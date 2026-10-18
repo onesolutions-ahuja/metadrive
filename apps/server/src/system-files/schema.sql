@@ -159,3 +159,13 @@ CREATE TABLE IF NOT EXISTS md_tenant_provisioning_requests (actor_tenant_id uuid
 
 -- Versioned, tenant-bound route aliases for installed apps.
 CREATE TABLE IF NOT EXISTS md_app_route_aliases (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_api text NOT NULL REFERENCES md_apps(api_name), slug text NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'), kind text NOT NULL CHECK (kind IN ('App Home','App Page','Record List')), target_api text NOT NULL, status text NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Disabled')), version integer NOT NULL DEFAULT 1 CHECK (version>=1), updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,app_api,slug));
+
+-- Fresh installs use the same durable notification structure as additive migrations.
+CREATE TABLE IF NOT EXISTS md_notifications (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ recipient_id uuid NOT NULL, title text NOT NULL, body text NOT NULL DEFAULT '',
+ flow_api_name text NOT NULL DEFAULT '', sent_by uuid, created_at timestamptz NOT NULL DEFAULT now(),
+ read_at timestamptz, FOREIGN KEY(tenant_id,recipient_id) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,sent_by) REFERENCES md_users(tenant_id,id), UNIQUE(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_notifications_inbox ON md_notifications(tenant_id,recipient_id,created_at DESC);
