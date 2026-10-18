@@ -141,6 +141,39 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Set-Cookie',`${tokenCookie}=; HttpOnly; Path=/api/auth; Max-Age=0; SameSite=Lax`);
     res.status(204).end();
   }));
+  app.post('/api/auth/change-password',route(async(req,res)=>{
+    const actor=req.actor!;
+    const {currentPassword,newPassword}=req.body??{};
+    if(typeof currentPassword!=='string'||typeof newPassword!=='string')
+      throw new Error('Invalid password change');
+    try{
+      await auth.changePassword(actor.tenant_id,actor.user_id,currentPassword,newPassword);
+      res.status(204).end();
+    }catch(error){
+      if(error instanceof Error&&error.message==='Invalid credentials'){
+        res.status(401).json({error:'Invalid credentials'});return;
+      }
+      throw error;
+    }
+  }));
+  app.get('/api/auth/sessions',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await auth.activeSessions(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/auth/sessions/revoke-all',route(async(req,res)=>{
+    const actor=req.actor!;
+    const currentPassword=req.body?.currentPassword;
+    if(typeof currentPassword!=='string')throw new Error('Invalid credentials');
+    try{
+      await auth.revokeAllSessions(actor.tenant_id,actor.user_id,currentPassword);
+      res.status(204).end();
+    }catch(error){
+      if(error instanceof Error&&error.message==='Invalid credentials'){
+        res.status(401).json({error:'Invalid credentials'});return;
+      }
+      throw error;
+    }
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
