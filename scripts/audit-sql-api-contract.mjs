@@ -14,6 +14,8 @@ const dynamic=fs.readFileSync('apps/server/src/system-support/dynamic-api-routes
 const builderRoutes=[
  ['GET','/metadata/apps'],['POST','/metadata/apps'],['PUT','/metadata/apps/:apiName'],
  ['DELETE','/metadata/apps/:apiName'],
+ ['GET','/metadata/offline-publication'],
+ ['POST','/named-credentials/:id/test'],['POST','/named-credentials/:id/rotate'],
  ['GET','/metadata/pages'],['GET','/metadata/pages/:apiName'],
  ['PUT','/metadata/pages/:apiName'],['DELETE','/metadata/pages/:apiName'],
  ['GET','/metadata/flows'],['GET','/metadata/flows/list'],
