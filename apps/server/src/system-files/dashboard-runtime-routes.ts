@@ -36,6 +36,43 @@ export function registerDashboardRuntimeRoutes(app:Express,db:SqlPersistence,rba
   if(requested!==undefined&&requested!==null&&requested!==''&&requested!==req.actor!.user_id)
    throw Error('Running as another user requires an authorised execution context');
  };
+ app.put('/api/metadata/dashboard-territories',wrap(async(req,res)=>{
+  const a=req.actor!,items=req.body;
+  await rbac.require(a.tenant_id,a.user_id,'SystemDefinition:dashboard-territories','manage');
+  if(!Array.isArray(items)||items.length>250)throw Error('Invalid dashboard territories');
+  const seen=new Set<string>(),all=new Map<string,{id:string;label:string;parentTerritoryId:string|null;userIds:string[]}>();
+  for(const x of items){
+   if(!x||!uuid.test(x.id)||seen.has(x.id)||typeof x.label!=='string'||!x.label.trim()
+    ||x.label.length>200||x.parentTerritoryId!==null&&(!uuid.test(x.parentTerritoryId)||x.id===x.parentTerritoryId)
+    ||!Array.isArray(x.userIds)||x.userIds.length>500||x.userIds.some((u:unknown)=>typeof u!=='string'||!uuid.test(u)))
+    throw Error('Invalid dashboard territory definition');
+   seen.add(x.id);all.set(x.id,{id:x.id,label:x.label.trim(),parentTerritoryId:x.parentTerritoryId,userIds:[...new Set<string>(x.userIds)]});
+  }
+  for(const x of all.values())if(x.parentTerritoryId&&!all.has(x.parentTerritoryId))throw Error('Parent territory missing');
+  for(const x of all.values()){
+   const visited=new Set<string>([x.id]);let p=x.parentTerritoryId;
+   while(p){if(visited.has(p))throw Error('Territory hierarchy has a cycle');
+    visited.add(p);p=all.get(p)?.parentTerritoryId??null;}
+  }
+  const users=[...new Set([...all.values()].flatMap(x=>x.userIds))];
+  await db.transaction(async client=>{
+   if(users.length){
+    const {rows}=await client.query<{id:string}>(
+     'SELECT id FROM md_users WHERE tenant_id=$1 AND id=ANY($2::uuid[])',[a.tenant_id,users]);
+    if(rows.length!==users.length)throw Error('Territory members must be current tenant users');
+   }
+   await client.query('DELETE FROM md_dashboard_territory_users WHERE tenant_id=$1',[a.tenant_id]);
+   await client.query('DELETE FROM md_dashboard_territories WHERE tenant_id=$1',[a.tenant_id]);
+   for(const x of all.values())await client.query(`
+    INSERT INTO md_dashboard_territories(tenant_id,id,label,parent_territory_id)
+    VALUES($1,$2,$3,$4)`,[a.tenant_id,x.id,x.label,x.parentTerritoryId]);
+   for(const x of all.values())for(const user of x.userIds)
+    await client.query('INSERT INTO md_dashboard_territory_users(tenant_id,territory_id,user_id) VALUES($1,$2,$3)',
+     [a.tenant_id,x.id,user]);
+  });
+  const timestamp=new Date().toISOString();
+  res.json({territories:[...all.values()].map(x=>({...x,createdAt:timestamp,updatedAt:timestamp}))});
+ }));
  app.get('/api/metadata/dashboards/:apiName/data/:objectApi',wrap(async(req,res)=>{
   const a=req.actor!,dashboard=await lookup(req,req.params.apiName),object=req.params.objectApi;
   checkUser(req,req.query.runningUserId);
