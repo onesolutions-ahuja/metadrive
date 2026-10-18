@@ -1,3 +1,4 @@
+import {resolveMetadataProperties} from './metadataReferences';
 import {useFlowStateChannel} from './useFlowStateChannel';
 import { presentPageRecords, type ChannelGrant } from './recordPresentationAdapters';
 import TemplatePageRuntimeLayout from './TemplatePageRuntimeLayout';
@@ -236,15 +237,15 @@ function MetadataBoundPageComponent({
   currentAppId: string;
   pageSessionKey: string;
   reports: ReportMetadata[];
-  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'id' | 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>, context?:{requestId?:string}) => void;
   disableActions?: boolean;
   defaultObjectApiName?: string;
   recordId?: string;
 }) {
-  const properties = component.properties;
+  const properties = resolveMetadataProperties({...component.properties,objectApiName:component.properties.objectApiName||defaultObjectApiName},objects,availableFlows);
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
   const mentionRootObjectApiName = defaultObjectApiName || objectApiName;
   // An application-independent session can be referenced by configured Flows.
@@ -327,7 +328,7 @@ function MetadataBoundPageComponent({
     void refresh();
     // The shared Object API remains the RBAC-enforced read source. Poll only
     // live conversation presenters, and only while the document is visible.
-    const chatter = properties.recordPresenterApiName === 'CommunicationThread' && !disableActions;
+    const chatter = Boolean(properties.liveRefreshEnabled) && !disableActions;
     const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
     if (chatter) {
       window.addEventListener('focus', onVisible);
@@ -343,14 +344,16 @@ function MetadataBoundPageComponent({
         document.removeEventListener('visibilitychange', onVisible);
       }
     };
-  }, [objectApiName, revision, properties.recordPresenterApiName, disableActions]);
+  }, [objectApiName, revision, properties.recordPresenterApiName, properties.liveRefreshEnabled, disableActions]);
   useEffect(() => {
-    if (properties.recordPresenterApiName !== 'CommunicationThread') return;
+    setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
+    const accessPath=String(properties.channelAccessPath??'');
+    if(!/^\/[A-Za-z0-9/_-]+$/.test(accessPath))return;
     let active = true;
     let requestNumber = 0;
     const loadAccess = () => {
       const request = ++requestNumber;
-      void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
+      void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>(accessPath)
         .then(value => {if (active && request === requestNumber) setChannelAccess(value);})
         .catch(() => {if (active && request === requestNumber) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     };
@@ -373,7 +376,7 @@ function MetadataBoundPageComponent({
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [properties.recordPresenterApiName, revision]);
+  }, [properties.channelAccessPath, properties.recordPresenterApiName, revision]);
   // Contacts are loaded through the same OneEngine record API and its RBAC checks.
   // The bound object is metadata-owned, never supplied by a browser caller.
   const contactsObjectApiName = typeof properties.contactsObjectApiName === 'string' ? properties.contactsObjectApiName : '';
@@ -388,15 +391,15 @@ function MetadataBoundPageComponent({
   }, [contactsObjectApiName, revision]);
   const contactChoices = contactRecords.map(row => ({
     id: String(row.Id ?? ''),
-    name: String(row.Name ?? [row.FirstName, row.LastName].filter(Boolean).join(' ') ?? ''),
-    phone: String(row.MobilePhone ?? row.Phone ?? '')
+    name: String(row[String(properties.contactNameFieldApiName??'')]??''),
+    phone: String(row[String(properties.contactPhoneFieldApiName??'')]??'')
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
-  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
+  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess, properties);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
@@ -442,7 +445,7 @@ function MetadataBoundPageComponent({
       return { navigated: true };
     }
     const flowApiName = String(binding.flowApiName ?? '');
-    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName && flow.status === 'Active');
     if (!selected || selected.status !== 'Active') {
       throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
     }
@@ -454,7 +457,7 @@ function MetadataBoundPageComponent({
     ).map(([key, source]) => [key, resolveInput(source, payload)]));
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
-      onLaunchFlow(flowApiName, inputs);
+      onLaunchFlow(flowApiName, inputs,{requestId:typeof payload.requestId==='string'?payload.requestId:undefined});
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {
@@ -548,10 +551,10 @@ function LightningAppRuntime({
   pages: LightningPageMetadata[];
   reports: ReportMetadata[];
   libraryComponents: LibraryComponentMetadata[];
-  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'id' | 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>, context?:{requestId?:string}) => void;
   onStandaloneModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);

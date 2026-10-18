@@ -6,7 +6,8 @@
     "noEmit": false
   },
   "include": [
-    "src/system-files/**/*.ts"
+    "src/system-files/**/*.ts",
+    "src/app-seeders/**/*.ts"
   ],
   "exclude": [
     "src/system-files/**/*.test.ts"

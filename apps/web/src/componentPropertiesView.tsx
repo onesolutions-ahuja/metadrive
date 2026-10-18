@@ -1,3 +1,4 @@
+import {metadataReference,metadataSelection,resolveMetadataProperties,metadataFieldObject} from './metadataReferences';
 import { createPageRuntimeViews } from './pageRuntimeViews';
 import { createSetupApp } from './setupAppShell';
 import { createRecordWorkspaceViews } from './recordWorkspaceViews';
@@ -216,7 +217,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const [newEventName, setNewEventName] = useState('');
   const [advancedDraft, setAdvancedDraft] = useState('');
   const [advancedError, setAdvancedError] = useState('');
-  const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
+  const objectApiName = String(resolveMetadataProperties(properties,objects,flows).objectApiName ?? properties.targetObject ?? '');
   const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
@@ -239,17 +240,13 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const isFilter = (key: string) => key === 'filters' || key.endsWith('Filters');
   const objectBindings = Array.from(new Set(['objectApiName', ...Object.keys(properties).filter(isObjectBinding)]));
-  const fieldsFor = (key: string) => {
-    const prefix = key.replace(/(?:Field(?:ApiName)?|Filters)$/, '');
-    const binding = objectBindings.filter(name => name !== 'objectApiName' &&
-      prefix.startsWith(name.slice(0, -'ObjectApiName'.length)))
-      .sort((a, b) => b.length - a.length)[0];
-    const boundName = binding ? properties[binding] : objectApiName;
-    return objects.find(object => object.apiName === boundName)?.fields ?? [];
-  };
+  const fieldsFor = (key:string) => metadataFieldObject(objects,{...properties,objectApiName},key)?.fields??[];
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
-    <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
+    <select className="form-control" value={metadataSelection(fieldsFor(key),value)?.apiName??String(value??'')} onChange={(event) => {
+      const field=fieldsFor(key).find(f=>f.apiName===event.target.value);
+      update(key,field?.id?metadataReference(field.id):event.target.value);
+    }}>
       <option value="">Select field…</option>
       {key === 'categoryValueFieldApiName' && <option value="Id">Record ID (lookup value)</option>}
       {fieldsFor(key).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
@@ -265,8 +262,11 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     </label>}
 
     {objectBindings.map((key) => <label className="form-label" key={key}>{labelFor(key)}
-      <select className="form-control" value={String(properties[key] ?? '')}
-        onChange={(event) => update(key, event.target.value)}>
+      <select className="form-control" value={metadataSelection(objects,properties[key])?.apiName??String(properties[key]??'')}
+        onChange={(event) => {
+          const object=objects.find(o=>o.apiName===event.target.value);
+          update(key,object?.id?metadataReference(object.id):event.target.value);
+        }}>
         <option value="">No object selected</option>
         {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
       </select>
@@ -281,7 +281,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
       const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
-      const selectedFlow = flows.find(flow => flow.apiName === binding.flowApiName);
+      const selectedFlow = metadataSelection(flows,binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
       const actionType = binding.actionType === 'Navigate' ? 'Navigate' : binding.actionType === 'SetFilter' ? 'SetFilter' : 'Flow';
       const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
@@ -311,8 +311,8 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
             placeholder="category" pattern="[A-Za-z][A-Za-z0-9_]*" />
         </label> : actionType==='Flow' ? <>
           <label className="form-label">Flow
-            <select className="form-control" value={String(binding.flowApiName ?? '')}
-              onChange={(e) => setBinding({ ...binding, flowApiName: e.target.value })}>
+            <select className="form-control" value={selectedFlow?.apiName??String(binding.flowApiName??'')}
+              onChange={(e) => {const flow=flows.find(f=>f.apiName===e.target.value&&f.status==='Active');setBinding({ ...binding, flowApiName: flow?.id?metadataReference(flow.id):e.target.value });}}>
               <option value="">Select an active Flow…</option>
               {flows.filter(flow => flow.status === 'Active'
                 && ['Screen Flow','Autolaunched Flow'].includes(flow.flowType)).map(flow =>
@@ -377,9 +377,9 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
         setNewEventName('');
       }}>Add event action</button>
-    {!actionFlows && <label className="form-label">Flow API Name
-      <select className="form-control" value={String(properties.flowApiName ?? '')}
-        onChange={(event) => update('flowApiName', event.target.value)}>
+    {!actionFlows && <label className="form-label">Flow
+      <select className="form-control" value={metadataSelection(flows,properties.flowApiName)?.apiName??String(properties.flowApiName??'')}
+        onChange={(event) => {const flow=flows.find(f=>f.apiName===event.target.value);update('flowApiName',flow?.id?metadataReference(flow.id):event.target.value);}}>
         <option value="">No flow selected</option>
         {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
       </select>
@@ -453,7 +453,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
       </div>;
     })}
     <CustomComponentPropertyEditor properties={properties} onChange={onChange} definitions={definitions} addOnly
-      objects={objects} primaryObjectApiName={primaryObjectApiName || objectApiName} appObjectApiNames={appObjectApiNames} />
+      objects={objects} flows={flows} primaryObjectApiName={objectApiName || primaryObjectApiName} appObjectApiNames={appObjectApiNames} />
     {false && <><button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);

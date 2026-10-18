@@ -55,16 +55,21 @@ function ItemGrid({p,rows}){
   return values.some(value=>value!==undefined&&value!==null&&categoryValues.includes(String(value).trim().toLowerCase()));
  };
  const searchQuery=String(sharedFilters.search??p.searchQuery??'').trim().toLocaleLowerCase();
- const searchFields=String(p.searchFieldApiNames||'Name,SKU,Barcode').split(',').map(x=>x.trim()).filter(Boolean);
- const titleField=String(p.titleFieldApiName||'Name'),imageField=String(p.imageFieldApiName||'ImageURL'),priceField=String(p.priceFieldApiName||'DefaultPrice');
+ const searchFields=String(p.searchFieldApiNames||'').split(',').map(x=>x.trim()).filter(Boolean);
+ const titleField=String(p.titleFieldApiName||''),imageField=String(p.imageFieldApiName||''),priceField=String(p.priceFieldApiName||'');
  const visibleRows=rows.filter(row=>matchesCategory(row)
   &&(!searchQuery||searchFields.some(field=>String(row?.[field]??'').toLocaleLowerCase().includes(searchQuery))));
- const currency=value=>Number.isFinite(Number(value))?Number(value).toLocaleString(undefined,{style:'currency',currency:String(p.currencyCode||'GBP')}):view(value);
+ let formatter;
+ try{if(p.showPrice!==false){if(!p.currencyCode)throw Error();formatter=new Intl.NumberFormat(undefined,{style:'currency',currency:p.currencyCode});}}
+ catch{return <div role="alert">Configure a valid display currency.</div>;}
+ if(p.showTitle!==false&&!titleField)return <div role="alert">Select an item title field.</div>;
+ if(p.showPrice!==false&&!priceField)return <div role="alert">Select an item price field.</div>;
+ const currency=value=>Number.isFinite(Number(value))?formatter?.format(Number(value)):view(value);
  return <section><h3 className="one-heading" style={{marginBottom:12}}>{p.title||'Items'}</h3>
   <div className="one-grid md-product-grid" style={{'--one-grid-desktop':count,'--one-grid-tablet':tabletCount,'--one-grid-mobile':phoneCount}}>
    {visibleRows.map((r,i)=>{
     const image=r?.[imageField],validImage=typeof image==='string'&&/^https:\/\//i.test(image);
-    const name=view(r?.[titleField]??title(r)),price=r?.[priceField];
+    const name=view(r?.[titleField]??''),price=r?.[priceField];
     return <button className="one-item one-item--interactive md-product-card" key={r.Id??r.id??i} type="button" aria-label={'Add '+name}
       onClick={()=>{
        if(p.cartTargetKey&&p.pageSessionKey&&typeof window!=='undefined')

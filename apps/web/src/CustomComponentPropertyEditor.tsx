@@ -1,6 +1,7 @@
+import {metadataReference,metadataSelection,metadataFieldObject} from './metadataReferences';
 import { useState } from 'react';
 import SmartFieldInput from './SmartFieldInput';
-import type { ObjectMetadata } from './metadata';
+import type { ObjectMetadata,FlowDefinitionMetadata } from './metadata';
 import { sortComponentSettings, validateComponentSetting, type ComponentSettingDefinition } from './componentSettingDefinitions';
 import {
   addComponentProperty,
@@ -16,7 +17,7 @@ export default function CustomComponentPropertyEditor({
   disabled = false,
   addOnly = false,
   definitions,
-  objects = [], primaryObjectApiName = '', appObjectApiNames = []
+  objects = [], flows = [], primaryObjectApiName = '', appObjectApiNames = []
 }: {
   properties: ComponentPropertyValues;
   onChange: (next: ComponentPropertyValues) => void;
@@ -24,6 +25,7 @@ export default function CustomComponentPropertyEditor({
   addOnly?: boolean;
   definitions?: readonly ComponentSettingDefinition[];
   objects?: readonly ObjectMetadata[];
+  flows?: readonly FlowDefinitionMetadata[];
   primaryObjectApiName?: string;
   appObjectApiNames?: readonly string[];
 }) {
@@ -59,8 +61,17 @@ export default function CustomComponentPropertyEditor({
         const definition = definitionByName.get(name);
         const label = definition?.label ?? displayComponentPropertyName(name);
         const id = `component-property-${name}`;
+        const boundObject=metadataFieldObject(objects,{...properties,objectApiName:properties.objectApiName||primaryObjectApiName},name);
         return <div className="metadata-array-property" key={name}>
-          {definition?.kind === 'SELECT' && definition.choices ? <label className="form-label" htmlFor={id}>{label}
+          {definition?.kind === 'OBJECT_FIELD' ? <label className="form-label" htmlFor={id}>{label}
+            <select id={id} className="form-control" disabled={disabled} value={metadataSelection(boundObject?.fields??[],value)?.apiName??String(value??'')}
+              onChange={event=>{const field=boundObject?.fields.find(f=>f.apiName===event.target.value);update(name,field?.id?metadataReference(field.id):event.target.value);}}>
+              <option value="">Select field…</option>{boundObject?.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select></label> : definition?.kind === 'FLOW' ? <label className="form-label" htmlFor={id}>{label}
+            <select id={id} className="form-control" disabled={disabled} value={metadataSelection(flows,value)?.apiName??String(value??'')}
+              onChange={event=>{const flow=flows.find(f=>f.apiName===event.target.value);update(name,flow?.id?metadataReference(flow.id):event.target.value);}}>
+              <option value="">Select Flow…</option>{flows.map(flow=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+            </select></label> : definition?.kind === 'SELECT' && definition.choices ? <label className="form-label" htmlFor={id}>{label}
             <select id={id} className="form-control" disabled={disabled} value={String(value)} onChange={event => update(name,event.target.value)}>
               {!definition.required && <option value="">None</option>}
               {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}

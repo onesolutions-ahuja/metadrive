@@ -3,7 +3,7 @@
     "apiName": "ChatterInbox",
     "label": "Chatter Inbox",
     "category": "Communication",
-    "description": "Responsive object-bound conversation list and thread. Sending and assignment require Flow action bindings; no direct provider calls.",
+    "description": "Compatibility registration for the shared OneConversation renderer. Configure model mappings and Flow bindings through app metadata.",
     "surfaces": [
       "page",
       "dashboard",
@@ -12,33 +12,17 @@
     "defaults": {
       "title": "Chatter",
       "accentColor": "#168657",
-      "conversationsObjectApiName": "Communication_Records__c",
-      "messagesObjectApiName": "Communication_Records__c",
-      "channelAccountObjectApiName": "Connector_App__c",
+      "conversationsObjectApiName": "",
+      "messagesObjectApiName": "",
+      "channelAccountObjectApiName": "",
       "restrictToAssigned": false,
       "enableAssignment": true,
-      "actionFlows": {
-        "send": {
-          "flowApiName": "CHATTER_SEND_MESSAGE",
-          "inputs": {
-            "ConversationId": "$event.conversationId",
-            "ChannelAccountId": "$event.channelAccountId",
-            "RecipientPhone": "$event.recipientPhone",
-            "Body": "$event.body"
-          }
-        },
-        "assign": {
-          "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
-          "inputs": {
-            "ConversationId": "$event.conversationId",
-            "ChannelAccountId": "$event.channelAccountId"
-          }
-        }
-      }
+      "actionFlows": {},
+      "viewMode": "inbox"
     },
-    "jsx": "ChatterInbox/ChatterInbox.jsx",
-    "css": "ChatterInbox/ChatterInbox.css",
-    "version": 4,
+    "jsx": "one/OneConversation.jsx",
+    "css": "one/one.css",
+    "version": 5,
     "resize": {
       "defaultWidth": 900,
       "defaultHeight": 650,

@@ -1,3 +1,4 @@
+import {resolveMetadataProperties} from './metadataReferences';
 import * as React from 'react';
 import {useState,useEffect,useRef} from 'react';
 // Load the browser API client only during the mounted effect, not on SSR import.
@@ -23,15 +24,15 @@ export default function MetadataBoundPageComponent({
   currentAppId: string;
   pageSessionKey: string;
   reports: ReportMetadata[];
-  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'id' | 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>, context?:{requestId?:string}) => void;
   disableActions?: boolean;
   defaultObjectApiName?: string;
   recordId?: string;
 }) {
-  const properties = component.properties;
+  const properties = resolveMetadataProperties({...component.properties,objectApiName:component.properties.objectApiName||defaultObjectApiName},objects,availableFlows);
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
   const mentionRootObjectApiName = defaultObjectApiName || objectApiName;
   // An application-independent session can be referenced by configured Flows.
@@ -105,14 +106,16 @@ export default function MetadataBoundPageComponent({
     return () => { active = false; };
   }, [objectApiName, revision]);
   useEffect(() => {
-    if (properties.recordPresenterApiName !== 'CommunicationThread') return;
+    setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
+    const accessPath=String(properties.channelAccessPath??'');
+    if(!/^\/[A-Za-z0-9/_-]+$/.test(accessPath))return;
     let active = true;
     setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
-    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
+    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>(accessPath)
       .then(value => {if(active) setChannelAccess(value);})
       .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     return () => {active = false;};
-  }, [properties.recordPresenterApiName, revision]);
+  }, [properties.channelAccessPath, properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
@@ -125,7 +128,7 @@ export default function MetadataBoundPageComponent({
     ? fields.find(field=>field.relationship?.targetObject===categorySource.sourceObjectApiName
       || field.dataType==='Lookup('+categorySource.sourceObjectApiName+')')?.apiName
     : undefined;
-  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
+  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess, properties);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
@@ -173,7 +176,7 @@ export default function MetadataBoundPageComponent({
       return { navigated: true };
     }
     const flowApiName = String(binding.flowApiName ?? '');
-    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName && flow.status === 'Active');
     if (!selected || selected.status !== 'Active') {
       throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
     }
@@ -185,7 +188,7 @@ export default function MetadataBoundPageComponent({
     ).map(([key, source]) => [key, resolveInput(source, payload)]));
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
-      onLaunchFlow(flowApiName, inputs);
+      onLaunchFlow(flowApiName, inputs,{requestId:typeof payload.requestId==='string'?payload.requestId:undefined});
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {

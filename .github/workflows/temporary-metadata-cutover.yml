@@ -1,0 +1,49 @@
+name: Temporary metadata cutover verification and Pages release
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+  publish:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build branded frontend
+        env:
+          GITHUB_PAGES: 'true'
+          GITHUB_PAGES_BASE_PATH: '/'
+          VITE_API_BASE_URL: https://metadrive-production.up.railway.app/api
+        run: npm run build --workspace apps/web
+      - run: node scripts/verify-pages-artifacts.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

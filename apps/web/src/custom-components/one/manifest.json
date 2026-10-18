@@ -1176,7 +1176,7 @@
           "label": "Icon glyph",
           "kind": "TEXT",
           "displayOrder": 300,
-          "defaultValue": "★"
+          "defaultValue": "\u2605"
         }
       ]
     },
@@ -2628,7 +2628,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 8,
+      "version": 9,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2663,7 +2663,7 @@
         {
           "propertyKey": "categoryFieldApiName",
           "label": "Category field API name",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "defaultValue": "",
           "displayOrder": 340
         },
@@ -2691,29 +2691,29 @@
         {
           "propertyKey": "imageFieldApiName",
           "label": "Product image field",
-          "kind": "TEXT",
-          "defaultValue": "ImageURL",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
           "displayOrder": 400
         },
         {
           "propertyKey": "titleFieldApiName",
           "label": "Card title field",
-          "kind": "TEXT",
-          "defaultValue": "Name",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
           "displayOrder": 410
         },
         {
           "propertyKey": "priceFieldApiName",
           "label": "Card price field",
-          "kind": "TEXT",
-          "defaultValue": "DefaultPrice",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
           "displayOrder": 420
         },
         {
           "propertyKey": "currencyCode",
           "label": "Display currency code",
           "kind": "TEXT",
-          "defaultValue": "GBP",
+          "defaultValue": "",
           "displayOrder": 430
         },
         {
@@ -2727,7 +2727,7 @@
           "propertyKey": "searchFieldApiNames",
           "label": "Searchable fields (comma-separated)",
           "kind": "TEXT",
-          "defaultValue": "Name,SKU,Barcode",
+          "defaultValue": "",
           "displayOrder": 450
         }
       ]
@@ -2837,7 +2837,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 5,
+      "version": 6,
       "scope": "platform-core",
       "jsxFile": "one/OneConversation.jsx",
       "cssFile": "one/one.css",
@@ -2867,7 +2867,7 @@
           "label": "Composer placeholder",
           "kind": "TEXT",
           "displayOrder": 300,
-          "defaultValue": "Write a message…"
+          "defaultValue": "Write a message\u2026"
         },
         {
           "propertyKey": "viewMode",
@@ -2976,6 +2976,139 @@
           "kind": "TEXT",
           "displayOrder": 440,
           "defaultValue": ""
+        },
+        {
+          "propertyKey": "conversationDirectionFieldApiName",
+          "label": "Conversation direction field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 500
+        },
+        {
+          "propertyKey": "conversationAccountFieldApiName",
+          "label": "Conversation account field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 510
+        },
+        {
+          "propertyKey": "conversationFromFieldApiName",
+          "label": "Conversation from field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 520
+        },
+        {
+          "propertyKey": "conversationToFieldApiName",
+          "label": "Conversation to field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 530
+        },
+        {
+          "propertyKey": "conversationOccurredFieldApiName",
+          "label": "Conversation occurred field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 540
+        },
+        {
+          "propertyKey": "conversationBodyFieldApiName",
+          "label": "Conversation body field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 550
+        },
+        {
+          "propertyKey": "conversationContactNameFieldApiName",
+          "label": "Conversation contactName field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 560
+        },
+        {
+          "propertyKey": "conversationAssignedUserFieldApiName",
+          "label": "Conversation assignedUser field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 570
+        },
+        {
+          "propertyKey": "conversationReadAtFieldApiName",
+          "label": "Conversation readAt field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 580
+        },
+        {
+          "propertyKey": "conversationStatusFieldApiName",
+          "label": "Conversation status field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 590
+        },
+        {
+          "propertyKey": "conversationMediaUrlFieldApiName",
+          "label": "Conversation mediaUrl field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 600
+        },
+        {
+          "propertyKey": "conversationMediaNameFieldApiName",
+          "label": "Conversation mediaName field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 610
+        },
+        {
+          "propertyKey": "conversationMediaTypeFieldApiName",
+          "label": "Conversation mediaType field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 620
+        },
+        {
+          "propertyKey": "conversationIncomingValue",
+          "label": "Incoming direction value",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 650
+        },
+        {
+          "propertyKey": "conversationOutgoingValue",
+          "label": "Outgoing direction value",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 660
+        },
+        {
+          "propertyKey": "channelAccessPath",
+          "label": "Permission endpoint",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 670
+        },
+        {
+          "propertyKey": "contactNameFieldApiName",
+          "label": "Contact name field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 680
+        },
+        {
+          "propertyKey": "contactPhoneFieldApiName",
+          "label": "Contact phone field",
+          "kind": "OBJECT_FIELD",
+          "defaultValue": "",
+          "displayOrder": 690
+        },
+        {
+          "propertyKey": "liveRefreshEnabled",
+          "label": "Refresh live records",
+          "kind": "BOOLEAN",
+          "defaultValue": false,
+          "displayOrder": 710
         }
       ]
     },
@@ -2989,7 +3122,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 8,
+      "version": 9,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -3045,51 +3178,51 @@
         {
           "propertyKey": "nameFieldApiName",
           "label": "Product name field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 310,
-          "defaultValue": "Name"
+          "defaultValue": ""
         },
         {
           "propertyKey": "priceFieldApiName",
           "label": "Product price field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 320,
-          "defaultValue": "DefaultPrice"
+          "defaultValue": ""
         },
         {
           "propertyKey": "barcodeFieldApiName",
           "label": "Barcode field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 330,
-          "defaultValue": "Barcode"
+          "defaultValue": ""
         },
         {
           "propertyKey": "skuFieldApiName",
           "label": "SKU field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 340,
-          "defaultValue": "SKU"
+          "defaultValue": ""
         },
         {
           "propertyKey": "imageFieldApiName",
           "label": "Product image field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 350,
-          "defaultValue": "ImageURL"
+          "defaultValue": ""
         },
         {
           "propertyKey": "ageRestrictedFieldApiName",
           "label": "Age restriction field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 360,
-          "defaultValue": "AgeRestricted"
+          "defaultValue": ""
         },
         {
           "propertyKey": "vatApplicableFieldApiName",
           "label": "VAT applicability field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 370,
-          "defaultValue": "VATApplicable"
+          "defaultValue": ""
         },
         {
           "propertyKey": "customerDisplayUrl",
@@ -3103,7 +3236,7 @@
           "label": "Currency code",
           "kind": "TEXT",
           "displayOrder": 390,
-          "defaultValue": "GBP"
+          "defaultValue": ""
         },
         {
           "propertyKey": "showVatTotal",
@@ -3143,14 +3276,14 @@
         {
           "propertyKey": "stateValueFieldApiName",
           "label": "State value field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 450,
           "defaultValue": ""
         },
         {
           "propertyKey": "stateVersionFieldApiName",
           "label": "State revision field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 460,
           "defaultValue": ""
         },
@@ -3276,9 +3409,9 @@
         {
           "propertyKey": "categoryFieldApiName",
           "label": "Product category field",
-          "kind": "TEXT",
+          "kind": "OBJECT_FIELD",
           "displayOrder": 610,
-          "defaultValue": "Category"
+          "defaultValue": ""
         },
         {
           "propertyKey": "showCategoryTabs",
@@ -3300,6 +3433,40 @@
           "kind": "TEXT",
           "displayOrder": 640,
           "defaultValue": "All"
+        },
+        {
+          "propertyKey": "vatRate",
+          "label": "Tax rate (%)",
+          "kind": "NUMBER",
+          "displayOrder": 800
+        },
+        {
+          "propertyKey": "checkoutStatusOutput",
+          "label": "Checkout lifecycle output",
+          "kind": "TEXT",
+          "displayOrder": 810,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "checkoutRequestOutput",
+          "label": "Checkout request output",
+          "kind": "TEXT",
+          "displayOrder": 820,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "checkoutMessageOutput",
+          "label": "Checkout message output",
+          "kind": "TEXT",
+          "displayOrder": 830,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "checkoutChangeOutput",
+          "label": "Checkout change (minor units) output",
+          "kind": "TEXT",
+          "displayOrder": 840,
+          "defaultValue": ""
         }
       ]
     },

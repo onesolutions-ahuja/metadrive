@@ -33,6 +33,7 @@ export type WorkspaceId =
   | 'rbac';
 
 export type FieldMetadata = {
+  id?: string;
   apiName: string;
   label: string;
   dataType: string;
@@ -148,6 +149,7 @@ export type ObjectSettingsMetadata = {
 };
 
 export type ObjectMetadata = {
+  id?: string;
   apiName: string;
   label: string;
   pluralLabel: string;
@@ -339,6 +341,7 @@ export type FlowTestCaseMetadata = {
 };
 
 export type FlowDefinitionMetadata = {
+  id?: string;
   apiName: string;
   label: string;
   description?: string;
