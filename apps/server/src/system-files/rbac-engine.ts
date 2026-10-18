@@ -30,7 +30,9 @@ export class RbacEngine {
       FROM requested q
       LEFT JOIN md_permission_rules r ON r.tenant_id=$1
         AND r.permission_set_id IN (SELECT permission_set_id FROM assigned)
-        AND r.resource IN (q.resource,'*') AND r.action IN (q.action,'*')
+        AND r.resource IN (q.resource,'*',
+          CASE WHEN q.resource LIKE 'Flow:%' THEN 'Flow' ELSE q.resource END)
+        AND r.action IN (q.action,'*')
       GROUP BY q.ordinal ORDER BY q.ordinal
     `,[tenantId,userId,checks.map(c=>c.resource),checks.map(c=>c.action)]);
     const byIndex=new Map(rows.map(row=>[Number(row.ordinal)-1,row]));
