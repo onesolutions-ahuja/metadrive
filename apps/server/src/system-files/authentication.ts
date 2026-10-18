@@ -95,7 +95,7 @@ export class AuthenticationService {
     return {sessions:rows.map(row=>({
       familyId:row.id,
       expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000),
-      mfaVerified:row.mfa_verified
+      mfaVerified:row.mfa_verified===true
     }))};
   }
   async revokeAllSessions(tenantId:string,userId:string,password:string){
