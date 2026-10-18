@@ -83,31 +83,6 @@ type LandingBootstrap = {
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
 
 
-type RecordActivity = {
-  id: string;
-  objectApiName: string;
-  recordId: string;
-  kind: 'Task' | 'Call' | 'Event';
-  subject: string;
-  description: string;
-  status: 'Open' | 'Completed';
-  dueAt: string | null;
-  createdBy: string;
-  createdByName: string;
-  createdAt: string;
-};
-type ChatterComment = { id: string; body: string; createdBy: string; createdByName: string; createdAt: string };
-type ChatterPost = {
-  id: string;
-  objectApiName: string;
-  recordId: string;
-  body: string;
-  createdBy: string;
-  createdByName: string;
-  createdAt: string;
-  comments: ChatterComment[];
-};
-
 function App() {
   const [authState, setAuthState] = useState<AuthState>('restoring');
   const [authError, setAuthError] = useState('');
