@@ -743,6 +743,28 @@ export function createSystemServer(db:SqlPersistence) {
     await flows.deleteEditor(actor.tenant_id,actor.user_id,req.params.apiName);
     res.status(204).end();
   }));
+  // Explicit licence administration is separate from installation and activation.
+  app.post('/api/connector-apps/:appKey/licence',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Licence','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(req.params.appKey))
+      throw new Error('Invalid connector app');
+    await db.transaction(async client=>{
+      const found=await client.query<{id:string}>(
+        'SELECT id FROM md_apps WHERE api_name=$1 AND enabled=true AND (tenant_owner_id IS NULL OR tenant_owner_id=$2)',
+        [req.params.appKey,actor.tenant_id]);
+      if(!found.rows[0])throw new Error('Connector application not found');
+      await client.query(`INSERT INTO md_app_entitlements(tenant_id,app_id,active,expires_at)
+        VALUES ($1,$2,true,NULL)
+        ON CONFLICT(tenant_id,app_id) DO UPDATE SET active=true,expires_at=NULL`,
+        [actor.tenant_id,found.rows[0].id]);
+      await client.query(
+        'INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,$3)',
+        [actor.tenant_id,actor.user_id,'ConnectorLicenceGranted']);
+    });
+    res.json({granted:true});
+  }));
   app.post('/api/apps/:apiName/install',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
