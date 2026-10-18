@@ -33,7 +33,6 @@
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
     "/metadata/dashboards/${encodeURIComponent(dashboardApiName)}/data/${encodeURIComponent(objectApiName)}${runningUserId ",
     "/metadata/flow-interviews/${encodeURIComponent(interview.id)}",
-    "/metadata/flows/${encodeURIComponent(apiName)}/deactivate",
     "/metadata/flows/${encodeURIComponent(nextFlow.apiName)}/validate",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(field.apiName)}",
