@@ -141,6 +141,19 @@ export function createSystemServer(db:SqlPersistence) {
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
+  app.post('/api/auth/mfa/verify',route(async(req,res)=>{
+    const token=req.body?.challenge_token,code=req.body?.code;
+    if(typeof token!=='string'||typeof code!=='string'){res.status(400).json({error:'MFA challenge and code required'});return;}
+    try{
+      const session=await auth.verifyMfaChallenge(token,code);
+      res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+    }catch(error){
+      if(error instanceof Error&&['Invalid MFA code','Invalid MFA challenge'].includes(error.message))
+        res.status(401).json({error:'Invalid MFA code'});
+      else throw error;
+    }
+  }));
   registerPasswordResetRoutes(app,db,(req,slug)=>resolveTenant(db,req,slug));
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
