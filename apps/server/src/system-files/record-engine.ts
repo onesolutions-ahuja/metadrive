@@ -1,14 +1,14 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
-type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
+type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
 type Storable={value_text:string|null;reference_record_id:string|null};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
   private async fields(tenantId:string,objectApi:string,client?:PoolClient):Promise<FieldDefinition[]> {
     const {rows}=await (client??this.db).query<FieldDefinition>(
-      'SELECT api_name,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',
+      'SELECT api_name,data_type,related_object,required,max_length,picklist_restricted FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',
       [tenantId,objectApi]);
     return rows;
   }
@@ -37,9 +37,27 @@ export class RecordEngine {
       let text:string,reference:string|null=null;
       switch(field.data_type) {
         case 'text':
+        case 'email':
+        case 'phone':
+        case 'url':
+        case 'textarea':
+        case 'longtext':
+        case 'picklist':
           if(typeof value!=='string')throw new Error('Invalid text field: '+key);
           if(field.max_length && value.length>field.max_length)throw new Error('Invalid text length: '+key);
+          if(field.data_type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+            throw new Error('Invalid email field: '+key);
+          if(field.data_type==='url'&& !/^https?:\/\/[^\s]+$/i.test(value))
+            throw new Error('Invalid URL field: '+key);
+          if(field.data_type==='picklist'&&field.picklist_restricted!==false){
+            const allowed=await (client??this.db).query(
+              'SELECT 1 FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 AND value=$4',
+              [tenantId,objectApi,key,value]);
+            if(!allowed.rowCount)throw new Error('Invalid picklist value: '+key);
+          }
           text=value;break;
+        case 'currency':
+        case 'percent':
         case 'number':
           if(typeof value!=='number'||!Number.isFinite(value))throw new Error('Invalid number field: '+key);
           text=String(value);break;
@@ -115,7 +133,7 @@ export class RecordEngine {
       if(!allowed.get(row.field_api))continue;
       const value=row.reference_record_id??row.value_text;
       collected.get(row.id)![row.field_api]=value===null?null:
-        row.data_type==='number'?Number(value):row.data_type==='boolean'?value==='true':value;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(value):row.data_type==='boolean'?value==='true':value;
     }
     const total=await this.db.query<{total:string}>(
       'SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
@@ -147,7 +165,7 @@ export class RecordEngine {
       if(!access[index])continue;
       const val=row.reference_record_id??row.value_text;
       record[row.field_api as string]=val===null?null:
-        row.data_type==='number'?Number(val):row.data_type==='boolean'?val==='true':val;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(val):row.data_type==='boolean'?val==='true':val;
     }
     return record;
   }

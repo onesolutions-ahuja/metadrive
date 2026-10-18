@@ -484,7 +484,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
-    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined);
+    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined,field);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
   app.get('/api/component-library',route(async(req,res)=>{

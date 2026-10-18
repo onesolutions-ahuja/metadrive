@@ -148,7 +148,8 @@ test('Records HTTP API returns the actual list rather than double-nested records
 
 test('creating a duplicate Field never mutates its existing type or lookup target', async () => {
   const queries:string[]=[];
-  const db={query:async(sql:string)=>{queries.push(sql);return {rows:[],rowCount:0}}} as unknown as SqlPersistence;
+  const query=async(sql:string)=>{queries.push(sql);return {rows:[],rowCount:0}};
+  const db={query,transaction:async(fn:(client:{query:typeof query})=>Promise<unknown>)=>fn({query})} as unknown as SqlPersistence;
   const svc=new ObjectDefinitionService(db);
   await assert.rejects(()=>svc.addField('tenant','Sale__c','ProductId','Lookup','Product__c'),/Field already exists/);
   assert.ok(queries.every(q=>!q.includes('DO UPDATE')));
@@ -713,4 +714,37 @@ test('Tenant route aliases are revisioned and resolve only installed app targets
  await apps.disableAlias('tenant','MyApp','customers',1);
  assert.ok(queries.every(query=>query.args[0]==='tenant'));
  assert.ok(queries.some(query=>query.sql.includes('version=$4')&&query.sql.includes("status='Active'")));
+});
+
+test('SQL picklist field creation persists validated options and rejects invalid values',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    writes.push({sql,args});
+    return {rows:[{id:'created'}],rowCount:1};
+  }};
+  const db={
+    query:async(sql:string,args:unknown[])=>{
+      if(sql.includes('FROM md_field_definitions'))return {rows:[{
+        api_name:'Status',data_type:'picklist',related_object:null,required:false,max_length:null,picklist_restricted:true
+      }]};
+      if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'Approved'}],rowCount:args[3]==='Approved'?1:0};
+      throw new Error('Unexpected SQL '+sql);
+    },
+    transaction:async(fn:(c:typeof client)=>Promise<unknown>)=>fn(client)
+  } as unknown as SqlPersistence;
+  const service=new ObjectDefinitionService(db);
+  await service.addField('tenant','Sale__c','Status','Picklist',undefined,'Status',
+    {picklistValues:['Approved','Rejected'],picklistRestricted:true});
+  assert.equal(writes.filter(item=>item.sql.includes('INSERT INTO md_field_picklist_values')).length,2);
+  const {RecordEngine}=await import('../../src/system-files/record-engine.js');
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records=new RecordEngine(db,rbac);
+  await assert.rejects(()=>records.create('tenant','user','Sale__c',{Status:'Not Configured'}),/Invalid picklist value/);
+  assert.equal(await records.create('tenant','user','Sale__c',{Status:'Approved'}),'created');
+});
+test('SQL object creation rejects picklists with no selectable values before transaction',async()=>{
+  const db={transaction:async()=>{throw new Error('Unexpected transaction')}} as unknown as SqlPersistence;
+  await assert.rejects(()=>new ObjectDefinitionService(db).create('tenant','Sale__c','Sale',[
+    {apiName:'Status',label:'Status',dataType:'Picklist',picklistValues:[]}
+  ]),/Invalid picklist values/);
 });
