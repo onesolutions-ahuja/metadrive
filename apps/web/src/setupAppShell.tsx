@@ -702,7 +702,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     else if (['Users', 'Roles', 'Public Groups', 'Queues', 'Permission Sets', 'Permission Set Groups', 'Profiles', 'Sharing Settings', 'Sharing Rules'].includes(item)) {
       const resourceApiName = item === 'Users' ? 'Users' : item === 'Permission Set Groups' ? 'PermissionSetGroups' : item.replace(/[^A-Za-z0-9]/g, '');
       navigateRoute({ kind: 'setup', workspace: 'rbac', resourceApiName });
-    } else openSetupWorkspace('home');
+    } else notify(`Unknown Setup destination: ${item}. Navigation was not changed.`);
   };
 
   const addFlowElement = (type: string, afterId = selectedFlowId, connectorId?: string) => {
