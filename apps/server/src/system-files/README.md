@@ -1,39 +1,28 @@
-# SQL-only MetaDrive system runtime
+# MetaDrive approved SQL Core
 
-The active server uses `apps/server/src/system-support/entrypoint.ts` and
-`system-support/server.ts`. It does **not** import the removed legacy state
-modules, seeders or JSON snapshot files.
+This directory contains **exactly fifteen approved Core files**. The architecture
+contract and responsibilities are documented in `docs/server-code-organisation.md`.
 
-**Database contract:** `schema.sql` creates fresh relational `md_*` tables
-for tenants, identities, tenant domains, sessions, RBAC, metadata, typed records,
-flow definitions and applications. Data values use SQL columns, not JSON/JSONB.
-Never execute this schema as an automatic production migration: it does not
-import or adapt pre-existing MetaDrive SQL metadata.
+The active HTTP server and entrypoint live under `../system-support/`. This is
+an infrastructure boundary, not an alternative metadata, CRUD, RBAC or Flow engine.
+Versioned additive SQL migrations also live under `../system-support/migrations/`;
+the local `schema.sql` is for fresh installations, **not** an automatic
+production replacement or migration of existing tenant data.
 
-**Flow support:** limited synchronous SQL metadata actions (Start, Assignment, Decision, CreateRecord, End), with transactional Record writes. Unsupported steps fail closed.
+Other directories:
+- `../app-seeders/`: independently versioned app metadata seeds
+- `../../test/system/`: system regression tests
+- `../../scripts/`: build and SQL smoke utilities
 
-**Read-only existing database inventory:** `npm run preflight:sql --workspace apps/server`. This does not migrate data.
+The shared Core provides SQL persistence, Object metadata, authentication, RBAC,
+record CRUD, components, pages, flows, app lifecycle, tenant provisioning,
+session metadata, platform tenant administration and generic system definitions.
 
-**Commands:** `npm run build --workspace apps/server`,
-`npm run test:system --workspace apps/server`, `npm run check`.
+Do not introduce parallel engines or hardcoded app logic. Before extending Core,
+inspect and reuse the existing service. Keep tenant checks and server-side RBAC.
+Run `npm run check` and the PostgreSQL SQL-smoke validation before merging.
 
-**Not yet feature parity:** existing Aiven data migration, MFA, field/record
-sharing policies, complete Flow executor (Get/Update/Delete Records, loops, Screen Flows and durable restart recovery), metadata publishing/versioning, component
-client rendering, builder endpoint parity and installation migrations are not
-implemented. Existing app installations are not automatically recreated.
-
-The branch must remain unmerged/undeployed until a non-destructive SQL
-migration, complete security checks, end-to-end login, builders, CRUD, and flow
-checks pass. Compiling the isolated service does not prove production readiness.
-
-## File boundaries
-The 12 foundational engines and schema remain the core contract. Auxiliary runtime
-services, HTTP entrypoint and migrations remain separate only where necessary for
-secure reuse and upgrade safety. Tests live under `apps/server/test/system/`;
-build and SQL smoke utilities live under `apps/server/scripts/`.
-Do not add tests, disposable diagnostics, or build scripts to this runtime folder.
-Before adding a service, inspect existing engines and ensure OneEngine RBAC,
-tenant scope, SQL persistence and lazy-loading requirements are met.
-
-## Approved Core boundary
-Exactly fifteen Core files live here; HTTP service setup, encrypted credentials, bootstrap utilities and SQL upgrade migrations live under `src/system-support/`. Tests and build utilities remain under `test/system/` and `scripts/`. Avoid adding files to this folder without revising the approved architecture.
+**Known functional limits:** this restricted SQL runtime does not yet implement
+all previously available Flow actions, advanced builders, tenant-admin routes,
+record-sharing policies or complete metadata publishing/version rollback.
+Passing CI does not demonstrate feature parity or end-to-end production readiness.

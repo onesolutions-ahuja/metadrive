@@ -17,3 +17,11 @@ if(tests.length<6) {
 const missing=expected.filter(name=>!fs.existsSync(path.join(root,name)));
 if(missing.length){console.error('Mandatory core contract missing:',missing);process.exitCode=1;}
 if(!process.exitCode)console.log('System file boundaries verified');
+
+// Detect stale architectural references in current authoritative documentation.
+for(const filename of ['docs/server-code-organisation.md','apps/server/src/system-files/README.md']) {
+ const document=fs.readFileSync(filename,'utf8');
+ if(document.includes('src/system-files/entrypoint.ts')||document.includes('12 foundational engines')){
+  console.error('Outdated Core architecture reference:',filename);process.exitCode=1;
+ }
+}
