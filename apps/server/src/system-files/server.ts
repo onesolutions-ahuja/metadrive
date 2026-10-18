@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
 import {registerSqlCompatibilityRoutes} from './sql-compat-routes.js';
@@ -224,6 +225,21 @@ export function createSystemServer(db:SqlPersistence) {
     if(!['desktop','tablet','phone'].includes(factor))throw new Error('Invalid form factor');
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
     res.json({page:await apps.homePage(actor.tenant_id,req.params.appId,factor)});
+  }));
+  app.get('/api/metadata/offline-publication',route(async(req,res)=>{
+    const actor=req.actor!;
+    for(const resource of ['ObjectDefinition','PageDefinition','ComponentDefinition','AppExchange'])
+      await rbac.require(actor.tenant_id,actor.user_id,resource,'read');
+    // Only tenant-authorized active metadata. Never include drafts, business records or credentials.
+    const [publishedObjects,publishedPages,publishedApps,publishedComponents]=await Promise.all([
+      definitions.list(actor.tenant_id),pages.list(actor.tenant_id),
+      apps.listInstalled(actor.tenant_id),components.list(actor.tenant_id)
+    ]);
+    const content={pages:publishedPages,apps:publishedApps,objects:publishedObjects,components:publishedComponents};
+    const digest=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    const revision={version:1,publishedAt:Date.now(),digest};
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({content,publication:{revision,verifiedDigest:digest,minimumVersion:1}});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
