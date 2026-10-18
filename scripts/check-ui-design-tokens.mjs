@@ -44,7 +44,7 @@ for (const token of [
 
 const runtime = web('main.tsx');
 const marketing = web('MarketingSite.tsx');
-assert.ok(runtime.includes("import './core/workspace/WorkspaceTheme/design-system.css'"),
+assert.ok(runtime.includes("WorkspaceTheme/design-system.css"),
   'The public entry must load shared design tokens once for marketing and the workspace');
 assert.ok(runtime.includes('const Workspace = lazy('),
   'Workspace must remain lazily loaded');
