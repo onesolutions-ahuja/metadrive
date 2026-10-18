@@ -121,6 +121,9 @@ export class NamedCredentialService {
    const config=reencrypt(existing.configuration_ciphertext);
    await client.query('UPDATE md_named_credentials SET secret_ciphertext=$3,configuration_ciphertext=$4,encryption_key_id=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2',
     [tenantId,id,secret,config,targetId]);
+   await client.query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,userId,'NamedCredentialKeyRotation',JSON.stringify({credentialId:id,previousKeyId:existing.encryption_key_id,newKeyId:targetId})]);
   });
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
