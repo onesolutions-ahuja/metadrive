@@ -17,7 +17,7 @@ export class RecordEngine {
     const definitions=await this.fields(tenantId,objectApi,client);
     const fields=new Map(definitions.map(f=>[f.api_name,f]));
     if(creating) for(const field of definitions)
-      if(field.required && (values[field.api_name]===undefined || values[field.api_name]===null))
+      if(field.required && field.api_name!=='OwnerId' && (values[field.api_name]===undefined || values[field.api_name]===null))
         throw new Error('Required field missing: '+field.api_name);
     const prepared=new Map<string,Storable>();
     for(const [key,value] of Object.entries(values)) {

@@ -14,7 +14,7 @@ const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
 if(!url)throw new Error('SQL test database is required');
 const db=new SqlPersistence(url);
 const api=createSystemServer(db),listener=api.listen(0,'127.0.0.1');
-let frontend,browser;
+let frontend,browser,page;
 try{
  if(!listener.listening)await once(listener,'listening');
  const apiPort=listener.address().port;
@@ -48,9 +48,9 @@ try{
  if(!ready)throw new Error('Vite test frontend did not start');
  browser=await chromium.launch({headless:true});
  const context=await browser.newContext({viewport:{width:1440,height:900}});
- await context.addCookies([{name:'md_refresh',value:tokens.refreshToken,url:origin+'/api/auth/refresh',
+ await context.addCookies([{name:'md_refresh',value:tokens.refreshToken,domain:'127.0.0.1',path:'/api/auth',
   httpOnly:true,sameSite:'Lax'}]);
- const page=await context.newPage();
+ page=await context.newPage();
  const failures=[];
  page.on('pageerror',error=>failures.push(error.message));
  await page.goto(origin+'/une/setup/flow-builder',{waitUntil:'domcontentloaded'});
@@ -153,6 +153,13 @@ try{
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
+}catch(error){
+ if(page){
+  console.error('Browser failure URL:',page.url());
+  console.error('Browser failure text:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000));
+  await page.screenshot({path:new URL('../artifacts/rbac-failure.png',import.meta.url).pathname}).catch(()=>{});
+ }
+ throw error;
 }finally{
  if(browser)await browser.close();
  if(frontend){frontend.kill('SIGTERM');}

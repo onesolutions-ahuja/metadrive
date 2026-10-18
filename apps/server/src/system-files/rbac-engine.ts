@@ -22,6 +22,7 @@ export class RbacEngine{
   await this.require(tenantId,userId,'Security','read');
   return this.db.transaction(async tx=>{
    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+   await new RbacEngine(tx as unknown as SqlPersistence).require(tenantId,userId,'Security','read');
    return readRbac(tx,tenantId);
   });
  }

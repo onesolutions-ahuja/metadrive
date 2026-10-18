@@ -743,10 +743,15 @@ export function createSystemServer(db:SqlPersistence) {
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.
-  const userRecord=(row:{id:string;email:string;display_name:string;enabled:boolean})=>({
-    Id:row.id,Name:row.display_name||row.email,Email:row.email,Username:row.email,
-    IsActive:row.enabled
-  });
+  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean},actor:Actor)=>{
+    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,IsActive:row.enabled};
+    const checks=Object.keys(fields).map(field=>({resource:'User.'+field,action:'read'}));
+    const allowed=await rbac.allowedMany(actor.tenant_id,actor.user_id,checks);
+    return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i]))};
+  };
+  const requireUserFields=async(actor:Actor,values:Record<string,unknown>,action:string)=>{
+    for(const field of Object.keys(values))await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
+  };
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
     const allowed=new Set(['Name','Email','Username','IsActive','Password']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
@@ -760,11 +765,11 @@ export function createSystemServer(db:SqlPersistence) {
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
       role:undefined};
   };
-  const readUser=async(tenantId:string,id:string)=>{
+  const readUser=async(tenantId:string,userId:string,id:string)=>{
     const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
       'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
     if(!result.rows[0])throw new Error('Record not found');
-    return userRecord(result.rows[0]);
+    return userRecord(result.rows[0],{tenant_id:tenantId,user_id:userId});
   };
   app.get('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
@@ -777,18 +782,19 @@ export function createSystemServer(db:SqlPersistence) {
         [actor.tenant_id,Math.min(limit,100),offset]),
       db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
     ]);
-    res.json({records:users.rows.map(userRecord),total:Number(count.rows[0]?.total??0)});
+    res.json({records:await Promise.all(users.rows.map(row=>userRecord(row,actor))),total:Number(count.rows[0]?.total??0)});
   }));
   app.get('/api/records/User/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','read');
-    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   }));
   app.post('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','create');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
     await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    await requireUserFields(actor,req.body,'create');
     const values=userFields(req.body,true);
     const passwordHash=await auth.hashPassword(values.password!);
     const row=await db.transaction(async client=>{
@@ -802,12 +808,13 @@ export function createSystemServer(db:SqlPersistence) {
         [actor.tenant_id,result.rows[0].id,profile.rows[0].id]);
       return result.rows[0];
     });
-    res.status(201).json({record:await readUser(actor.tenant_id,row.id)});
+    res.status(201).json({record:await readUser(actor.tenant_id,actor.user_id,row.id)});
   }));
   const editUser=route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','edit');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
     if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
     await db.transaction(async client=>{
@@ -820,7 +827,7 @@ export function createSystemServer(db:SqlPersistence) {
         await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
       }
     });
-    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   });
   app.put('/api/records/User/:id',editUser);
   app.patch('/api/records/User/:id',editUser);

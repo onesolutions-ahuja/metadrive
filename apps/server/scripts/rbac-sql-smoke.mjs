@@ -103,6 +103,7 @@ try{
  await save(s=>{s.profiles.find(p=>p.id===profile).advancedRules=[{resource:'RecordType:Invoice.master',action:'read',effect:'deny'}];});
  await assert.rejects(()=>records.create(t,cashier,'Invoice',{Name:'Denied type',RecordTypeId:'master'}),/Permission denied/);
  assert.equal((await records.list(t,cashier,'Invoice')).total,0);
+ await assert.rejects(()=>records.create(t,cashier,'Invoice',{Name:'Implicit default type'}),/Permission denied/);
  await save(s=>{const p=s.profiles.find(p=>p.id===profile);p.advancedRules=[];p.deniedPermissions=[];p.recordTypePermissions['Invoice.master']=true;});
  // A delegated security administrator cannot grow its own rights indirectly.
  const limited=await user('delegated-admin@example.invalid'),limitedSet=randomUUID(),limitedRole=randomUUID();
