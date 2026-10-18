@@ -449,13 +449,13 @@ export function createSystemServer(db:SqlPersistence) {
     const proposal=req.body;
     if(!proposal||typeof proposal!=='object'||Array.isArray(proposal))
       throw new Error('Invalid field update');
-    res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,proposal)});
+    res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,proposal,actor.user_id)});
   }));
   app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
-    res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
+    res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi,actor.user_id)});
   }));
   app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
     const actor=req.actor!;
@@ -492,7 +492,7 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','create');
     const {apiName,label}=req.body??{};
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
-    const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[]);
+    const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[],actor.user_id);
     res.status(201).json({object});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
@@ -504,7 +504,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
-    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined);
+    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined,actor.user_id);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
   app.get('/api/component-library',route(async(req,res)=>{
