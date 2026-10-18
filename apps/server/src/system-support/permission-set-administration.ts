@@ -44,8 +44,18 @@ export class PermissionSetAdministration {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
  async save(tenant:string,actor:string,body:unknown){
    await this.rbac.require(tenant,actor,'Security','manage');
-   if(!value(body)||Object.keys(body).some(key=>key!=='permissionSets')||
+   if(!value(body)||Object.keys(body).some(key=>!['permissionSets','users'].includes(key))||
      !Array.isArray(body.permissionSets)||body.permissionSets.length>500)throw Error('Invalid permission set request');
+   const requestedUsers=body.users;
+   if(requestedUsers!==undefined&&(!Array.isArray(requestedUsers)||requestedUsers.length>2000))throw Error('Invalid assignment request');
+   const users=(requestedUsers as unknown[]|undefined)?.map((raw)=>{
+     if(!value(raw)||Object.keys(raw).some(key=>!['id','permissionSetIds'].includes(key))||
+       typeof raw.id!=='string'||!uuid.test(raw.id)||!Array.isArray(raw.permissionSetIds)||
+       raw.permissionSetIds.some(id=>typeof id!=='string'||!uuid.test(id))||
+       new Set(raw.permissionSetIds).size!==raw.permissionSetIds.length)throw Error('Invalid user assignment');
+     return raw as {id:string;permissionSetIds:string[]};
+   });
+   if(users&&new Set(users.map(user=>user.id)).size!==users.length)throw Error('Duplicate user');
    const sets=body.permissionSets.map((raw:unknown)=>{
      if(!value(raw)||Object.keys(raw).some(k=>!['id','apiName','label','systemPermissions','objectPermissions','fieldPermissions'].includes(k))||
        typeof raw.id!=='string'||!uuid.test(raw.id)||typeof raw.apiName!=='string'||!name.test(raw.apiName)||
@@ -95,6 +105,27 @@ export class PermissionSetAdministration {
          if(!found)await tx.query(
            "INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,'allow')",
            [tenant,s.entry.id,rule.resource,rule.action]);
+       }
+     }
+     if(users){
+       await this.rbac.require(tenant,actor,'User','edit');
+       const currentUsers=await tx.query<{id:string}>('SELECT id FROM md_users WHERE tenant_id=$1',[tenant]);
+       if(currentUsers.rows.length!==users.length||users.some(user=>!currentUsers.rows.some(row=>row.id===user.id)))
+         throw Error('Stale user assignment list');
+       const knownSets=new Set(sets.map(set=>set.entry.id));
+       const previous=await tx.query<{user_id:string;permission_set_id:string}>(
+         'SELECT user_id,permission_set_id FROM md_permission_assignments WHERE tenant_id=$1',[tenant]);
+       for(const user of users){
+         if(user.permissionSetIds.some(id=>!knownSets.has(id)))throw Error('Unknown permission set');
+         const prior=previous.rows.filter(row=>row.user_id===user.id).map(row=>row.permission_set_id).sort();
+         if(user.id===actor&&JSON.stringify(prior)!==JSON.stringify([...user.permissionSetIds].sort()))
+           throw Error('Cannot alter own permission set assignment');
+         for(const id of prior.filter(id=>!user.permissionSetIds.includes(id)))
+           await tx.query('DELETE FROM md_permission_assignments WHERE tenant_id=$1 AND user_id=$2 AND permission_set_id=$3',
+             [tenant,user.id,id]);
+         for(const id of user.permissionSetIds.filter(id=>!prior.includes(id)))
+           await tx.query('INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id) VALUES($1,$2,$3)',
+             [tenant,user.id,id]);
        }
      }
      await tx.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'rbac.permission_sets.update')",[tenant,actor]);
