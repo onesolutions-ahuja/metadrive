@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from '../system-files/authentication.js';
+import {MfaService} from './mfa-service.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
@@ -64,6 +65,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use(express.json({limit:'64kb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
+  const mfa=new MfaService(db,rbac,auth);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -91,8 +93,8 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Access-Control-Allow-Origin',origin);
       res.setHeader('Access-Control-Allow-Credentials','true');
       res.setHeader('Vary','Origin');
-      res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-MetaDrive-Request-Source');
-      res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-MetaDrive-Request-Source, If-Match, If-Unmodified-Since');
+      res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');
     }
     if(req.method==='OPTIONS') {res.status(204).end();return;}
     next();
@@ -121,7 +123,9 @@ export function createSystemServer(db:SqlPersistence) {
     const tenantId=await resolveTenant(db,req,tenantSlug);
     if(!tenantId) {res.status(401).json({error:'Invalid credentials or tenant domain'});return;}
     try {
-      const session=await auth.signIn(tenantId,email,password);
+      const result=await mfa.beginLogin(tenantId,email,password);
+      if('mfa_required' in result){res.json(result);return;}
+      const session=result.session;
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch(error) {
@@ -131,6 +135,11 @@ export function createSystemServer(db:SqlPersistence) {
         res.status(401).json({error:'Invalid credentials'});
       else throw error;
     }
+  }));
+  app.post('/api/auth/mfa/verify',route(async(req,res)=>{
+    const session=await mfa.verifyLogin(req.body?.challenge_token,req.body?.code);
+    res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn});
   }));
   app.post('/api/auth/refresh',route(async(req,res)=>{
     const token=getCookie(req);
@@ -259,6 +268,24 @@ export function createSystemServer(db:SqlPersistence) {
       await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$3,'user.unlock')",[actor.tenant_id,actor.user_id,id]);
     });
     res.status(204).end();
+  }));
+  app.get('/api/auth/mfa/status',route(async(req,res)=>{
+    res.json(await mfa.status(req.actor!));
+  }));
+  app.get('/api/auth/mfa/policy',route(async(req,res)=>{
+    res.json(await mfa.getPolicy(req.actor!));
+  }));
+  app.put('/api/auth/mfa/policy',route(async(req,res)=>{
+    res.json(await mfa.setPolicy(req.actor!,req.body));
+  }));
+  app.post('/api/auth/mfa/enroll',route(async(req,res)=>{
+    res.json(await mfa.beginEnrollment(req.actor!,req.body?.password));
+  }));
+  app.post('/api/auth/mfa/enroll/confirm',route(async(req,res)=>{
+    res.json(await mfa.finishEnrollment(req.actor!,req.body?.enrollment_token,req.body?.code));
+  }));
+  app.post('/api/auth/mfa/disable',route(async(req,res)=>{
+    res.json(await mfa.disable(req.actor!,req.body?.password,req.body?.code));
   }));
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
