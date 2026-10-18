@@ -27,6 +27,8 @@ export async function publishSimpleFlow(
   nodes.set(e.id,e);
  }
  const starts=elements.filter(x=>x.type==='Start'),ends=elements.filter(x=>x.type==='End');
+ if(flow.flowType==='Screen Flow'&&!elements.some(x=>x.type==='Screen'))
+  throw Error('Screen Flow requires a Screen element');
  if(starts.length!==1||!ends.length)throw Error('Flow requires exactly one Start and an End');
  const adjacency=new Map<number,number[]>();
  for(const edge of edges){
