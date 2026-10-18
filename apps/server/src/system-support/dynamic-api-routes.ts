@@ -3,6 +3,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
+import {DurableJobService} from './durable-job-service.js';
 
 type Actor={tenant_id:string;user_id:string};
 type AuthenticatedRequest=Request&{actor?:Actor};
@@ -16,6 +17,41 @@ function authenticated(req:AuthenticatedRequest):Actor{
 
 /** Only independent SQL metadata and the shared CRUD/permission engines; never app-specific code. */
 export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,records:RecordEngine,flows:FlowRuntime){
+  const jobs=new DurableJobService(db);
+  app.post('/api/flows/:apiName/schedule',wrap(async(req,res)=>{
+    const actor=authenticated(req),flowName=req.params.apiName;
+    if(!api.test(flowName))throw new Error('Invalid Flow name');
+    await rbac.require(actor.tenant_id,actor.user_id,'Flow:'+flowName,'execute');
+    const active=await flows.loadActive(actor.tenant_id,flowName);
+    if(!active)throw new Error('Active flow not found');
+    const body=req.body;
+    if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid schedule');
+    const at=body.runAt;
+    if(typeof at!=='string'||!/Z$|[+-][0-9]{2}:[0-9]{2}$/.test(at))throw new Error('Invalid schedule time');
+    const date=new Date(at);
+    if(!Number.isFinite(date.getTime())||date.getTime()<Date.now()-1000)
+      throw new Error('Invalid schedule time');
+    const app=body.appApiName;
+    if(app!==undefined){
+      if(typeof app!=='string'||!api.test(app))throw new Error('Invalid app');
+      const {rows}=await db.query(`
+        SELECT 1 FROM md_apps a
+        JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+        JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+        WHERE a.api_name=$2 AND a.enabled=true AND e.active=true
+        AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)`,
+       [actor.tenant_id,app]);
+      if(!rows.length)throw new Error('App not installed or entitled');
+    }
+    if(body.idempotencyKey!==undefined&&(typeof body.idempotencyKey!=='string'
+      ||body.idempotencyKey.length>128))throw new Error('Invalid idempotency key');
+    const id=await jobs.enqueue(actor.tenant_id,'flow.execute',{
+      actorUserId:actor.user_id,resourceId:flowName,appApiName:app,
+      scheduledAt:date,idempotencyKey:body.idempotencyKey
+    });
+    res.status(201).json({id,status:'queued'});
+  }));
+
   app.get('/api/records/:objectApi/typed-aggregate/:fieldApi',wrap(async(req,res)=>{
     const actor=authenticated(req);
     const result=await records.aggregateNumeric(actor.tenant_id,actor.user_id,
