@@ -491,7 +491,11 @@ export default function FlowBuilder({
   );
   const renderElementSettings = () => {
     if (!selected || selected.type === 'Start') return renderStartSettings();
-    if (selected.type === 'End') return <div className="info-callout">This terminal element completes the Flow. Add it to each required path and configure any returned outputs in the Flow metadata.</div>;
+    if (selected.type === 'End') return <div className="info-callout">
+      <p>End completes this execution path and returns Flow resources marked <strong>Available for output</strong> in the Manager tab.</p>
+      <p>For checkout, create and assign the status and request ID resources before End, mark both Available for output, and map their exact API names in the till component's checkout status and request output properties. Return the incoming request ID unchanged. Optional message and change resources can be mapped in the same way.</p>
+      <p>A checkout status must be pending, complete, failed, or cancelled. The till stays unavailable until its output mappings and other required settings are configured.</p>
+    </div>;
     if (selected.type === 'Roll Back Records') {
       return <div className="info-callout">
         Restores record changes made earlier in this Flow transaction. Execution continues, so later record changes can still be saved.
