@@ -57,7 +57,9 @@ export class FlowRuntime {
       ids.add(node.id);
       const type=String(node.type??'');
       types.set(node.id,type);
-      if(!['Start','Assignment','Decision','CreateRecord','Create Records','HTTP Callout','Screen','End'].includes(type) || (type==='Screen'&&data.flowType!=='Screen Flow')){
+      if(!(data.flowType==='Screen Flow'
+        ?['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','Screen','End'].includes(type)
+        :['Start','Assignment','Decision','CreateRecord','End'].includes(type))){
         errors.push('Unsupported SQL Flow element: '+type);
       }
     }
@@ -361,6 +363,8 @@ export class FlowRuntime {
     });
   }
   async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     const definition=await this.loadActive(tenantId,flowApi);
     const {rows}=await this.db.query<{flow_type:string}>(
       'SELECT flow_type FROM md_flow_definitions WHERE tenant_id=$1 AND id=$2',[tenantId,definition.id]);
