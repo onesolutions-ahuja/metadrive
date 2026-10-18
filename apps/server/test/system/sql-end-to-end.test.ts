@@ -61,6 +61,22 @@ test('PostgreSQL tenant, MFA, Flow, Screen interview and Page publishing E2E',
   assert.equal(published?.flow.status,'Active');
   const executed=await request('/flows/E2ECheckout/execute','POST',{inputs:{}},token);
   assert.equal(executed?.status,'completed');
+  const baseline=await db.query<{count:string}>(`
+   SELECT count(*)::text AS count FROM md_flow_runs r
+   JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+   WHERE f.api_name=$1`,['E2ECheckout']);
+  const debug=await request('/flows/E2ECheckout/debug','POST',{inputs:{}},token);
+  assert.equal(debug?.status,'completed');
+  assert.equal(debug?.rolledBack,true);
+  assert.equal(debug?.dryRun,true);
+  assert.ok(Array.isArray(debug?.debugTrace)&&debug.debugTrace.length>=2);
+  const afterDebug=await db.query<{count:string}>(`
+   SELECT count(*)::text AS count FROM md_flow_runs r
+   JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+   WHERE f.api_name=$1`,['E2ECheckout']);
+  assert.equal(afterDebug.rows[0].count,baseline.rows[0].count,
+   'Dry-run debugger must not persist execution records');
+
   const screen={
    ...basic,apiName:'E2EScreen',label:'Screen Check',flowType:'Screen Flow',
    elements:[basic.elements[0],{id:2,type:'Screen',label:'Choose',config:{title:'Welcome'}},
