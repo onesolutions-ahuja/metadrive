@@ -200,7 +200,7 @@ import {
 } from '../../metadata/Definitions/metadata';
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onDeletePage, onExit, onNotify, onLaunchFlow,
   preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes, editorMode, onBackToPages
 }: {
   page: LightningPageMetadata;
@@ -218,6 +218,7 @@ function PageBuilder({
   onSave: (page: LightningPageMetadata, previousApiName: string, successMessage?: string) => Promise<boolean>;
   onSaveApp: (app: LightningAppMetadata, updating: boolean) => Promise<void>;
   onDeleteApp: (apiName: string) => Promise<void>;
+  onDeletePage: (apiName: string) => Promise<void>;
   onExit: () => void;
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
@@ -1441,7 +1442,11 @@ function PageBuilder({
           <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</td>
           <td><span className={item.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{item.status}</span></td>
           <td className="page-manager-actions"><button className="btn btn-small" type="button" aria-label={'Edit '+item.label} onClick={()=>selectSavedPage(item.apiName)}><Pencil size={14}/> Edit</button>
-          <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button></td>
+          <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button>
+          <button className="btn btn-small" type="button" disabled={saving} aria-label={'Delete '+item.label}
+            onClick={()=>{ if(window.confirm('Archive page "'+item.label+'"? Its metadata will be retained.')) {
+              void onDeletePage(item.apiName).catch(error=>onNotify(error instanceof Error?error.message:'Unable to archive page'));
+            } }}><Trash2 size={14}/> Delete</button></td>
         </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages match the selected filter. Create a new page to begin.</div>}</div>
       </section>}
       {editorMode && <>
