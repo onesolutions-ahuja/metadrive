@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from '../system-files/authentication.js';
+import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
@@ -62,6 +63,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use(express.json({limit:'64kb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
+  const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
@@ -198,6 +200,14 @@ export function createSystemServer(db:SqlPersistence) {
       [actor.tenant_id,actor.user_id,req.params.id]);
     if(!rows[0]){res.status(404).json({error:'Notification not found'});return;}
     res.json({notification:notificationView(rows[0])});
+  }));
+  app.get('/api/auth/password-recovery/settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await recoverySettings.read(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/auth/password-recovery/settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await recoverySettings.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
