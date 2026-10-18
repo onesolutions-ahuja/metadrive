@@ -3,8 +3,8 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const built=new URL('../dist-system/system-files/',import.meta.url);
 const support=new URL('../dist-system/system-support/',import.meta.url);
-const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{PageRuntime}]=await Promise.all([
- 'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js','page-runtime.js'
+const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{PageRuntime},{AuthenticationService}]=await Promise.all([
+ 'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js','page-runtime.js','authentication.js'
 ].map(file=>import(new URL(file,file==='system-migrations.js'?support:built).href)));
 
 const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
@@ -53,5 +53,16 @@ try{
  await assert.rejects(()=>pageRuntime.resolveAlias(tenantId,'CIApp','sales-home'),/not available/);
  const audit=await db.query('SELECT operation,version FROM md_route_alias_audit WHERE tenant_id=$1 ORDER BY id',[tenantId]);
  assert.deepEqual(audit.rows.map(row=>row.operation),['save','disable']);
+ const subject=await db.query('INSERT INTO md_users(tenant_id,email,password_hash) VALUES($1,$2,$3) RETURNING id',
+   [tenantId,'locked-user@example.invalid','ci-placeholder-hash']);
+ const authentication=new AuthenticationService(db);
+ await authentication.changeUserLock(tenantId,userId,subject.rows[0].id,true,15);
+ const locked=await authentication.userLocks(tenantId);
+ assert.ok(locked.users.some(u=>u.id===subject.rows[0].id && u.lockedUntil>Date.now()));
+ await authentication.changeUserLock(tenantId,userId,subject.rows[0].id,false,60);
+ const unlocked=await authentication.userLocks(tenantId);
+ assert.ok(unlocked.users.some(u=>u.id===subject.rows[0].id && u.lockedUntil===null));
+ assert.deepEqual((await authentication.securityEvents(tenantId)).events.map(e=>e.action),
+   ['user.unlock','user.lock']);
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
