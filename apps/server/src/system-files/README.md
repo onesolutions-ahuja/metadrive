@@ -25,3 +25,12 @@ implemented. Existing app installations are not automatically recreated.
 The branch must remain unmerged/undeployed until a non-destructive SQL
 migration, complete security checks, end-to-end login, builders, CRUD, and flow
 checks pass. Compiling the isolated service does not prove production readiness.
+
+## File boundaries
+The 12 foundational engines and schema remain the core contract. Auxiliary runtime
+services, HTTP entrypoint and migrations remain separate only where necessary for
+secure reuse and upgrade safety. Tests live under `apps/server/test/system/`;
+build and SQL smoke utilities live under `apps/server/scripts/`.
+Do not add tests, disposable diagnostics, or build scripts to this runtime folder.
+Before adding a service, inspect existing engines and ensure OneEngine RBAC,
+tenant scope, SQL persistence and lazy-loading requirements are met.
