@@ -383,10 +383,19 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/apps/:appId/home-page',route(async(req,res)=>{
     const actor=req.actor!;
-    const factor=String(req.query.formFactor??'desktop');
-    if(!['desktop','tablet','phone'].includes(factor))throw new Error('Invalid form factor');
+    const factor=String(req.query.formFactor??'Desktop');
+    if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    res.json({page:await apps.homePage(actor.tenant_id,req.params.appId,factor)});
+    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase());
+    res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
+  }));
+  app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
+    const factor=String(req.query.formFactor??'Desktop');
+    const page=await pages.resolveAppPage(actor.tenant_id,req.params.appId,req.params.pageApiName,factor);
+    if(!page)throw new Error('Page not found');
+    res.json({page});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -446,6 +455,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  app.put('/api/metadata/pages/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','manage');
+    const page=await pages.save(actor.tenant_id,req.params.apiName,req.body);
+    res.json({page});
   }));
   app.get('/api/named-credentials/readiness',route(async(req,res)=>{
     const actor=req.actor!;
@@ -762,7 +777,12 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     const record=await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
-    res.json({record,lightningPage:null});
+    const actorSession=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    const device=String(req.query.formFactor??'Desktop');
+    const page=await pages.resolveRecordPage(actor.tenant_id,req.params.objectApi,
+      String(req.query.appId??'Records'),actorSession.user.profileId,String(record.RecordTypeId??''),device);
+    res.json({record,lightningPage:page});
+  
   }));
   // Historical events are reported only if captured; never fabricate changes.
   app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
@@ -806,7 +826,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
-    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
+    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
