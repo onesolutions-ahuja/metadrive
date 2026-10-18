@@ -31,7 +31,7 @@ test('credential mutations require OneEngine manage and tenant isolation',async(
  const id='00000000-0000-4000-8000-000000000001';
  await service.setEnabled('tenant-a','user-a',id,false);
  await service.remove('tenant-a','user-a',id);
- assert.deepEqual(checks,['manage','manage']);
+ assert.deepEqual(checks,['manage','read','manage']);
  assert.deepEqual(calls[0],['tenant-a',id,false]);
  assert.deepEqual(calls[1],['tenant-a',id]);
 });
