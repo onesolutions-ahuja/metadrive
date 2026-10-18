@@ -50,7 +50,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||!['HTTPS','SMTP'].includes(String(x.protocol))
-    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))
+    ||!['None','Bearer','Basic','API Key'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
@@ -99,7 +99,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     !['HTTPS','SMTP'].includes(String(x.protocol))||
-    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
+    !['None','Bearer','Basic','API Key'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
