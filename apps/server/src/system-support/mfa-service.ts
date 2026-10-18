@@ -19,7 +19,7 @@ export class MfaService {
  async status(actor:Actor){
   const [mode,enrollment]=await Promise.all([this.mode(actor.tenant_id),this.db.query(
    'SELECT 1 FROM md_user_mfa WHERE tenant_id=$1 AND user_id=$2',[actor.tenant_id,actor.user_id])]);
-  return {mode,enrolled:enrollment.rowCount>0};
+  return {mode,enrolled:(enrollment.rowCount??0)>0};
  }
  async getPolicy(actor:Actor){
   await this.rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
