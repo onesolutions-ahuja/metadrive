@@ -32,10 +32,19 @@ export class PlatformTenantService {
   const data=payload as Record<string,unknown>;
   if(key==='company-profile') {
     const fields=['logoUrl','legalName','tradingName','website','phone','email','addressLine1','addressLine2','city','postcode','country','timezone','locale','description'];
-    if(Object.keys(data).some(k=>!fields.includes(k))||Object.values(data).some(v=>typeof v!=='string'||v.length>2048))
+    if(Object.keys(data).some(k=>!fields.includes(k))||Object.entries(data).some(([k,v])=>typeof v!=='string'||(k==='logoUrl'?v.length>180000:v.length>2048)))
       throw new Error('Invalid company profile');
-    if(data.logoUrl&&(!String(data.logoUrl).startsWith('https://')||String(data.logoUrl).length>2048))
-      throw new Error('Invalid company logo URL');
+    const logo=data.logoUrl;
+    if(typeof logo==='string'&&logo){
+      const match=/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(logo);
+      if(!match||match[2].length>Math.ceil(128*1024/3)*4||Buffer.from(match[2],'base64').length>128*1024)
+        throw new Error('Invalid company logo: upload a PNG, JPG or WebP image up to 128 KB');
+      const bytes=Buffer.from(match[2],'base64');
+      const png=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+      const jpg=bytes.subarray(0,3).equals(Buffer.from([255,216,255]));
+      const webp=bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP';
+      if(!(match[1]==='png'&&png||match[1]==='jpeg'&&jpg||match[1]==='webp'&&webp))throw new Error('Logo file content does not match its format');
+    }
   } else if(key==='currencies') {
     const currencies=data.currencies;
     if(typeof data.corporateCurrency!=='string'||! /^[A-Z]{3}$/.test(data.corporateCurrency)
