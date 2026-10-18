@@ -518,3 +518,17 @@ test('Pending Flow interviews use SQL pending runs rather than fabricated sample
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  assert.deepEqual(await new FlowRuntime(db,rbac).pendingInterviews('tenant','user'),{interviews:[]});
 });
+
+test('AppExchange catalog uses SQL tenant installations and entitlements',async()=>{
+ const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
+ const db={query:async(sql:string,args:unknown[])=>{
+   assert.match(sql,/md_app_installations/);
+   assert.match(sql,/md_app_entitlements/);
+   assert.deepEqual(args,['tenant']);
+   return {rows:[{id:'app1',api_name:'CUSTOM_APP',label:'Custom App',installed:true,
+     expires_at:null,licensed:true}]};
+ }} as unknown as SqlPersistence;
+ const value=await new AppRuntime(db).marketplace('tenant');
+ assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
+   CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
+});
