@@ -1,4 +1,4 @@
-import type {AppPageSeed} from '../system-files/app-page-seeder.js';
+import type {AppPageSeed} from '../system-support/app-page-seeder.js';
 /** Independent conversation app package. Installation supplies metadata selected
  * by label; no Object/Field/Flow API name is embedded in reusable components. */
 export type ConversationSeed = {
