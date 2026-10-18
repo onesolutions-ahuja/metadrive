@@ -10,7 +10,6 @@
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
-    "/named-credentials/${encodeURIComponent(id)}/oauth/start",
     "/platform/recovery/cases/",
     "/tenant/developer-account",
     "/tenant/developer-account/activate",
