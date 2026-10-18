@@ -7,14 +7,12 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 export function registerFlowAdministrationRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
  app.get('/api/metadata/flow-logs',route(async(req,res)=>{
   const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'FlowDefinition','read');
+  const canManage=await rbac.allowed(a.tenant_id,a.user_id,'FlowDefinition','manage');
   const {rows}=await db.query(`SELECT r.id,r.status,r.started_at,r.finished_at,r.error_code,
     f.api_name AS flow_api_name,f.version AS flow_version
     FROM md_flow_runs r JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
-    WHERE r.tenant_id=$1 AND (r.started_by=$2 OR EXISTS(
-      SELECT 1 FROM md_permission_rules p JOIN md_permission_assignments pa
-      ON pa.tenant_id=p.tenant_id AND pa.permission_set_id=p.permission_set_id
-      WHERE pa.tenant_id=$1 AND pa.user_id=$2 AND p.resource='FlowDefinition' AND p.action='manage' AND p.effect='allow'
-    )) ORDER BY r.started_at DESC LIMIT 100`,[a.tenant_id,a.user_id]);
+    WHERE r.tenant_id=$1 AND ($3::boolean OR r.started_by=$2)
+    ORDER BY r.started_at DESC LIMIT 100`,[a.tenant_id,a.user_id,canManage]);
   res.json({logs:rows});
  }));
  app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
