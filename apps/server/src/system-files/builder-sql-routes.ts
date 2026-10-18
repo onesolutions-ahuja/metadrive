@@ -23,7 +23,7 @@ export function registerBuilderSqlRoutes(app:Express,db:SqlPersistence,rbac:Rbac
    INSERT INTO md_builder_drafts(tenant_id,kind,api_name,definition)
    VALUES($1,$2,$3,$4::jsonb)
    ON CONFLICT(tenant_id,kind,api_name) DO UPDATE
-   SET definition=EXCLUDED.definition,revision=md_builder_drafts.revision+1,updated_at=now()
+   SET definition=EXCLUDED.definition,published=false,revision=md_builder_drafts.revision+1,updated_at=now()
    RETURNING revision`,[a.tenant_id,kind,name,JSON.stringify(body)]);
   res.json({[kind]:{...body,revision:rows[0].revision}});
  }
