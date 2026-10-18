@@ -45,6 +45,12 @@ export class ObjectDefinitionService {
       for(const field of normalized)await client.query(
         'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
         [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label]);
+      await client.query(
+        'INSERT INTO md_object_revisions(tenant_id,object_api,revision,snapshot) VALUES($1,$2,1,$3::jsonb)',
+        [tenantId,apiName,JSON.stringify({apiName,label,fields:normalized.map(f=>({
+          apiName:f.apiName,label:f.label,dataType:f.dataType,required:f.required,
+          ...(f.relatedObject?{relationship:{targetObject:f.relatedObject}}:{}),
+        }))})]);
     });
     return this.get(tenantId,apiName);
   }
