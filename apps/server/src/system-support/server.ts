@@ -362,6 +362,9 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    // Tenant metadata must never reuse an obsolete empty browser response.
+    res.setHeader('Cache-Control','private, no-store');
+    res.removeHeader('ETag');
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
   // Validate against the SQL-supported metadata model; never report unsupported
