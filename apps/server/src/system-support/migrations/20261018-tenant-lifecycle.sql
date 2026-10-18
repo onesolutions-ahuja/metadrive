@@ -24,3 +24,15 @@ CREATE TABLE IF NOT EXISTS md_tenant_lifecycle_audit (
  FOREIGN KEY (actor_tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS md_tenant_lifecycle_audit_target ON md_tenant_lifecycle_audit(target_tenant_id,created_at DESC);
+
+ALTER TABLE md_users ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS md_tenant_provisioning_requests (
+ actor_tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ actor_user_id uuid NOT NULL,
+ request_key uuid NOT NULL,
+ request_digest text NOT NULL,
+ target_tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY (actor_tenant_id,actor_user_id,request_key),
+ FOREIGN KEY (actor_tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id)
+);
