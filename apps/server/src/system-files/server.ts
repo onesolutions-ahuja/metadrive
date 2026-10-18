@@ -14,6 +14,8 @@ import {registerRecordOwnershipRoutes} from './record-ownership-routes.js';
 import {registerReportRuntimeRoutes} from './report-runtime-routes.js';
 import {registerDashboardRuntimeRoutes} from './dashboard-runtime-routes.js';
 import {registerFormulaValidationRoutes} from './formula-validation-routes.js';
+import {registerOfflinePublicationRoutes} from './offline-publication-routes.js';
+import {registerComponentPublishingRoutes} from './component-publishing-routes.js';
 import {registerFlowDebugRoutes} from './flow-debug-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
@@ -505,6 +507,8 @@ export function createSystemServer(db:SqlPersistence) {
   registerReportRuntimeRoutes(app,db,rbac,records);
   registerDashboardRuntimeRoutes(app,db,rbac,records);
   registerFormulaValidationRoutes(app,db,rbac);
+  registerOfflinePublicationRoutes(app,db,rbac,definitions,pages,components,apps);
+  registerComponentPublishingRoutes(app,db,rbac);
   registerFlowDebugRoutes(app,db,rbac);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
