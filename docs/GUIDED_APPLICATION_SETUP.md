@@ -23,10 +23,10 @@ This is a shared extension of **App Manager**, not an independent Builder, anoth
 
 ## Implementation boundaries
 
-- `apps/web/src/appSetupReadiness.ts` — reusable, read-only metadata assessment and developer-name suggestion.
-- `apps/web/src/AppSetupGuide.tsx` — guidance shown only in App Manager; optional fetches use the existing authenticated API.
-- `apps/web/src/pageDependencies.ts` — existing shared inspector extended to configured state read/write Flows.
-- `apps/web/src/AppManager.tsx` — display metadata identities and page statuses clearly.
+- `apps/web/src/core/applications/AppSetupGuide/appSetupReadiness.ts` — reusable, read-only metadata assessment and developer-name suggestion.
+- `apps/web/src/core/applications/AppSetupGuide/AppSetupGuide.tsx` — guidance shown only in App Manager; optional fetches use the existing authenticated API.
+- `apps/web/src/core/pages/PageRuntime/pageDependencies.ts` — existing shared inspector extended to configured state read/write Flows.
+- `apps/web/src/core/applications/AppManager/AppManager.tsx` — display metadata identities and page statuses clearly.
 - Existing AppExchange, seeders, OneEngine permissions, SQL records and publish routes remain the authority.
 
 ## Acceptance checks

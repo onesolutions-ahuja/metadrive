@@ -1,0 +1,51 @@
+{
+  "apiName": "OneSearch",
+  "label": "One-Search",
+  "category": "Actions",
+  "description": "Universal Search component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 3,
+  "scope": "platform-core",
+  "jsxFile": "one/OneSearch/OneSearch.jsx",
+  "cssFile": "one/OneSearch/OneSearch.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Search",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Search",
+          "label": "One-Search"
+        }
+      ]
+    },
+    {
+      "propertyKey": "placeholder",
+      "label": "Search placeholder",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Search"
+    },
+    {
+      "propertyKey": "searchKey",
+      "label": "Shared search key",
+      "kind": "TEXT",
+      "defaultValue": "catalogue",
+      "displayOrder": 320
+    }
+  ]
+}

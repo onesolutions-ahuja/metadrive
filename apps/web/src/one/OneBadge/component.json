@@ -1,0 +1,69 @@
+{
+  "apiName": "OneBadge",
+  "label": "One-Badge",
+  "category": "Display",
+  "description": "Universal Badge component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneBadge/OneBadge.jsx",
+  "cssFile": "one/OneBadge/OneBadge.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Badge",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Badge",
+          "label": "One-Badge"
+        }
+      ]
+    },
+    {
+      "propertyKey": "text",
+      "label": "Text",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Status"
+    },
+    {
+      "propertyKey": "tone",
+      "label": "Tone",
+      "kind": "SELECT",
+      "displayOrder": 310,
+      "defaultValue": "neutral",
+      "choices": [
+        {
+          "key": "neutral",
+          "label": "Neutral"
+        },
+        {
+          "key": "success",
+          "label": "Success"
+        },
+        {
+          "key": "warning",
+          "label": "Warning"
+        },
+        {
+          "key": "danger",
+          "label": "Danger"
+        }
+      ]
+    }
+  ]
+}

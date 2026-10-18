@@ -1,0 +1,72 @@
+{
+  "apiName": "OneOverlay",
+  "label": "One-Overlay",
+  "category": "Layout",
+  "description": "Universal Overlay component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneOverlay/OneOverlay.jsx",
+  "cssFile": "one/OneOverlay/OneOverlay.css",
+  "resize": {
+    "defaultWidth": 560,
+    "defaultHeight": 260,
+    "minWidth": 140,
+    "minHeight": 70
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Overlay",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Overlay",
+          "label": "One-Overlay"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Dialog"
+    },
+    {
+      "propertyKey": "openLabel",
+      "label": "Open button",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": "Open"
+    },
+    {
+      "propertyKey": "mode",
+      "label": "Mode",
+      "kind": "SELECT",
+      "displayOrder": 320,
+      "defaultValue": "modal",
+      "choices": [
+        {
+          "key": "modal",
+          "label": "Modal"
+        },
+        {
+          "key": "drawer",
+          "label": "Drawer"
+        },
+        {
+          "key": "popover",
+          "label": "Popover"
+        }
+      ]
+    }
+  ]
+}

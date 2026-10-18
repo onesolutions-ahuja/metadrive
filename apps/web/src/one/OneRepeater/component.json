@@ -1,0 +1,44 @@
+{
+  "apiName": "OneRepeater",
+  "label": "One-Repeater",
+  "category": "Inputs",
+  "description": "Universal Repeater component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneRepeater/OneRepeater.jsx",
+  "cssFile": "one/OneRepeater/OneRepeater.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Repeater",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Repeater",
+          "label": "One-Repeater"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "List title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Items"
+    }
+  ]
+}

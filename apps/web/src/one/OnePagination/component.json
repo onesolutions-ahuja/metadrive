@@ -1,0 +1,44 @@
+{
+  "apiName": "OnePagination",
+  "label": "One-Pagination",
+  "category": "Actions",
+  "description": "Universal Pagination component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OnePagination/OnePagination.jsx",
+  "cssFile": "one/OnePagination/OnePagination.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Pagination",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Pagination",
+          "label": "One-Pagination"
+        }
+      ]
+    },
+    {
+      "propertyKey": "pageSize",
+      "label": "Rows per page",
+      "kind": "NUMBER",
+      "displayOrder": 300,
+      "defaultValue": 25
+    }
+  ]
+}

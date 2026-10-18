@@ -1,0 +1,51 @@
+{
+  "apiName": "OneAvatar",
+  "label": "One-Avatar",
+  "category": "Display",
+  "description": "Universal Avatar component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneAvatar/OneAvatar.jsx",
+  "cssFile": "one/OneAvatar/OneAvatar.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Avatar",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Avatar",
+          "label": "One-Avatar"
+        }
+      ]
+    },
+    {
+      "propertyKey": "name",
+      "label": "Display name",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "User"
+    },
+    {
+      "propertyKey": "src",
+      "label": "Avatar image URL",
+      "kind": "IMAGE",
+      "displayOrder": 310,
+      "defaultValue": ""
+    }
+  ]
+}

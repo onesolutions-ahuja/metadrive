@@ -1,0 +1,44 @@
+{
+  "apiName": "OneAccordion",
+  "label": "One-Accordion",
+  "category": "Layout",
+  "description": "Universal Accordion component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneAccordion/OneAccordion.jsx",
+  "cssFile": "one/OneAccordion/OneAccordion.css",
+  "resize": {
+    "defaultWidth": 560,
+    "defaultHeight": 260,
+    "minWidth": 140,
+    "minHeight": 70
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Accordion",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Accordion",
+          "label": "One-Accordion"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Details"
+    }
+  ]
+}

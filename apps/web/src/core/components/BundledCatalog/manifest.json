@@ -1,0 +1,60 @@
+[
+  {
+    "apiName": "ChatterInbox",
+    "label": "Chatter Inbox",
+    "category": "Communication",
+    "description": "Compatibility registration for the shared OneConversation renderer. Configure model mappings and Flow bindings through app metadata.",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow"
+    ],
+    "defaults": {
+      "title": "Chatter",
+      "accentColor": "#168657",
+      "conversationsObjectApiName": "",
+      "messagesObjectApiName": "",
+      "channelAccountObjectApiName": "",
+      "restrictToAssigned": false,
+      "enableAssignment": true,
+      "actionFlows": {},
+      "viewMode": "inbox"
+    },
+    "jsx": "one/OneConversation/OneConversation.jsx",
+    "css": "one/OneConversation/OneConversation.css",
+    "version": 5,
+    "resize": {
+      "defaultWidth": 900,
+      "defaultHeight": 650,
+      "minWidth": 320,
+      "minHeight": 380
+    }
+  },
+  {
+    "apiName": "SystemPanel",
+    "label": "System Panel",
+    "category": "Layout",
+    "description": "Protected reusable information panel for Setup and tenant page, dashboard or Flow surfaces; no privileged operations.",
+    "scope": "platform-system",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow",
+      "platform"
+    ],
+    "version": 1,
+    "defaults": {
+      "title": "Panel",
+      "description": "",
+      "accentColor": "#1b6586"
+    },
+    "jsx": "core/components/SystemPanel/SystemPanel.jsx",
+    "css": "core/components/SystemPanel/SystemPanel.css",
+    "resize": {
+      "defaultWidth": 440,
+      "defaultHeight": 200,
+      "minWidth": 180,
+      "minHeight": 90
+    }
+  }
+]
