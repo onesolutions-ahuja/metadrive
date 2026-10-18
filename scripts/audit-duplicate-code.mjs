@@ -8,8 +8,8 @@ roots.forEach(scan);
 const windows=new Map();
 for(const file of files){
  const content=fs.readFileSync(file,'utf8');
- const lines=content.split('\n').map((raw,i)=>({content:raw.trim().replace(/\s+/g,' '),line:i+1})).filter(x=>x.content && !x.content.startsWith('//') && !x.content.startsWith('*'));
- const size=16;
+ const lines=content.split('\n').map((raw,i)=>({content:raw.trim().replace(/\s+/g,' '),line:i+1})).filter(x=>x.content && !x.content.startsWith('//') && !x.content.startsWith('*') && !x.content.startsWith('import ') && !x.content.startsWith('export {'));
+ const size=20;
  for(let i=0;i+size<=lines.length;i++){
   const block=lines.slice(i,i+size);
   const text=block.map(x=>x.content).join('\n');
