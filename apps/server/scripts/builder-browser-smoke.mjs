@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {chromium} from 'playwright';
-import {SqlPersistence} from '../dist-system/system-files/sql-persistence.js';
-import {AuthenticationService} from '../dist-system/system-files/authentication.js';
-import {createSystemServer} from '../dist-system/system-support/server.js';
+const built=new URL('../dist-system/system-files/',import.meta.url);
+const support=new URL('../dist-system/system-support/',import.meta.url);
+const [{SqlPersistence},{AuthenticationService},{createSystemServer}]=await Promise.all([
+ import(new URL('sql-persistence.js',built).href),
+ import(new URL('authentication.js',built).href),
+ import(new URL('server.js',support).href)
+]);
 
 const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
 if(!url)throw new Error('SQL test database is required');
