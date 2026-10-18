@@ -574,6 +574,14 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
   }));
+  app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','manage');
+    const result=await namedCredentials.callout(
+      actor.tenant_id,actor.user_id,
+      {namedCredentialId:req.params.id,method:'GET',path:''},{},'credential-connectivity-test');
+    res.json({success:true,status:result.status});
+  }));
   app.post('/api/named-credentials/:id/rotate',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({credential:await namedCredentials.rotate(actor.tenant_id,actor.user_id,req.params.id)});
