@@ -368,9 +368,17 @@ test('first-login rotation writes a fresh hash only once for matched domain/acco
 test('Setup session metadata reuses OneEngine SQL policy, with explicit deny overriding allow',async()=>{
   const {sessionMetadata}=await import('../../src/system-files/session-metadata.js');
   const db={query:async(sql:string,params:unknown[])=>{
+    assert.equal(params[0],'tenant');
+    if(sql.includes('WITH assigned AS'))return {rows:[
+      {ordinal:1,allow_granted:true,deny_granted:false},
+      {ordinal:2,allow_granted:true,deny_granted:false},
+      {ordinal:4,allow_granted:true,deny_granted:true}
+    ]};
+    if(sql.includes('FROM md_user_profiles'))return {rows:[]};
+    if(sql.includes('FROM md_field_definitions'))return {rows:[]};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[]};
     assert.ok(sql.includes('md_role_permission_sets'));
     assert.ok(sql.includes('md_permission_rules'));
-    assert.equal(params[0],'tenant');
     assert.equal(params[1],'developer');
     assert.equal((params[2] as string[]).length,8);
     return {rows:[
@@ -390,6 +398,10 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
   const db={query:async(sql:string)=>{
     if(sql.includes('FROM md_sessions s JOIN md_users'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
+    if(sql.includes('WITH assigned AS'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},{ordinal:2,allow_granted:true,deny_granted:false}]};
+    if(sql.includes('FROM md_user_profiles'))return {rows:[]};
+    if(sql.includes('FROM md_field_definitions'))return {rows:[]};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[]};
     if(sql.includes('md_permission_rules'))
       return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},
         {ordinal:2,allow_granted:true,deny_granted:false}]};
@@ -421,6 +433,8 @@ test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()
   if(sql.includes('FROM md_roles'))return {rows:[{id:'r1',api_name:'Developer',label:'Developer',parent_role_id:null}]};
   if(sql.includes('FROM md_permission_rules'))return {rows:[{permission_set_id:'ps1',resource:'ObjectDefinition',action:'read',effect:'allow'}]};
   if(sql.includes('FROM md_users'))return {rows:[{id:'u1',email:'dev@example.invalid'}]};
+  if(sql.includes('FROM md_profiles'))return {rows:[{id:'prof1',api_name:'Default',label:'Default Profile'}]};
+  if(sql.includes('FROM md_user_profiles'))return {rows:[{user_id:'u1',profile_id:'prof1'}]};
   throw new Error('Unexpected SQL');
  }} as unknown as SqlPersistence;
  const result=await new RbacEngine(db).describe('tenant','user');
@@ -429,6 +443,8 @@ test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()
  assert.deepEqual(result.permissionSets[0].systemPermissions,['ObjectDefinition:read']);
  assert.equal(result.roles[0].name,'Developer');
  assert.equal(result.users[0].username,'dev@example.invalid');
+ assert.equal(result.users[0].profileId,'prof1');
+ assert.equal(result.profiles[0].apiName,'Default');
  assert.ok(calls.every(query=>query.includes('tenant_id=$1')||query.includes('r.tenant_id=$1')));
 });
 test('SQL RBAC metadata access fails closed without Security read permission',async()=>{
@@ -479,7 +495,8 @@ test('Object relationship dependency discovery reads tenant-scoped SQL with no i
    if(sql.includes('SELECT id,object_api,api_name'))return {rows:[{id:'f1',object_api:'Sale__c',api_name:'CustomerId',label:'Customer',data_type:'reference',related_object:'Customer__c',required:false,max_length:null}]};
    if(sql.includes('SELECT object_api,related_object'))return {rows:[{object_api:'Sale__c',related_object:'Customer__c'}]};
    if(sql.includes('SELECT api_name,related_object'))return {rows:[{api_name:'CustomerId',related_object:'Customer__c'}]};
-   throw new Error('Unexpected SQL');
+   if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')||sql.includes('FROM md_object_record_type'))return {rows:[]};
+  throw new Error('Unexpected SQL');
  }} as unknown as SqlPersistence;
  const engine=new ObjectDefinitionService(db);
  assert.deepEqual((await engine.dependencies('tenant','Sale__c')).dependencies,['Customer__c']);
@@ -602,6 +619,7 @@ test('Field update rejects datatype changes instead of silently discarding metad
  const db={query:async(sql:string)=>{
   if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Sale__c',label:'Sale',is_system:false}]};
   if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Sale__c',api_name:'Total',label:'Total',data_type:'number',related_object:null,required:false,max_length:null}]};
+  if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')||sql.includes('FROM md_object_record_type'))return {rows:[]};
   throw new Error('Unexpected SQL write');
  }} as unknown as SqlPersistence;
  await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',{label:'Total',dataType:'Text'}),/datatype migration/);

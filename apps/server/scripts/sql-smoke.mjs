@@ -36,5 +36,48 @@ try{
  await db.query('INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
   [tenantId,set.rows[0].id,'SystemDefinition:reports','read','allow']);
  assert.equal((await svc.list(tenantId,userId,'reports')).length,1);
+
+ const [{ObjectDefinitionService},{PageRuntime}]=await Promise.all([
+   import(new URL('object-definition.js',built).href),
+   import(new URL('page-runtime.js',built).href)
+ ]);
+ const objects=new ObjectDefinitionService(db);
+ const object=await objects.create(tenantId,'AuditItem__c','Audit Item',[
+   {apiName:'Name',label:'Name',dataType:'Text(80)',required:true}
+ ]);
+ assert.equal(object.pageLayouts.length,1);
+ const layout=await objects.replaceLayouts(tenantId,'AuditItem__c',
+   {...object,pageLayouts:[{...object.pageLayouts[0],label:'Custom Layout'}]},object.revision);
+ assert.equal(layout.pageLayouts[0].label,'Custom Layout');
+ await assert.rejects(()=>objects.replaceLayouts(tenantId,'AuditItem__c',object,object.revision),
+   /revision conflict/);
+
+ const pageService=new PageRuntime(db);
+ const savedPage=await pageService.save(tenantId,'AuditItem_Record_Page',{
+   apiName:'AuditItem_Record_Page',label:'Audit Item Record Page',
+   targetObject:'AuditItem__c',pageType:'Record Page',layoutMode:'template',
+   canvasWidth:1200,canvasHeight:800,template:'main-sidebar',status:'Active',devices:['Desktop'],
+   components:[{id:'details',type:'Field Section',label:'Details',region:'main',visible:true,
+     properties:{fieldApiNames:['Name'],style:{width:'100%'}}}],
+   activationAssignments:[{id:'default',scope:'Org Default',appId:null,
+     profileId:null,recordTypeId:null,formFactors:['Desktop']}]
+ });
+ assert.equal(savedPage.status,'Active');
+ assert.deepEqual(savedPage.components[0].properties.style,{width:'100%'});
+ assert.equal((await pageService.resolveRecordPage(tenantId,'AuditItem__c','Records','','master','Desktop')).apiName,
+   savedPage.apiName);
+
+ await db.query('INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
+  [tenantId,set.rows[0].id,'*','*','allow']);
+ const {RecordEngine}=await import(new URL('record-engine.js',built).href);
+ const records=new RecordEngine(db,new RbacEngine(db));
+ const recordId=await records.create(tenantId,userId,'AuditItem__c',{Name:'First',RecordTypeId:'master'});
+ const initial=await records.get(tenantId,userId,'AuditItem__c',recordId);
+ assert.equal(initial.Name,'First');
+ assert.equal(initial.RecordTypeId,'master');
+ await records.update(tenantId,userId,'AuditItem__c',recordId,{Name:'Edited'},
+  new Date(initial.LastModifiedDate).toISOString());
+ const changedRecord=await records.get(tenantId,userId,'AuditItem__c',recordId);
+ assert.equal(changedRecord.Name,'Edited');
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}

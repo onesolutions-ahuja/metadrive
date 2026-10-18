@@ -45,6 +45,21 @@ export class ObjectDefinitionService {
       for(const field of normalized)await client.query(
         'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
         [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label]);
+      // Create the first Page Layout together with its object and fields.
+      await client.query('INSERT INTO md_object_page_layouts (tenant_id,object_api,layout_id,label,sort_order) VALUES ($1,$2,$3,$4,0)',
+        [tenantId,apiName,'default',label+' Layout']);
+      await client.query(`INSERT INTO md_object_page_layout_sections
+        (tenant_id,object_api,layout_id,section_id,label,columns,sort_order)
+        VALUES ($1,$2,'default','details','Record Information',2,0)`,[tenantId,apiName]);
+      for(const [sortOrder,field] of normalized.entries())await client.query(`INSERT INTO md_object_page_layout_fields
+        (tenant_id,object_api,layout_id,section_id,field_api,sort_order)
+        VALUES ($1,$2,'default','details',$3,$4)`,[tenantId,apiName,field.apiName,sortOrder]);
+      for(const [sortOrder,action] of ['New','Edit','Delete'].entries())await client.query(`INSERT INTO md_object_page_layout_actions
+        (tenant_id,object_api,layout_id,action_name,sort_order)
+        VALUES ($1,$2,'default',$3,$4)`,[tenantId,apiName,action,sortOrder]);
+      await client.query(`INSERT INTO md_object_record_types
+        (tenant_id,object_api,record_type_id,developer_name,label,active,is_default,sort_order)
+        VALUES ($1,$2,'master','Master','Master',true,true,0)`,[tenantId,apiName]);
     });
     return this.get(tenantId,apiName);
   }
@@ -146,10 +161,33 @@ export class ObjectDefinitionService {
     const typeLabel:Record<string,string>={
       text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup'
     };
+    const layouts=await this.loadLayoutMetadata(tenantId);
+    const [types,values]=await Promise.all([
+      this.db.query<{object_api:string;record_type_id:string;label:string;developer_name:string;description:string;active:boolean;is_default:boolean}>(
+        'SELECT object_api,record_type_id,label,developer_name,description,active,is_default FROM md_object_record_types WHERE tenant_id=$1 ORDER BY object_api,sort_order',[tenantId]),
+      this.db.query<{object_api:string;record_type_id:string;field_api:string;field_value:string}>(
+        'SELECT object_api,record_type_id,field_api,field_value FROM md_object_record_type_values WHERE tenant_id=$1 ORDER BY object_api,record_type_id,field_api,sort_order',[tenantId])
+    ]);
+    const typeByObject=new Map<string,Array<{id:string;label:string;developerName:string;description:string;active:boolean;isDefault:boolean;picklistValues:Record<string,string[]>}>>();
+    for(const row of types.rows){
+      const items=typeByObject.get(row.object_api)??[];
+      items.push({id:row.record_type_id,label:row.label,developerName:row.developer_name,
+        description:row.description,active:row.active,isDefault:row.is_default,picklistValues:{}});
+      typeByObject.set(row.object_api,items);
+    }
+    for(const row of values.rows){
+      const recordType=typeByObject.get(row.object_api)?.find(item=>item.id===row.record_type_id);
+      if(recordType){
+        const current=recordType.picklistValues[row.field_api]??[];
+        current.push(row.field_value);recordType.picklistValues[row.field_api]=current;
+      }
+    }
     return objects.map(obj=>({
       id:obj.id,apiName:obj.api_name,label:obj.label,pluralLabel:obj.label,
       kind:obj.is_system?'Standard Object' as const:'Custom Object' as const,
       description:'',
+      ...(layouts.get(obj.api_name)??{revision:0,pageLayouts:[],pageLayoutAssignments:[]}),
+      recordTypes:typeByObject.get(obj.api_name)??[],
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
         dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
@@ -159,5 +197,228 @@ export class ObjectDefinitionService {
         }}:{})
       }))
     }));
+  }
+
+  /** Object layouts are relational SQL metadata, not a client-only object property. */
+  private async loadLayoutMetadata(tenantId:string) {
+    const names=['md_object_layout_versions','md_object_page_layouts','md_object_page_layout_sections',
+      'md_object_page_layout_fields','md_object_page_layout_actions','md_object_page_layout_related_lists',
+      'md_object_page_layout_links','md_object_page_layout_assignments'];
+    // Each table exposes a subset of these named SQL columns; the corresponding
+    // reader below only accesses columns from that table.
+    type LayoutSqlRow={
+      object_api:string;revision:number;sort_order:number;
+      layout_id:string;label:string;section_id:string;columns:number;
+      field_api:string;action_name:string;list_name:string;
+      link_id:string;url:string;open_in_new_window:boolean;
+      profile_id:string;record_type_id:string;
+    };
+    const [versions,layouts,sections,fields,actions,related,links,assignments]=await Promise.all(
+      names.map(name=>this.db.query<LayoutSqlRow>(`SELECT * FROM ${name} WHERE tenant_id=$1`,[tenantId])));
+    type Layout={id:string;label:string;sections:{id:string;label:string;columns:1|2;fieldApiNames:string[]}[];
+      relatedLists:string[];actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean}[]};
+    const byObject=new Map<string,{revision:number;pageLayouts:Layout[];pageLayoutAssignments:{profileId:string;recordTypeId:string;pageLayoutId:string}[]}>();
+    const get=(name:string)=>{let value=byObject.get(name);if(!value){
+      value={revision:0,pageLayouts:[],pageLayoutAssignments:[]};byObject.set(name,value);
+    }return value;};
+    for(const row of versions.rows)get(row.object_api).revision=Number(row.revision);
+    const indexed=new Map<string,Layout>();
+    const sectionIndex=new Map<string,Layout['sections'][number]>();
+    const key=(...parts:string[])=>JSON.stringify(parts);
+    for(const row of [...layouts.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order))){
+      const layout:Layout={id:row.layout_id,label:row.label,sections:[],relatedLists:[],actions:[],customLinks:[]};
+      get(row.object_api).pageLayouts.push(layout);
+      indexed.set(key(row.object_api,row.layout_id),layout);
+    }
+    for(const row of [...sections.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order))){
+      const layout=indexed.get(key(row.object_api,row.layout_id));if(!layout)continue;
+      const section={id:row.section_id,label:row.label,columns:Number(row.columns) as 1|2,fieldApiNames:[] as string[]};
+      layout.sections.push(section);
+      sectionIndex.set(key(row.object_api,row.layout_id,row.section_id),section);
+    }
+    for(const row of [...fields.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
+      sectionIndex.get(key(row.object_api,row.layout_id,row.section_id))?.fieldApiNames.push(row.field_api);
+    for(const row of [...actions.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
+      indexed.get(key(row.object_api,row.layout_id))?.actions.push(row.action_name);
+    for(const row of [...related.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
+      indexed.get(key(row.object_api,row.layout_id))?.relatedLists.push(row.list_name);
+    for(const row of [...links.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
+      indexed.get(key(row.object_api,row.layout_id))?.customLinks.push({
+        id:row.link_id,label:row.label,url:row.url,openInNewWindow:row.open_in_new_window
+      });
+    for(const row of assignments.rows)get(row.object_api).pageLayoutAssignments.push({
+      profileId:row.profile_id,recordTypeId:row.record_type_id,pageLayoutId:row.layout_id
+    });
+    return byObject;
+  }
+
+  /** Atomic layout replacement with optimistic concurrency and strict referential validation. */
+  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number){
+    if(!payload||typeof payload!=='object'||Array.isArray(payload)
+      ||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
+      throw new Error('Invalid page layout request');
+    const input=payload as Record<string,unknown>;
+    if(!Array.isArray(input.pageLayouts)||!Array.isArray(input.pageLayoutAssignments)
+      ||input.pageLayouts.length===0||input.pageLayouts.length>100||input.pageLayoutAssignments.length>1000)
+      throw new Error('Invalid page layout request');
+    const string=(v:unknown,max=128):v is string=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
+    const list=(v:unknown,max=200):v is string[]=>Array.isArray(v)&&v.length<=max
+      &&v.every(item=>string(item))&&new Set(v).size===v.length;
+    const {rows:definedFields}=await this.db.query<{api_name:string}>(
+      'SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
+    const fieldNames=new Set(definedFields.map(row=>row.api_name));
+    type SectionInput={id:string;label:string;columns:1|2;fieldApiNames:string[]};
+    type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean};
+    type LayoutInput={id:string;label:string;sections:SectionInput[];actions:string[];relatedLists:string[];customLinks:LinkInput[]};
+    type AssignmentInput={profileId:string;recordTypeId:string;pageLayoutId:string};
+    const normalized:LayoutInput[]=[];
+    const layoutIds=new Set<string>();
+    for(const raw of input.pageLayouts){
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid page layout');
+      const layout=raw as Record<string,unknown>;
+      if(!string(layout.id)||!string(layout.label,200)||layoutIds.has(layout.id)
+        ||!Array.isArray(layout.sections)||layout.sections.length>100
+        ||!list(layout.actions)||!list(layout.relatedLists))
+        throw new Error('Invalid page layout');
+      layoutIds.add(layout.id);
+      const sections:SectionInput[]=[];const sectionIds=new Set<string>();const placed=new Set<string>();
+      for(const item of layout.sections){
+        if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid page layout section');
+        const section=item as Record<string,unknown>;
+        if(!string(section.id)||sectionIds.has(section.id)||!string(section.label,200)
+          ||(section.columns!==1&&section.columns!==2)||!list(section.fieldApiNames))
+          throw new Error('Invalid page layout section');
+        sectionIds.add(section.id);
+        for(const field of section.fieldApiNames as string[]){
+          if(!fieldNames.has(field)||placed.has(field))throw new Error('Invalid page layout field: '+field);
+          placed.add(field);
+        }
+        sections.push({id:section.id,label:section.label,columns:section.columns,fieldApiNames:section.fieldApiNames as string[]});
+      }
+      const linkIds=new Set<string>();const customLinks:LinkInput[]=[];
+      const rawLinks=layout.customLinks??[];
+      if(!Array.isArray(rawLinks)||rawLinks.length>100)throw new Error('Invalid page layout links');
+      for(const item of rawLinks){
+        if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid page layout link');
+        const link=item as Record<string,unknown>;
+        if(!string(link.id)||linkIds.has(link.id)||!string(link.label,200)||!string(link.url,2048)
+          ||(!link.url.startsWith('https://')&&!/^\/(?!\/)/.test(link.url))
+          ||typeof link.openInNewWindow!=='boolean')throw new Error('Invalid page layout link');
+        linkIds.add(link.id);
+        customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow});
+      }
+      normalized.push({id:layout.id,label:layout.label,sections,
+        actions:layout.actions as string[],relatedLists:layout.relatedLists as string[],customLinks});
+    }
+
+    type RecordTypeInput={id:string;label:string;developerName:string;description:string;
+      active:boolean;isDefault:boolean;picklistValues:Record<string,string[]>};
+    let recordTypes:RecordTypeInput[]|undefined;
+    if(input.recordTypes!==undefined){
+      if(!Array.isArray(input.recordTypes)||input.recordTypes.length===0||input.recordTypes.length>100)
+        throw new Error('Invalid record types');
+      recordTypes=[];const ids=new Set<string>();let defaults=0;
+      for(const raw of input.recordTypes){
+        if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid record type');
+        const t=raw as Record<string,unknown>;
+        if(!string(t.id)||ids.has(t.id)||!string(t.label,200)
+          ||!string(t.developerName)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(t.developerName)
+          ||typeof t.active!=='boolean'||typeof t.isDefault!=='boolean'
+          ||(t.description!==undefined&&typeof t.description!=='string'))
+          throw new Error('Invalid record type');
+        ids.add(t.id);if(t.isDefault)defaults++;
+        const options:Record<string,string[]>={};
+        const rawOptions=t.picklistValues??{};
+        if(!rawOptions||typeof rawOptions!=='object'||Array.isArray(rawOptions))throw new Error('Invalid record type values');
+        for(const [field,values] of Object.entries(rawOptions)){
+          if(!fieldNames.has(field)||!list(values,200))throw new Error('Invalid record type field values');
+          options[field]=values;
+        }
+        recordTypes.push({id:t.id,label:t.label,developerName:t.developerName,
+          description:typeof t.description==='string'?t.description:'',active:t.active,
+          isDefault:t.isDefault,picklistValues:options});
+      }
+      if(defaults!==1||!recordTypes.some(t=>t.active&&t.isDefault))throw new Error('Invalid default record type');
+    }
+
+    const assigned:AssignmentInput[]=[];const assignmentKeys=new Set<string>();
+    for(const raw of input.pageLayoutAssignments){
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid layout assignment');
+      const a=raw as Record<string,unknown>;
+      if(!string(a.profileId)||!string(a.recordTypeId)||!string(a.pageLayoutId)
+        ||!layoutIds.has(a.pageLayoutId))throw new Error('Invalid layout assignment');
+      const key=JSON.stringify([a.profileId,a.recordTypeId]);
+      if(assignmentKeys.has(key))throw new Error('Invalid duplicate layout assignment');
+      assignmentKeys.add(key);
+      assigned.push({profileId:a.profileId,recordTypeId:a.recordTypeId,pageLayoutId:a.pageLayoutId});
+    }
+    await this.db.transaction(async client=>{
+      const found=await client.query(
+        'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
+      if(!found.rows.length)throw new Error('Object not found');
+      await client.query(`INSERT INTO md_object_layout_versions(tenant_id,object_api)
+        VALUES ($1,$2) ON CONFLICT DO NOTHING`,[tenantId,objectApi]);
+      const version=await client.query<{revision:number}>(
+        'SELECT revision FROM md_object_layout_versions WHERE tenant_id=$1 AND object_api=$2 FOR UPDATE',[tenantId,objectApi]);
+      if(version.rows[0].revision!==expectedRevision)throw new Error('Page layout revision conflict');
+      if(typeof input.label==='string'){
+        if(!input.label.trim()||input.label.length>200)throw new Error('Invalid object label');
+        await client.query('UPDATE md_object_definitions SET label=$3 WHERE tenant_id=$1 AND api_name=$2',
+          [tenantId,objectApi,input.label.trim()]);
+      }
+      await client.query('DELETE FROM md_object_page_layouts WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
+      for(const [i,layout] of normalized.entries()){
+        await client.query(`INSERT INTO md_object_page_layouts
+          (tenant_id,object_api,layout_id,label,sort_order) VALUES ($1,$2,$3,$4,$5)`,
+          [tenantId,objectApi,layout.id,layout.label,i]);
+        for(const [j,section] of layout.sections.entries()){
+          await client.query(`INSERT INTO md_object_page_layout_sections
+            (tenant_id,object_api,layout_id,section_id,label,columns,sort_order)
+            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [tenantId,objectApi,layout.id,section.id,section.label,section.columns,j]);
+          for(const [k,field] of section.fieldApiNames.entries())
+            await client.query(`INSERT INTO md_object_page_layout_fields
+              (tenant_id,object_api,layout_id,section_id,field_api,sort_order)
+              VALUES ($1,$2,$3,$4,$5,$6)`,[tenantId,objectApi,layout.id,section.id,field,k]);
+        }
+        for(const [j,action] of layout.actions.entries())await client.query(`INSERT INTO md_object_page_layout_actions
+          (tenant_id,object_api,layout_id,action_name,sort_order) VALUES ($1,$2,$3,$4,$5)`,
+          [tenantId,objectApi,layout.id,action,j]);
+        for(const [j,name] of layout.relatedLists.entries())await client.query(`INSERT INTO md_object_page_layout_related_lists
+          (tenant_id,object_api,layout_id,list_name,sort_order) VALUES ($1,$2,$3,$4,$5)`,
+          [tenantId,objectApi,layout.id,name,j]);
+        for(const [j,link] of layout.customLinks.entries())await client.query(`INSERT INTO md_object_page_layout_links
+          (tenant_id,object_api,layout_id,link_id,label,url,open_in_new_window,sort_order)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [tenantId,objectApi,layout.id,link.id,link.label,link.url,link.openInNewWindow,j]);
+      }
+      for(const assignment of assigned)await client.query(`INSERT INTO md_object_page_layout_assignments
+        (tenant_id,object_api,profile_id,record_type_id,layout_id) VALUES ($1,$2,$3,$4,$5)`,
+        [tenantId,objectApi,assignment.profileId,assignment.recordTypeId,assignment.pageLayoutId]);
+
+      if(recordTypes){
+        const used=await client.query<{record_type_id:string|null}>(`SELECT DISTINCT record_type_id
+          FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND record_type_id IS NOT NULL`,
+          [tenantId,objectApi]);
+        for(const row of used.rows)
+          if(row.record_type_id&&!recordTypes.some(t=>t.id===row.record_type_id))
+            throw new Error('Record type has stored records; removal requires reviewed migration');
+        await client.query('DELETE FROM md_object_record_types WHERE tenant_id=$1 AND object_api=$2',
+          [tenantId,objectApi]);
+        for(const [index,t] of recordTypes.entries()){
+          await client.query(`INSERT INTO md_object_record_types
+            (tenant_id,object_api,record_type_id,developer_name,label,description,active,is_default,sort_order)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [tenantId,objectApi,t.id,t.developerName,t.label,t.description,t.active,t.isDefault,index]);
+          for(const [field,values] of Object.entries(t.picklistValues))
+            for(const [order,value] of values.entries())await client.query(`INSERT INTO md_object_record_type_values
+              (tenant_id,object_api,record_type_id,field_api,field_value,sort_order)
+              VALUES($1,$2,$3,$4,$5,$6)`,[tenantId,objectApi,t.id,field,value,order]);
+        }
+      }
+      await client.query(`UPDATE md_object_layout_versions SET revision=revision+1,updated_at=now()
+        WHERE tenant_id=$1 AND object_api=$2`,[tenantId,objectApi]);
+    });
+    return this.get(tenantId,objectApi);
   }
 }

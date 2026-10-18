@@ -392,7 +392,7 @@ export function createSystemServer(db:SqlPersistence) {
       }
     }
     // Draft/publishing and layouts require dedicated versioned SQL metadata support.
-    if(draft.pageLayouts?.length||draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length)
+    if(draft.validationRules?.length||draft.formulaFields?.length)
       errors.push('Advanced Object draft features are not supported by the current SQL runtime');
     res.json({valid:errors.length===0,errors});
   }));
@@ -432,10 +432,19 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/apps/:appId/home-page',route(async(req,res)=>{
     const actor=req.actor!;
-    const factor=String(req.query.formFactor??'desktop');
-    if(!['desktop','tablet','phone'].includes(factor))throw new Error('Invalid form factor');
+    const factor=String(req.query.formFactor??'Desktop');
+    if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    res.json({page:await apps.homePage(actor.tenant_id,req.params.appId,factor)});
+    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase());
+    res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
+  }));
+  app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
+    const factor=String(req.query.formFactor??'Desktop');
+    const page=await pages.resolveAppPage(actor.tenant_id,req.params.appId,req.params.pageApiName,factor);
+    if(!page)throw new Error('Page not found');
+    res.json({page});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -449,6 +458,22 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
     const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[]);
     res.status(201).json({object});
+  }));
+  app.put('/api/metadata/objects/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    const revisionHeader=req.get('if-match')??'';
+    if(!/^"(0|[1-9][0-9]*)"$/.test(revisionHeader))throw new Error('Invalid page layout revision precondition');
+    const draft=req.body;
+    if(!draft||typeof draft!=='object'||Array.isArray(draft)||draft.apiName!==req.params.apiName)
+      throw new Error('Invalid object draft');
+    // Unsupported configuration must never appear successfully saved.
+    if(draft.validationRules?.length||draft.formulaFields?.length
+      ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
+      throw new Error('Invalid unsupported object configuration');
+    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
+    res.json({object});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
@@ -479,6 +504,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  app.put('/api/metadata/pages/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','manage');
+    const page=await pages.save(actor.tenant_id,req.params.apiName,req.body);
+    res.json({page});
   }));
   app.get('/api/named-credentials/readiness',route(async(req,res)=>{
     const actor=req.actor!;
@@ -713,6 +744,11 @@ export function createSystemServer(db:SqlPersistence) {
       const result=await client.query<{id:string}>(
         'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled) VALUES($1,$2,$3,$4,$5) RETURNING id',
         [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true]);
+      const profile=await client.query<{id:string}>(
+        "SELECT id FROM md_profiles WHERE tenant_id=$1 AND api_name='Default'",[actor.tenant_id]);
+      if(profile.rows[0])await client.query(
+        'INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
+        [actor.tenant_id,result.rows[0].id,profile.rows[0].id]);
       if(values.role){
         const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
         if(!role.rowCount)throw new Error('Invalid role');
@@ -766,10 +802,6 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
 
-  app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
-    const actor=req.actor!;
-    res.json(await records.history(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id));
-  }));
   app.get('/api/records/:objectApi/:id/activities',route(async(req,res)=>{
     res.json(await collaboration.listActivities(req.actor!,req.params.objectApi,req.params.id));
   }));
@@ -796,6 +828,20 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    const record=await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
+    const actorSession=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    const device=String(req.query.formFactor??'Desktop');
+    const page=await pages.resolveRecordPage(actor.tenant_id,req.params.objectApi,
+      String(req.query.appId??'Records'),actorSession.user.profileId,String(record.RecordTypeId??''),device);
+    res.json({record,lightningPage:page});
+  
+  }));
+  app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await records.history(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id));
+  }));
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
@@ -806,14 +852,17 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
-    res.status(201).json({id});
+    res.status(201).json({id,record:{Id:id}});
   }));
-  app.patch('/api/records/:objectApi/:id',route(async(req,res)=>{
+  const updateRecord=route(async(req,res)=>{
     const actor=req.actor!;
-    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
-    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body);
-    res.status(204).end();
-  }));
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid record values');
+    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,
+      req.body,req.get('if-unmodified-since'));
+    res.json({record:{Id:req.params.id}});
+  });
+  app.patch('/api/records/:objectApi/:id',updateRecord);
+  app.put('/api/records/:objectApi/:id',updateRecord);
   app.put('/api/records/:objectApi/:id/owner',route(async(req,res)=>{
     const actor=req.actor!;
     if(typeof req.body?.ownerId!=='string')throw new Error('Invalid owner ID');
@@ -829,7 +878,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
-    else if(err.message==='Field already exists'||err.message==='Object already exists')res.status(409).json({error:err.message});
+    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}

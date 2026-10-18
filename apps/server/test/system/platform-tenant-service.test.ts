@@ -85,6 +85,7 @@ test('tenant request retries reuse the same SQL tenant and reject changes to req
    if(sql.includes('SELECT id FROM md_tenants WHERE slug'))return {rows:[],rowCount:0};
    if(sql.includes('INSERT INTO md_tenants'))return {rows:[{id:'new-tenant'}],rowCount:1};
    if(sql.includes('INSERT INTO md_users'))return {rows:[{id:'new-user'}],rowCount:1};
+   if(sql.includes('INSERT INTO md_profiles'))return {rows:[{id:'new-profile'}],rowCount:1};
    if(sql.includes('INSERT INTO md_roles'))return {rows:[{id:'new-role'}],rowCount:1};
    if(sql.includes('INSERT INTO md_permission_sets'))return {rows:[{id:'new-set'}],rowCount:1};
    if(sql.includes('INSERT INTO md_tenant_provisioning_requests'))created=true;

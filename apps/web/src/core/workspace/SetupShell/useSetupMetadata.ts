@@ -153,11 +153,9 @@ export function useSetupMetadata(ctx: any) {
             setLibraryComponents(offlineView.components as LibraryComponentMetadata[]);
             setToast('Showing last saved page layout. Cloud actions require a connection.');
           }
-          if (displayObjects.length) {
-            setObjects(displayObjects);
-            setObject(displayObjects.find((item) => item.apiName === object.apiName) ?? displayObjects[0]);
-          }
-          if (displayPages.length) setPages(displayPages);
+          setObjects(displayObjects);
+          if(displayObjects.length)setObject(displayObjects.find(item=>item.apiName===object.apiName)??displayObjects[0]);
+          setPages(displayPages);
           setApps(displayApps);
           if (!displayApps.some((item) => item.apiName === currentAppId))
             setCurrentAppId(displayApps[0]?.apiName ?? '');
@@ -207,13 +205,11 @@ export function useSetupMetadata(ctx: any) {
           .catch((error) => {
             setAccessControlError(error instanceof Error ? error.message : String(error));
           });
-        if (objectPayload.objects.length) {
-          setObjects(objectPayload.objects);
-          setObject(objectPayload.objects.find((item) => item.apiName === object.apiName) ?? objectPayload.objects[0]);
-        }
+        setObjects(objectPayload.objects);
+        if(objectPayload.objects.length)setObject(objectPayload.objects.find(item=>item.apiName===object.apiName)??objectPayload.objects[0]);
         setPlatformEvents(platformEventPayload.platformEvents);
+        setPages(pagePayload.pages);
         if (pagePayload.pages.length) {
-          setPages(pagePayload.pages);
           setPage(pagePayload.pages.find((item) =>
             route.kind === 'setup' && route.workspace === 'page-builder' && item.apiName === route.resourceApiName)
             ?? pagePayload.pages.find((item) => item.targetObject === 'Account' && item.pageType === 'Record Page')

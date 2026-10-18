@@ -49,6 +49,12 @@ export class TenantProvisioning {
       const user=await client.query<{id:string}>(
         'INSERT INTO md_users (tenant_id,email,password_hash,display_name,enabled) VALUES ($1,$2,$3,$4,true) RETURNING id',
         [tenantId,developerEmail.toLowerCase(),passwordHash,developerName?.trim()??'']);
+      const profile=await client.query<{id:string}>(
+        'INSERT INTO md_profiles(tenant_id,api_name,label) VALUES($1,$2,$3) RETURNING id',
+        [tenantId,'Default','Default Profile']);
+      await client.query(
+        'INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
+        [tenantId,user.rows[0].id,profile.rows[0].id]);
       const role=await client.query<{id:string}>(
         'INSERT INTO md_roles (tenant_id,api_name,label) VALUES ($1,$2,$3) RETURNING id',
         [tenantId,'TenantDeveloper','Tenant Developer']);

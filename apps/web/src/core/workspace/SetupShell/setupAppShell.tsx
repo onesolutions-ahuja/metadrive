@@ -139,7 +139,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(false);
   const [objectSearch, setObjectSearch] = useState('');
-  const [objects, setObjects] = useState(objectMetadata);
+  const [objects, setObjects] = useState<ObjectMetadata[]>([]);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
   const [advancedMetadataLoaded, setAdvancedMetadataLoaded] = useState(false);
   const [metadataLoadError, setMetadataLoadError] = useState('');
@@ -201,7 +201,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   // UI-only wizard handoff; app membership is persisted through metadata navigation on activation.
   const [pageCreationAppContext, setPageCreationAppContext] = useState<Record<string, string>>({});
   const pageRouteApiName = useRef('');
-  const [pages, setPages] = useState<LightningPageMetadata[]>([defaultLightningPage]);
+  const [pages, setPages] = useState<LightningPageMetadata[]>([]);
   const [dashboards, setDashboards] = useState<DashboardMetadata[]>([]);
   const [dashboardFolders, setDashboardFolders] = useState<DashboardFolderMetadata[]>([]);
   const [dashboardTerritories, setDashboardTerritories] = useState<DashboardTerritoryMetadata[]>([]);
