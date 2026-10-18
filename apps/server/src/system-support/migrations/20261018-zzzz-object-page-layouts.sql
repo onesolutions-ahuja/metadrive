@@ -113,3 +113,56 @@ WHERE l.layout_id='default' AND NOT EXISTS (
  SELECT 1 FROM md_object_page_layout_actions x
  WHERE x.tenant_id=l.tenant_id AND x.object_api=l.object_api AND x.layout_id=l.layout_id
 ) ON CONFLICT DO NOTHING;
+
+-- Normalized, tenant-scoped Lightning Page definition, component tree and activation.
+-- Existing app seed pages are retained; no JSON/JSONB storage.
+CREATE TABLE IF NOT EXISTS md_lightning_page_details (
+ tenant_id uuid NOT NULL, page_id uuid NOT NULL,
+ page_type text NOT NULL CHECK(page_type IN ('Record Page','App Page','Home Page')),
+ target_object text NOT NULL DEFAULT '',
+ layout_mode text NOT NULL CHECK(layout_mode IN ('template','free-canvas')),
+ template text,
+ canvas_width integer NOT NULL CHECK(canvas_width BETWEEN 320 AND 10000),
+ canvas_height integer NOT NULL CHECK(canvas_height BETWEEN 320 AND 10000),
+ status text NOT NULL CHECK(status IN ('Draft','Active')),
+ devices text[] NOT NULL CHECK(cardinality(devices) BETWEEN 1 AND 2),
+ revision integer NOT NULL DEFAULT 1 CHECK(revision>0),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,page_id),
+ FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_lightning_page_nodes (
+ tenant_id uuid NOT NULL, page_id uuid NOT NULL,
+ component_key text NOT NULL CHECK(length(component_key) BETWEEN 1 AND 128),
+ component_type text NOT NULL CHECK(length(component_type) BETWEEN 1 AND 128),
+ label text NOT NULL CHECK(length(label) BETWEEN 1 AND 200),
+ region text NOT NULL DEFAULT 'main',
+ visible boolean NOT NULL DEFAULT true,
+ sort_order integer NOT NULL,
+ PRIMARY KEY(tenant_id,page_id,component_key),
+ FOREIGN KEY(tenant_id,page_id) REFERENCES md_lightning_page_details(tenant_id,page_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_lightning_page_node_properties (
+ tenant_id uuid NOT NULL, page_id uuid NOT NULL,
+ component_key text NOT NULL,
+ property_path text NOT NULL CHECK(length(property_path) BETWEEN 1 AND 1024),
+ value_kind text NOT NULL CHECK(value_kind IN ('string','number','boolean','null','array','object')),
+ value_text text,
+ PRIMARY KEY(tenant_id,page_id,component_key,property_path),
+ FOREIGN KEY(tenant_id,page_id,component_key)
+   REFERENCES md_lightning_page_nodes(tenant_id,page_id,component_key) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_lightning_page_activation (
+ tenant_id uuid NOT NULL, page_id uuid NOT NULL,
+ assignment_id text NOT NULL CHECK(length(assignment_id) BETWEEN 1 AND 128),
+ scope text NOT NULL CHECK(scope IN ('Org Default','App Default','App and Profile','App, Record Type, and Profile')),
+ app_api text, profile_id text, record_type_id text,
+ desktop boolean NOT NULL DEFAULT true,
+ phone boolean NOT NULL DEFAULT false,
+ sort_order integer NOT NULL,
+ PRIMARY KEY(tenant_id,page_id,assignment_id),
+ FOREIGN KEY(tenant_id,page_id) REFERENCES md_lightning_page_details(tenant_id,page_id) ON DELETE CASCADE,
+ CHECK(desktop OR phone)
+);
+CREATE INDEX IF NOT EXISTS md_lightning_page_active_lookup
+ ON md_lightning_page_details(tenant_id,target_object,page_type,status);
