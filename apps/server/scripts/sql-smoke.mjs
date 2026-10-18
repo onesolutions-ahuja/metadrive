@@ -4,10 +4,10 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const built=new URL('../dist-system/system-files/',import.meta.url);
 const support=new URL('../dist-system/system-support/',import.meta.url);
-const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{AuthenticationService},{MfaService},{totpCodeAt},{ObjectDefinitionService}]=await Promise.all([
+const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{AuthenticationService},{MfaService},{totpCodeAt},{ObjectDefinitionService},{ComponentLibraryService}]=await Promise.all([
  'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js',
- 'authentication.js','mfa-service.js','mfa-crypto.js','object-definition.js'
-].map(file=>import(new URL(file,['system-migrations.js','mfa-service.js','mfa-crypto.js'].includes(file)?support:built).href)));
+ 'authentication.js','mfa-service.js','mfa-crypto.js','object-definition.js','component-library-service.js'
+].map(file=>import(new URL(file,['system-migrations.js','mfa-service.js','mfa-crypto.js','component-library-service.js'].includes(file)?support:built).href)));
 
 const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
 if(!url)throw new Error('METADRIVE_SQL_TEST_DATABASE_URL is required');
@@ -80,6 +80,33 @@ try{
  assert.equal(historyChange.change.after.fields[0].apiName,'Title');
  assert.equal(historyChange.change.before.fields.length,0);
  console.info('SQL object history triggers, snapshots and actor attribution: passed');
+ for(const action of ['read','create','manage'])await db.query(
+  "INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,'ComponentDefinition',$3,'allow')",
+  [tenantId,set.rows[0].id,action]);
+ const library=new ComponentLibraryService(db,new RbacEngine(db));
+ const initial=await library.create(actor,{
+  apiName:'CiComponent',label:'CI Component',description:'test',surfaces:['page'],
+  jsxSource:'export default function Component(props) { return React.createElement("div",null,props.label); }',
+  cssSource:'div { color:blue; }',publicationStatus:'Draft'
+ });
+ assert.equal(initial.component.status,'Draft');
+ const published=await library.publish(actor,'CiComponent');
+ assert.equal(published.component.status,'Published');
+ assert.equal(published.component.publishedVersion,1);
+ assert.ok(published.component.compiledJs.length>0);
+ const edited=await library.save(actor,'CiComponent',{
+  apiName:'CiComponent',label:'Updated',description:'modified',surfaces:['page'],
+  jsxSource:'export default function Component() { return React.createElement("span",null,"changed"); }',
+  cssSource:'span { color:green; }',publicationStatus:'Draft'
+ });
+ assert.equal(edited.component.publishedVersion,1);
+ assert.equal(edited.component.compiledJs,published.component.compiledJs);
+ const reverted=await library.rollback(actor,'CiComponent',1);
+ assert.equal(reverted.component.publishedVersion,3);
+ assert.equal(reverted.component.label,'CI Component');
+ assert.equal((await library.list(actor)).length,1);
+ console.info('Component Library SQL draft/publish/rollback and published runtime preservation: passed');
+
 
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
