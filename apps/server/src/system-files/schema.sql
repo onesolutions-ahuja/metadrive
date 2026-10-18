@@ -1,7 +1,7 @@
 -- Fresh, isolated system runtime schema. No legacy tables or JSON state imports.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS md_tenants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text NOT NULL UNIQUE, name text NOT NULL);
-CREATE TABLE IF NOT EXISTS md_users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), email text NOT NULL, password_hash text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,id));
+CREATE TABLE IF NOT EXISTS md_users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), email text NOT NULL, password_hash text NOT NULL, enabled boolean NOT NULL DEFAULT true, locked_until timestamptz, UNIQUE(tenant_id,id));
 CREATE UNIQUE INDEX IF NOT EXISTS md_users_email_per_tenant ON md_users (tenant_id,lower(email));
 CREATE TABLE IF NOT EXISTS md_tenant_domains (domain text PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES md_tenants(id), CHECK (domain=lower(domain)));
 CREATE TABLE IF NOT EXISTS md_sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), user_id uuid NOT NULL, FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id), token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, revoked_at timestamptz);
@@ -180,3 +180,16 @@ CREATE TABLE IF NOT EXISTS md_route_alias_audit (
  at timestamptz NOT NULL DEFAULT now(),
  FOREIGN KEY(tenant_id,actor_id) REFERENCES md_users(tenant_id,id)
 );
+
+
+ALTER TABLE md_users ADD COLUMN IF NOT EXISTS locked_until timestamptz;
+CREATE TABLE IF NOT EXISTS md_security_events (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ actor_user_id uuid NOT NULL,
+ action text NOT NULL,
+ details jsonb NOT NULL DEFAULT '{}'::jsonb,
+ at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_security_events_tenant_at ON md_security_events(tenant_id,at DESC);

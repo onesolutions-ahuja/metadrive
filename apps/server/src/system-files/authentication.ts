@@ -34,6 +34,7 @@ export class AuthenticationService {
     const {rows}=await this.db.query<{id:string,password_hash:string,enabled:boolean}>(
       "SELECT id,password_hash,enabled FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[tenantId,email]);
     const user=rows[0];
+    if((user as typeof user & {locked_until?:Date|null})?.locked_until && new Date((user as typeof user & {locked_until?:Date|null}).locked_until!).getTime()>Date.now()) throw new Error('Invalid credentials');
     if(!user?.enabled || !(await this.verifyPassword(password,user.password_hash))) throw new Error('Invalid credentials');
     return this.issue(tenantId,user.id);
   }
@@ -100,6 +101,51 @@ export class AuthenticationService {
       await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
       await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
     });
+  }
+
+  async userLocks(tenantId:string){
+    const {rows}=await this.db.query<{id:string;email:string;enabled:boolean;locked_until:Date|null}>(`
+      SELECT id,email,enabled,locked_until FROM md_users
+      WHERE tenant_id=$1 ORDER BY lower(email) LIMIT 500
+    `,[tenantId]);
+    return {users:rows.map(row=>({
+      id:row.id,name:row.email,email:row.email,active:row.enabled,
+      lockedUntil:row.locked_until?new Date(row.locked_until).getTime():null
+    }))};
+  }
+  async changeUserLock(tenantId:string,actorId:string,targetId:string,lock:boolean,durationMinutes=60){
+    if(!/^[0-9a-f-]{36}$/i.test(targetId)||targetId===actorId&&lock)
+      throw new Error('Invalid account lock target');
+    if(!Number.isInteger(durationMinutes)||durationMinutes<1||durationMinutes>1440)
+      throw new Error('Invalid lock duration');
+    await this.db.transaction(async client=>{
+      const target=await client.query('SELECT id FROM md_users WHERE tenant_id=$1 AND id=$2 FOR UPDATE',[tenantId,targetId]);
+      if(!target.rowCount)throw new Error('User not found');
+      await client.query(`
+        UPDATE md_users SET locked_until=CASE WHEN $3::boolean
+          THEN now()+($4::integer * interval '1 minute') ELSE NULL END
+        WHERE tenant_id=$1 AND id=$2
+      `,[tenantId,targetId,lock,durationMinutes]);
+      if(lock) {
+        await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,targetId]);
+        await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,targetId]);
+      }
+      await client.query(`
+        INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+        VALUES($1,$2,$3,$4::jsonb)
+      `,[tenantId,actorId,lock?'user.lock':'user.unlock',JSON.stringify({targetUserId:targetId})]);
+    });
+  }
+  async securityEvents(tenantId:string,limit=50){
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid event limit');
+    const {rows}=await this.db.query<{id:string;at:Date;actor_user_id:string;action:string;details:unknown}>(`
+      SELECT id,at,actor_user_id,action,details
+      FROM md_security_events WHERE tenant_id=$1 ORDER BY at DESC,id DESC LIMIT $2
+    `,[tenantId,limit]);
+    return {events:rows.map(event=>({
+      id:event.id,at:new Date(event.at).toISOString(),actorUserId:event.actor_user_id,
+      action:event.action,details:event.details&&typeof event.details==='object'&&!Array.isArray(event.details)?event.details:{}
+    }))};
   }
   async signOut(token:string,refreshToken?:string) {
     await this.db.query('UPDATE md_sessions SET revoked_at=now() WHERE token_hash=$1',[fingerprint(token)]);

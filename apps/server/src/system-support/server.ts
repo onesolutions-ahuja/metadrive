@@ -174,6 +174,25 @@ export function createSystemServer(db:SqlPersistence) {
       throw error;
     }
   }));
+  app.get('/api/auth/user-locks',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    res.json(await auth.userLocks(actor.tenant_id));
+  }));
+  for(const action of ['lock','unlock'] as const) {
+    app.post('/api/auth/users/:userId/'+action,route(async(req,res)=>{
+      const actor=req.actor!;
+      await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+      await auth.changeUserLock(actor.tenant_id,actor.user_id,req.params.userId,
+        action==='lock',action==='lock'?req.body?.durationMinutes??60:60);
+      res.status(204).end();
+    }));
+  }
+  app.get('/api/auth/security-events',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    res.json(await auth.securityEvents(actor.tenant_id,req.query.limit===undefined?50:Number(req.query.limit)));
+  }));
   app.get('/api/tenant/company-profile',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({profile:await platformTenants.getSetting(actor.tenant_id,actor.user_id,'company-profile')});
