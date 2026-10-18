@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-const built=new URL('../dist-system/system-files/',import.meta.url);
+const built=new URL('../dist-system/system-support/',import.meta.url);
 const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService}]=await Promise.all([
  'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js'
 ].map(file=>import(new URL(file,built).href)));
