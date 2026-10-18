@@ -1,5 +1,5 @@
 import type { SqlPersistence } from './sql-persistence.js';
-import {toDisplayedPermission} from '../system-support/permission-resource-map.js';
+import {toDisplayedPermission,systemPermissionBindings,toPermissionRule} from '../system-support/permission-resource-map.js';
 
 export type PermissionCheck = {resource:string;action:string};
 
@@ -30,7 +30,9 @@ export class RbacEngine {
       FROM requested q
       LEFT JOIN md_permission_rules r ON r.tenant_id=$1
         AND r.permission_set_id IN (SELECT permission_set_id FROM assigned)
-        AND r.resource IN (q.resource,'*') AND r.action IN (q.action,'*')
+        AND r.resource IN (q.resource,'*',
+          CASE WHEN q.resource LIKE 'Flow:%' THEN 'Flow' ELSE q.resource END)
+        AND r.action IN (q.action,'*')
       GROUP BY q.ordinal ORDER BY q.ordinal
     `,[tenantId,userId,checks.map(c=>c.resource),checks.map(c=>c.action)]);
     const byIndex=new Map(rows.map(row=>[Number(row.ordinal)-1,row]));
@@ -70,17 +72,44 @@ export class RbacEngine {
     const objectNames=new Set(objects.rows.map(o=>o.api_name));
     const fieldNames=new Set(fields.rows.map(f=>f.object_api+'.'+f.api_name));
     const bySet=new Map<string,{systemPermissions:string[];objectPermissions:Record<string,Record<string,boolean>>;fieldPermissions:Record<string,Record<string,boolean>>}>();
-    for(const rule of assignments.rows){
-      if(rule.effect!=='allow')continue;
-      const entries=bySet.get(rule.permission_set_id)??{systemPermissions:[],objectPermissions:{},fieldPermissions:{}};
-      if(rule.resource.startsWith('Object:')||objectNames.has(rule.resource)){
+    for(const permissionSet of sets.rows){
+      const assigned=assignments.rows.filter(row=>row.permission_set_id===permissionSet.id);
+      const wildcard=assigned.some(row=>row.effect==='allow'&&row.resource==='*'&&row.action==='*');
+      const denies=new Set(assigned.filter(row=>row.effect==='deny').map(row=>row.resource+':'+row.action));
+      const data={systemPermissions:[] as string[],objectPermissions:{} as Record<string,Record<string,boolean>>,
+        fieldPermissions:{} as Record<string,Record<string,boolean>>};
+      if(wildcard){
+        data.systemPermissions.push('*:*');
+        for(const key of Object.keys(systemPermissionBindings)){
+          const {resource,action}=toPermissionRule(key);
+          if(!denies.has(resource+':'+action))data.systemPermissions.push(key);
+        }
+        for(const objectApi of objectNames){
+          data.objectPermissions[objectApi]={};
+          for(const action of ['read','create','edit','delete','viewAll','modifyAll'])
+            data.objectPermissions[objectApi][action]=!denies.has(objectApi+':'+action);
+        }
+        for(const fieldApi of fieldNames){
+          data.fieldPermissions[fieldApi]={};
+          for(const action of ['read','edit','create','delete'])
+            data.fieldPermissions[fieldApi][action]=!denies.has(fieldApi+':'+action);
+        }
+      }
+      for(const rule of assigned){
+        if(rule.effect!=='allow'||rule.resource==='*'&&rule.action==='*')continue;
         const key=rule.resource.startsWith('Object:')?rule.resource.slice(7):rule.resource;
-        (entries.objectPermissions[key]??={})[rule.action]=true;
-      }else if(rule.resource.startsWith('Field:')||fieldNames.has(rule.resource)){
-        const key=rule.resource.startsWith('Field:')?rule.resource.slice(6):rule.resource;
-        (entries.fieldPermissions[key]??={})[rule.action]=true;
-      }else entries.systemPermissions.push(toDisplayedPermission(rule.resource,rule.action));
-      bySet.set(rule.permission_set_id,entries);
+        const fieldKey=rule.resource.startsWith('Field:')?rule.resource.slice(6):rule.resource;
+        if(objectNames.has(key)){
+          (data.objectPermissions[key]??={})[rule.action]=!denies.has(key+':'+rule.action);
+        }else if(fieldNames.has(fieldKey)){
+          (data.fieldPermissions[fieldKey]??={})[rule.action]=!denies.has(fieldKey+':'+rule.action);
+        }else{
+          const token=toDisplayedPermission(rule.resource,rule.action);
+          if(!data.systemPermissions.includes(token)&&!denies.has(rule.resource+':'+rule.action))
+            data.systemPermissions.push(token);
+        }
+      }
+      bySet.set(permissionSet.id,data);
     }
     const emptyRecordAccess={};
     return {

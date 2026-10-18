@@ -68,3 +68,31 @@ test('Cashier object, field and Flow grants use executable central RBAC resource
  assert.ok(grants.some(([resource,action])=>resource==='Flow'&&action==='execute'));
  assert.equal(grants.some(([resource])=>resource.startsWith('Object:')||resource.startsWith('Field:')),false);
 });
+
+test('OneEngine wildcard permits individual object and field restrictions through deny precedence',async()=>{
+ const rules:Array<{resource:string;action:string;effect:string}>=[];
+ const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('SELECT id,api_name FROM md_permission_sets'))return {rows:[{id,api_name:'OneEngine'}]};
+   if(sql.includes('SELECT resource,action,effect'))return {rows:[{resource:'*',action:'*',effect:'allow'}]};
+   if(sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
+   if(sql.includes('INSERT INTO md_permission_rules'))rules.push({resource:String(args[2]),action:String(args[3]),effect:String(args[4])});
+   return {rows:[]};
+ }})} as unknown as SqlPersistence;
+ const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
+ const permissions={...set,apiName:'OneEngine',systemPermissions:['*:*','security:manage'],
+  objectPermissions:{Invoice:{read:true,create:false}},
+  fieldPermissions:{'Invoice.Total':{read:true,edit:false}}};
+ await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[permissions]});
+ assert.ok(rules.some(rule=>rule.resource==='Invoice'&&rule.action==='create'&&rule.effect==='deny'));
+ assert.ok(rules.some(rule=>rule.resource==='Invoice.Total'&&rule.action==='edit'&&rule.effect==='deny'));
+ assert.ok(!rules.some(rule=>rule.resource==='Invoice'&&rule.action==='read'));
+});
+
+test('central RBAC supports a Flow execute grant for named Flow instances',async()=>{
+ const queries:string[]=[];
+ const db={query:async(sql:string)=>{queries.push(sql);return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};}} as unknown as SqlPersistence;
+ const {RbacEngine}=await import('../../src/system-files/rbac-engine.js');
+ assert.equal(await new RbacEngine(db).allowed('tenant','user','Flow:ONEposCheckout','execute'),true);
+ assert.match(queries[0],/q\.resource LIKE 'Flow:%'/);
+ assert.match(queries[0],/THEN 'Flow'/);
+});
