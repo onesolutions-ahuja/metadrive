@@ -9,13 +9,34 @@ const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response
 /** Compatibility routes backed by the same SQL metadata and OneEngine engines. */
 export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,objects:ObjectDefinitionService){
  app.get('/api/metadata/permissions',wrap(async(req,res)=>{
-  const actor=req.actor!;
-  await rbac.require(actor.tenant_id,actor.user_id,'PermissionSet','read');
-  const {rows:sets}=await db.query<{id:string;api_name:string}>(
-   'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[actor.tenant_id]);
-  const {rows:rules}=await db.query<{permission_set_id:string;resource:string;action:string;effect:string}>(
-   'SELECT permission_set_id,resource,action,effect FROM md_permission_rules WHERE tenant_id=$1 ORDER BY resource,action',[actor.tenant_id]);
-  res.json({permissionSets:sets.map(s=>({id:s.id,apiName:s.api_name,permissions:rules.filter(r=>r.permission_set_id===s.id)})),profiles:[],roles:[],sharingRules:[]});
+  const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'PermissionSet','read');
+  const [sets,grants,roles,users]=await Promise.all([
+   db.query<{id:string;api_name:string}>('SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[a.tenant_id]),
+   db.query<{permission_set_id:string;resource:string;action:string;effect:string}>('SELECT permission_set_id,resource,action,effect FROM md_permission_rules WHERE tenant_id=$1',[a.tenant_id]),
+   db.query<{id:string;api_name:string;label:string;parent_role_id:string|null}>('SELECT id,api_name,label,parent_role_id FROM md_roles WHERE tenant_id=$1',[a.tenant_id]),
+   db.query<{id:string;email:string}>('SELECT id,email FROM md_users WHERE tenant_id=$1',[a.tenant_id])
+  ]);
+  const permissionSets=sets.rows.map(s=>{
+   const rules=grants.rows.filter(r=>r.permission_set_id===s.id);
+   const objectPermissions:Record<string,{read:boolean;create:boolean;edit:boolean;delete:boolean;viewAll:boolean;modifyAll:boolean}>={};
+   const fieldPermissions:Record<string,{read:boolean;edit:boolean;create:boolean;delete:boolean}>={};
+   for(const r of rules){
+    const target=r.resource.includes('.')?fieldPermissions:objectPermissions;
+    if(r.resource==='*'||r.resource.includes(':')||!['read','create','edit','delete'].includes(r.action))continue;
+    const value=target[r.resource]??(r.resource.includes('.')
+     ?{read:false,create:false,edit:false,delete:false}
+     :{read:false,create:false,edit:false,delete:false,viewAll:false,modifyAll:false});
+    (value as unknown as Record<string,boolean>)[r.action]=r.effect==='allow';
+    (target as Record<string,typeof value>)[r.resource]=value;
+   }
+   return {id:s.id,apiName:s.api_name,label:s.api_name,license:'',description:'',systemPermissions:[],
+    objectPermissions,fieldPermissions,recordTypePermissions:{}};
+  });
+  res.json({tenantId:a.tenant_id,profiles:[],permissionSets,permissionSetGroups:[],
+   roles:roles.rows.map(r=>({id:r.id,apiName:r.api_name,name:r.label,parentRoleId:r.parent_role_id})),
+   publicGroups:[],queues:[],sharingRules:[],
+   users:users.rows.map(u=>({id:u.id,name:u.email,username:u.email,role:'',roleId:'',profileId:'',permissionSetIds:[],permissionSetGroupIds:[],timeZone:'UTC',locale:'en-GB'})),
+   sharingSettings:{}});
  }));
  app.put('/api/metadata/objects/:apiName',wrap(async(req,res)=>{
   const a=req.actor!,api=req.params.apiName;
