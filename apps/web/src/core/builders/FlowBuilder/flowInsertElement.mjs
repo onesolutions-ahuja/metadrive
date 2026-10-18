@@ -12,6 +12,10 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
   if (flow.elements.some(item => item.id === element.id)) throw Error('Flow element IDs must be unique.');
   if (flow.elements[previousIndex].type === 'End') throw Error('Cannot add after an End element.');
   const outgoing = flow.connectors.filter(connector => connector.from === fromId);
+  // End is a terminal node and must never be connected to another element.
+  if (element.type === 'End' && outgoing.length) {
+    throw Error('End must terminate a path; select an element with no outgoing connector.');
+  }
   if (outgoing.some(connector => !flow.elements.some(item => item.id === connector.to))) {
     throw Error('Cannot insert on a path with a missing destination element.');
   }

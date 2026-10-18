@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import React from 'react';
-import type { LibraryComponentMetadata } from '../src/core/metadata/Definitions/metadata';
+import { flowElementMetadata, type LibraryComponentMetadata, type FlowDefinitionMetadata } from '../src/core/metadata/Definitions/metadata';
+import { insertFlowElementAtPath } from '../src/core/builders/FlowBuilder/flowInsertElement.mjs';
 import ComponentLibrary from '../src/core/components/ComponentLibrary/ComponentLibrary';
 import { libraryComponentLabel, oneComponentLabel, uniqueLibraryComponents } from '../src/core/components/Registry/componentLibraryDiscovery';
 import { findRegisteredComponent } from '../src/core/components/Registry/componentRegistryLookup';
@@ -66,4 +67,21 @@ test('library starts in Core with two library choices and no custom registration
   assert.match(markup, /One- library/);
   assert.match(markup, /Core · Page components/);
   assert.doesNotMatch(markup, /id="library-component-label"/);
+});
+
+test('Flow Builder offers End and only inserts it on a terminal connector path', () => {
+  assert.equal(flowElementMetadata.filter(item => item.type === 'End').length, 1);
+  const flow = {
+    elements: [
+      { id: 1, type: 'Start', label: 'Start', config: {} },
+      { id: 2, type: 'Screen', label: 'Checkout', config: { fields: [] } }
+    ],
+    connectors: [{ id: 'connector-1', from: 1, to: 2, label: '', kind: 'normal' }]
+  } as unknown as FlowDefinitionMetadata;
+  const end = { id: 3, type: 'End', label: 'End', config: {} };
+  const completed = insertFlowElementAtPath(flow, 2, end, undefined, 'connector-2');
+  assert.equal(completed.elements.at(-1)?.type, 'End');
+  assert.ok(completed.connectors.some(connector => connector.from === 2 && connector.to === 3));
+  assert.equal(completed.connectors.some(connector => connector.from === 3), false);
+  assert.throws(() => insertFlowElementAtPath(flow, 1, end, undefined, 'connector-2'), /End must terminate a path/);
 });
