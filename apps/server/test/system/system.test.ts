@@ -652,3 +652,21 @@ test('Flow interview cancellation rejects unauthorised or malformed requests',as
  await assert.rejects(()=>new FlowRuntime(db,denied).cancelInterview('tenant','user','c439f882-7316-4cf1-86fb-81d95b135c97'),/Permission denied/);
  await assert.rejects(()=>new FlowRuntime(db,denied).cancelInterview('tenant','user','not-an-id'),/Invalid interview ID/);
 });
+
+test('App removal only clears tenant installation and app-owned home bindings',async()=>{
+ const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
+ const sql:string[]=[];
+ const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+   run({query:async(query:string,args:unknown[])=>{
+     sql.push(query);
+     assert.deepEqual(args,['tenant','MarketplaceApp']);
+     assert.ok(!query.includes('md_records'));
+     assert.ok(!query.includes('md_record_values'));
+     return {rowCount:1,rows:[]};
+   }})
+ } as unknown as SqlPersistence;
+ await new AppRuntime(db).uninstall('tenant','MarketplaceApp');
+ assert.equal(sql.length,2);
+ assert.ok(sql.some(query=>query.includes('md_app_installations')));
+ assert.ok(sql.some(query=>query.includes('md_app_home_pages')));
+});
