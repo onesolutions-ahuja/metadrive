@@ -461,6 +461,12 @@ function ShoppingCartTill({ props }) {
   }, [displaySession, cart]);
   const add = (product) => {
     if (locked || !sessionReady) return;
+    // Financial settings are loaded asynchronously: never classify a product
+    // using the initial NaN rate before the effective tenant rate is verified.
+    if (!settingsReady || !Number.isFinite(vatRate)) {
+      setError("Financial settings are not ready. Wait for tax configuration to load.");
+      return;
+    }
     const id = String(product.Id || ""),
       label = name(product),
       unit = price(product);
@@ -512,7 +518,9 @@ function ShoppingCartTill({ props }) {
     };
     window.addEventListener("metadrive:page-cart-add", receive);
     return () => window.removeEventListener("metadrive:page-cart-add", receive);
-  }, [props.pageSessionKey, props.cartTargetKey, cart, locked, sessionReady]);
+  }, [props.pageSessionKey, props.cartTargetKey, props.nameFieldApiName,
+      props.priceFieldApiName, props.vatApplicableFieldApiName, props.ageRestrictedFieldApiName,
+      cart, locked, sessionReady, settingsReady, vatRate]);
   const changeQuantity = (id, amount) => {
     if (locked || !sessionReady) return;
     updateCart(
