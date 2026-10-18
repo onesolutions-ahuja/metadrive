@@ -934,10 +934,23 @@ function PageBuilder({
       onNotify('Create a Lightning app before activating an App Page');
       return;
     }
-    const nextPage = status ? { ...candidate, status } : page;
+    const nextPage = status ? { ...candidate, status } : candidate;
+    // App Page availability is resolved from SQL activation assignments.
+    const targetAppId = builderAppApiName || preparedAppId;
+    if (nextPage.status === 'Active' && nextPage.pageType === 'App Page'
+      && !(nextPage.activationAssignments ?? []).some(item => item.appId === targetAppId)) {
+      if (!targetAppId || !apps.some(item => item.apiName === targetAppId)) {
+        onNotify('Select an installed application before activating this App Page');
+        return;
+      }
+      nextPage.activationAssignments = [...(nextPage.activationAssignments ?? []), {
+        id: crypto.randomUUID(), scope: 'App Default', appId: targetAppId,
+        profileId: null, recordTypeId: null, formFactors: [...nextPage.devices]
+      }];
+    }
     setSaving(true);
     try {
-      const saved = await onSave(nextPage, candidate.apiName);
+      const saved = await onSave(nextPage, candidate === page ? savedPageApiName.current : candidate.apiName);
       if (saved) {
         if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
           const targetAppId = builderAppApiName || preparedAppId;
@@ -974,8 +987,10 @@ function PageBuilder({
       apiName = `${baseApiName}_${suffix}`;
       suffix += 1;
     }
+    const clonedIds = new Map(page.components.map(component => [component.id, `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`]));
     const cloned: LightningPageMetadata = {
       ...structuredClone(page),
+      revision: undefined,
       apiName,
       label: `${page.label} Copy`,
       updatedAt: undefined,
@@ -983,7 +998,12 @@ function PageBuilder({
       activationAssignments: [],
       components: page.components.map((component) => ({
         ...component,
-        id: `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`
+        id: clonedIds.get(component.id)!,
+        parentId: component.parentId ? clonedIds.get(component.parentId) ?? component.parentId : component.parentId,
+        properties: { ...component.properties,
+          ...(typeof component.properties?.layoutParentId === 'string'
+            ? { layoutParentId: clonedIds.get(component.properties.layoutParentId) ?? component.properties.layoutParentId }
+            : {}) }
       }))
     };
     setSaving(true);
@@ -1025,13 +1045,13 @@ function PageBuilder({
     }
     const nextPage: LightningPageMetadata = {
       apiName, label, targetObject: newPageTargetObject,
-      pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
+      pageType: newPageType,
       layoutMode: newPageLayoutMode, template: newPageTemplate,
       canvasWidth: newPageCanvasWidth,
       canvasHeight: newPageCanvasHeight,
       status: 'Draft', devices: [...newPageDevices], components: [],
       // App Pages belong to app navigation; only Record/Home pages use activation assignments.
-      activationAssignments: newPageAppId && newPageType !== 'App Page'
+      activationAssignments: newPageAppId
         ? [{
           id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
           profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
@@ -1888,14 +1908,14 @@ function PageBuilder({
               onChange={event => {
                 const mode = event.target.value as LightningPageMetadata['layoutMode'];
                 setNewPageLayoutMode(mode);
-                if (mode === 'free-canvas') setNewPageType('Home Page');
+                // Page type and canvas layout are independently configurable.
               }}>
               <option value="template">Responsive template</option><option value="free-canvas">Free Canvas</option>
             </select>
           </label>
           <label className="form-label" htmlFor="new-lightning-page-type">Page type
             <select id="new-lightning-page-type" className="form-control" value={newPageType}
-              disabled={newPageLayoutMode === 'free-canvas'}
+              
               onChange={event => {
                 const type = event.target.value as LightningPageMetadata['pageType'];
                 setNewPageType(type);
