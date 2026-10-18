@@ -451,7 +451,7 @@ export function createSystemServer(db:SqlPersistence) {
     const allowed=new Set(['Name','Email','Username','IsActive','Password','UserRoleId']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
-    if(email!==undefined&&(typeof email!=='string'||!/^\\S+@\\S+\\.\\S+$/.test(email)))throw new Error('Invalid user email');
+    if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
     if(input.UserRoleId!==undefined&&input.UserRoleId!==null&&typeof input.UserRoleId!=='string')throw new Error('Invalid role');
