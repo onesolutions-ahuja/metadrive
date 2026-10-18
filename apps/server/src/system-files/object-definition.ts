@@ -57,6 +57,9 @@ export class ObjectDefinitionService {
       for(const [sortOrder,action] of ['New','Edit','Delete'].entries())await client.query(`INSERT INTO md_object_page_layout_actions
         (tenant_id,object_api,layout_id,action_name,sort_order)
         VALUES ($1,$2,'default',$3,$4)`,[tenantId,apiName,action,sortOrder]);
+      await client.query(`INSERT INTO md_object_record_types
+        (tenant_id,object_api,record_type_id,developer_name,label,active,is_default,sort_order)
+        VALUES ($1,$2,'master','Master','Master',true,true,0)`,[tenantId,apiName]);
     });
     return this.get(tenantId,apiName);
   }
@@ -159,11 +162,32 @@ export class ObjectDefinitionService {
       text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup'
     };
     const layouts=await this.loadLayoutMetadata(tenantId);
+    const [types,values]=await Promise.all([
+      this.db.query<{object_api:string;record_type_id:string;label:string;developer_name:string;description:string;active:boolean;is_default:boolean}>(
+        'SELECT object_api,record_type_id,label,developer_name,description,active,is_default FROM md_object_record_types WHERE tenant_id=$1 ORDER BY object_api,sort_order',[tenantId]),
+      this.db.query<{object_api:string;record_type_id:string;field_api:string;field_value:string}>(
+        'SELECT object_api,record_type_id,field_api,field_value FROM md_object_record_type_values WHERE tenant_id=$1 ORDER BY object_api,record_type_id,field_api,sort_order',[tenantId])
+    ]);
+    const typeByObject=new Map<string,Array<{id:string;label:string;developerName:string;description:string;active:boolean;isDefault:boolean;picklistValues:Record<string,string[]>}>>();
+    for(const row of types.rows){
+      const items=typeByObject.get(row.object_api)??[];
+      items.push({id:row.record_type_id,label:row.label,developerName:row.developer_name,
+        description:row.description,active:row.active,isDefault:row.is_default,picklistValues:{}});
+      typeByObject.set(row.object_api,items);
+    }
+    for(const row of values.rows){
+      const recordType=typeByObject.get(row.object_api)?.find(item=>item.id===row.record_type_id);
+      if(recordType){
+        const current=recordType.picklistValues[row.field_api]??[];
+        current.push(row.field_value);recordType.picklistValues[row.field_api]=current;
+      }
+    }
     return objects.map(obj=>({
       id:obj.id,apiName:obj.api_name,label:obj.label,pluralLabel:obj.label,
       kind:obj.is_system?'Standard Object' as const:'Custom Object' as const,
       description:'',
       ...(layouts.get(obj.api_name)??{revision:0,pageLayouts:[],pageLayoutAssignments:[]}),
+      recordTypes:typeByObject.get(obj.api_name)??[],
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
         dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
