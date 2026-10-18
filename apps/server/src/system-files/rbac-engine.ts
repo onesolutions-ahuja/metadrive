@@ -44,7 +44,7 @@ export class RbacEngine {
   /** Read actual tenant RBAC definitions; never manufacture profiles or grants. */
   async describe(tenantId:string,userId:string) {
     await this.require(tenantId,userId,'Security','read');
-    const [sets,roles,assignments,users,profiles,assignedProfiles,assignedRoles]=await Promise.all([
+    const [sets,roles,assignments,users,profiles,assignedProfiles,assignedRoles,userSets]=await Promise.all([
       this.db.query<{id:string;api_name:string}>(
         'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[tenantId]),
       this.db.query<{id:string;api_name:string;label:string;parent_role_id:string|null}>(
@@ -58,7 +58,9 @@ export class RbacEngine {
       this.db.query<{user_id:string;profile_id:string}>(
         'SELECT user_id,profile_id FROM md_user_profiles WHERE tenant_id=$1',[tenantId]),
       this.db.query<{user_id:string;role_id:string}>(
-        'SELECT user_id,role_id FROM md_user_roles WHERE tenant_id=$1',[tenantId])
+        'SELECT user_id,role_id FROM md_user_roles WHERE tenant_id=$1',[tenantId]),
+      this.db.query<{user_id:string;permission_set_id:string}>(
+        'SELECT user_id,permission_set_id FROM md_permission_assignments WHERE tenant_id=$1',[tenantId])
     ]);
     const bySet=new Map<string,{systemPermissions:string[];objectPermissions:Record<string,Record<string,boolean>>;fieldPermissions:Record<string,Record<string,boolean>>}>();
     for(const rule of assignments.rows){
@@ -91,7 +93,7 @@ export class RbacEngine {
       publicGroups:[],queues:[],sharingRules:[],
       users:users.rows.map(u=>({
         id:u.id,name:u.email,username:u.email,role:'',roleId:assignedRoles.rows.find(r=>r.user_id===u.id)?.role_id??'',
-        profileId:assignedProfiles.rows.find(p=>p.user_id===u.id)?.profile_id??'',permissionSetIds:[],permissionSetGroupIds:[],
+        profileId:assignedProfiles.rows.find(p=>p.user_id===u.id)?.profile_id??'',permissionSetIds:userSets.rows.filter(p=>p.user_id===u.id).map(p=>p.permission_set_id),permissionSetGroupIds:[],
         timeZone:'UTC',locale:'en-GB'
       })),
       sharingSettings:{}
