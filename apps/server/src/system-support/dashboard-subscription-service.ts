@@ -82,7 +82,7 @@ export class DashboardSubscriptionService {
     throw Error('Invalid dashboard subscription');
   nextDashboardDeliveryAt(new Date(),p.timeZone,p.localTime,p.frequency as 'Daily'|'Weekly',
    p.dayOfWeek as number|null);
-  return p as Input;
+  return p as unknown as Input;
  }
  private view(row:Row){
   return {id:row.id,dashboardApiName:row.dashboard_api,label:row.label,
@@ -180,9 +180,12 @@ export class DashboardSubscriptionService {
      input.namedCredentialId,input.fromEmail,user.email,
      'MetaDrive dashboard update: '+input.label,
      'An updated dashboard is available in MetaDrive. Sign in to view it using your current permissions.');
+   const next=nextDashboardDeliveryAt(new Date(),row.time_zone,row.local_time.slice(0,5),
+     row.frequency,row.day_of_week);
    await this.db.query(`UPDATE md_dashboard_subscriptions
-     SET last_run_status='Success',last_run_error=NULL,updated_at=now()
-     WHERE tenant_id=$1 AND id=$2 AND owner_user_id=$3`,[actor.tenant_id,id,actor.user_id]);
+     SET last_run_status='Success',last_run_error=NULL,next_run_at=$4,updated_at=now()
+     WHERE tenant_id=$1 AND id=$2 AND owner_user_id=$3`,
+     [actor.tenant_id,id,actor.user_id,next]);
   }catch(error){
    const message=error instanceof Error?error.message:'Delivery failed';
    await this.db.query(`UPDATE md_dashboard_subscriptions
