@@ -11,7 +11,7 @@ export class ObjectDefinitionService {
     return rows[0];
   }
   // Atomic tenant-scoped creation: no partially created Objects when a field is invalid.
-  async create(tenantId:string,apiName:string,label:string,fields:unknown=[]) {
+  async create(tenantId:string,apiName:string,label:string,fields:unknown=[],actorUserId?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!label.trim())throw new Error('Invalid object definition');
     if(!Array.isArray(fields))throw new Error('Invalid object fields');
     const types:Record<string,string>={text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference'};
@@ -38,6 +38,7 @@ export class ObjectDefinitionService {
     if(new Set(normalized.map(x=>x.apiName.toLowerCase())).size!==normalized.length)
       throw new Error('Duplicate field API name');
     await this.db.transaction(async client=>{
+      if(actorUserId)await client.query('SELECT set_config($1,$2,true)',['metadrive.actor_user_id',actorUserId]);
       const inserted=await client.query(
         'INSERT INTO md_object_definitions (tenant_id,api_name,label,is_system) VALUES ($1,$2,$3,false) ON CONFLICT (tenant_id,api_name) DO NOTHING RETURNING id',
         [tenantId,apiName,label]);
@@ -48,7 +49,7 @@ export class ObjectDefinitionService {
     });
     return this.get(tenantId,apiName);
   }
-  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string) {
+  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,actorUserId?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     const normalized=dataType.toLowerCase().replace(/\s+/g,'');
     const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
@@ -60,16 +61,19 @@ export class ObjectDefinitionService {
       throw new Error('Invalid text field length');
     if(type==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))
       throw new Error('Invalid relationship target');
-    const result=await this.db.query(`
+    const result=await this.db.transaction(async client=>{
+      if(actorUserId)await client.query('SELECT set_config($1,$2,true)',['metadrive.actor_user_id',actorUserId]);
+      return client.query(`
       INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label)
       VALUES ($1,$2,$3,$4,$5,$6,$7)
       ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
     `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength,label?.trim()||fieldApi]);
+    });
     if(!result.rowCount)throw new Error('Field already exists');
     return result;
   }
   /** Only mutable SQL-backed field properties may be edited; unsupported options fail closed. */
-  async updateField(tenantId:string,objectApi:string,fieldApi:string,proposal:Record<string,unknown>){
+  async updateField(tenantId:string,objectApi:string,fieldApi:string,proposal:Record<string,unknown>,actorUserId?:string){
     if(typeof proposal.label!=='string'||!proposal.label.trim()||proposal.label.length>160
       || (proposal.apiName!==undefined&&proposal.apiName!==fieldApi))
       throw new Error('Invalid field update');
@@ -84,16 +88,20 @@ export class ObjectDefinitionService {
       (proposal.unique!==undefined&&proposal.unique!==current.unique)||
       (proposal.relationship!==undefined&&JSON.stringify(proposal.relationship)!==JSON.stringify(current.relationship)))
       throw new Error('Unsupported field update requires a metadata migration');
-    const changed=await this.db.query(
+    const changed=await this.db.transaction(async client=>{
+      if(actorUserId)await client.query('SELECT set_config($1,$2,true)',['metadrive.actor_user_id',actorUserId]);
+      return client.query(
       'UPDATE md_field_definitions SET label=$4 WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id',
       [tenantId,objectApi,fieldApi,proposal.label.trim()]);
+    });
     if(!changed.rowCount)throw new Error('Field not found');
     return this.get(tenantId,objectApi);
   }
   /** Refuse destructive removal if any tenant record contains a value in this field. */
-  async deleteField(tenantId:string,objectApi:string,fieldApi:string){
+  async deleteField(tenantId:string,objectApi:string,fieldApi:string,actorUserId?:string){
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     await this.db.transaction(async client=>{
+      if(actorUserId)await client.query('SELECT set_config($1,$2,true)',['metadrive.actor_user_id',actorUserId]);
       const {rows}=await client.query<{id:string}>(`
         SELECT id FROM md_field_definitions
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE
