@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { insertFlowElementAtPath, reconcileDecisionOutcomePaths } from '../src/core/builders/FlowBuilder/flowInsertElement.mjs';
+import { insertFlowElementAtPath, reconcileDecisionOutcomePaths, completeFlowEndPaths } from '../src/core/builders/FlowBuilder/flowInsertElement.mjs';
 
 const start = { id: 1, type: 'Start', label: 'Start', config: {} };
 const step = { id: 2, type: 'Assignment', label: 'Assign', config: {} };
@@ -61,4 +61,24 @@ test('Decision outcome rename retains destination and new outcomes receive End r
   assert.deepEqual(extended.connectors.filter(c => c.from === 4).map(c => c.label).sort(),
     ['Accepted','Default','Rejected']);
   assert.equal(extended.connectors.find(c => c.label === 'Rejected').to,3);
+});
+
+test('Legacy Start -> Screen Draft can restore and save a terminal End safely', () => {
+  const screen = { id: 2, type: 'Screen', label: 'Checkout details', config: { fields: [] } };
+  const legacy = { status:'Draft', elements:[start,screen], connectors:[link('a',1,2)] };
+  const repaired = completeFlowEndPaths(legacy,'repair');
+  assert.equal(repaired.elements.filter(node => node.type === 'End').length,1);
+  assert.equal(repaired.connectors.length,2);
+  assert.equal(repaired.connectors.find(edge => edge.from === 2).to,repaired.elements.find(node => node.type === 'End').id);
+  assert.deepEqual(completeFlowEndPaths(repaired,'again'),repaired);
+  assert.deepEqual(legacy.elements,[start,screen]);
+});
+
+test('Legacy Decision repair adds missing default path without overwriting assigned outcome target', () => {
+  const graph = {status:'Draft',elements:[start,decision,step,end],
+    connectors:[link('a',1,4),{...link('b',4,2),label:'Approved'},link('c',2,3)]};
+  const repaired = completeFlowEndPaths(graph,'repair');
+  assert.equal(repaired.connectors.find(c => c.id === 'b').to,2);
+  assert.equal(repaired.connectors.find(c => c.from === 4 && c.label === 'Default').to,3);
+  assert.deepEqual(completeFlowEndPaths(repaired,'again'),repaired);
 });
