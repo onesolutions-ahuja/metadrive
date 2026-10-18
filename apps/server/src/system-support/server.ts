@@ -3,6 +3,7 @@ import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from '../system-files/authentication.js';
 import {MfaService} from './mfa-service.js';
+import {PasswordResetService} from './password-reset-service.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
@@ -66,6 +67,7 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const mfa=new MfaService(db,rbac,auth);
+  const passwordReset=new PasswordResetService(db,auth);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -135,6 +137,16 @@ export function createSystemServer(db:SqlPersistence) {
         res.status(401).json({error:'Invalid credentials'});
       else throw error;
     }
+  }));
+  app.post('/api/auth/password-reset/request',route(async(req,res)=>{
+    const tenant=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenant){res.json({message:'If password recovery is enabled, instructions will be emailed.'});return;}
+    res.json(await passwordReset.request(tenant,req.body?.email));
+  }));
+  app.post('/api/auth/password-reset/confirm',route(async(req,res)=>{
+    const tenant=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenant)throw new Error('Invalid reset token');
+    res.json(await passwordReset.confirm(tenant,req.body?.email,req.body?.token,req.body?.newPassword));
   }));
   app.post('/api/auth/mfa/verify',route(async(req,res)=>{
     const session=await mfa.verifyLogin(req.body?.challenge_token,req.body?.code);
