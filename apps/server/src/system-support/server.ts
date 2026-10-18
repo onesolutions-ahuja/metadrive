@@ -209,6 +209,55 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await recoverySettings.save(actor.tenant_id,actor.user_id,req.body));
   }));
+  app.get('/api/auth/user-locks',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    const {rows}=await db.query<{id:string;email:string;display_name:string;enabled:boolean;locked_until:Date|null}>(
+      'SELECT id,email,display_name,enabled,locked_until FROM md_users WHERE tenant_id=$1 ORDER BY email LIMIT 500',[actor.tenant_id]);
+    res.json({users:rows.map(r=>({id:r.id,name:r.display_name||r.email,email:r.email,active:r.enabled,
+      lockedUntil:r.locked_until?new Date(r.locked_until).getTime():null}))});
+  }));
+  app.get('/api/auth/security-events',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    const limit=Number(req.query.limit??50);
+    if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('Invalid pagination');
+    const {rows}=await db.query<{id:string;actor_user_id:string;action:string;details:Record<string,string>;created_at:Date}>(
+      'SELECT id,actor_user_id,action,details,created_at FROM md_security_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2',[actor.tenant_id,limit]);
+    res.json({events:rows.map(r=>({id:r.id,actorUserId:r.actor_user_id,at:new Date(r.created_at).toISOString(),action:r.action,details:r.details}))});
+  }));
+  app.post('/api/auth/users/:id/lock',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const id=req.params.id,duration=req.body?.durationMinutes;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      ||!Number.isSafeInteger(duration)||duration<1||duration>1440||id===actor.user_id)
+      throw new Error('Invalid account lock');
+    await db.transaction(async client=>{
+      const target=await client.query(
+        "UPDATE md_users SET locked_until=now()+($3 * interval '1 minute') WHERE tenant_id=$1 AND id=$2 AND enabled=true RETURNING id",
+        [actor.tenant_id,id,duration]);
+      if(!target.rowCount)throw new Error('User not found');
+      await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,id]);
+      await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,id]);
+      await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action,details) VALUES($1,$2,$3,'user.lock',jsonb_build_object('durationMinutes',$4::integer))",
+        [actor.tenant_id,actor.user_id,id,duration]);
+    });
+    res.status(204).end();
+  }));
+  app.post('/api/auth/users/:id/unlock',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const id=req.params.id;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+      throw new Error('Invalid user ID');
+    await db.transaction(async client=>{
+      const target=await client.query('UPDATE md_users SET locked_until=NULL WHERE tenant_id=$1 AND id=$2 RETURNING id',[actor.tenant_id,id]);
+      if(!target.rowCount)throw new Error('User not found');
+      await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$3,'user.unlock')",[actor.tenant_id,actor.user_id,id]);
+    });
+    res.status(204).end();
+  }));
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
   }));
