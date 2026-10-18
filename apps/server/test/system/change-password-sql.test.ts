@@ -19,7 +19,7 @@ test('SQL password change verifies old password and revokes both session types a
   (req as typeof req&{actor:unknown}).actor={tenant_id:'tenant',user_id:'user'};next();
  });
  registerAuthSqlRoutes(app,db,{} as RbacEngine);
- const server=app.listen(0,'127.0.0.1');
+ const server=await new Promise<import('node:http').Server>(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
  try{
   const url='http://127.0.0.1:'+(server.address() as import('node:net').AddressInfo).port;
   const resp=await fetch(url+'/api/auth/change-password',{
