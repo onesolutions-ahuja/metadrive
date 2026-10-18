@@ -156,3 +156,6 @@ CREATE INDEX IF NOT EXISTS md_tenant_lifecycle_audit_target ON md_tenant_lifecyc
 
 ALTER TABLE md_users ADD COLUMN IF NOT EXISTS display_name text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS md_tenant_provisioning_requests (actor_tenant_id uuid NOT NULL REFERENCES md_tenants(id),actor_user_id uuid NOT NULL,request_key uuid NOT NULL,request_digest text NOT NULL,target_tenant_id uuid NOT NULL REFERENCES md_tenants(id),created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(actor_tenant_id,actor_user_id,request_key),FOREIGN KEY(actor_tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id));
+
+-- Versioned, tenant-bound route aliases for installed apps.
+CREATE TABLE IF NOT EXISTS md_app_route_aliases (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_api text NOT NULL REFERENCES md_apps(api_name), slug text NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'), kind text NOT NULL CHECK (kind IN ('App Home','App Page','Record List')), target_api text NOT NULL, status text NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Disabled')), version integer NOT NULL DEFAULT 1 CHECK (version>=1), updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,app_api,slug));
