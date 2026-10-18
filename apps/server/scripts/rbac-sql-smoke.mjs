@@ -132,6 +132,16 @@ try{
   const u=s.users.find(u=>u.id===limited);u.roleId=limitedRole;u.permissionSetIds=[limitedSet];
  });
  await assert.rejects(()=>save(s=>{s.permissionSets.find(p=>p.id===limitedSet).objectPermissions.Invoice.create=true;},limited),/Permission denied/);
+ // A delegated administrator cannot assign an unchanged broader policy to a
+ // different user (a privilege escalation otherwise missed by policy-diff checks).
+ await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).permissionSetIds.push(one);},limited),/Permission denied/);
+ await assert.rejects(()=>save(s=>{
+  s.profiles.find(p=>p.id===profile).inheritedPermissionSetIds.push(one);
+ },limited),/Permission denied/);
+ await assert.rejects(()=>save(s=>{
+  s.permissionSetGroups.find(g=>g.id===group).permissionSetIds.push(one);
+ },limited),/Permission denied/);
+
  await assert.rejects(()=>save(s=>{s.roles.find(r=>r.id===role).parentRoleId=limitedRole;},limited),/Cannot escalate own/);
  assert.equal((await rbac.describe(t,supervisor)).roles.find(r=>r.id===role).parentRoleId,null);
 
