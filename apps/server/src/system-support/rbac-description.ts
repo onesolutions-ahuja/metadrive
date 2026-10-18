@@ -18,7 +18,12 @@ export async function readRbac(db:SqlExecutor,tenant:string){
  const rules=(setId:string):Rule[]=>rows('md_permission_rules').filter(r=>r.permission_set_id===setId)
   .map(r=>({resource:r.resource,action:r.action,effect:r.effect}));
  const ownSets=new Set(rows('md_profiles').map(p=>p.editor_set_id).filter(Boolean));
- const grants=(setId:string)=>displayRules(rules(setId),objects,fields,types,apps);
+ const grants=(setId:string)=>{
+  const policy=rows('md_permission_sets').find(p=>p.id===setId),all=rules(setId);
+  if(policy?.navigation_default_access==='Allow')for(const resource of [...apps.map(a=>'App:'+a),...objects.map(o=>'Tab:'+o)])
+   if(!all.some(r=>r.resource===resource&&r.action==='read'))all.push({resource,action:'read',effect:'allow'});
+  return displayRules(all,objects,fields,types,apps);
+ };
  const sets=rows('md_permission_sets').filter(p=>!ownSets.has(p.id)).map(p=>({
   id:p.id,apiName:p.api_name,label:p.label??p.api_name,license:p.license??'',description:p.description??'',
   navigationDefaultAccess:p.navigation_default_access??'Deny',...grants(p.id)

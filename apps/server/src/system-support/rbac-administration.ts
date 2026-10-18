@@ -43,6 +43,9 @@ export class RbacAdministration{
    }
    // Platform policy administration remains a separately assigned authority.
    const platform=previous.permissionSets.find(p=>p.apiName==='PlatformDeveloper');
+   if(!platform&&next.permissionSets.some(p=>p.apiName==='PlatformDeveloper'))throw Error('Permission denied');
+   for(const p of next.permissionSets)if(p.navigationDefaultAccess==='Allow'&&previous.permissionSets.find(old=>old.id===p.id)?.navigationDefaultAccess!=='Allow')
+    await currentRbac.require(tenant,actor,'*','*');
    const platformChanged=platform&&stable(platform)!==stable(next.permissionSets.find(p=>p.id===platform.id));
    const platformAssigned=platform&&next.users.some(u=>{
     const old=previous.users.find(p=>p.id===u.id)!;

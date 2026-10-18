@@ -748,18 +748,17 @@ export function createSystemServer(db:SqlPersistence) {
     IsActive:row.enabled
   });
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
-    const allowed=new Set(['Name','Email','Username','IsActive','Password','UserRoleId']);
+    const allowed=new Set(['Name','Email','Username','IsActive','Password']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
-    if(input.UserRoleId)throw new Error('Invalid role assignment: use Users & Assignments to save through RBAC');
     if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
-      role:input.UserRoleId as string|undefined|null};
+      role:undefined};
   };
   const readUser=async(tenantId:string,id:string)=>{
     const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
@@ -801,12 +800,6 @@ export function createSystemServer(db:SqlPersistence) {
       if(profile.rows[0])await client.query(
         'INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
         [actor.tenant_id,result.rows[0].id,profile.rows[0].id]);
-      if(values.role){
-        const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
-        if(!role.rowCount)throw new Error('Invalid role');
-        await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
-          [actor.tenant_id,result.rows[0].id,values.role]);
-      }
       return result.rows[0];
     });
     res.status(201).json({record:await readUser(actor.tenant_id,row.id)});
@@ -822,15 +815,6 @@ export function createSystemServer(db:SqlPersistence) {
         'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled) WHERE tenant_id=$1 AND id=$2 RETURNING id',
         [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null]);
       if(!updated.rowCount)throw new Error('Record not found');
-      if(values.role!==undefined){
-        if(values.role){
-          const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
-          if(!role.rowCount)throw new Error('Invalid role');
-        }
-        await client.query('DELETE FROM md_user_roles WHERE tenant_id=$1 AND user_id=$2',[actor.tenant_id,req.params.id]);
-        if(values.role)await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
-          [actor.tenant_id,req.params.id,values.role]);
-      }
       if(values.enabled===false){
         await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
         await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);

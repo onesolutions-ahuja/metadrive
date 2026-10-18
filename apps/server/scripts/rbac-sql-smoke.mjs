@@ -104,6 +104,19 @@ try{
  await assert.rejects(()=>records.create(t,cashier,'Invoice',{Name:'Denied type',RecordTypeId:'master'}),/Permission denied/);
  assert.equal((await records.list(t,cashier,'Invoice')).total,0);
  await save(s=>{const p=s.profiles.find(p=>p.id===profile);p.advancedRules=[];p.deniedPermissions=[];p.recordTypePermissions['Invoice.master']=true;});
+ // A delegated security administrator cannot grow its own rights indirectly.
+ const limited=await user('delegated-admin@example.invalid'),limitedSet=randomUUID(),limitedRole=randomUUID();
+ await save(s=>{
+  s.roles.push({id:limitedRole,apiName:'DelegatedRole',name:'Delegated role',parentRoleId:null});
+  s.permissionSets.push({...policy(limitedSet,'DelegatedAdministration'),
+   systemPermissions:['security:read','security:manage','User:edit'],
+   objectPermissions:{Invoice:{read:true}},recordTypePermissions:{'Invoice.master':true}});
+  const u=s.users.find(u=>u.id===limited);u.roleId=limitedRole;u.permissionSetIds=[limitedSet];
+ });
+ await assert.rejects(()=>save(s=>{s.permissionSets.find(p=>p.id===limitedSet).objectPermissions.Invoice.create=true;},limited),/Permission denied/);
+ await assert.rejects(()=>save(s=>{s.roles.find(r=>r.id===role).parentRoleId=limitedRole;},limited),/Cannot escalate own/);
+ assert.equal((await rbac.describe(t,supervisor)).roles.find(r=>r.id===role).parentRoleId,null);
+
  // Assignment refresh/login and explicit revocation.
  const tokens=await auth.signIn(t,'cashier@example.invalid',password);
  const actor=await auth.authenticate(tokens.accessToken);
@@ -116,6 +129,7 @@ try{
  await assert.rejects(()=>admin.save(t,supervisor,{...state,tenantId:other.id}),/Permission denied|revision conflict/);
  const foreignSet=(await db.query("INSERT INTO md_permission_sets(tenant_id,api_name) VALUES($1,'Foreign') RETURNING id",[other.id])).rows[0].id;
  await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).permissionSetIds=[foreignSet];}),/Unknown tenant/);
+ await assert.rejects(()=>save(s=>{s.permissionSets.push(policy(randomUUID(),'PlatformDeveloper'));}),/Permission denied/);
  const before=await rbac.describe(t,supervisor);
  await assert.rejects(()=>admin.save(t,supervisor,{...before,revision:before.revision-1}),/revision conflict/);
  await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===supervisor).permissionSetIds=[one];}),/own permission assignments/);
