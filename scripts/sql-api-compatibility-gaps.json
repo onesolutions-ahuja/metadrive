@@ -39,8 +39,6 @@
     "/metadata/flow-logs",
     "/metadata/flows/${encodeURIComponent(apiName)}/deactivate",
     "/metadata/flows/${encodeURIComponent(nextFlow.apiName)}/validate",
-    "/metadata/objects/${encodeURIComponent(draft.apiName)}/dependencies",
-    "/metadata/objects/${encodeURIComponent(draft.apiName)}/field-dependencies",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(field.apiName)}",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",

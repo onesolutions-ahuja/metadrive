@@ -68,6 +68,24 @@ export class ObjectDefinitionService {
     if(!result.rowCount)throw new Error('Field already exists');
     return result;
   }
+  /** Relational lookup dependencies. No inferred or hardcoded app references. */
+  async dependencies(tenantId:string,apiName:string) {
+    await this.get(tenantId,apiName);
+    const {rows}=await this.db.query<{object_api:string;related_object:string}>(
+      'SELECT object_api,related_object FROM md_field_definitions WHERE tenant_id=$1 AND (object_api=$2 OR related_object=$2) AND related_object IS NOT NULL ORDER BY object_api,related_object',
+      [tenantId,apiName]);
+    return {dependencies:[...new Set(rows.map(row=>row.object_api===apiName?row.related_object:row.object_api))].filter((name):name is string=>Boolean(name)).sort()};
+  }
+  async fieldDependencies(tenantId:string,apiName:string) {
+    const object=await this.get(tenantId,apiName);
+    const {rows}=await this.db.query<{api_name:string;related_object:string|null}>(
+      'SELECT api_name,related_object FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 ORDER BY api_name',
+      [tenantId,apiName]);
+    return {fields:object.fields.map(field=>({
+      fieldApiName:field.apiName,
+      dependencies:rows.filter(row=>row.api_name===field.apiName&&row.related_object!==null).map(row=>row.related_object as string)
+    }))};
+  }
   async get(tenantId:string,apiName:string) {
     const objects=await this.list(tenantId);
     const object=objects.find(item=>item.apiName===apiName);

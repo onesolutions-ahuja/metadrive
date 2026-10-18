@@ -470,3 +470,19 @@ test('Account session list returns only current tenant/user SQL rows',async()=>{
  const result=await new AuthenticationService(db).activeSessions('tenant','user');
  assert.deepEqual(result.sessions,[{familyId:'family',expiresAt:1792497600,mfaVerified:false}]);
 });
+
+test('Object relationship dependency discovery reads tenant-scoped SQL with no invented dependencies',async()=>{
+ const calls:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+   calls.push(args);
+   if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o1',api_name:'Sale__c',label:'Sale',is_system:false}]};
+   if(sql.includes('SELECT id,object_api,api_name'))return {rows:[{id:'f1',object_api:'Sale__c',api_name:'CustomerId',label:'Customer',data_type:'reference',related_object:'Customer__c',required:false,max_length:null}]};
+   if(sql.includes('SELECT object_api,related_object'))return {rows:[{object_api:'Sale__c',related_object:'Customer__c'}]};
+   if(sql.includes('SELECT api_name,related_object'))return {rows:[{api_name:'CustomerId',related_object:'Customer__c'}]};
+   throw new Error('Unexpected SQL');
+ }} as unknown as SqlPersistence;
+ const engine=new ObjectDefinitionService(db);
+ assert.deepEqual((await engine.dependencies('tenant','Sale__c')).dependencies,['Customer__c']);
+ assert.deepEqual((await engine.fieldDependencies('tenant','Sale__c')).fields,[{fieldApiName:'CustomerId',dependencies:['Customer__c']}]);
+ assert.ok(calls.every(args=>args[0]==='tenant'));
+});
