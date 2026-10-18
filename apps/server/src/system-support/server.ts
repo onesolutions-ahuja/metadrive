@@ -345,6 +345,10 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await flows.pendingInterviews(actor.tenant_id,actor.user_id));
   }));
+  app.post('/api/metadata/flows/:apiName/deactivate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.deactivate(actor.tenant_id,actor.user_id,req.params.apiName));
+  }));
   app.get('/api/metadata/flows',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
