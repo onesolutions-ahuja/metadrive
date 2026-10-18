@@ -686,7 +686,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       });
       return;
     }
-    if (item === 'Lightning App Builder') openSetupWorkspace('page-builder');
+    if (item === 'Page Builder' || item === 'Lightning App Builder') openSetupWorkspace('page-builder');
+    else if (item === 'Connector Settings') openSetupWorkspace('connector-settings');
+    else if (item === 'Setup Home') openSetupWorkspace('home');
     else if (item === 'App Manager') openSetupWorkspace('app-manager');
     else if (item === 'Component Library') openSetupWorkspace('component-library');
     else if (item === 'AppExchange') openSetupWorkspace('app-exchange');
