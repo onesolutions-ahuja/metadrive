@@ -195,3 +195,6 @@ CREATE TABLE IF NOT EXISTS md_approval_requests (
  FOREIGN KEY(tenant_id,decided_by) REFERENCES md_users(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS md_approval_requests_inbox ON md_approval_requests(tenant_id,approver_id,status,created_at DESC);
+
+ALTER TABLE md_records ADD COLUMN IF NOT EXISTS owner_id uuid;
+ALTER TABLE md_records ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
