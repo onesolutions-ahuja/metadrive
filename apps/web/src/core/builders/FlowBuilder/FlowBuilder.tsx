@@ -1,6 +1,7 @@
 import { uniqueLibraryComponents, libraryComponentLabel } from '../../components/Registry/componentLibraryDiscovery';
 import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './flowGraphLayout';
+import { reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
 import { flowTypeOptions, formulaFunctions, formulaOperators } from './flowEditorCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
@@ -526,7 +527,13 @@ export default function FlowBuilder({
     if (selected.type === 'Decision') {
       const outcomes = outcomesFrom(selected.config.outcomes);
       const decisionObject = objects.find((object) => object.apiName === displayValue(selected.config.object)) ?? selectedObject;
-      const setOutcomes = (next: DecisionOutcome[]) => setConfig('outcomes', next);
+      const setOutcomes = (next: DecisionOutcome[]) => {
+        try {
+          onFlowChange(reconcileDecisionOutcomePaths(flow, selected.id, next, `connector-${crypto.randomUUID()}`));
+        } catch (error) {
+          onNotify(error instanceof Error ? error.message : 'Unable to update Decision paths');
+        }
+      };
       return <div className="flow-config-list"><h3>Outcomes</h3>
         <label className="form-label">Object<select className="form-control" value={decisionObject?.apiName ?? ''} onChange={(event) => setConfig('object', event.target.value)}><option value="">Select object</option>{objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         {outcomes.map((outcome, index) => <div className="metadata-card" key={outcome.name}>
