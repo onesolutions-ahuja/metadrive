@@ -442,10 +442,9 @@ export const FRESH_CORE_OBJECTS = [
         "dataType": "text"
       },
       {
-        "apiName": "ObjectDefinition",
-        "label": "Object Definition",
-        "dataType": "reference",
-        "relatedObject": "ObjectDefinition"
+        "apiName": "ObjectApiName",
+        "label": "Object API Name",
+        "dataType": "text"
       },
       {
         "apiName": "DataType",
