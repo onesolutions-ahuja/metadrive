@@ -61,6 +61,48 @@ export class FlowRuntime {
         ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type)){
         errors.push('Unsupported SQL Flow element: '+type);
       }
+      const config=node.config;
+      if(!config||typeof config!=='object'||Array.isArray(config)){
+        errors.push('Flow element needs a configuration object: '+node.id);
+        continue;
+      }
+      const properties=config as Record<string,unknown>;
+      if(type==='HTTP Callout'){
+        if(typeof properties.namedCredentialId!=='string'
+          ||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(properties.namedCredentialId))
+          errors.push('HTTP Callout requires a tenant HTTPS Named Credential');
+        if(properties.integrationConnectionId||properties.integrationConnectionResource
+          ||properties.namedCredentialResource)
+          errors.push('HTTP Callout dynamic provider bindings are not yet supported');
+        if(!['GET','POST','PUT','PATCH','DELETE'].includes(String(properties.method??'GET')))
+          errors.push('HTTP Callout method is not supported');
+        if(typeof properties.path!=='string'||properties.path.startsWith('/')
+          ||properties.path.includes('\\')||properties.path.length>2048)
+          errors.push('HTTP Callout needs a safe relative path');
+        if(properties.deliveryMode==='DURABLE_ASYNC')
+          errors.push('Durable async HTTP Callout requires an enabled SQL dispatcher');
+        if(properties.queryParameters)
+          errors.push('HTTP Callout structured query mapping is not supported');
+        if(!['FAULT_PATH','FAIL','CONTINUE'].includes(String(properties.onError??'FAIL')))
+          errors.push('HTTP Callout error policy is invalid');
+      }
+      if(type==='Screen'){
+        const fields=properties.fields;
+        if(!Array.isArray(fields)||fields.length>100)
+          errors.push('Screen must declare up to 100 fields');
+        else {
+          const names=new Set<string>();
+          for(const field of fields){
+            if(!field||typeof field!=='object'||Array.isArray(field)){
+              errors.push('Invalid Screen field');continue;
+            }
+            const name=(field as Record<string,unknown>).apiName;
+            if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)
+              ||names.has(name))errors.push('Screen fields require unique safe API names');
+            else names.add(name);
+          }
+        }
+      }
     }
     if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
     if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
