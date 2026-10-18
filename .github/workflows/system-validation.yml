@@ -1,0 +1,23 @@
+name: SQL System Validation
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/system-files/**'
+      - 'apps/server/package.json'
+      - 'apps/web/src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/system-validation.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
