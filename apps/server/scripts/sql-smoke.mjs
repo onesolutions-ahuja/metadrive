@@ -4,9 +4,9 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const built=new URL('../dist-system/system-files/',import.meta.url);
 const support=new URL('../dist-system/system-support/',import.meta.url);
-const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{AuthenticationService},{MfaService},{totpCodeAt}]=await Promise.all([
+const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{AuthenticationService},{MfaService},{totpCodeAt},{ObjectDefinitionService}]=await Promise.all([
  'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js',
- 'authentication.js','mfa-service.js','mfa-crypto.js'
+ 'authentication.js','mfa-service.js','mfa-crypto.js','object-definition.js'
 ].map(file=>import(new URL(file,['system-migrations.js','mfa-service.js','mfa-crypto.js'].includes(file)?support:built).href)));
 
 const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
@@ -69,5 +69,17 @@ try{
  await mfa.setPolicy(actor,{mode:'Off'});
  await assert.rejects(()=>auth.authenticate(verified.accessToken),/Invalid session/);
  console.info('MFA tenant policy, SQL challenge, TOTP replay defense and revocation: passed');
+ const objectAudit=new ObjectDefinitionService(db);
+ await objectAudit.register(tenantId,'CiAuditedObject','CI audited object');
+ await objectAudit.addField(tenantId,'CiAuditedObject','Title','text',undefined,'Title',userId);
+ const events=await objectAudit.history(tenantId,'CiAuditedObject');
+ assert.equal(events.history.length,2);
+ assert.equal(events.history[0].action,'Field.Added');
+ assert.equal(events.history[0].actorUserId,userId);
+ const historyChange=await objectAudit.historyRevision(tenantId,'CiAuditedObject',2);
+ assert.equal(historyChange.change.after.fields[0].apiName,'Title');
+ assert.equal(historyChange.change.before.fields.length,0);
+ console.info('SQL object history triggers, snapshots and actor attribution: passed');
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
