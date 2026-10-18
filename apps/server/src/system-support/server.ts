@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {ComponentLibraryService} from './component-library-service.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
@@ -90,6 +91,7 @@ export function createSystemServer(db:SqlPersistence) {
   const definitions=new ObjectDefinitionService(db);
   const objectHistory=new ObjectMetadataHistory(db);
   const components=new ComponentRuntime(db);
+  const library=new ComponentLibraryService(db,rbac);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records,
     (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
@@ -609,11 +611,30 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
-    res.json({
-      components:await components.list(actor.tenant_id),
-      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
-    });
+    res.json({components:await library.list(actor.tenant_id,actor.user_id),
+      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')});
+  }));
+  app.post('/api/component-library',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.status(201).json({component:await library.save(actor.tenant_id,actor.user_id,req.body)});
+  }));
+  app.put('/api/component-library/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.save(actor.tenant_id,actor.user_id,req.body,req.params.apiName)});
+  }));
+  app.post('/api/component-library/:apiName/publish',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.publish(actor.tenant_id,actor.user_id,req.params.apiName)});
+  }));
+  app.post('/api/component-library/:apiName/rollback',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.publish(actor.tenant_id,actor.user_id,
+      req.params.apiName,req.body?.version)});
+  }));
+  app.delete('/api/component-library/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await library.remove(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.status(204).end();
   }));
   // Authenticated publication of display-only metadata. No cached record data or grants.
   app.get('/api/metadata/offline-publication',route(async(req,res)=>{
