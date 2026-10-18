@@ -83,13 +83,13 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      id:string;created_at:Date;owner_id:string|null;updated_at:Date;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
     }>(`
       WITH selected AS (
-        SELECT id,created_at FROM md_records WHERE tenant_id=$1 AND object_api=$2
+        SELECT id,created_at,owner_id,updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2
         ORDER BY created_at,id LIMIT $3 OFFSET $4
       )
-      SELECT r.id,r.created_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.owner_id,r.updated_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -98,7 +98,7 @@ export class RecordEngine {
     const collected=new Map<string,Record<string,unknown>>();
     const allowed=new Map<string,boolean>();
     for(const row of rows) {
-      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at});
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,OwnerId:row.owner_id,LastModifiedDate:row.updated_at});
       if(!row.field_api)continue;
       if(!allowed.has(row.field_api))allowed.set(row.field_api,
         await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
@@ -115,10 +115,10 @@ export class RecordEngine {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;field_api:string|null;value_text:string|null;
+      id:string;created_at:Date;owner_id:string|null;updated_at:Date;field_api:string|null;value_text:string|null;
       reference_record_id:string|null;data_type:string|null
     }>(`
-      SELECT r.id,r.created_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.owner_id,r.updated_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
       FROM md_records r
       LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
       LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api AND f.api_name=v.field_api
@@ -126,7 +126,7 @@ export class RecordEngine {
       ORDER BY v.field_api
     `,[tenantId,objectApi,id]);
     if(!rows.length)throw new Error('Record not found');
-    const record:Record<string,unknown>={Id:rows[0].id,CreatedAt:rows[0].created_at};
+    const record:Record<string,unknown>={Id:rows[0].id,CreatedAt:rows[0].created_at,OwnerId:rows[0].owner_id,LastModifiedDate:rows[0].updated_at};
     for(const row of rows){
       if(!row.field_api)continue;
       if(!(await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read')))continue;
