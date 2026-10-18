@@ -559,6 +559,88 @@ export class FlowRuntime {
       throw new Error('Screen Flow exceeded maximum steps');
     });
   }
+
+  /** Server-side read-only debugger: never writes SQL, executes a callout or creates a record. */
+  async debugGraph(tenantId:string,userId:string,apiName:string,inputs:unknown,
+    recordTriggered=false){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
+    await this.rbac.require(tenantId,userId,'Flow:'+apiName,'execute');
+    if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))
+      throw new Error('Invalid Flow debug inputs');
+    if(Object.keys(inputs).length>100)throw new Error('Too many Flow debug inputs');
+    const version=await this.loadActive(tenantId,apiName);
+    const {rows}=await this.db.query<MetadataValueRow>(
+      'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+      [tenantId,version.id]);
+    const doc=decodeMetadataValues(rows).builder as Record<string,unknown>|undefined;
+    if(!doc||!Array.isArray(doc.elements)||!Array.isArray(doc.connectors))
+      throw new Error('Flow debug graph unavailable');
+    if(recordTriggered && doc.flowType!=='Record-Triggered Flow')
+      throw new Error('Record debug requires a Record-Triggered Flow');
+    const nodes=doc.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
+    const edges=doc.connectors as Array<{from:number;to:number;label:string;kind:string}>;
+    const start=nodes.filter(n=>n.type==='Start');
+    if(start.length!==1)throw new Error('Invalid Flow Start');
+    const vars:Record<string,Scalar>=Object.create(null) as Record<string,Scalar>;
+    for(const [name,value] of Object.entries(inputs)){
+      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!scalar(value))throw new Error('Invalid debug input');
+      vars[name]=value;
+    }
+    const resolve=(value:unknown):Scalar=>{
+      if(!scalar(value))throw new Error('Unsupported debug expression');
+      if(typeof value!=='string')return value;
+      const reference=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
+        ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
+      if(!reference)return value;
+      if(!Object.hasOwn(vars,reference))throw new Error('Unknown debug resource');
+      return vars[reference];
+    };
+    const trace:Array<{elementApiName:string;type:string;status:string}>=[];
+    let current=start[0].id;
+    for(let step=0;step<200;step++){
+      const node=nodes.find(n=>n.id===current);
+      if(!node)throw new Error('Missing debug Flow element');
+      trace.push({elementApiName:'step_'+node.id,type:node.type,
+        status:['HTTP Callout','Create Records','CreateRecord','Update Records','Delete Records'].includes(node.type)
+          ?'Simulated':'Completed'});
+      if(node.type==='End')return {status:'completed',flowApiName:apiName,
+        flowVersion:version.version,outputs:vars,debugTrace:trace,dryRun:true};
+      if(node.type==='Screen')return {status:'waiting',flowApiName:apiName,
+        flowVersion:version.version,screen:node,outputs:vars,debugTrace:trace,dryRun:true};
+      let outcome:string|undefined;
+      if(node.type==='Assignment'){
+        const name=node.config.variable;
+        if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+          throw new Error('Invalid Assignment resource');
+        vars[name]=resolve(node.config.value??null);
+      }else if(node.type==='Decision'){
+        const conditions=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
+        const match=(option:Record<string,unknown>)=>{
+          if(!Array.isArray(option.conditions)||!option.conditions.length)return false;
+          const decisions=option.conditions.map(condition=>{
+            const rule=condition as Record<string,unknown>,a=resolve(rule.field),b=resolve(rule.value??null);
+            if(rule.operator==='Equals')return a===b;
+            if(rule.operator==='Not Equals')return a!==b;
+            throw new Error('Unsupported Decision comparison');
+          });
+          return option.conditionLogic==='Any'?decisions.some(Boolean):decisions.every(Boolean);
+        };
+        const matched=conditions.find(option=>option.name!=='Default'&&match(option));
+        outcome=String(matched?.label??matched?.name??'Default');
+      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord'].includes(node.type)){
+        throw new Error('Cannot safely debug unsupported Flow action: '+node.type);
+      }
+      const available=edges.filter(edge=>edge.from===current&&edge.kind==='normal');
+      const next=outcome
+        ?available.find(edge=>edge.label===outcome)??available.find(edge=>edge.label==='Default')
+        :available.find(edge=>!edge.label||edge.label==='Default')??(available.length===1?available[0]:undefined);
+      if(!next)throw new Error('Flow debug requires a connected branch');
+      current=next.to;
+    }
+    throw new Error('Flow debug exceeded maximum steps');
+  }
+
   private screenOutcomes(node:{config:Record<string,unknown>}) {
     const raw=Array.isArray(node.config.outcomes)?node.config.outcomes:[];
     const result=(raw as Array<Record<string,unknown>>).filter(item=>
