@@ -49,12 +49,12 @@ try{
  await db.query('INSERT INTO md_permission_assignments VALUES($1,$2,$3)',[t2,outsider,outsidePermissionSet]);
  await objects.create(t2,'Invoice','Invoice',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
  const foreign=await records.create(t2,outsider,'Invoice',{Name:'Tenant two record',RecordTypeId:'master'});
- assert.equal((await records.get(t2,outsider,'Invoice',foreign.Id)).Id,foreign.Id);
- await assert.rejects(()=>records.get(t,developer,'Invoice',foreign.Id),/Record not found/);
- await assert.rejects(()=>records.get(t2,outsider,'Invoice',owned.Id),/Record not found/);
- await assert.rejects(()=>records.update(t2,outsider,'Invoice',owned.Id,{Name:'Breach'}),/Record not found/);
- await assert.rejects(()=>records.remove(t2,outsider,'Invoice',owned.Id),/Record not found/);
- assert.equal((await records.get(t,developer,'Invoice',owned.Id)).Name,'Private invoice');
+ assert.equal((await records.get(t2,outsider,'Invoice',foreign)).Id,foreign);
+ await assert.rejects(()=>records.get(t,developer,'Invoice',foreign),/Record not found/);
+ await assert.rejects(()=>records.get(t2,outsider,'Invoice',owned),/Record not found/);
+ await assert.rejects(()=>records.update(t2,outsider,'Invoice',owned,{Name:'Breach'}),/Record not found/);
+ await assert.rejects(()=>records.remove(t2,outsider,'Invoice',owned),/Record not found/);
+ assert.equal((await records.get(t,developer,'Invoice',owned)).Name,'Private invoice');
 
  const profile=randomUUID(),cashSet=randomUUID(),group=randomUUID(),role=randomUUID(),publicGroup=randomUUID(),queue=randomUUID();
  const policy=(id,apiName)=>({id,apiName,label:apiName,license:'MetaDrive',description:'',
