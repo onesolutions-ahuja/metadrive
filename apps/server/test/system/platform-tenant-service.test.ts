@@ -6,12 +6,43 @@ import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 
 test('tenant list binds every SQL argument including pagination and default search',async()=>{
  const queries:Array<{sql:string;args:unknown[]}>=[],db={
-  query:async(sql:string,args:unknown[])=>{queries.push({sql,args});return {rows:sql.includes('AS authorised')?[{authorised:false}]:sql.includes('AS total')?[{total:'1'}]:[{id:'t',slug:'tenant',name:'Tenant',users:'1',active_users:'1'}]};}
+  query:async(sql:string,args:unknown[])=>{queries.push({sql,args});return {rows:sql.includes('AS authorised')?[{authorised:false}]:sql.includes('AS total')?[{total:'1'}]:[{id:'t',slug:'tenant',name:'Tenant',description:'',status:'ACTIVE',created_at:new Date('2026-10-18T00:00:00Z'),updated_at:new Date('2026-10-18T00:00:00Z'),archived_at:null,retention_until:null,legal_hold:false,users:'1',active_users:'1'}]};}
  } as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  const result=await new PlatformTenantService(db,rbac).list('00000000-0000-4000-8000-000000000001','u',{status:'ALL',page:1,pageSize:25});
  assert.equal(result.total,1);
  assert.match(queries[1].sql,/LIMIT \$4 OFFSET \$5/);
- assert.deepEqual(queries[1].args,['00000000-0000-4000-8000-000000000001',null,true,25,0]);
- assert.deepEqual(queries[2].args,['00000000-0000-4000-8000-000000000001',null,true]);
+ assert.deepEqual(queries[1].args,['00000000-0000-4000-8000-000000000001',null,'ALL',25,0]);
+ assert.deepEqual(queries[2].args,['00000000-0000-4000-8000-000000000001',null,'ALL']);
+});
+
+test('tenant suspension uses an audited SQL transaction and revokes both token families',async()=>{
+ const operations:Array<{sql:string;args:unknown[]}>= [];
+ const db={
+  query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('AS authorised'))return {rows:[{authorised:true}]};
+   return {rows:[]};
+  },
+  transaction:async(run:(client:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+   run({query:async(sql:string,args:unknown[]=[])=>{
+    operations.push({sql,args});
+    if(sql.includes('SELECT id,status FROM md_tenants'))return {rows:[{id:'target-tenant',status:'ACTIVE'}]};
+    return {rows:[],rowCount:1};
+   }})
+ } as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const service=new PlatformTenantService(db,rbac);
+ await assert.rejects(()=>service.transition('actor-tenant','actor-user','target','suspend'),/Tenant not found/);
+ assert.equal(operations.filter(x=>x.sql.includes('UPDATE md_sessions')).length,1);
+ assert.equal(operations.filter(x=>x.sql.includes('UPDATE md_refresh_sessions')).length,1);
+ const audit=operations.find(x=>x.sql.includes('INSERT INTO md_tenant_lifecycle_audit'));
+ assert.deepEqual(audit?.args,['actor-tenant','actor-user','target-tenant','suspend','ACTIVE','SUSPENDED']);
+});
+test('tenant developer cannot transition other tenants without PlatformDeveloper assignment',async()=>{
+ const db={query:async(sql:string)=>{
+  if(sql.includes('AS authorised'))return {rows:[{authorised:false}]};
+  throw Error('Unexpected query');
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ await assert.rejects(()=>new PlatformTenantService(db,rbac).transition('tenant','user','other','suspend'),/Permission denied/);
 });
