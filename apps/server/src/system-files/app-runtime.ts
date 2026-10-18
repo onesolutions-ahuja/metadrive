@@ -37,6 +37,26 @@ export class AppRuntime {
     if(!rows.length)throw new Error('Permission denied');
     return rows[0].api_name?{apiName:rows[0].api_name}:null;
   }
+  async marketplace(tenantId:string) {
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string;installed:boolean;expires_at:Date|null;licensed:boolean
+    }>(`
+      SELECT a.id,a.api_name,a.label,(i.app_id IS NOT NULL) AS installed,
+        e.expires_at,(COALESCE(e.active,false) AND
+          (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
+      FROM md_apps a
+      LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+      LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+      WHERE a.enabled=true
+      ORDER BY a.label
+    `,[tenantId]);
+    return {records:rows.map(row=>({
+      Id:row.id,Name:row.label,AppKey__c:row.api_name,
+      CredentialName__c:'',Installed__c:row.installed,
+      LicenceStatus__c:row.licensed?'ACTIVE':'UNLICENSED',
+      ...(row.expires_at?{LicenceExpiresAt__c:new Date(row.expires_at).toISOString()}:{})
+    }))};
+  }
   async listInstalled(tenantId:string) {
     const {rows}=await this.db.query<{api_name:string;label:string}>(`
       SELECT a.api_name,a.label FROM md_apps a
