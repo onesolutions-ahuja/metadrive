@@ -471,3 +471,31 @@ INSERT INTO md_object_record_types(tenant_id,object_api,record_type_id,developer
  FROM md_object_definitions o WHERE NOT EXISTS(
   SELECT 1 FROM md_object_record_types r WHERE r.tenant_id=o.tenant_id AND r.object_api=o.api_name
  ) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS md_security_events (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ actor_user_id uuid NOT NULL,
+ action text NOT NULL,
+ subject_user_id uuid,
+ details jsonb NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(details)='object'),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,subject_user_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_security_events_tenant_created ON md_security_events(tenant_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS md_record_history (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ record_id uuid NOT NULL,
+ object_api text NOT NULL,
+ field_api text NOT NULL,
+ changed_by uuid NOT NULL,
+ changed_at timestamptz NOT NULL DEFAULT now(),
+ old_value text,
+ new_value text,
+ FOREIGN KEY(tenant_id,record_id,object_api) REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,changed_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_record_history_lookup ON md_record_history(tenant_id,object_api,record_id,changed_at DESC);
