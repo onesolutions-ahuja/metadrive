@@ -30,7 +30,7 @@ export async function validateRbac(db:SqlExecutor,tenant:string,next:Snapshot){
   db.query<{api_name:string}>('SELECT api_name FROM md_object_definitions WHERE tenant_id=$1',[tenant]),
   db.query<{object_api:string;api_name:string}>('SELECT object_api,api_name FROM md_field_definitions WHERE tenant_id=$1',[tenant]),
   db.query<{object_api:string;record_type_id:string}>('SELECT object_api,record_type_id FROM md_object_record_types WHERE tenant_id=$1',[tenant]),
-  db.query<{api_name:string}>('SELECT api_name FROM md_tenant_app_metadata WHERE tenant_id=$1',[tenant]),
+  db.query<{api_name:string}>('SELECT COALESCE(m.api_name,a.api_name) AS api_name FROM md_apps a JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1 LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id UNION SELECT api_name FROM md_tenant_app_metadata WHERE tenant_id=$1',[tenant]),
   db.query<{id:string}>('SELECT id FROM md_users WHERE tenant_id=$1',[tenant])
  ]);
  if(users.rows.length!==next.users.length||next.users.some(u=>!users.rows.some(r=>r.id===u.id)))throw Error('Stale user list');

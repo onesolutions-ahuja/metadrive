@@ -13,7 +13,8 @@ export async function readRbac(db:SqlExecutor,tenant:string){
  const objects=rows('md_object_definitions').map(o=>o.api_name);
  const fields=rows('md_field_definitions').map(f=>f.object_api+'.'+f.api_name);
  const types=rows('md_object_record_types').map(r=>r.object_api+'.'+r.record_type_id);
- const apps=rows('md_tenant_app_metadata').map(r=>r.api_name);
+ const catalog=await db.query<{api_name:string}>('SELECT COALESCE(m.api_name,a.api_name) AS api_name FROM md_apps a JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1 LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id UNION SELECT api_name FROM md_tenant_app_metadata WHERE tenant_id=$1',[tenant]);
+ const apps=catalog.rows.map(r=>r.api_name);
  const rules=(setId:string):Rule[]=>rows('md_permission_rules').filter(r=>r.permission_set_id===setId)
   .map(r=>({resource:r.resource,action:r.action,effect:r.effect}));
  const ownSets=new Set(rows('md_profiles').map(p=>p.editor_set_id).filter(Boolean));

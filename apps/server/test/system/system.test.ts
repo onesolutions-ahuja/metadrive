@@ -440,7 +440,7 @@ test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()
    md_permission_assignments:[{user_id:'u1',permission_set_id:'ps1'}]
   };
   const table=/FROM (md_[a-z_]+)/.exec(sql)?.[1];
-  assert.ok(table);assert.ok(sql.includes('WHERE tenant_id=$1'));
+  assert.ok(table);assert.ok(sql.includes('tenant_id=$1'));
   return {rows:data[table!]??[]};
  };
  const db={query,transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query})} as unknown as SqlPersistence;
@@ -737,6 +737,7 @@ test('SQL picklist field creation persists validated options and rejects invalid
         api_name:'Status',data_type:'picklist',related_object:null,required:false,max_length:null,picklist_restricted:true
       }]};
       if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'Approved'}],rowCount:args[3]==='Approved'?1:0};
+      if(sql.includes('FROM md_object_record_types'))return {rows:[]};
       throw new Error('Unexpected SQL '+sql);
     },
     transaction:async(fn:(c:typeof client)=>Promise<unknown>)=>fn(client)

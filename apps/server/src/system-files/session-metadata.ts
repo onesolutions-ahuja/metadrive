@@ -42,7 +42,7 @@ export async function sessionMetadata(db:SqlPersistence,tenantId:string,userId:s
   for(const name of [...new Set(types.rows.map(t=>t.object_api))])objectRights.set(name,rights[cursor++]);
   const recordTypeAccess:Record<string,boolean>={};
   for(const type of types.rows)recordTypeAccess[type.object_api+'.'+type.record_type_id]=
-    type.active&&objectRights.get(type.object_api)===true&&rights[cursor++];
+    rights[cursor++]&&type.active&&objectRights.get(type.object_api)===true;
   return {user:{
     id:userId,userId,tenantId,profileId:profile.rows[0]?.profile_id??'',permissions,fieldAccess,recordTypeAccess
   }};
