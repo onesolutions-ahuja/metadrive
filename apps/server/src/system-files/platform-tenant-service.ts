@@ -53,6 +53,9 @@ export class PlatformTenantService {
   return {tenant:{tenantId:slug,name:name.trim(),description:'',status:'ACTIVE',
    userCount:1,activeUserCount:1,provisioning:{status:'READY',version:1,completedAt:''},developerAccount:null},replayed:false};
  }
+ async requirePlatformOperator(tenantId:string,userId:string){
+  if(!(await this.platformScope(tenantId,userId)))throw Error('Platform Developer permission required');
+ }
  async list(tenantId:string,userId:string,parameters:Record<string,unknown>){
   const platform=await this.platformScope(tenantId,userId);
   const page=Number(parameters.page??1),pageSize=Number(parameters.pageSize??25);
