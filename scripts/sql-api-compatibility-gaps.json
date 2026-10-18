@@ -20,8 +20,6 @@
     "/component-library/${encodeURIComponent(apiName)}/publish",
     "/component-library/${encodeURIComponent(apiName)}/rollback",
     "/connector-apps/${encodeURIComponent(appKey)}/licence",
-    "/connector-apps/capabilities",
-    "/connector-apps/catalog",
     "/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next",
     "/flows/",
     "/integration-connections/${encodeURIComponent(id)}/test",
