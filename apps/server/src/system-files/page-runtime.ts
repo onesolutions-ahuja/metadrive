@@ -1,4 +1,4 @@
-import {expandAppProperties} from './app-page-seeder.js';
+import {expandAppProperties} from '../system-support/app-page-seeder.js';
 import type { SqlPersistence } from './sql-persistence.js';
 export class PageRuntime {
   constructor(private readonly db:SqlPersistence) {}
