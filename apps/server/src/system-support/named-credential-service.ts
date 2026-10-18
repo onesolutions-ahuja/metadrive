@@ -91,6 +91,39 @@ export class NamedCredentialService {
    [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false,this.activeKeyId()]);
   return (await this.list(tenantId,userId)).find(item=>item.id===rows[0].id);
  }
+ /** Transactional, privileged re-encryption of a single tenant credential. */
+ async rotate(tenantId:string,userId:string,id:string) {
+  await this.rbac.require(tenantId,userId,'Security','manage');
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
+  const targetId=this.activeKeyId(),targetKey=this.key();
+  if(!targetKey)throw new Error('Credential encryption is not configured');
+  await this.db.transaction(async client=>{
+   const {rows}=await client.query<{
+    encryption_key_id:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null
+   }>('SELECT encryption_key_id,secret_ciphertext,configuration_ciphertext FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 FOR UPDATE',[tenantId,id]);
+   const existing=rows[0];
+   if(!existing)throw new Error('Credential not found');
+   if(existing.encryption_key_id===targetId)return;
+   const oldKey=this.keyFor(existing.encryption_key_id);
+   if(!oldKey&&(existing.secret_ciphertext||existing.configuration_ciphertext))
+    throw new Error('Original credential encryption key is unavailable');
+   const reencrypt=(encrypted:Buffer|null):Buffer|null=>{
+    if(!encrypted)return null;
+    if(!oldKey||encrypted.length<29)throw new Error('Invalid encrypted credential');
+    const decipher=createDecipheriv('aes-256-gcm',oldKey,encrypted.subarray(0,12));
+    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
+    const plain=Buffer.concat([decipher.update(encrypted.subarray(12,-16)),decipher.final()]);
+    const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',targetKey,iv);
+    return Buffer.concat([iv,cipher.update(plain),cipher.final(),cipher.getAuthTag()]);
+   };
+   const secret=reencrypt(existing.secret_ciphertext);
+   const config=reencrypt(existing.configuration_ciphertext);
+   await client.query('UPDATE md_named_credentials SET secret_ciphertext=$3,configuration_ciphertext=$4,encryption_key_id=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2',
+    [tenantId,id,secret,config,targetId]);
+  });
+  return (await this.list(tenantId,userId)).find(c=>c.id===id);
+ }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(typeof enabled!=='boolean'|| !/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
