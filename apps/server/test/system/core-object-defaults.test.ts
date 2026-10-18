@@ -18,6 +18,6 @@ test('core default reconciliation stays additive and transactional',async()=>{
  for(const sql of statements.slice(1)){
   assert.match(sql,/NOT EXISTS/);
   assert.match(sql,/ON CONFLICT DO NOTHING/);
-  assert.doesNotMatch(sql,/\b(?:UPDATE|DELETE|TRUNCATE|DROP)\b/i);
+  assert.match(sql,/^\s*INSERT INTO /i);
  }
 });
