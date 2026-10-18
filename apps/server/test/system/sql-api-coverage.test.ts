@@ -6,10 +6,15 @@ import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 test('core SQL runtime registers required builder, user and AppExchange API routes',()=>{
  const app=createSystemServer({} as SqlPersistence);
  const registered=new Set<string>();
+ const routeCount=new Map<string,number>();
  for(const layer of app._router.stack){
   if(!layer.route)continue;
   const methods=Object.keys(layer.route.methods);
-  for(const method of methods)registered.add(method.toUpperCase()+' '+layer.route.path);
+  for(const method of methods){
+   const key=method.toUpperCase()+' '+layer.route.path;
+   registered.add(key);
+   routeCount.set(key,(routeCount.get(key)??0)+1);
+  }
  }
  for(const route of [
   'GET /api/metadata/permissions','GET /api/metadata/flows','PUT /api/metadata/flows/:apiName',
@@ -37,4 +42,5 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'POST /api/auth/mfa/disable','PUT /api/auth/password-recovery/settings',
   'GET /api/metadata/flows/:apiName/versions','POST /api/flow-interviews/:id/cancel'
  ])assert.ok(registered.has(route),'Missing SQL endpoint: '+route);
+ assert.equal(routeCount.get('GET /api/metadata/dashboards/:apiName/snapshots'),1,'Dashboard snapshot route registered more than once');
 });
