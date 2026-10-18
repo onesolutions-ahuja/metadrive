@@ -3,9 +3,6 @@
   "unmatchedPaths": [
     "/apps/",
     "/auth/users/",
-    "/component-library/${encodeURIComponent(apiName)}",
-    "/component-library/${encodeURIComponent(apiName)}/publish",
-    "/component-library/${encodeURIComponent(apiName)}/rollback",
     "/connector-apps/${encodeURIComponent(appKey)}/licence",
     "/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next",
     "/flows/",
