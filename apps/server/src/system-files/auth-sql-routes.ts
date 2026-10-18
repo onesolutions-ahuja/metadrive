@@ -38,12 +38,14 @@ export function registerAuthSqlRoutes(app:Express,db:SqlPersistence,rbac:RbacEng
   await rbac.require(a.tenant_id,a.user_id,'User','edit');
   if(typeof req.body?.enabled!=='boolean')throw Error('Invalid user status');
   if(req.params.id===a.user_id&&!req.body.enabled)throw Error('Cannot disable your own session');
-  const updated=await db.query('UPDATE md_users SET enabled=$3 WHERE tenant_id=$1 AND id=$2 RETURNING id',
-   [a.tenant_id,req.params.id,req.body.enabled]);
-  if(!updated.rowCount)throw Error('User not found');
-  if(!req.body.enabled)await db.transaction(async client=>{
-   await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,req.params.id]);
-   await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,req.params.id]);
+  await db.transaction(async client=>{
+   const updated=await client.query('UPDATE md_users SET enabled=$3 WHERE tenant_id=$1 AND id=$2 RETURNING id',
+    [a.tenant_id,req.params.id,req.body.enabled]);
+   if(!updated.rowCount)throw Error('User not found');
+   if(!req.body.enabled){
+    await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,req.params.id]);
+    await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,req.params.id]);
+   }
   });
   res.json({id:req.params.id,enabled:req.body.enabled});
  }));
