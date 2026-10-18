@@ -6,7 +6,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 /** Versioned, additive SQL system migrations; existing business records are untouched. */
 export async function applySystemMigrations(db:SqlPersistence) {
  const folder=fileURLToPath(new URL('./migrations/',import.meta.url));
- const files=readdirSync(folder).filter(name=>/^\d{8}-[a-z0-9-]+\.sql$/.test(name)).sort();
+ const files=readdirSync(folder).filter(name=>/^(?:\d{3}|\d{8})-[a-z0-9-]+\.sql$/.test(name)).sort();
  await db.transaction(async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['metadrive:system:migrations']);
   await client.query(`CREATE TABLE IF NOT EXISTS md_system_migrations (

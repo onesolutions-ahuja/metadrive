@@ -1,7 +1,9 @@
+import {createHash} from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
+import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
 import { AuthenticationService } from '../system-files/authentication.js';
@@ -91,7 +93,7 @@ export function createSystemServer(db:SqlPersistence) {
     const origin=req.get('origin');
     if(origin) {
       let host:string;
-      try { const parsed=new URL(origin); if(!['https:','http:'].includes(parsed.protocol)) throw Error(); host=parsed.hostname.toLowerCase(); }
+      try { const parsed=new URL(origin); if(!['https:','http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname!=='/' || parsed.search || parsed.hash) throw Error(); if(process.env.NODE_ENV==='production' && (parsed.protocol!=='https:' || (parsed.port && parsed.port!=='443')))throw Error(); host=parsed.hostname.toLowerCase(); }
       catch { res.status(403).json({error:'Unrecognised origin'});return; }
       const authorized=await db.query('SELECT tenant_id FROM md_tenant_domains WHERE domain=$1',[host]);
       if(!authorized.rows.length) { res.status(403).json({error:'Unregistered origin'});return; }
@@ -516,6 +518,29 @@ export function createSystemServer(db:SqlPersistence) {
       canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
     });
   }));
+  // Authenticated publication of display-only metadata. No cached record data or grants.
+  app.get('/api/metadata/offline-publication',route(async(req,res)=>{
+    const actor=req.actor!;
+    await Promise.all(['ObjectDefinition','PageDefinition','ComponentDefinition'].map(
+      resource=>rbac.require(actor.tenant_id,actor.user_id,resource,'read')));
+    const [objects,publishedPages,availableApps,library]=await Promise.all([
+      definitions.list(actor.tenant_id),
+      pages.list(actor.tenant_id),
+      apps.listMetadata(actor.tenant_id),
+      components.list(actor.tenant_id)
+    ]);
+    const content={
+      pages:publishedPages,
+      apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,availableApps),
+      objects,components:library
+    };
+    const digest=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    res.setHeader('Cache-Control','no-store');
+    res.json({content,publication:{
+      revision:{version:1,publishedAt:Date.now(),digest},
+      verifiedDigest:digest,minimumVersion:1
+    }});
+  }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
@@ -548,6 +573,18 @@ export function createSystemServer(db:SqlPersistence) {
   app.put('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
+  }));
+  app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','manage');
+    const result=await namedCredentials.callout(
+      actor.tenant_id,actor.user_id,
+      {namedCredentialId:req.params.id,method:'GET',path:''},{},'credential-connectivity-test');
+    res.json({success:true,status:result.status});
+  }));
+  app.post('/api/named-credentials/:id/rotate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({credential:await namedCredentials.rotate(actor.tenant_id,actor.user_id,req.params.id)});
   }));
   app.patch('/api/named-credentials/:id/enabled',route(async(req,res)=>{
     const actor=req.actor!;
@@ -955,7 +992,8 @@ export async function startSystemServer() {
   try { await applySystemMigrations(db); await db.verifySchema();
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
-    await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+    await bootstrapFreshTenant(db);
+    await reconcileCoreObjectDefaults(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
     if(firstLogin==='rotated'){

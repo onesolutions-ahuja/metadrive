@@ -8,6 +8,22 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
+ private activeKeyId():string {
+  return process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID || 'legacy';
+ }
+ private keyFor(id:string):Buffer|null {
+  if(id==='legacy' && process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY){
+   const decoded=Buffer.from(process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY,'base64');
+   return decoded.length===32?decoded:null;
+  }
+  let parsed:unknown;
+  try {parsed=JSON.parse(process.env.METADRIVE_CREDENTIAL_KEYS??'');}catch{return null;}
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return null;
+  const raw=(parsed as Record<string,unknown>)[id];
+  if(typeof raw!=='string')return null;
+  const decoded=Buffer.from(raw,'base64');
+  return decoded.length===32?decoded:null;
+ }
  private key() {
   // The active key belongs to the application, never to a hosting provider.
   // Keep the legacy single-key setting readable for existing installations.
@@ -36,12 +52,12 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
-   header_name:string;secret_ciphertext:Buffer|null;enabled:boolean;updated_at:Date
-  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
+   header_name:string;secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean;updated_at:Date
+  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
   return rows.map(x=>({id:x.id,name:x.name,label:x.label,protocol:x.protocol,
    baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
    hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration:{},
-   keyId:'server-managed',updatedAt:x.updated_at}));
+   keyId:x.encryption_key_id,updatedAt:x.updated_at}));
  }
  async create(tenantId:string,userId:string,body:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
@@ -50,7 +66,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||!['HTTPS','SMTP'].includes(String(x.protocol))
-    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))
+    ||!['None','Bearer','Basic','API Key'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
@@ -71,9 +87,45 @@ export class NamedCredentialService {
    encryptedConfiguration=Buffer.concat([iv,cipher.update(JSON.stringify(config),'utf8'),cipher.final(),cipher.getAuthTag()]);
   }
   const {rows}=await this.db.query<{id:string}>(
-   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
-   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false]);
+   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,enabled,encryption_key_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false,this.activeKeyId()]);
   return (await this.list(tenantId,userId)).find(item=>item.id===rows[0].id);
+ }
+ /** Transactional, privileged re-encryption of a single tenant credential. */
+ async rotate(tenantId:string,userId:string,id:string) {
+  await this.rbac.require(tenantId,userId,'Security','manage');
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
+  const targetId=this.activeKeyId(),targetKey=this.key();
+  if(!targetKey)throw new Error('Credential encryption is not configured');
+  await this.db.transaction(async client=>{
+   const {rows}=await client.query<{
+    encryption_key_id:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null
+   }>('SELECT encryption_key_id,secret_ciphertext,configuration_ciphertext FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 FOR UPDATE',[tenantId,id]);
+   const existing=rows[0];
+   if(!existing)throw new Error('Credential not found');
+   if(existing.encryption_key_id===targetId)return;
+   const oldKey=this.keyFor(existing.encryption_key_id);
+   if(!oldKey&&(existing.secret_ciphertext||existing.configuration_ciphertext))
+    throw new Error('Original credential encryption key is unavailable');
+   const reencrypt=(encrypted:Buffer|null):Buffer|null=>{
+    if(!encrypted)return null;
+    if(!oldKey||encrypted.length<29)throw new Error('Invalid encrypted credential');
+    const decipher=createDecipheriv('aes-256-gcm',oldKey,encrypted.subarray(0,12));
+    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
+    const plain=Buffer.concat([decipher.update(encrypted.subarray(12,-16)),decipher.final()]);
+    const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',targetKey,iv);
+    return Buffer.concat([iv,cipher.update(plain),cipher.final(),cipher.getAuthTag()]);
+   };
+   const secret=reencrypt(existing.secret_ciphertext);
+   const config=reencrypt(existing.configuration_ciphertext);
+   await client.query('UPDATE md_named_credentials SET secret_ciphertext=$3,configuration_ciphertext=$4,encryption_key_id=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2',
+    [tenantId,id,secret,config,targetId]);
+   await client.query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,userId,'NamedCredentialKeyRotation',JSON.stringify({credentialId:id,previousKeyId:existing.encryption_key_id,newKeyId:targetId})]);
+  });
+  return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
@@ -95,11 +147,19 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!/^[0-9a-f-]{36}$/i.test(id)||!body||typeof body!=='object'||Array.isArray(body))
    throw new Error('Invalid credential');
+  const current=await this.db.query<{encryption_key_id:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null}>(
+   'SELECT encryption_key_id,secret_ciphertext,configuration_ciphertext FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+   [tenantId,id]);
+  if(!current.rows[0])throw new Error('Credential not found');
+  // A partial update cannot re-label ciphertext encrypted with an older key.
+  if(current.rows[0].encryption_key_id!==this.activeKeyId() &&
+     (current.rows[0].secret_ciphertext || current.rows[0].configuration_ciphertext))
+    throw new Error('Credential key rotation requires a complete re-encryption workflow');
   const x=body as Record<string,unknown>;
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     !['HTTPS','SMTP'].includes(String(x.protocol))||
-    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
+    !['None','Bearer','Basic','API Key'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
@@ -119,8 +179,9 @@ export class NamedCredentialService {
      auth_type=$7,header_name=$8,
      secret_ciphertext=COALESCE($9,secret_ciphertext),
      configuration_ciphertext=COALESCE($10,configuration_ciphertext),
+     encryption_key_id=CASE WHEN $9::bytea IS NOT NULL OR $10::bytea IS NOT NULL THEN $11 ELSE encryption_key_id END,
      updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig]);
+   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig,this.activeKeyId()]);
   if(!result.rowCount)throw new Error('Credential not found');
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
@@ -134,8 +195,8 @@ export class NamedCredentialService {
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
    protocol:string;base_url:string;auth_type:string;header_name:string;
-   secret_ciphertext:Buffer|null;enabled:boolean
-  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+   secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
+  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
     [tenantId,config.namedCredentialId]);
   const item=rows[0];
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
@@ -185,7 +246,7 @@ export class NamedCredentialService {
   }
   if(item.auth_type!=='None'){
    const encrypted=item.secret_ciphertext;
-   const key=this.key();
+   const key=this.keyFor(item.encryption_key_id);
    if(!encrypted||!key||encrypted.length<29)throw new Error('Named Credential cannot be decrypted');
    const decipher=createDecipheriv('aes-256-gcm',key,encrypted.subarray(0,12));
    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
