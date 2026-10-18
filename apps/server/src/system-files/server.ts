@@ -208,7 +208,8 @@ export function createSystemServer(db:SqlPersistence) {
     '/metadata/dashboard-territories':'dashboard-territories',
     '/metadata/report-folders':'report-folders',
     '/metadata/reports':'reports',
-    '/connector-providers':'connector-providers'
+    '/connector-providers':'connector-providers',
+    '/integration-connections':'integration-connections'
   };
   for(const [path,kind] of Object.entries(definitionPaths)) {
     app.get('/api'+path,route(async(req,res)=>{
