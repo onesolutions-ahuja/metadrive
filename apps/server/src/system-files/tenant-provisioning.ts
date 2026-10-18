@@ -3,6 +3,7 @@ import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
 import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
 import {seedFreshBundledComponents} from '../app-seeders/bundled-components.js';
+import {seedFreshProductImageField} from '../app-seeders/product-image-field.js';
 
 export type TenantRequest={
   slug:string;
@@ -75,6 +76,7 @@ export class TenantProvisioning {
       // Fresh tenant catalog belongs to the same SQL transaction; business records are never seeded.
       await seedFreshCoreObjects(client,tenantId);
       await seedFreshBundledComponents(client,tenantId);
+      await seedFreshProductImageField(client,tenantId);
       if(authority){
         await client.query(`INSERT INTO md_tenant_provisioning_requests
           (actor_tenant_id,actor_user_id,request_key,request_digest,target_tenant_id)
