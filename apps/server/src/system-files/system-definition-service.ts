@@ -66,4 +66,14 @@ export class SystemDefinitionService {
     if(!rows.length)throw new Error('Definition revision conflict');
     return {apiName,label,revision:rows[0].revision};
   }
+ async remove(tenantId:string,userId:string,kind:DefinitionKind,apiName:string){
+  await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'manage');
+  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid definition');
+  // Soft deletion preserves versioned customer metadata and relationships.
+  const {rowCount}=await this.db.query(
+   'UPDATE md_system_definitions SET enabled=false,revision=revision+1,updated_at=now() WHERE tenant_id=$1 AND kind=$2 AND api_name=$3 AND enabled=true',
+   [tenantId,kind,apiName]);
+  if(!rowCount)throw new Error('Definition not found');
+ }
+
 }
