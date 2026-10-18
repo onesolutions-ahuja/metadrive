@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
+import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
 
 export type TenantRequest={
   slug:string;
@@ -64,6 +65,8 @@ export class TenantProvisioning {
       await client.query(
         "INSERT INTO md_permission_rules (tenant_id,permission_set_id,resource,action,effect) VALUES ($1,$2,'*','*','allow')",
         [tenantId,permissionSet.rows[0].id]);
+      // Fresh tenant catalog belongs to the same SQL transaction; business records are never seeded.
+      await seedFreshCoreObjects(client,tenantId);
       if(authority){
         await client.query(`INSERT INTO md_tenant_provisioning_requests
           (actor_tenant_id,actor_user_id,request_key,request_digest,target_tenant_id)
