@@ -35,6 +35,17 @@ export class AppRuntime {
       await client.query('SELECT app_id FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2 FOR UPDATE',
        [tenantId,rows[0].id]);
       await seedIndependentAppMetadata(client,tenantId,seed,rows[0].id);
+      // Re-enable only metadata which this app's own uninstall previously disabled.
+      await client.query(`UPDATE md_page_definitions p SET enabled=true
+       FROM md_app_owned_definitions o
+       WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page' AND o.disabled_by_uninstall=true
+        AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name`,[tenantId,rows[0].id]);
+      await client.query(`UPDATE md_component_definitions c SET enabled=true
+       FROM md_app_owned_definitions o
+       WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='component' AND o.disabled_by_uninstall=true
+        AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name`,[tenantId,rows[0].id]);
+      await client.query(`UPDATE md_app_owned_definitions SET disabled_by_uninstall=false
+       WHERE tenant_id=$1 AND app_id=$2 AND kind IN ('page','component')`,[tenantId,rows[0].id]);
       await client.query(`INSERT INTO md_app_installed_versions(tenant_id,app_id,version)
         VALUES($1,$2,$3) ON CONFLICT(tenant_id,app_id)
         DO UPDATE SET version=EXCLUDED.version,upgraded_at=now()`,
@@ -51,6 +62,45 @@ export class AppRuntime {
        JOIN md_app_installations i ON i.app_id=dependent.id AND i.tenant_id=$1
        WHERE target.api_name=$2`,[tenantId,appApi]);
       if(blocking.length)throw new Error('Cannot uninstall app required by: '+blocking.map(x=>x.api_name).join(', '));
+      const {rows:target}=await client.query<{id:string}>(
+       'SELECT id FROM md_apps WHERE api_name=$1',[appApi]);
+      if(!target[0])throw Error('App not found');
+      const appId=target[0].id;
+      // Stop executable business logic and durable interviews without deleting records.
+      await client.query(`UPDATE md_flow_runs r SET status='failed',error_code='app_uninstalled',finished_at=now()
+       FROM md_flow_definitions f JOIN md_app_owned_definitions o
+        ON o.tenant_id=f.tenant_id AND o.kind='flow' AND o.api_name=f.api_name
+       WHERE r.tenant_id=$1 AND o.app_id=$2 AND r.flow_id=f.id
+        AND r.tenant_id=f.tenant_id AND r.status='pending'`,[tenantId,appId]);
+      await client.query(`UPDATE md_screen_interviews i SET status='cancelled',updated_at=now()
+       FROM md_flow_definitions f JOIN md_app_owned_definitions o
+        ON o.tenant_id=f.tenant_id AND o.kind='flow' AND o.api_name=f.api_name
+       WHERE i.tenant_id=$1 AND o.app_id=$2 AND i.flow_id=f.id
+        AND i.tenant_id=f.tenant_id AND i.status='waiting'`,[tenantId,appId]);
+      await client.query(`UPDATE md_flow_definitions f SET active=false
+       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2
+       AND o.kind='flow' AND o.api_name=f.api_name AND f.tenant_id=$1
+       AND f.active=true`,[tenantId,appId]);
+      await client.query(`UPDATE md_app_owned_definitions o SET disabled_by_uninstall=true
+       FROM md_page_definitions p WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page'
+       AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name AND p.enabled=true`,[tenantId,appId]);
+      await client.query(`UPDATE md_page_definitions p SET enabled=false
+       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page'
+       AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name AND o.disabled_by_uninstall=true`,
+       [tenantId,appId]);
+      await client.query(`UPDATE md_app_owned_definitions o SET disabled_by_uninstall=true
+       FROM md_component_definitions c WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='component'
+       AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name AND c.enabled=true
+       AND NOT EXISTS(SELECT 1 FROM md_page_components pc WHERE pc.tenant_id=$1
+        AND pc.component_api=c.api_name
+        AND NOT EXISTS(SELECT 1 FROM md_app_owned_definitions op
+         JOIN md_page_definitions p ON p.tenant_id=op.tenant_id AND p.api_name=op.api_name
+         WHERE op.tenant_id=$1 AND op.app_id=$2 AND op.kind='page' AND p.id=pc.page_id))`,
+       [tenantId,appId]);
+      await client.query(`UPDATE md_component_definitions c SET enabled=false
+       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2
+       AND o.kind='component' AND o.disabled_by_uninstall=true
+       AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name`,[tenantId,appId]);
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
         AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,appApi]);
       await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)',
