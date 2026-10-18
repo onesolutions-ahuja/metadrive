@@ -1,98 +1,40 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {grantRules,displayRules,policySet} from '../../src/system-support/rbac-contract.js';
+import {PermissionSetAdministration} from '../../src/system-support/permission-set-administration.js';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
-import {PermissionSetAdministration} from '../../src/system-support/permission-set-administration.js';
-
-const id='12345678-1234-4234-8234-123456789abc';
-const set={id,apiName:'Cashier',label:'Cashier',systemPermissions:['FlowDefinition:read'],
-  objectPermissions:{Invoice:{read:true,create:true,edit:false}},fieldPermissions:{'Invoice.Total':{read:true,edit:false}}};
-test('permission set writes only tenant-scoped SQL grants',async()=>{
- const sql:string[]=[];
- const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(query:string,args:unknown[])=>{
-   assert.equal(args[0],'tenant');sql.push(query);
-   if(query.includes('SELECT id,api_name FROM md_permission_sets'))return {rows:[]};
-   if(query.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
-   if(query.includes('SELECT resource,action,effect'))return {rows:[]};
-   return {rows:[]};
- }})} as unknown as SqlPersistence;
- const rbac={require:async()=>{},describe:async()=>({tenantId:'tenant'})} as unknown as RbacEngine;
- const output=await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]});
- assert.deepEqual(output,{tenantId:'tenant'});
- assert.ok(sql.some(q=>q.includes('INSERT INTO md_permission_rules')));
- assert.ok(!sql.some(q=>q.includes('UPDATE md_users')));
+const set=policySet.parse({id:'12345678-1234-4234-8234-123456789abc',apiName:'Cashier',label:'Cashier',
+ systemPermissions:['flows:run'],objectPermissions:{Invoice:{create:true}},fieldPermissions:{'Invoice.Total':{read:true}}});
+test('policy grants use the existing central executable resource contract',()=>{
+ const rules=grantRules(set);
+ assert.ok(rules.some(r=>r.resource==='Invoice'&&r.action==='create'));
+ assert.ok(rules.some(r=>r.resource==='Invoice.Total'&&r.action==='read'));
+ assert.ok(rules.some(r=>r.resource==='Flow'&&r.action==='execute'));
+ assert.ok(!rules.some(r=>r.resource.startsWith('Object:')||r.resource.startsWith('Field:')));
 });
-test('permission set rejects wildcard grants and malformed fields',async()=>{
- const db={transaction:async()=>{throw Error('SQL should not be reached')}} as unknown as SqlPersistence;
- const rbac={require:async()=>{}} as unknown as RbacEngine;
- const service=new PermissionSetAdministration(db,rbac);
- await assert.rejects(()=>service.save('tenant','admin',{permissionSets:[{...set,systemPermissions:['Security:*']}]}),/Invalid system permission|Wildcard/);
- await assert.rejects(()=>service.save('tenant','admin',{permissionSets:[{...set,fieldPermissions:{'Invoice..Total':{edit:true}}}]}),/Invalid field grant/);
+test('wildcard restrictions and restoration round-trip through displayed checkboxes',()=>{
+ const rules=grantRules({...set,systemPermissions:['*:*','security:read','security:manage'],
+  objectPermissions:{Invoice:{read:true,create:false}},fieldPermissions:{'Invoice.Total':{read:true,edit:false}}});
+ assert.ok(rules.some(r=>r.resource==='Invoice'&&r.action==='create'&&r.effect==='deny'));
+ const shown=displayRules(rules,['Invoice'],['Invoice.Total'],[],[]);
+ assert.equal(shown.objectPermissions.Invoice.create,false);
+ const restored=grantRules({...set,...shown,objectPermissions:{Invoice:{read:true,create:true}}});
+ assert.ok(!restored.some(r=>r.resource==='Invoice'&&r.action==='create'&&r.effect==='deny'));
 });
-test('permission set write checks OneEngine Security manage first',async()=>{
- const db={} as SqlPersistence;
- const rbac={require:async()=>{throw Error('Permission denied')}} as unknown as RbacEngine;
- await assert.rejects(()=>new PermissionSetAdministration(db,rbac).save('tenant','actor',{permissionSets:[]}),/Permission denied/);
+test('custom denies and scoped wildcard rules survive unrelated edits',()=>{
+ const old=[{resource:'Flow:Checkout',action:'execute',effect:'deny' as const},
+  {resource:'Custom',action:'*',effect:'allow' as const}];
+ const shown=displayRules(old,[],[],[],[]);
+ const saved=grantRules({...set,...shown});
+ assert.ok(saved.some(r=>r.resource==='Flow:Checkout'&&r.effect==='deny'));
+ assert.ok(saved.some(r=>r.resource==='Custom'&&r.action==='*'));
 });
-
-test('existing OneEngine wildcard grant remains configurable by authorised RBAC administrator',async()=>{
- const writes:string[]=[];
- const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
-   writes.push(sql);
-   if(sql.includes('SELECT id,api_name FROM md_permission_sets'))return {rows:[{id,api_name:'Cashier'}]};
-   if(sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
-   if(sql.includes('SELECT resource,action,effect'))return {rows:[{resource:'*',action:'*',effect:'allow'}]};
-   return {rows:[]};
- }})} as unknown as SqlPersistence;
- const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
- await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[{...set,systemPermissions:['*:*',...set.systemPermissions]}]});
- assert.ok(!writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
- await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]});
- assert.ok(writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
+test('invalid field keys and actions fail closed',()=>{
+ assert.throws(()=>grantRules({...set,fieldPermissions:{'Invoice..Total':{read:true}}}),/Invalid field/);
+ assert.throws(()=>grantRules({...set,objectPermissions:{Invoice:{execute:true}}}),/Invalid object/);
 });
-
-test('Cashier object, field and Flow grants use executable central RBAC resources',async()=>{
- const grants:Array<[string,string]>=[];
- const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('SELECT id,api_name FROM md_permission_sets')||sql.includes('SELECT resource,action,effect')||
-      sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
-   if(sql.includes('INSERT INTO md_permission_rules'))grants.push([String(args[2]),String(args[3])]);
-   return {rows:[]};
- }})} as unknown as SqlPersistence;
- const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
- await new PermissionSetAdministration(db,rbac).save('tenant','admin',{
-   permissionSets:[{...set,systemPermissions:['flows:run']}]
- });
- assert.ok(grants.some(([resource,action])=>resource==='Invoice'&&action==='create'));
- assert.ok(grants.some(([resource,action])=>resource==='Invoice.Total'&&action==='read'));
- assert.ok(grants.some(([resource,action])=>resource==='Flow'&&action==='execute'));
- assert.equal(grants.some(([resource])=>resource.startsWith('Object:')||resource.startsWith('Field:')),false);
-});
-
-test('OneEngine wildcard permits individual object and field restrictions through deny precedence',async()=>{
- const rules:Array<{resource:string;action:string;effect:string}>=[];
- const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('SELECT id,api_name FROM md_permission_sets'))return {rows:[{id,api_name:'OneEngine'}]};
-   if(sql.includes('SELECT resource,action,effect'))return {rows:[{resource:'*',action:'*',effect:'allow'}]};
-   if(sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
-   if(sql.includes('INSERT INTO md_permission_rules'))rules.push({resource:String(args[2]),action:String(args[3]),effect:String(args[4])});
-   return {rows:[]};
- }})} as unknown as SqlPersistence;
- const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
- const permissions={...set,apiName:'OneEngine',systemPermissions:['*:*','security:manage'],
-  objectPermissions:{Invoice:{read:true,create:false}},
-  fieldPermissions:{'Invoice.Total':{read:true,edit:false}}};
- await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[permissions]});
- assert.ok(rules.some(rule=>rule.resource==='Invoice'&&rule.action==='create'&&rule.effect==='deny'));
- assert.ok(rules.some(rule=>rule.resource==='Invoice.Total'&&rule.action==='edit'&&rule.effect==='deny'));
- assert.ok(!rules.some(rule=>rule.resource==='Invoice'&&rule.action==='read'));
-});
-
-test('central RBAC supports a Flow execute grant for named Flow instances',async()=>{
- const queries:string[]=[];
- const db={query:async(sql:string)=>{queries.push(sql);return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};}} as unknown as SqlPersistence;
- const {RbacEngine}=await import('../../src/system-files/rbac-engine.js');
- assert.equal(await new RbacEngine(db).allowed('tenant','user','Flow:ONEposCheckout','execute'),true);
- assert.match(queries[0],/q\.resource LIKE 'Flow:%'/);
- assert.match(queries[0],/THEN 'Flow'/);
+test('permission-set writes require Security manage before SQL',async()=>{
+ const rbac={require:async()=>{throw Error('Permission denied');}} as unknown as RbacEngine;
+ await assert.rejects(()=>new PermissionSetAdministration({} as SqlPersistence,rbac).save('tenant','actor',{}),/Permission denied/);
 });

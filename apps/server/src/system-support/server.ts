@@ -9,8 +9,8 @@ import {PasswordRecoverySettingsService} from './password-recovery-settings-serv
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
-import { RoleAdministration } from './role-administration.js';
-import { PermissionSetAdministration } from './permission-set-administration.js';
+import {permittedApps} from './rbac-navigation.js';
+import {RbacAdministration} from './rbac-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
@@ -67,11 +67,10 @@ async function resolveTenant(db:SqlPersistence,req:Request,tenantSlug?:unknown) 
 export function createSystemServer(db:SqlPersistence) {
   const app=express();
   app.disable('x-powered-by');
-  app.use(express.json({limit:'64kb'}));
+  app.use(express.json({limit:'2mb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
-  const roleAdministration=new RoleAdministration(db,rbac);
-  const permissionSetAdministration=new PermissionSetAdministration(db,rbac);
+  const rbacAdministration=new RbacAdministration(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -368,11 +367,11 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/permissions/sets',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json(await permissionSetAdministration.save(actor.tenant_id,actor.user_id,req.body));
+    res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.put('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json(await roleAdministration.save(actor.tenant_id,actor.user_id,req.body));
+    res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -716,8 +715,10 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
     const resolution=await apps.resolveAlias(actor.tenant_id,req.params.appId,req.params.slug);
-    if(resolution.kind==='Record List')
+    if(resolution.kind==='Record List'){
+      await rbac.require(actor.tenant_id,actor.user_id,'Tab:'+resolution.targetApiName,'read');
       await rbac.require(actor.tenant_id,actor.user_id,resolution.targetApiName,'read');
+    }
     else if(resolution.kind==='App Page')
       await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({path:resolution.path});
@@ -725,7 +726,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
-    res.json({apps:await apps.listMetadata(actor.tenant_id)});
+    res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
   }));
   app.post('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
@@ -929,7 +930,8 @@ export function createSystemServer(db:SqlPersistence) {
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
-    if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
+    if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
+    else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});

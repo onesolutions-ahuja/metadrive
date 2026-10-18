@@ -28,7 +28,8 @@ export async function sessionMetadata(db:SqlPersistence,tenantId:string,userId:s
       {resource:f.object_api+'.'+f.api_name,action:'read'},
       {resource:f.object_api+'.'+f.api_name,action:'edit'}
     ]),
-    ...[...new Set(types.rows.map(t=>t.object_api))].map(name=>({resource:name,action:'read'}))
+    ...[...new Set(types.rows.map(t=>t.object_api))].map(name=>({resource:name,action:'read'})),
+    ...types.rows.map(t=>({resource:'RecordType:'+t.object_api+'.'+t.record_type_id,action:'read'}))
   ];
   const rights=await rbac.allowedMany(tenantId,userId,checks);
   const permissions=capabilities.filter((_,i)=>rights[i]).map(c=>c.capability);
@@ -41,7 +42,7 @@ export async function sessionMetadata(db:SqlPersistence,tenantId:string,userId:s
   for(const name of [...new Set(types.rows.map(t=>t.object_api))])objectRights.set(name,rights[cursor++]);
   const recordTypeAccess:Record<string,boolean>={};
   for(const type of types.rows)recordTypeAccess[type.object_api+'.'+type.record_type_id]=
-    type.active&&objectRights.get(type.object_api)===true;
+    type.active&&objectRights.get(type.object_api)===true&&rights[cursor++];
   return {user:{
     id:userId,userId,tenantId,profileId:profile.rows[0]?.profile_id??'',permissions,fieldAccess,recordTypeAccess
   }};

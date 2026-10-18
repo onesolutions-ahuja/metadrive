@@ -552,49 +552,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     window.setTimeout(() => setToast(''), 2400);
   };
   const saveAccessControl = async (nextAccessControl: AccessControlMetadata) => {
-    const omit = (user: AccessControlMetadata['users'][number]) => {
-      const {roleId: _roleId, permissionSetIds: _permissionSetIds, ...other} = user;
-      return other;
-    };
-    const {roles: previousRoles, permissionSets: previousSets, users: previousUsers, ...previousRest} = accessControl;
-    const {roles: nextRoles, permissionSets: nextSets, users: nextUsers, ...nextRest} = nextAccessControl;
-    if (JSON.stringify(previousRest) !== JSON.stringify(nextRest) ||
-      JSON.stringify(previousUsers.map(omit)) !== JSON.stringify(nextUsers.map(omit)))
-      throw new Error('This SQL runtime cannot persist these settings yet. No changes have been saved.');
-    const rolesChanged = JSON.stringify(previousRoles) !== JSON.stringify(nextRoles) ||
-      JSON.stringify(previousUsers.map(user => user.roleId)) !== JSON.stringify(nextUsers.map(user => user.roleId));
-    const setsChanged = JSON.stringify(previousSets) !== JSON.stringify(nextSets) ||
-      JSON.stringify(previousUsers.map(user => user.permissionSetIds)) !== JSON.stringify(nextUsers.map(user => user.permissionSetIds));
-    if (rolesChanged && setsChanged)
-      throw new Error('Save role changes and permission-set changes separately to avoid partial updates.');
-    if (!rolesChanged && !setsChanged) return;
-    let saved: AccessControlMetadata;
-    if (rolesChanged) {
-      saved = await apiRequest<AccessControlMetadata>('/metadata/permissions', {
-        method: 'PUT',
-        body: JSON.stringify({
-          roles: nextRoles.map(({id, apiName, name, parentRoleId}) => ({id, apiName, name, parentRoleId: parentRoleId ?? null})),
-          users: nextUsers.map(({id, roleId}) => ({id, roleId: roleId ?? ''}))
-        })
-      });
-    } else {
-      const unsupportedFields = (set: AccessControlMetadata['permissionSets'][number]) => {
-        const {systemPermissions: _system, objectPermissions: _object, fieldPermissions: _field, ...remaining} = set;
-        return remaining;
-      };
-      if (previousSets.some(oldSet => { const updated = nextSets.find(set => set.id === oldSet.id); return !updated || JSON.stringify(unsupportedFields(oldSet)) !== JSON.stringify(unsupportedFields(updated)); }))
-        throw new Error('Permission set names and advanced settings cannot be edited in this SQL runtime.');
-      saved = await apiRequest<AccessControlMetadata>('/metadata/permissions/sets', {
-        method: 'PUT',
-        body: JSON.stringify({permissionSets: nextSets.map(({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions}) =>
-          ({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions})),
-          ...(JSON.stringify(previousUsers.map(user => user.permissionSetIds)) !== JSON.stringify(nextUsers.map(user => user.permissionSetIds))
-            ? {users: nextUsers.map(({id, permissionSetIds}) => ({id, permissionSetIds}))} : {})})
-      });
-    }
+    const saved=await apiRequest<AccessControlMetadata>('/metadata/permissions',{
+      method:'PUT',body:JSON.stringify(nextAccessControl)
+    });
     setAccessControl(saved);
     setAccessControlError('');
-    notify('OneEngine permissions saved');
+    notify('Permissions and assignments saved');
   };
   const saveConnectorProvider = async (provider: ConnectorProviderMetadata) => {
     const result = await apiRequest<{ provider: ConnectorProviderMetadata }>(
