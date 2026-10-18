@@ -42,3 +42,9 @@ jobs:
       - run: node apps/server/scripts/dynamic-http-smoke.mjs
         env:
           METADRIVE_SQL_TEST_DATABASE_URL: postgresql://postgres:test-only-password@localhost:5432/metadrive_test
+      - name: Install Chromium browser for SQL Builder E2E
+        run: npm install --no-save --package-lock=false playwright && npx playwright install --with-deps chromium
+      - name: Real-browser Flow Builder and Screen Flow SQL smoke
+        run: node apps/server/scripts/builder-browser-smoke.mjs
+        env:
+          METADRIVE_SQL_TEST_DATABASE_URL: postgresql://postgres:test-only-password@localhost:5432/metadrive_test
