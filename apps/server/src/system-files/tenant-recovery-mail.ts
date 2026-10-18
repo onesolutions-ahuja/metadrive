@@ -37,7 +37,7 @@ export async function sendRecoveryCode(db:SqlPersistence,tenantId:string,to:stri
  if(!email.test(to)||!/^[0-9]{6}$/.test(code))throw Error('Invalid password recovery delivery');
  const s=await recoverySettings(db,tenantId);
  let sender=process.env.METADRIVE_RESET_FROM_EMAIL??'';
- let transport:nodemailer.Transporter;
+ let transport:ReturnType<typeof nodemailer.createTransport>;
  if(s.smtp_credential_id){
   if(!s.enabled||!s.base_url||!s.from_email)throw Error('Tenant SMTP credential unavailable');
   const url=new URL(s.base_url);
