@@ -695,6 +695,11 @@ export function createSystemServer(db:SqlPersistence) {
       const result=await client.query<{id:string}>(
         'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled) VALUES($1,$2,$3,$4,$5) RETURNING id',
         [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true]);
+      const profile=await client.query<{id:string}>(
+        "SELECT id FROM md_profiles WHERE tenant_id=$1 AND api_name='Default'",[actor.tenant_id]);
+      if(profile.rows[0])await client.query(
+        'INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
+        [actor.tenant_id,result.rows[0].id,profile.rows[0].id]);
       if(values.role){
         const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
         if(!role.rowCount)throw new Error('Invalid role');
