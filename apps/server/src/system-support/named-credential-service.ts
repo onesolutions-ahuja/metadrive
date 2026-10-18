@@ -1,3 +1,4 @@
+import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import nodemailer from 'nodemailer';
 import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
@@ -99,7 +100,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||!['HTTPS','SMTP'].includes(String(x.protocol))
-    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials'].includes(String(x.authType))
+    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
@@ -192,7 +193,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     !['HTTPS','SMTP'].includes(String(x.protocol))||
-    !['None','Bearer','Basic','API Key','OAuth Client Credentials'].includes(String(x.authType))||
+    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
@@ -313,7 +314,10 @@ export class NamedCredentialService {
    }
   }
   let oauthClientSecret:string|undefined;
-  if(item.auth_type!=='None'){
+  if(item.auth_type==='OAuth Authorization Code'){
+   header.Authorization='Bearer '+await new OAuthAuthorizationService(this.db,this.rbac,this)
+    .bearerToken(tenantId,String(config.namedCredentialId));
+  }else if(item.auth_type!=='None'){
    const encrypted=item.secret_ciphertext;
    const key=this.keyFor(item.encryption_key_id);
    if(!encrypted||!key||encrypted.length<29)throw new Error('Named Credential cannot be decrypted');
