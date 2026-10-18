@@ -16,6 +16,7 @@ export function registerBuilderSqlRoutes(app:Express,db:SqlPersistence,rbac:Rbac
   if(kind==='flow'&&(!Array.isArray(body.elements)||!Array.isArray(body.connectors)||!Array.isArray(body.resources)
     ||!['Draft','Active'].includes(body.status)))throw Error('Invalid Flow definition');
   if(kind==='page'&&(!Array.isArray(body.components)||!['Draft','Active'].includes(body.status)))throw Error('Invalid Page definition');
+ if(kind==='page'&&body.components.some((x:unknown)=>!x||typeof x!=='object'||typeof (x as {id?:unknown}).id!=='string'))throw Error('Invalid Page components');
   // Store only drafts; publishing requires graph/renderer verification and cannot be inferred from a UI flag.
   if(body.status!=='Draft')throw Error('Publishing requires validated runtime activation');
   const {rows}=await db.query<{revision:number}>(`
