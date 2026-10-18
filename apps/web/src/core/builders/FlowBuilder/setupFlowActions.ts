@@ -469,8 +469,11 @@ export function createSetupFlowActions(ctx: any) {
       activeVersion: null,
       triggerObject,
       startConfig,
-      elements: [{ id: 1, type: 'Start', label: `${flowType} Start`, config: { ...startConfig, ...(triggerObject ? { object: triggerObject } : {}) } }],
-      connectors: [],
+      elements: [
+        { id: 1, type: 'Start', label: `${flowType} Start`, config: { ...startConfig, ...(triggerObject ? { object: triggerObject } : {}) } },
+        { id: 2, type: 'End', label: 'End', config: {} }
+      ],
+      connectors: [{ id: 'connector-start-end', from: 1, to: 2, label: '', kind: 'normal' as const }],
       resources: [],
       versions: []
     };
