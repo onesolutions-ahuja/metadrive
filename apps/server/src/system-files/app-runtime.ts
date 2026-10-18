@@ -18,6 +18,7 @@ export class AppRuntime {
       await seedIndependentAppMetadata(client,tenantId,seed);
     });
   }
+  async update(tenantId:string,appApi:string) { await this.install(tenantId,appApi); }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
