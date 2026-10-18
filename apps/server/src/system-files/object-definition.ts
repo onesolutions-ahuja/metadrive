@@ -301,6 +301,37 @@ export class ObjectDefinitionService {
       normalized.push({id:layout.id,label:layout.label,sections,
         actions:layout.actions as string[],relatedLists:layout.relatedLists as string[],customLinks});
     }
+
+    type RecordTypeInput={id:string;label:string;developerName:string;description:string;
+      active:boolean;isDefault:boolean;picklistValues:Record<string,string[]>};
+    let recordTypes:RecordTypeInput[]|undefined;
+    if(input.recordTypes!==undefined){
+      if(!Array.isArray(input.recordTypes)||input.recordTypes.length===0||input.recordTypes.length>100)
+        throw new Error('Invalid record types');
+      recordTypes=[];const ids=new Set<string>();let defaults=0;
+      for(const raw of input.recordTypes){
+        if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid record type');
+        const t=raw as Record<string,unknown>;
+        if(!string(t.id)||ids.has(t.id)||!string(t.label,200)
+          ||!string(t.developerName)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(t.developerName)
+          ||typeof t.active!=='boolean'||typeof t.isDefault!=='boolean'
+          ||(t.description!==undefined&&typeof t.description!=='string'))
+          throw new Error('Invalid record type');
+        ids.add(t.id);if(t.isDefault)defaults++;
+        const options:Record<string,string[]>={};
+        const rawOptions=t.picklistValues??{};
+        if(!rawOptions||typeof rawOptions!=='object'||Array.isArray(rawOptions))throw new Error('Invalid record type values');
+        for(const [field,values] of Object.entries(rawOptions)){
+          if(!fieldNames.has(field)||!list(values,200))throw new Error('Invalid record type field values');
+          options[field]=values;
+        }
+        recordTypes.push({id:t.id,label:t.label,developerName:t.developerName,
+          description:typeof t.description==='string'?t.description:'',active:t.active,
+          isDefault:t.isDefault,picklistValues:options});
+      }
+      if(defaults!==1||!recordTypes.some(t=>t.active&&t.isDefault))throw new Error('Invalid default record type');
+    }
+
     const assigned:AssignmentInput[]=[];const assignmentKeys=new Set<string>();
     for(const raw of input.pageLayoutAssignments){
       if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid layout assignment');
@@ -355,6 +386,27 @@ export class ObjectDefinitionService {
       for(const assignment of assigned)await client.query(`INSERT INTO md_object_page_layout_assignments
         (tenant_id,object_api,profile_id,record_type_id,layout_id) VALUES ($1,$2,$3,$4,$5)`,
         [tenantId,objectApi,assignment.profileId,assignment.recordTypeId,assignment.pageLayoutId]);
+
+      if(recordTypes){
+        const used=await client.query<{record_type_id:string|null}>(`SELECT DISTINCT record_type_id
+          FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND record_type_id IS NOT NULL`,
+          [tenantId,objectApi]);
+        for(const row of used.rows)
+          if(row.record_type_id&&!recordTypes.some(t=>t.id===row.record_type_id))
+            throw new Error('Record type has stored records; removal requires reviewed migration');
+        await client.query('DELETE FROM md_object_record_types WHERE tenant_id=$1 AND object_api=$2',
+          [tenantId,objectApi]);
+        for(const [index,t] of recordTypes.entries()){
+          await client.query(`INSERT INTO md_object_record_types
+            (tenant_id,object_api,record_type_id,developer_name,label,description,active,is_default,sort_order)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [tenantId,objectApi,t.id,t.developerName,t.label,t.description,t.active,t.isDefault,index]);
+          for(const [field,values] of Object.entries(t.picklistValues))
+            for(const [order,value] of values.entries())await client.query(`INSERT INTO md_object_record_type_values
+              (tenant_id,object_api,record_type_id,field_api,field_value,sort_order)
+              VALUES($1,$2,$3,$4,$5,$6)`,[tenantId,objectApi,t.id,field,value,order]);
+        }
+      }
       await client.query(`UPDATE md_object_layout_versions SET revision=revision+1,updated_at=now()
         WHERE tenant_id=$1 AND object_api=$2`,[tenantId,objectApi]);
     });
