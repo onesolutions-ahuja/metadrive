@@ -12,7 +12,6 @@
     "/component-library/${encodeURIComponent(apiName)}",
     "/component-library/${encodeURIComponent(apiName)}/publish",
     "/component-library/${encodeURIComponent(apiName)}/rollback",
-    "/connector-apps/${encodeURIComponent(appKey)}/licence",
     "/integration-connections/${encodeURIComponent(id)}/test",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
