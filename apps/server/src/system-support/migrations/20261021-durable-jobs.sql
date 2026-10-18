@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS md_durable_jobs (
  app_api_name text,
  job_type text NOT NULL CHECK (length(job_type) BETWEEN 1 AND 128),
  resource_id text,
+ resource_version integer CHECK(resource_version>0),
  actor_user_id uuid,
  status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','leased','completed','failed','cancelled')),
  scheduled_at timestamptz NOT NULL DEFAULT now(),
