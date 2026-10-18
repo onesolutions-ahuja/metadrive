@@ -145,6 +145,10 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
   }));
+  app.get('/api/metadata/permissions',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await rbac.describe(actor.tenant_id,actor.user_id));
+  }));
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
