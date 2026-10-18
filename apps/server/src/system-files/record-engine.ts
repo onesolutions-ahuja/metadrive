@@ -45,9 +45,9 @@ export class RecordEngine {
         case 'picklist':
           if(typeof value!=='string')throw new Error('Invalid text field: '+key);
           if(field.max_length && value.length>field.max_length)throw new Error('Invalid text length: '+key);
-          if(field.data_type==='email'&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value))
+          if(field.data_type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
             throw new Error('Invalid email field: '+key);
-          if(field.data_type==='url'&& !/^https?:\\/\\/[^\\s]+$/i.test(value))
+          if(field.data_type==='url'&& !/^https?:\/\/[^\s]+$/i.test(value))
             throw new Error('Invalid URL field: '+key);
           if(field.data_type==='picklist'&&field.picklist_restricted!==false){
             const allowed=await (client??this.db).query(
