@@ -14,7 +14,8 @@
     "check": "node scripts/verify-project-references.mjs && npm run test:unit && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
-    "audit:architecture": "node scripts/verify-project-references.mjs"
+    "audit:architecture": "node scripts/verify-project-references.mjs",
+    "audit:api-parity": "node scripts/verify-api-parity.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
