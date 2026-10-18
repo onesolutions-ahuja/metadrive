@@ -10,6 +10,7 @@ import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {NamedCredentialActions} from './named-credential-actions.js';
+import {IntegrationConnectionRuntime} from './integration-connection-runtime.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
@@ -77,6 +78,7 @@ export function createSystemServer(db:SqlPersistence) {
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const credentialActions=new NamedCredentialActions(db,rbac);
+  const integrationConnections=new IntegrationConnectionRuntime(db,rbac,credentialActions);
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
@@ -522,6 +524,10 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  app.post('/api/integration-connections/:id/test',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await integrationConnections.test(actor.tenant_id,actor.user_id,req.params.id));
   }));
   app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
     const actor=req.actor!;
