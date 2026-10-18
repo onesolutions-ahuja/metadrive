@@ -8,6 +8,7 @@ import { RbacEngine } from '../system-files/rbac-engine.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
@@ -62,6 +63,7 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
+  const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
@@ -722,6 +724,14 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/records/:objectApi/:id/chatter/:postId/comments',route(async(req,res)=>{
     res.status(201).json(await collaboration.addComment(req.actor!,req.params.objectApi,req.params.id,req.params.postId,req.body?.body));
+  }));
+  app.post('/api/reports/preview',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await reportRuntime.run(actor,req.body?.report,req.body??{}));
+  }));
+  app.post('/api/reports/:apiName/run',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
