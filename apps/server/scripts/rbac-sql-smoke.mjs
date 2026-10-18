@@ -141,6 +141,10 @@ try{
  await assert.rejects(()=>save(s=>{
   s.permissionSetGroups.find(g=>g.id===group).permissionSetIds.push(one);
  },limited),/Permission denied/);
+ await assert.rejects(()=>save(s=>{
+  s.permissionSetGroups.find(g=>g.id===group).mutedSystemPermissions=[];
+ },limited),/Permission denied/);
+
 
  await assert.rejects(()=>save(s=>{s.roles.find(r=>r.id===role).parentRoleId=limitedRole;},limited),/Cannot escalate own/);
  assert.equal((await rbac.describe(t,supervisor)).roles.find(r=>r.id===role).parentRoleId,null);
