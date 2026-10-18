@@ -377,7 +377,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   registerSqlCompatibilityRoutes(app,db,rbac,definitions);
   registerBuilderSqlRoutes(app,db,rbac);
-  registerAuthSqlRoutes(app,db);
+  registerAuthSqlRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
