@@ -395,6 +395,17 @@ export function createSystemServer(db:SqlPersistence) {
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
     res.status(201).json({id});
   }));
+  app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id)});
+  }));
+  app.put('/api/records/:objectApi/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))
+      throw new Error('Invalid record values');
+    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body);
+    res.json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id)});
+  }));
   app.patch('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
