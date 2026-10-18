@@ -9,7 +9,7 @@ const api=/^[A-Za-z][A-Za-z0-9_]*$/;
 const email=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type Config={label:string;frequency:'Daily'|'Weekly';localTime:string;timeZone:string;dayOfWeek:number|null;
  recipientUserIds:string[];namedCredentialId:string;fromEmail:string;active:boolean;saveSnapshots:boolean};
-type SubRow={id:string;dashboard_api:string;created_by:string;configuration:Config;
+type SubRow={id:string;dashboard_api:string;created_by:string;active:boolean;configuration:Config;
  next_run_at:Date;last_run_at:Date|null;last_run_status:string;last_run_error:string|null;created_at:Date;updated_at:Date};
 const shape=(r:SubRow)=>({...r.configuration,id:r.id,dashboardApiName:r.dashboard_api,
  nextRunAt:r.next_run_at,lastRunAt:r.last_run_at,lastRunStatus:r.last_run_status,
