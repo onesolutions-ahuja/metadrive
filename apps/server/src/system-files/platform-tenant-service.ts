@@ -29,10 +29,9 @@ export class PlatformTenantService {
   const status=parameters.status??'ALL';
   if(!['ALL','ACTIVE','SUSPENDED','ARCHIVED'].includes(String(status)))
    throw new Error('Invalid status');
-  const filters=[platform?null:tenantId,q,status].filter(x=>x!==null);
   const conditions=[platform?'true':'t.id=$1::uuid'];
   const n=platform?0:1;
-  if(q)conditions.push(`(t.slug ILIKE $\{n+1} OR t.name ILIKE $\{n+1})`);
+  if(q)conditions.push(`(t.slug ILIKE ${n+1} OR t.name ILIKE ${n+1})`);
   if(status!=='ALL' && status!=='ACTIVE')conditions.push('false');
   const values:unknown[]=platform?[]:[tenantId];
   if(q)values.push('%'+q.replace(/[%_\\]/g,'\\$&')+'%');
@@ -45,7 +44,7 @@ export class PlatformTenantService {
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id) AS users,
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled) AS active_users
     FROM md_tenants t WHERE ${where}
-    ORDER BY t.slug LIMIT $\{values.length+1} OFFSET $\{values.length+2}
+    ORDER BY t.slug LIMIT ${values.length+1} OFFSET ${values.length+2}
   `,[...values,pageSize,(page-1)*pageSize]);
   const {rows:counts}=await this.db.query<{total:string}>(
    `SELECT count(*)::text AS total FROM md_tenants t WHERE ${where}`,values);
