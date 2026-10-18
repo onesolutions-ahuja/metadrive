@@ -213,6 +213,20 @@ export function createSystemServer(db:SqlPersistence) {
     const credential=await namedCredentials.create(actor.tenant_id,actor.user_id,req.body);
     res.status(201).json({credential});
   }));
+  app.put('/api/named-credentials/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
+  }));
+  app.patch('/api/named-credentials/:id/enabled',route(async(req,res)=>{
+    const actor=req.actor!;
+    await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
+    res.json({enabled:req.body.enabled});
+  }));
+  app.delete('/api/named-credentials/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await namedCredentials.remove(actor.tenant_id,actor.user_id,req.params.id);
+    res.status(204).end();
+  }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
   const definitionPaths:Record<string,DefinitionKind>={
     '/metadata/platform-events':'platform-events',
