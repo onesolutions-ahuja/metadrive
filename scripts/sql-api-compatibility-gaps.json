@@ -36,8 +36,6 @@
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
     "/named-credentials/${encodeURIComponent(id)}/rotate",
     "/named-credentials/${encodeURIComponent(id)}/test",
-    "/notifications",
-    "/notifications/${encodeURIComponent(notification.id)}/read",
     "/platform/recovery/cases/",
     "/platform/tenants/",
     "/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}/owner",
