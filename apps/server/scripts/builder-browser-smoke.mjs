@@ -91,9 +91,37 @@ try{
  },{token:tokens.accessToken});
  assert.deepEqual(status,{saved:200,started:200,completed:200,archived:204},
   'Real browser builder save/Screen Flow API check: '+JSON.stringify(status));
+ const pageStatus=await page.evaluate(async ({token})=>{
+  const payload={apiName:'BrowserPage',label:'Browser Page',targetObject:'',
+   pageType:'Home Page',layoutMode:'free-canvas',canvasWidth:1280,canvasHeight:900,
+   status:'Draft',devices:['Desktop'],components:[],activationAssignments:[]};
+  const http=async(path,method='GET',body)=>{
+   const result=await fetch('/api'+path,{
+    method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    ...(body?{body:JSON.stringify(body)}:{})
+   });
+   return {status:result.status,content:result.status===204?null:await result.json().catch(()=>null)};
+  };
+  const saved=await http('/metadata/pages/BrowserPage','PUT',payload);
+  const loaded=await http('/metadata/pages/BrowserPage');
+  const deleted=await http('/metadata/pages/BrowserPage','DELETE');
+  return {save:saved.status,load:loaded.status,delete:deleted.status,
+   label:loaded.content?.page?.label??loaded.content?.label};
+ },{token:tokens.accessToken});
+ assert.equal(pageStatus.save,200,'Page Builder SQL save failed: '+JSON.stringify(pageStatus));
+ assert.equal(pageStatus.load,200,'Page Builder SQL load failed: '+JSON.stringify(pageStatus));
+ assert.equal(pageStatus.delete,204,'Page Builder SQL archive failed: '+JSON.stringify(pageStatus));
+ await page.goto(origin+'/une/setup/page-builder',{waitUntil:'domcontentloaded'});
+ await page.waitForTimeout(1100);
+ const {mkdir}=await import('node:fs/promises');
+ await mkdir(new URL('../artifacts/',import.meta.url),{recursive:true});
+ await page.screenshot({path:new URL('../artifacts/page-builder.png',import.meta.url).pathname});
+ await page.goto(origin+'/une/setup/flow-builder',{waitUntil:'domcontentloaded'});
+ await page.waitForTimeout(800);
+ await page.screenshot({path:new URL('../artifacts/flow-builder.png',import.meta.url).pathname});
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
- console.info('Browser UI loaded and SQL Flow save, start, screen submit, completion, archive passed');
+ console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
 }finally{
  if(browser)await browser.close();
  if(frontend){frontend.kill('SIGTERM');}
