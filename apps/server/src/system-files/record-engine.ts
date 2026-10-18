@@ -119,6 +119,16 @@ export class RecordEngine {
         [tenantId,objectApi,id]);
       if(!found.rowCount)throw new Error('Record not found');
       await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+      for(const [field,value] of prepared) {
+        const previous=await client.query<{value_text:string|null;reference_record_id:string|null}>(
+          'SELECT value_text,reference_record_id FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
+          [tenantId,id,field]);
+        const before=previous.rows[0]?.reference_record_id??previous.rows[0]?.value_text??null;
+        const after=value.reference_record_id??value.value_text;
+        if(before!==after)await client.query(
+          'INSERT INTO md_record_history(tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value) VALUES($1,$2,$3,$4,$5,$6,$7)',
+          [tenantId,id,objectApi,field,userId,before,after]);
+      }
       for(const [field,value] of prepared)await client.query(`
         INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id)
         VALUES ($1,$2,$3,$4,$5,$6)
@@ -126,6 +136,26 @@ export class RecordEngine {
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id
       `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);
     });
+  }
+  async history(tenantId:string,userId:string,objectApi:string,id:string){
+    if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,'Record:'+id,'read');
+    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+    if(!found.rowCount)throw new Error('Record not found');
+    const {rows}=await this.db.query<{id:string;field_api:string;changed_by:string;changed_at:Date;old_value:string|null;new_value:string|null}>(
+      'SELECT id,field_api,changed_by,changed_at,old_value,new_value FROM md_record_history WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 ORDER BY changed_at DESC,id DESC LIMIT 100',
+      [tenantId,objectApi,id]);
+    const readable=new Map<string,boolean>();
+    const history=[];
+    for(const row of rows){
+      if(!readable.has(row.field_api))readable.set(row.field_api,
+        await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
+      if(!readable.get(row.field_api))continue;
+      history.push({id:row.id,fieldApiName:row.field_api,changedBy:row.changed_by,
+        changedAt:new Date(row.changed_at).toISOString(),oldValue:row.old_value,newValue:row.new_value});
+    }
+    return {history};
   }
   /** Transfer record ownership without bypassing Object/Record permissions or tenant boundaries. */
   async transferOwner(tenantId:string,userId:string,objectApi:string,id:string,ownerId:string,ifUnmodifiedSince?:string){
