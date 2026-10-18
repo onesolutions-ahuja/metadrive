@@ -1104,6 +1104,19 @@ function RecordWorkspace({
   };
   if (!object && !metadataLoaded) return <div className="records-loading">Loading object metadata…</div>;
   if (!object) return <div className="records-page"><div className="records-message" role="alert">Object “{route.objectApiName}” was not found.</div></div>;
+  if (formOpen) return <main className="records-page record-editor-page">
+    <div className="record-detail-top">
+      <button type="button" className="text-action" disabled={saving} onClick={() => setFormOpen(false)}>
+        <ArrowLeft size={14} />Back to {editingId ? object.label : object.pluralLabel}
+      </button>
+    </div>
+    <RecordFormDialog embedded object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
+        fieldAccess={fieldAccess} userRoles={userRoles}
+        formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
+        actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
+        onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
+        onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />
+  </main>;
   if (route.kind === 'record-detail') {
     if (!record) return <div className="records-page">
       {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
@@ -1432,12 +1445,7 @@ function RecordWorkspace({
         {relatedError && <div className="records-message surface" role="alert">{relatedError}</div>}
         {lookupError && <div className="records-message surface" role="alert">Some related record names could not be resolved: {lookupError}</div>}
       </>}
-      {formOpen && <RecordFormDialog object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
-        fieldAccess={fieldAccess} userRoles={userRoles}
-        formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
-        actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-        onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
-        onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
+      
     </div>;
   }
   const readableFields = object.fields.filter((field) => fieldAccess[`${object.apiName}.${field.apiName}`]?.read);
@@ -1640,12 +1648,7 @@ function RecordWorkspace({
         </form>
       </section>
     </div>}
-    {formOpen && <RecordFormDialog object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
-      fieldAccess={fieldAccess} userRoles={userRoles}
-      formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
-      actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-      onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
-      onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
+    
   </div>;
 }
 return { RecordWorkspace, RecordFormDialog };
