@@ -10,7 +10,7 @@ const kinds=['platform-events','email-alerts','approval-processes','dashboards',
 for(const name of kinds)for(const method of ['GET','POST','PUT','DELETE'])routes.push({method,path:(name.startsWith('connector')||name.startsWith('integration')?'':'/metadata')+'/'+name+(method==='PUT'||method==='DELETE'?'/:apiName':'')});
 const calls=[];
 for(const file of files){const txt=fs.readFileSync(file,'utf8');for(const m of txt.matchAll(/(?:apiRequest|request)\s*(?:<[^\n]*?>)?\s*\(\s*(['"`])(\/[^'"`\n]+)\1/g))calls.push({file,path:m[2].split('?')[0]});}
-const matches=(route,target)=>{const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
+const matches=(route,target)=>{if(target.endsWith('/')&&route.startsWith(target)){const tail=route.slice(target.length).split('/');return tail.length>0&&tail.every(p=>p.startsWith(':'));}const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
 const missed=[...new Map(calls.filter(x=>!routes.some(r=>matches(r.path,x.path))).map(x=>[x.path,x])).values()].sort((a,b)=>a.path.localeCompare(b.path));
 const baseline=JSON.parse(fs.readFileSync('scripts/sql-api-compatibility-gaps.json','utf8')).unmatchedPaths;
 const unexpected=missed.filter(x=>!baseline.includes(x.path));
