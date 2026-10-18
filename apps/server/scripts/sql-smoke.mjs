@@ -130,6 +130,67 @@ try{
  assert.equal((await flows.saveEditor(tenantId,userId,'SimpleAuditFlow',simple)).status,'Active');
  assert.equal((await flows.execute(tenantId,'SimpleAuditFlow',userId)).status,'completed');
 
+
+ // Durable SQL Screen Flow with two screens, backwards navigation, a real shared
+ // Create Records operation, and an injected HTTP transport (no network in CI).
+ let calloutCount=0;
+ const supportedFlows=new FlowRuntime(db,new RbacEngine(db),records,
+  async (_tenant,_user,config,variables)=>{
+   calloutCount++;
+   assert.equal(config.namedCredentialId,'mock-ci');
+   assert.equal(variables.Amount,15);
+   return {status:200,body:'approved'};
+  });
+ const checkout={apiName:'AuditScreenCheckout',label:'Audit Screen Checkout',
+  flowType:'Screen Flow',status:'Active',resources:[
+   {name:'RecordId',availableForOutput:true},
+   {name:'PaymentStatus',availableForOutput:true}
+  ],startConfig:{},tests:[],versions:[],
+  elements:[
+   {id:1,type:'Start',label:'Start',config:{}},
+   {id:2,type:'Screen',label:'Amount',config:{
+    fields:[{apiName:'Amount',type:'Number',label:'Amount',required:true}]}},
+   {id:3,type:'Screen',label:'Confirm',config:{
+    fields:[{apiName:'Confirmed',type:'Checkbox',label:'Confirm',required:true}]}},
+   {id:4,type:'HTTP Callout',label:'Collect payment',config:{
+    namedCredentialId:'mock-ci',method:'POST',path:'pay',statusVariable:'PaymentStatus',
+    onError:'FAULT_PATH'}},
+   {id:5,type:'Create Records',label:'Create invoice',config:{
+    object:'AuditItem__c',fieldValues:[{field:'Name',value:'{!Amount}'}],
+    resultVariable:'RecordId'}},
+   {id:6,type:'End',label:'End',config:{}},
+   {id:7,type:'End',label:'Payment failure',config:{}}
+  ],connectors:[
+   {id:'1',from:1,to:2,kind:'normal',label:'default'},
+   {id:'2',from:2,to:3,kind:'normal',label:'Next'},
+   {id:'3',from:3,to:4,kind:'normal',label:'Next'},
+   {id:'4',from:4,to:5,kind:'normal',label:'default'},
+   {id:'5',from:4,to:7,kind:'fault',label:'Fault'},
+   {id:'6',from:5,to:6,kind:'normal',label:'default'}
+  ]};
+ assert.equal((await supportedFlows.saveEditor(tenantId,userId,checkout.apiName,checkout)).status,'Active');
+ const first=await supportedFlows.execute(tenantId,checkout.apiName,userId);
+ assert.equal(first.screen.id,2);
+ await assert.rejects(
+  ()=>supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{values:{Amount:null}}),
+  /Required Screen field/);
+ const second=await supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{values:{Amount:15}});
+ assert.equal(second.screen.id,3);
+ assert.equal(second.canGoBack,true);
+ const back=await supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{action:'back'});
+ assert.equal(back.screen.id,2);
+ const confirmation=await supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{values:{Amount:15}});
+ assert.equal(confirmation.screen.id,3);
+ const complete=await supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{values:{Confirmed:true}});
+ assert.equal(complete.completed,true);
+ assert.equal(complete.outputs.PaymentStatus,200);
+ assert.equal(calloutCount,1);
+ assert.equal((await records.get(tenantId,userId,'AuditItem__c',complete.outputs.RecordId)).Name,'15');
+ await assert.rejects(()=>supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{}),/not found/);
+ const debug=await supportedFlows.debugGraph(tenantId,userId,checkout.apiName,{});
+ assert.equal(debug.status,'waiting');
+ assert.equal(calloutCount,1);
+
  const recordId=await records.create(tenantId,userId,'AuditItem__c',{Name:'First',RecordTypeId:'master'});
  const initial=await records.get(tenantId,userId,'AuditItem__c',recordId);
  assert.equal(initial.Name,'First');
