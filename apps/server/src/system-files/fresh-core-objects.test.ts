@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {FRESH_CORE_OBJECTS,seedFreshCoreObjects} from './fresh-core-objects.js';
+import {FRESH_STANDARD_FIELDS} from './fresh-standard-fields.js';
 
 test('fresh core contains precisely the approved 12 standard and 10 system objects',()=>{
  assert.equal(FRESH_CORE_OBJECTS.length,22);
@@ -25,6 +26,19 @@ test('fresh core seeds definitions only and reruns without overwriting customisa
  }};
  await seedFreshCoreObjects(client as never,'new-tenant');
  assert.equal(statements.filter(sql=>sql.includes('md_object_definitions')).length,22);
- assert.equal(statements.filter(sql=>sql.includes('md_field_definitions')).length,FRESH_CORE_OBJECTS.reduce((sum,o)=>sum+o.fields.length,0));
+ assert.equal(statements.filter(sql=>sql.includes('md_field_definitions')).length,FRESH_CORE_OBJECTS.reduce((sum,o)=>sum+o.fields.length+(o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
  assert.equal(statements.some(sql=>/INSERT INTO md_records|INSERT INTO md_record_values/.test(sql)),false);
+});
+
+test('standard fields are valid, related to the approved objects and unique',()=>{
+ const objects=new Set<string>(FRESH_CORE_OBJECTS.map(o=>o.apiName));
+ for(const obj of FRESH_CORE_OBJECTS.filter(o=>o.category==='standard')){
+  const names=new Set(obj.fields.map(f=>f.apiName));
+  for(const field of FRESH_STANDARD_FIELDS[obj.apiName]){
+   assert.ok(!names.has(field.apiName),`Duplicate field ${obj.apiName}.${field.apiName}`);
+   names.add(field.apiName);
+   if('relatedObject' in field)assert.ok(objects.has(field.relatedObject));
+   if('maxLength' in field)assert.ok(field.maxLength>0);
+  }
+ }
 });
