@@ -89,7 +89,9 @@ export class FlowRuntime {
       const nodes=def.nodes??def.elements;
       if(!Array.isArray(nodes)||nodes.length===0)errors.push('Flow requires nodes');
       else {
+        const supported=new Set(['Start','Assignment','Decision','CreateRecord','End']);
         const known=new Set<string>();
+        let starts=0,ends=0;
         for(const node of nodes){
           if(!node||typeof node!=='object'||Array.isArray(node)){
             errors.push('Invalid Flow node');continue;
@@ -99,9 +101,14 @@ export class FlowRuntime {
           if(typeof name!=='string'||!namePattern.test(name)||known.has(name))
             errors.push('Flow node names must be unique and valid');
           else known.add(name);
-          if(typeof entry.type!=='string'&&typeof entry.nodeType!=='string')
-            errors.push('Flow node type is required');
+          const nodeType=entry.type??entry.nodeType;
+          if(typeof nodeType!=='string'||!supported.has(nodeType))
+            errors.push('Unsupported Flow node type: '+String(nodeType));
+          if(nodeType==='Start')starts++;
+          if(nodeType==='End')ends++;
         }
+        if(starts!==1)errors.push('Exactly one Start node is required');
+        if(ends<1)errors.push('At least one End node is required');
       }
     }
     return {valid:errors.length===0,errors,warnings};
