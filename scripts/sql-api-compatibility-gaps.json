@@ -3,7 +3,6 @@
   "unmatchedPaths": [
     "/apps/",
     "/auth/users/",
-    "/connector-apps/${encodeURIComponent(appKey)}/licence",
     "/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next",
     "/flows/",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
