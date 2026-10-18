@@ -4,7 +4,7 @@ import type {RbacEngine} from './rbac-engine.js';
 type Req=Request&{actor?:{tenant_id:string;user_id:string}};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
 const safe=/^[A-Za-z][A-Za-z0-9_]*$/;
-const uuid=/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function registerScreenInterviewRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
  app.post('/api/flows/:apiName/screen/start',wrap(async(req,res)=>{
   const a=req.actor!,name=req.params.apiName;
