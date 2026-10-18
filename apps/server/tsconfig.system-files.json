@@ -10,6 +10,7 @@
     "src/app-seeders/**/*.ts"
   ],
   "exclude": [
+    "test/**/*.ts",
     "src/system-files/**/*.test.ts"
   ]
 }

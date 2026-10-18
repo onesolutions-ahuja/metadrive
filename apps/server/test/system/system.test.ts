@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AuthenticationService } from './authentication.js';
-import { RbacEngine } from './rbac-engine.js';
-import { ObjectDefinitionService } from './object-definition.js';
-import type { SqlPersistence } from './sql-persistence.js';
+import { AuthenticationService } from '../../src/system-files/authentication.js';
+import { RbacEngine } from '../../src/system-files/rbac-engine.js';
+import { ObjectDefinitionService } from '../../src/system-files/object-definition.js';
+import type { SqlPersistence } from '../../src/system-files/sql-persistence.js';
 
 test('authentication hashes and verifies passwords without storing plain text', async () => {
   const queries: Array<{ sql: string; args: unknown[] }> = [];
@@ -41,7 +41,7 @@ test('SQL record CRUD rejects fields not registered in metadata', async () => {
       :{rows:[],rowCount:0}
   } as unknown as SqlPersistence;
   const rbac={require:async()=>{}} as unknown as RbacEngine;
-  const {RecordEngine}=await import('./record-engine.js');
+  const {RecordEngine}=await import('../../src/system-files/record-engine.js');
   await assert.rejects(
     ()=>new RecordEngine(db,rbac).create('tenant','user','Product__c',{Unexpected:1}),
     /Unknown field/
@@ -53,7 +53,7 @@ test('SQL record CRUD rejects fields not registered in metadata', async () => {
 });
 
 test('registered browser origin cannot select another tenant by slug', async () => {
-  const {createSystemServer}=await import('./server.js');
+  const {createSystemServer}=await import('../../src/system-files/server.js');
   const touched:string[]=[];
   const db={
     query:async(sql:string,params:unknown[])=>{
@@ -84,7 +84,7 @@ test('registered browser origin cannot select another tenant by slug', async () 
 });
 
 test('home page resolution rejects uninstalled apps and preserves empty home assignment', async () => {
-  const {AppRuntime}=await import('./app-runtime.js');
+  const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
   const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
   await assert.rejects(()=>new AppRuntime(db).homePage('tenant','NotInstalled','desktop'),/Permission denied/);
   const noHome={query:async()=>({rows:[{api_name:null}]})} as unknown as SqlPersistence;
@@ -121,7 +121,7 @@ test('atomic object creation rejects unsupported fields before any SQL write', a
 });
 
 test('Records HTTP API returns the actual list rather than double-nested records', async () => {
-  const {createSystemServer}=await import('./server.js');
+  const {createSystemServer}=await import('../../src/system-files/server.js');
   const db={
     query:async(sql:string)=>{
       if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
@@ -158,14 +158,14 @@ test('text field length is returned in metadata and enforced when writing record
     query:async(sql:string)=>sql.includes('FROM md_field_definitions')
       ?{rows:[{api_name:'Name',data_type:'text',related_object:null,required:false,max_length:4}]}:{rows:[],rowCount:0}
   } as unknown as SqlPersistence;
-  const {RecordEngine}=await import('./record-engine.js');
+  const {RecordEngine}=await import('../../src/system-files/record-engine.js');
   const rbac={require:async()=>{}} as unknown as RbacEngine;
   await assert.rejects(()=>new RecordEngine(db,rbac).create('tenant','user','Item__c',{Name:'Too long'}),/Invalid text length/);
 });
 
 
 test('SQL cutover inventory preserves inactive objects and flags unresolved lookups',async()=>{
-  const {inspectSqlCutover}=await import('./cutover-preflight.js');
+  const {inspectSqlCutover}=await import('../../src/system-files/cutover-preflight.js');
   const tables=['md_v2_object_registry','md_v2_field_registry','metadrive_rel_tenants'];
   const objects=[
     {object_id:'a',tenant_id:'dev',api_name:'Sale__c',object_label:'Sale',physical_table:'md_obj_'+'a'.repeat(32),active:true},
@@ -193,7 +193,7 @@ test('SQL cutover inventory preserves inactive objects and flags unresolved look
 
 
 test('Flow with Start and End completes without unconfigured actions', async () => {
-  const {FlowRuntime}=await import('./flow-runtime.js');
+  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
   const client={query:async(sql:string)=>{
     if(sql.includes('INSERT INTO md_flow_runs'))return {rows:[{id:'run-id'}],rowCount:1};
     if(sql.includes('FROM md_flow_runs r JOIN'))return {rows:[{flow_id:'flow-id',started_by:'user',status:'pending',api_name:'SimpleFlow'}]};
@@ -212,11 +212,11 @@ test('Flow with Start and End completes without unconfigured actions', async () 
     transaction:async(fn:(client:typeof client)=>Promise<unknown>)=>fn(client)
   } as unknown as SqlPersistence;
   const rbac={require:async()=>{}} as unknown as RbacEngine;
-  const records={} as import('./record-engine.js').RecordEngine;
+  const records={} as import('../../src/system-files/record-engine.js').RecordEngine;
   assert.deepEqual(await new FlowRuntime(db,rbac,records).execute('tenant','SimpleFlow','user'),{id:'run-id',status:'completed'});
 });
 test('Flow execution refuses unauthorized callers without creating runs',async()=>{
-  const {FlowRuntime}=await import('./flow-runtime.js');
+  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
   let called=false;
   const db={query:async()=>{called=true;return{rows:[]}}} as unknown as SqlPersistence;
   const rbac={require:async()=>{throw Error('Permission denied')}} as unknown as RbacEngine;
@@ -226,7 +226,7 @@ test('Flow execution refuses unauthorized callers without creating runs',async()
 
 
 test('Fresh bootstrap never touches existing tenants or runs without explicit opt-in', async () => {
-  const {bootstrapFreshTenant}=await import('./server.js');
+  const {bootstrapFreshTenant}=await import('../../src/system-files/server.js');
   let queries=0;
   let transactions=0;
   const db={
@@ -241,7 +241,7 @@ test('Fresh bootstrap never touches existing tenants or runs without explicit op
 });
 
 test('Aiven SQL connection retains certificate verification and dedicated DB override',async()=>{
-  const {resolveSqlConnection}=await import('./sql-persistence.js');
+  const {resolveSqlConnection}=await import('../../src/system-files/sql-persistence.js');
   const config=resolveSqlConnection(
     'postgres://user:password@db.example.net:12345/defaultdb?sslmode=require',
     {METADRIVE_DB_NAME_OVERRIDE:'metadrive_sql_20261012',
@@ -257,8 +257,8 @@ test('Aiven SQL connection retains certificate verification and dedicated DB ove
 
 
 test('login does not misreport SQL session failure as bad credentials',async()=>{
-  const {createSystemServer}=await import('./server.js');
-  const {AuthenticationService}=await import('./authentication.js');
+  const {createSystemServer}=await import('../../src/system-files/server.js');
+  const {AuthenticationService}=await import('../../src/system-files/authentication.js');
   const password='correct-password-123';
   const hash=await new AuthenticationService({} as SqlPersistence).hashPassword(password);
   const db={
@@ -285,7 +285,7 @@ test('login does not misreport SQL session failure as bad credentials',async()=>
 });
 
 test('first-install reconciliation is opt-in and refuses multi-user databases',async()=>{
-  const {reconcileBootstrapPassword}=await import('./bootstrap-password-sync.js');
+  const {reconcileBootstrapPassword}=await import('../../src/system-files/bootstrap-password-sync.js');
   let writes=0;
   const db={
     query:async()=>({rows:[{tenants:1,users:2}]}),
@@ -302,7 +302,7 @@ test('first-install reconciliation is opt-in and refuses multi-user databases',a
 });
 
 test('reconciliation repairs one matching account exactly once',async()=>{
-  const {reconcileBootstrapPassword}=await import('./bootstrap-password-sync.js');
+  const {reconcileBootstrapPassword}=await import('../../src/system-files/bootstrap-password-sync.js');
   const password='FreshDeveloperPassword2026';
   const auth=new AuthenticationService({} as SqlPersistence);
   let stored=await auth.hashPassword('OldDeveloperPassword2026'),marker=false,updates=0;
@@ -326,7 +326,7 @@ test('reconciliation repairs one matching account exactly once',async()=>{
 });
 
 test('first-login password rotation is opt-in and refuses multi-user SQL',async()=>{
-  const {rotateFirstLoginPassword}=await import('./first-login-rotation.js');
+  const {rotateFirstLoginPassword}=await import('../../src/system-files/first-login-rotation.js');
   let transactions=0;
   const db={query:async()=>({rows:[{tenants:1,users:2}]}),
     transaction:async()=>{transactions++;}} as unknown as SqlPersistence;
@@ -340,7 +340,7 @@ test('first-login password rotation is opt-in and refuses multi-user SQL',async(
   assert.equal(transactions,0);
 });
 test('first-login rotation writes a fresh hash only once for matched domain/account',async()=>{
-  const {rotateFirstLoginPassword}=await import('./first-login-rotation.js');
+  const {rotateFirstLoginPassword}=await import('../../src/system-files/first-login-rotation.js');
   const auth=new AuthenticationService({} as SqlPersistence);
   let saved='',rotated=false,updates=0;
   const db={query:async()=>({rows:[{tenants:1,users:1}]}),
@@ -366,7 +366,7 @@ test('first-login rotation writes a fresh hash only once for matched domain/acco
 
 
 test('Setup session metadata uses SQL grants, and denies override grants',async()=>{
-  const {sessionMetadata}=await import('./session-metadata.js');
+  const {sessionMetadata}=await import('../../src/system-files/session-metadata.js');
   const db={query:async(sql:string,params:unknown[])=>{
     assert.ok(sql.includes('md_role_permission_sets'));
     assert.deepEqual(params,['tenant','developer']);
@@ -384,7 +384,7 @@ test('Setup session metadata uses SQL grants, and denies override grants',async(
   assert.deepEqual(result.user.fieldAccess,{});
 });
 test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
-  const {createSystemServer}=await import('./server.js');
+  const {createSystemServer}=await import('../../src/system-files/server.js');
   const db={query:async(sql:string)=>{
     if(sql.includes('FROM md_sessions s JOIN md_users'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};

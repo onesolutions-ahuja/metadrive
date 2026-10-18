@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {SystemDefinitionService} from './system-definition-service.js';
-import type {SqlPersistence} from './sql-persistence.js';
-import type {RbacEngine} from './rbac-engine.js';
+import {SystemDefinitionService} from '../../src/system-files/system-definition-service.js';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 
 test('system definitions scope reads by tenant and resource permission',async()=>{
  const calls:Array<{sql:string;args:unknown[]}>=[];const db={

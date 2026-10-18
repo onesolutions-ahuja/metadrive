@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {NamedCredentialService} from './named-credential-service.js';
-import type {SqlPersistence} from './sql-persistence.js';
-import type {RbacEngine} from './rbac-engine.js';
+import {NamedCredentialService} from '../../src/system-files/named-credential-service.js';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 
 test('credential listing is tenant-scoped and secrets never returned',async()=>{
  const reads:unknown[][]=[];

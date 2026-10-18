@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {flattenAppProperties,expandAppProperties,seedAppPage} from './app-page-seeder.js';
-import {conversationPageSeed} from '../app-seeders/conversation.js';
-import {FlowRuntime} from './flow-runtime.js';
-import type {SqlPersistence} from './sql-persistence.js';
-import type {RbacEngine} from './rbac-engine.js';
-import type {RecordEngine} from './record-engine.js';
+import {flattenAppProperties,expandAppProperties,seedAppPage} from '../../src/system-files/app-page-seeder.js';
+import {conversationPageSeed} from '../../src/app-seeders/conversation.js';
+import {FlowRuntime} from '../../src/system-files/flow-runtime.js';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
+import type {RecordEngine} from '../../src/system-files/record-engine.js';
 import type {PoolClient} from 'pg';
 const id='11111111-1111-4111-8111-111111111111';
 test('relational app properties preserve types and stable references without JSON state',()=>{
