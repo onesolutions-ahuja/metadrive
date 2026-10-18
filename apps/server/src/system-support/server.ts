@@ -766,6 +766,10 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
 
+  app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await records.history(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id));
+  }));
   app.get('/api/records/:objectApi/:id/activities',route(async(req,res)=>{
     res.json(await collaboration.listActivities(req.actor!,req.params.objectApi,req.params.id));
   }));
