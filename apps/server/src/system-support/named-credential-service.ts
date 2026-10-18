@@ -1,6 +1,6 @@
 import {createCipheriv,randomBytes} from 'node:crypto';
-import type {SqlPersistence} from './sql-persistence.js';
-import type {RbacEngine} from './rbac-engine.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
+import type {RbacEngine} from '../system-files/rbac-engine.js';
 
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {

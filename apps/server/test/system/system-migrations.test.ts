@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
-import {applySystemMigrations} from '../../src/system-files/system-migrations.js';
+import {applySystemMigrations} from '../../src/system-support/system-migrations.js';
 
 test('system migrations are additive, recorded, and idempotent',async()=>{
  const versions=new Map<string,string>();

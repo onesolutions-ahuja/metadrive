@@ -1,5 +1,5 @@
-import {AuthenticationService} from './authentication.js';
-import type {SqlPersistence} from './sql-persistence.js';
+import {AuthenticationService} from '../system-files/authentication.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
 /**
  * One-off first-install reconciliation of the developer's Railway password

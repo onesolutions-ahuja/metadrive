@@ -1,5 +1,5 @@
-import {SqlPersistence} from './sql-persistence.js';
-import {TenantProvisioning} from './tenant-provisioning.js';
+import {SqlPersistence} from '../system-files/sql-persistence.js';
+import {TenantProvisioning} from '../system-files/tenant-provisioning.js';
 const required=(name:string)=>{
   const value=process.env[name];
   if(!value)throw new Error('Missing required environment setting: '+name);

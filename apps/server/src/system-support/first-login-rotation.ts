@@ -1,5 +1,5 @@
-import {AuthenticationService} from './authentication.js';
-import type {SqlPersistence} from './sql-persistence.js';
+import {AuthenticationService} from '../system-files/authentication.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
 /** Strictly scoped first-login credential rotation for the fresh single-user install. */
 export async function rotateFirstLoginPassword(db:SqlPersistence,env:NodeJS.ProcessEnv=process.env):

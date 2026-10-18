@@ -1,7 +1,7 @@
 # SQL-only MetaDrive system runtime
 
-The active server uses `apps/server/src/system-files/entrypoint.ts` and
-`system-files/server.ts`. It does **not** import the removed legacy state
+The active server uses `apps/server/src/system-support/entrypoint.ts` and
+`system-support/server.ts`. It does **not** import the removed legacy state
 modules, seeders or JSON snapshot files.
 
 **Database contract:** `schema.sql` creates fresh relational `md_*` tables
@@ -34,3 +34,6 @@ build and SQL smoke utilities live under `apps/server/scripts/`.
 Do not add tests, disposable diagnostics, or build scripts to this runtime folder.
 Before adding a service, inspect existing engines and ensure OneEngine RBAC,
 tenant scope, SQL persistence and lazy-loading requirements are met.
+
+## Approved Core boundary
+Exactly fifteen Core files live here; HTTP service setup, encrypted credentials, bootstrap utilities and SQL upgrade migrations live under `src/system-support/`. Tests and build utilities remain under `test/system/` and `scripts/`. Avoid adding files to this folder without revising the approved architecture.

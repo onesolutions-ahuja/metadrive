@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {flattenAppProperties,expandAppProperties,seedAppPage} from '../../src/system-files/app-page-seeder.js';
+import {flattenAppProperties,expandAppProperties,seedAppPage} from '../../src/system-support/app-page-seeder.js';
 import {conversationPageSeed} from '../../src/app-seeders/conversation.js';
 import {FlowRuntime} from '../../src/system-files/flow-runtime.js';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
