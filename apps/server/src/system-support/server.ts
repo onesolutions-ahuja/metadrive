@@ -26,6 +26,7 @@ import {NamedCredentialService} from './named-credential-service.js';
 import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {FormulaEngine} from '../system-files/formula-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
@@ -663,6 +664,17 @@ export function createSystemServer(db:SqlPersistence) {
       throw new Error('Invalid unsupported object configuration');
     const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)),actor.user_id);
     res.json({object});
+  }));
+  app.post('/api/metadata/objects/:apiName/formulas/validate',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||
+      typeof req.body.expression!=='string'||typeof req.body.returnType!=='string')
+      throw Error('Invalid formula validation request');
+    res.json(await new FormulaEngine(db).validate(actor.tenant_id,req.params.apiName,
+      req.body.expression,req.body.returnType));
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
