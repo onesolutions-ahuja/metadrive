@@ -5,7 +5,6 @@ import type {AuthenticationService} from '../system-files/authentication.js';
 import {decryptStoredCredential,secureRecoveryHash} from './mfa-crypto.js';
 type Settings={smtp_credential_id:string|null;from_email:string;policy:{
  method:'OTP'|'LINK';templates?:{email?:{subject:string;body:string}}}};
-};
 type Credential={base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
  configuration_ciphertext:Buffer|null;protocol:string};
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
