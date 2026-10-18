@@ -20,7 +20,7 @@ export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rba
  app.put('/api/metadata/objects/:apiName',wrap(async(req,res)=>{
   const a=req.actor!,api=req.params.apiName;
   await rbac.require(a.tenant_id,a.user_id,'ObjectDefinition','edit');
-  if(!name.test(api)||req.body?.apiName!==api||typeof req.body.label!=='string'||!req.body.label.trim())throw Error('Invalid object');
+  if(!name.test(api)||req.body?.apiName!==api||typeof req.body.label!=='string'||!req.body.label.trim()||Object.keys(req.body).some(k=>!['apiName','label','id'].includes(k)))throw Error('Unsupported object modification');
   const result=await db.query('UPDATE md_object_definitions SET label=$1 WHERE tenant_id=$2 AND api_name=$3 RETURNING id',[req.body.label.trim(),a.tenant_id,api]);
   if(!result.rowCount)throw Error('Object not found');
   res.json({object:await objects.get(a.tenant_id,api)});
@@ -35,7 +35,7 @@ export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rba
   await rbac.require(a.tenant_id,a.user_id,o+'.'+f,'edit');
   if(!name.test(o)||!name.test(f)||!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw Error('Invalid field');
   const permitted=['label'];const changes=Object.keys(req.body);
-  if(!changes.includes('label')||typeof req.body.label!=='string'||!req.body.label.trim()||changes.some(x=>x==='apiName'&&req.body.apiName!==f||x==='dataType'||x==='relationship'))throw Error('Unsupported field modification');
+  if(typeof req.body.label!=='string'||!req.body.label.trim()||changes.some(x=>!['label','apiName','id'].includes(x))||('apiName' in req.body&&req.body.apiName!==f))throw Error('Unsupported field modification');
   const row=await db.query('UPDATE md_field_definitions SET label=$1 WHERE tenant_id=$2 AND object_api=$3 AND api_name=$4 RETURNING id',
    [req.body.label.trim(),a.tenant_id,o,f]);
   if(!row.rowCount)throw Error('Field not found');
