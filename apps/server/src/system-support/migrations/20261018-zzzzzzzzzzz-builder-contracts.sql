@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS md_tenant_app_metadata (
  revision integer NOT NULL DEFAULT 1 CHECK(revision>0),
  PRIMARY KEY(tenant_id,app_id),
  UNIQUE(tenant_id,api_name),
- FOREIGN KEY(tenant_id,app_id) REFERENCES md_app_installations(tenant_id,app_id) ON DELETE CASCADE
+ FOREIGN KEY(app_id) REFERENCES md_apps(id)
 );
 CREATE TABLE IF NOT EXISTS md_tenant_app_navigation (
  tenant_id uuid NOT NULL,
