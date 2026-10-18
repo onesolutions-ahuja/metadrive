@@ -12,7 +12,7 @@ test('notification inbox and read actions are scoped to session tenant and user'
  }} as unknown as SqlPersistence;
  const app=express();app.use(express.json());app.use((req,_res,next)=>{(req as typeof req&{actor:unknown}).actor={tenant_id:'tenant-1',user_id:'user-1'};next();});
  registerNotificationSqlRoutes(app,db);
- const server=app.listen(0,'127.0.0.1');
+ const server=await new Promise<import('node:http').Server>(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
  try{
   const url='http://127.0.0.1:'+(server.address() as import('node:net').AddressInfo).port;
   const inbox=await fetch(url+'/api/notifications');assert.equal(inbox.status,200);
