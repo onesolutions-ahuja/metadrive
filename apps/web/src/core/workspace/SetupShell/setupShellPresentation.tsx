@@ -245,7 +245,7 @@ export function renderSetupShell(ctx: any) {
               onSavePage={savePage}
               onOpenPageBuilder={() => openPageForObject(object.apiName)}
               onOpenRecords={() => navigateRoute({ kind: 'record-list', objectApiName: object.apiName })}
-              page={pages.find((item) => item.targetObject === object.apiName && item.pageType === 'Record Page') ?? page}
+              page={pages.find((item) => item.targetObject === object.apiName && item.pageType === 'Record Page') ?? null}
               onNotify={notify}
             />
             </PlatformWorkspaceSurface>
