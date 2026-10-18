@@ -10,6 +10,7 @@ import {registerRecordInteractionRoutes} from './record-interaction-routes.js';
 import {registerObjectLifecycleRoutes} from './object-lifecycle-routes.js';
 import {registerRecordOwnershipRoutes} from './record-ownership-routes.js';
 import {registerReportRuntimeRoutes} from './report-runtime-routes.js';
+import {registerDashboardRuntimeRoutes} from './dashboard-runtime-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
 import {registerAuthSecurityRoutes} from './auth-security-routes.js';
@@ -457,6 +458,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerObjectLifecycleRoutes(app,db,rbac,definitions);
   registerRecordOwnershipRoutes(app,db,rbac,records);
   registerReportRuntimeRoutes(app,db,rbac,records);
+  registerDashboardRuntimeRoutes(app,db,rbac,records);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerAuthSecurityRoutes(app,db,rbac);
