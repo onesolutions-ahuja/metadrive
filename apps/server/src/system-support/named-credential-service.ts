@@ -6,6 +6,20 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 export class NamedCredentialService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
  private key() {
+  // The active key belongs to the application, never to a hosting provider.
+  // Keep the legacy single-key setting readable for existing installations.
+  const keyring=process.env.METADRIVE_CREDENTIAL_KEYS;
+  const activeId=process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
+  if(keyring || activeId){
+   if(!keyring || !activeId)return null;
+   let keys:unknown;
+   try { keys=JSON.parse(keyring); } catch { return null; }
+   if(!keys || typeof keys!=='object' || Array.isArray(keys))return null;
+   const raw=(keys as Record<string,unknown>)[activeId];
+   if(typeof raw!=='string')return null;
+   const key=Buffer.from(raw,'base64');
+   return key.length===32?key:null;
+  }
   const raw=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
   if(!raw)return null;
   const key=Buffer.from(raw,'base64');
