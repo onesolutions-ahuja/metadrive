@@ -532,6 +532,7 @@ CREATE INDEX IF NOT EXISTS md_flow_definitions_latest
 
 -- Tenant-owned custom application definitions have independent public API names.
 -- md_apps remains the global licensed catalog with an internal unique identity.
+ALTER TABLE md_apps ADD COLUMN IF NOT EXISTS tenant_owner_id uuid REFERENCES md_tenants(id);
 CREATE TABLE IF NOT EXISTS md_tenant_app_metadata (
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
  app_id uuid NOT NULL REFERENCES md_apps(id),
