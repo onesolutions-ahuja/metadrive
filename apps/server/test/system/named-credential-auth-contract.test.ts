@@ -6,7 +6,7 @@ import {NamedCredentialService} from '../../src/system-support/named-credential-
 
 test('unsupported OAuth credentials cannot be saved as executable Named Credentials',async()=>{
  let writes=0;
- const db={query:async()=>{writes++;return {rows:[],rowCount:0};}} as unknown as SqlPersistence;
+ const db={query:async(sql:string)=>{if(sql.startsWith('SELECT encryption_key_id'))return {rows:[{encryption_key_id:'legacy',secret_ciphertext:null,configuration_ciphertext:null}],rowCount:1};writes++;return {rows:[],rowCount:0};}} as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  const service=new NamedCredentialService(db,rbac);
  const request={name:'demo',label:'Demo',protocol:'HTTPS',baseUrl:'https://example.com',
