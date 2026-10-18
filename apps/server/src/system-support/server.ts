@@ -18,6 +18,7 @@ import {DashboardSubscriptionService} from './dashboard-subscription-service.js'
 import {RecordCollaborationService} from './record-collaboration-service.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
+import {ComponentLibraryService} from './component-library-service.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
 import { AppRuntime } from '../system-files/app-runtime.js';
@@ -81,6 +82,7 @@ export function createSystemServer(db:SqlPersistence) {
   const integrationConnections=new IntegrationConnectionRuntime(db,rbac,credentialActions);
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
+  const componentLibrary=new ComponentLibraryService(db,rbac);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records);
   const apps=new AppRuntime(db);
@@ -522,10 +524,32 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
-    res.json({
-      components:await components.list(actor.tenant_id),
-      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
-    });
+    const [shared,tenant]=await Promise.all([
+      components.list(actor.tenant_id),componentLibrary.list(actor)]);
+    const tenantNames=new Set(tenant.map(x=>x.apiName));
+    res.json({components:[...shared.filter(x=>!tenantNames.has(x.apiName)),...tenant],
+      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')});
+  }));
+  app.post('/api/component-library',route(async(req,res)=>{
+    res.status(201).json(await componentLibrary.create(req.actor!,req.body));
+  }));
+  app.get('/api/component-library/:apiName',route(async(req,res)=>{
+    const component=(await componentLibrary.list(req.actor!)).find(x=>x.apiName===req.params.apiName);
+    if(!component){res.status(404).json({error:'Component not found'});return;}
+    res.json({component});
+  }));
+  app.put('/api/component-library/:apiName',route(async(req,res)=>{
+    res.json(await componentLibrary.save(req.actor!,req.params.apiName,req.body));
+  }));
+  app.post('/api/component-library/:apiName/publish',route(async(req,res)=>{
+    res.json(await componentLibrary.publish(req.actor!,req.params.apiName));
+  }));
+  app.post('/api/component-library/:apiName/rollback',route(async(req,res)=>{
+    res.json(await componentLibrary.rollback(req.actor!,req.params.apiName,req.body?.version));
+  }));
+  app.delete('/api/component-library/:apiName',route(async(req,res)=>{
+    await componentLibrary.remove(req.actor!,req.params.apiName);
+    res.status(204).end();
   }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;
