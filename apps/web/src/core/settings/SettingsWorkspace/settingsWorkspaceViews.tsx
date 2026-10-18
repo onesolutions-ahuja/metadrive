@@ -496,7 +496,6 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
 type CompanyProfile = {logoUrl?:string;legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};
 const blankCompanyProfile:CompanyProfile={logoUrl:'',legalName:'',tradingName:'',website:'',phone:'',email:'',addressLine1:'',addressLine2:'',city:'',postcode:'',country:'',timezone:'Europe/London',locale:'en-GB',description:''};
 const companyFields:ReadonlyArray<{key:keyof CompanyProfile;label:string}>= [
-{key:'logoUrl',label:'Company logo URL (HTTPS)'},
 {key:'legalName',label:'Legal company name'},{key:'tradingName',label:'Trading name'},
 {key:'description',label:'Description'},{key:'website',label:'Website'},
 {key:'email',label:'Contact email'},{key:'phone',label:'Contact phone'},
@@ -512,11 +511,23 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   const [companySaving,setCompanySaving]=useState(false);
   const [companyError,setCompanyError]=useState('');
   const [companyNotice,setCompanyNotice]=useState('');
+  const [logoReading,setLogoReading]=useState(false);
+  const selectCompanyLogo=async(file?:File)=>{
+    if(!file)return;
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type)){setCompanyError('Choose a PNG, JPG or WebP image.');return;}
+    if(file.size>128*1024){setCompanyError('Logo must be 128 KB or smaller.');return;}
+    setLogoReading(true);setCompanyError('');
+    try{
+      const encoded=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Unable to read selected logo'));reader.readAsDataURL(file)});
+      setCompany(previous=>({...previous,logoUrl:encoded}));
+    }catch(error){setCompanyError(error instanceof Error?error.message:String(error));}
+    finally{setLogoReading(false)}
+  };
   useEffect(()=>{let active=true;void apiRequest<{profile:CompanyProfile|null}>('/tenant/company-profile')
    .then(value=>{if(active)setCompany({...blankCompanyProfile,...(value.profile??{})});})
    .catch(error=>{if(active)setCompanyError(error instanceof Error?error.message:String(error));})
    .finally(()=>{if(active)setCompanyLoading(false)});return()=>{active=false}},[]);
-  const saveCompany=async()=>{if(!canManage||companySaving)return;
+  const saveCompany=async()=>{if(!canManage||companySaving||logoReading)return;
     setCompanySaving(true);setCompanyError('');setCompanyNotice('');
     try{const saved=await apiRequest<{profile:CompanyProfile}>('/tenant/company-profile',{method:'PUT',body:JSON.stringify(company)});
       setCompany(saved.profile);setCompanyEditing(false);setCompanyBeforeEdit(null);setCompanyNotice('Company details saved.');}
@@ -648,14 +659,14 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
     <section className="surface permission-section company-profile-section" aria-label="Company details">
       <div className="section-toolbar"><div><h2>Company details</h2><p>Organisation, contact and regional information.</p></div>
       {canManage&&!companyEditing&&!companyLoading&&<button type="button" className="btn" onClick={()=>{setCompanyBeforeEdit({...company});setCompanyEditing(true);}}>Edit details</button>}</div>
-      {companyLoading?<p>Loading company details…</p>:<><div className="company-profile-logo">{company.logoUrl?.startsWith("https://")?<img src={company.logoUrl} alt="Company logo" />:<span aria-label="No logo configured">No logo</span>}</div><div className="company-profile-grid">
+      {companyLoading?<p>Loading company details…</p>:<><div className="company-profile-logo">{(company.logoUrl?.startsWith("data:image/")||company.logoUrl?.startsWith("https://"))?<img src={company.logoUrl} alt="Company logo" />:<span aria-label="No logo configured">No logo</span>}</div><div className="company-profile-grid">{companyEditing&&<div className="company-profile-field" data-company-field="logoUrl"><label htmlFor="company-logo-upload">Company logo</label><input id="company-logo-upload" type="file" accept="image/png,image/jpeg,image/webp" disabled={companySaving||logoReading} onChange={event=>{void selectCompanyLogo(event.target.files?.[0]);event.target.value='';}}/><small>PNG, JPG or WebP · maximum 128 KB</small>{company.logoUrl&&<button className="btn" type="button" disabled={companySaving||logoReading} onClick={()=>setCompany(previous=>({...previous,logoUrl:''}))}>Remove logo</button>}</div>}
       {companyFields.map(field=><div className="company-profile-field" data-company-field={field.key} key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
         {companyEditing?<input id={'company-'+field.key} className="form-control" value={company[field.key]}
           onChange={event=>setCompany(previous=>({...previous,[field.key]:event.target.value}))}/>
         :<p>{company[field.key]||'Not provided'}</p>}</div> )}</div></>}
       {companyEditing&&<div className="settings-read-first-toolbar">
         <button type="button" className="btn" disabled={companySaving} onClick={()=>{setCompany(companyBeforeEdit??blankCompanyProfile);setCompanyEditing(false);setCompanyBeforeEdit(null);}}>Cancel</button>
-        <button type="button" className="btn btn-brand" disabled={companySaving} onClick={()=>void saveCompany()}>{companySaving?'Saving…':'Save details'}</button></div>}
+        <button type="button" className="btn btn-brand" disabled={companySaving||logoReading} onClick={()=>void saveCompany()}>{companySaving?'Saving…':'Save details'}</button></div>}
       {companyError&&<p className="form-error" role="alert">{companyError}</p>}
       {companyNotice&&<p className="form-success" role="status">{companyNotice}</p>}
     </section>
