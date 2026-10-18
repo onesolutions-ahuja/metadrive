@@ -116,7 +116,7 @@ try{
   ['DELETE','/metadata/route-aliases/MissingApp/missing',{expectedVersion:1}],
   ['GET','/platform/tenants'],['GET','/platform/tenants/no-such-tenant'],
   ['PATCH','/platform/tenants/no-such-tenant',{name:'Changed'}],
-  ['POST','/platform/tenants/no-such-tenant/deactivate',{}],
+  ['POST','/platform/tenants/no-such-tenant/suspend',{}],
   ['PATCH','/platform/tenants/no-such-tenant/retention',{retentionDays:30}],
   ['GET','/records/AuditItem__c'],['GET','/records/AuditItem__c/'+recordId],
   ['POST','/auth/users/00000000-0000-4000-8000-000000000000/lock',{}],
