@@ -484,7 +484,6 @@ export function createSystemServer(db:SqlPersistence) {
   registerRecordOwnershipRoutes(app,db,rbac,records);
   registerReportRuntimeRoutes(app,db,rbac,records);
   registerDashboardRuntimeRoutes(app,db,rbac,records);
-  registerDashboardRuntimeRoutes(app,db,rbac,records);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerAuthSecurityRoutes(app,db,rbac);
