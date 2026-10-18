@@ -27,6 +27,16 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'PATCH /api/records/:objectApi/:id/activities/:activityId',
   'GET /api/records/:objectApi/:id/chatter','POST /api/records/:objectApi/:id/chatter',
   'POST /api/records/:objectApi/:id/chatter/:postId/comments',
+  'PUT /api/metadata/permissions','POST /api/integration-connections/:id/test',
+  'PUT /api/component-library/:apiName','POST /api/component-library/:apiName/publish',
+  'POST /api/component-library/:apiName/rollback','DELETE /api/component-library/:apiName',
+  'POST /api/named-credentials/:id/oauth/start','GET /api/named-credentials/oauth/callback',
+  'POST /api/flows/:apiName/:endpoint','GET /api/metadata/offline-publication',
+  'GET /api/metadata/dashboards/:apiName/subscriptions',
+  'POST /api/metadata/dashboards/:apiName/subscriptions',
+  'PUT /api/metadata/dashboards/:apiName/subscriptions/:id',
+  'DELETE /api/metadata/dashboards/:apiName/subscriptions/:id',
+  'POST /api/metadata/dashboards/:apiName/subscriptions/:id/run',
   'GET /api/auth/users','GET /api/auth/sessions','POST /api/auth/sessions/revoke-all',
   'GET /api/connector-apps/catalog','POST /api/apps/:apiName/install',
   'POST /api/apps/:apiName/update','POST /api/apps/:apiName/uninstall',
@@ -42,5 +52,15 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'POST /api/auth/mfa/disable','PUT /api/auth/password-recovery/settings',
   'GET /api/metadata/flows/:apiName/versions','POST /api/flow-interviews/:id/cancel'
  ])assert.ok(registered.has(route),'Missing SQL endpoint: '+route);
- assert.equal(routeCount.get('GET /api/metadata/dashboards/:apiName/snapshots'),1,'Dashboard snapshot route registered more than once');
+  for(const contract of [
+  'PUT /api/metadata/permissions','POST /api/integration-connections/:id/test',
+  'POST /api/component-library/:apiName/publish','POST /api/component-library/:apiName/rollback',
+  'DELETE /api/component-library/:apiName','POST /api/named-credentials/:id/oauth/start',
+  'GET /api/named-credentials/oauth/callback','POST /api/flows/:apiName/:endpoint',
+  'GET /api/metadata/offline-publication',
+  'GET /api/metadata/dashboards/:apiName/subscriptions',
+  'DELETE /api/metadata/dashboards/:apiName/subscriptions/:id',
+  'POST /api/metadata/dashboards/:apiName/subscriptions/:id/run'
+ ])assert.equal(routeCount.get(contract),1,'Missing or duplicate SQL runtime contract: '+contract);
+assert.equal(routeCount.get('GET /api/metadata/dashboards/:apiName/snapshots'),1,'Dashboard snapshot route registered more than once');
 });
