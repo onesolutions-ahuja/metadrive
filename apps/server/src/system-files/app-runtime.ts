@@ -20,10 +20,25 @@ export class AppRuntime {
       if(missing.rows.length)throw new Error('Missing installed and entitled app dependencies: '+missing.rows.map(x=>x.api_name).join(', '));
       await client.query('INSERT INTO md_app_installations (tenant_id,app_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
         [tenantId,rows[0].id]);
-      // Seed is supplied only by the trusted app package, never HTTP input.
-      const seed=await this.trustedAppSeed?.(appApi);
-      if(!seed)throw new Error('No trusted independent app seeder registered: '+appApi);
-      await seedIndependentAppMetadata(client,tenantId,seed);
+      const packaged=await client.query<{version:number;manifest:AppSeedDefinition}>(`
+       SELECT version,manifest FROM md_app_package_versions WHERE app_id=$1
+       ORDER BY version DESC LIMIT 1`,[rows[0].id]);
+      // Manifests come from versioned SQL app packages or trusted lazy server modules.
+      const selected=packaged.rows[0];
+      const seed=selected?.manifest??await this.trustedAppSeed?.(appApi);
+      if(!seed)throw new Error('No trusted app package registered: '+appApi);
+      const size=JSON.stringify(seed).length;
+      if(size>262144||!seed||typeof seed!=='object'||Array.isArray(seed)
+        ||Object.keys(seed).some(k=>!['objects','components','pages','flows','actions'].includes(k))
+        ||Object.values(seed).some(v=>v!==undefined&&!Array.isArray(v)))
+       throw new Error('Invalid app package manifest');
+      await client.query('SELECT app_id FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2 FOR UPDATE',
+       [tenantId,rows[0].id]);
+      await seedIndependentAppMetadata(client,tenantId,seed,rows[0].id);
+      await client.query(`INSERT INTO md_app_installed_versions(tenant_id,app_id,version)
+        VALUES($1,$2,$3) ON CONFLICT(tenant_id,app_id)
+        DO UPDATE SET version=EXCLUDED.version,upgraded_at=now()`,
+       [tenantId,rows[0].id,selected?.version??1]);
     });
   }
   async update(tenantId:string,appApi:string) { await this.install(tenantId,appApi); }
