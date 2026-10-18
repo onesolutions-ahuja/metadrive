@@ -164,30 +164,33 @@ export class PlatformTenantService {
    throw new Error('Invalid status');
   const search=q?('%'+q.replace(/[%_\\]/g,'\\$&')+'%'):null;
   const scopedTenant=platform?null:tenantId;
-  const statusFilter=status==='ALL'||status==='ACTIVE';
   const {rows}=await this.db.query<{
-   id:string;slug:string;name:string;created_at:Date|null;users:string;active_users:string;
+   id:string;slug:string;name:string;description:string;status:'ACTIVE'|'SUSPENDED'|'ARCHIVED';
+   created_at:Date;updated_at:Date;archived_at:Date|null;retention_until:Date|null;legal_hold:boolean;
+   users:string;active_users:string;
   }>(`
-    SELECT t.id,t.slug,t.name,null::timestamptz AS created_at,
+    SELECT t.id,t.slug,t.name,t.description,t.status,t.created_at,t.updated_at,
+      t.archived_at,t.retention_until,t.legal_hold,
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id) AS users,
-      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled) AS active_users
+      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled=true) AS active_users
     FROM md_tenants t
     WHERE ($1::uuid IS NULL OR t.id=$1)
       AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
-      AND $3::boolean
+      AND ($3::text='ALL' OR t.status=$3)
     ORDER BY t.slug LIMIT $4 OFFSET $5
-  `,[scopedTenant,search,statusFilter,pageSize,(page-1)*pageSize]);
+  `,[scopedTenant,search,status,pageSize,(page-1)*pageSize]);
   const {rows:counts}=await this.db.query<{total:string}>(`
     SELECT count(*)::text AS total FROM md_tenants t
     WHERE ($1::uuid IS NULL OR t.id=$1)
       AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
-      AND $3::boolean
-  `,[scopedTenant,search,statusFilter]);
+      AND ($3::text='ALL' OR t.status=$3)
+  `,[scopedTenant,search,status]);
   return {tenants:rows.map(t=>({
-   tenantId:t.slug,name:t.name,description:'',status:'ACTIVE' as const,
-   createdAt:t.created_at??new Date(0),updatedAt:t.created_at??new Date(0),
+   tenantId:t.slug,name:t.name,description:t.description,status:t.status,
+   createdAt:t.created_at,updatedAt:t.updated_at,archivedAt:t.archived_at,
+   retentionUntil:t.retention_until,legalHold:t.legal_hold,
    userCount:Number(t.users),activeUserCount:Number(t.active_users),
-   provisioning:{status:'READY' as const,version:1,completedAt:''},developerAccount:null
+   provisioning:{status:'READY' as const,version:1,completedAt:t.created_at},developerAccount:null
   })),total:Number(counts[0]?.total??0)};
  }
 }
