@@ -51,4 +51,37 @@ export class NamedCredentialService {
    [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,x.enabled!==false]);
   return {id:rows[0].id,name:x.name};
  }
+ async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(typeof enabled!=='boolean'|| !/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
+  const result=await this.db.query(
+   'UPDATE md_named_credentials SET enabled=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id',
+   [tenantId,id,enabled]);
+  if(!result.rowCount)throw new Error('Credential not found');
+ }
+ async remove(tenantId:string,userId:string,id:string){
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
+  const result=await this.db.query(
+   'DELETE FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 RETURNING id',[tenantId,id]);
+  if(!result.rowCount)throw new Error('Credential not found');
+ }
+ async update(tenantId:string,userId:string,id:string,body:unknown){
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(!/^[0-9a-f-]{36}$/i.test(id)||!body||typeof body!=='object'||Array.isArray(body))
+   throw new Error('Invalid credential');
+  const x=body as Record<string,unknown>;
+  if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
+    typeof x.label!=='string'||!x.label.trim()||
+    !['HTTPS','SMTP'].includes(String(x.protocol))||
+    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
+    typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
+  if(x.configuration && Object.keys(x.configuration as object).length)throw new Error('Credential configuration requires encrypted field mapping');
+  const result=await this.db.query(
+   'UPDATE md_named_credentials SET name=$3,label=$4,protocol=$5,base_url=$6,auth_type=$7,header_name=$8,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id',
+   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName]);
+  if(!result.rowCount)throw new Error('Credential not found');
+  return (await this.list(tenantId,userId)).find(c=>c.id===id);
+ }
+
 }
