@@ -32,7 +32,6 @@
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
-    "/metadata/objects/${encodeURIComponent(object.apiName)}/validate",
     "/metadata/offline-publication",
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
     "/named-credentials/${encodeURIComponent(id)}/rotate",
