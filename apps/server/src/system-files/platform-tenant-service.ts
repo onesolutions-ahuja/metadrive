@@ -29,25 +29,27 @@ export class PlatformTenantService {
   const status=parameters.status??'ALL';
   if(!['ALL','ACTIVE','SUSPENDED','ARCHIVED'].includes(String(status)))
    throw new Error('Invalid status');
-  const conditions=[platform?'true':'t.id=$1::uuid'];
-  const n=platform?0:1;
-  if(q)conditions.push(`(t.slug ILIKE ${n+1} OR t.name ILIKE ${n+1})`);
-  if(status!=='ALL' && status!=='ACTIVE')conditions.push('false');
-  const values:unknown[]=platform?[]:[tenantId];
-  if(q)values.push('%'+q.replace(/[%_\\]/g,'\\$&')+'%');
-  const where=conditions.join(' AND ');
+  const search=q?('%'+q.replace(/[%_\\]/g,'\\$&')+'%'):null;
+  const scopedTenant=platform?null:tenantId;
+  const statusFilter=status==='ALL'||status==='ACTIVE';
   const {rows}=await this.db.query<{
    id:string;slug:string;name:string;created_at:Date|null;users:string;active_users:string;
   }>(`
-    SELECT t.id,t.slug,t.name,
-      null::timestamptz AS created_at,
+    SELECT t.id,t.slug,t.name,null::timestamptz AS created_at,
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id) AS users,
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled) AS active_users
-    FROM md_tenants t WHERE ${where}
-    ORDER BY t.slug LIMIT ${values.length+1} OFFSET ${values.length+2}
-  `,[...values,pageSize,(page-1)*pageSize]);
-  const {rows:counts}=await this.db.query<{total:string}>(
-   `SELECT count(*)::text AS total FROM md_tenants t WHERE ${where}`,values);
+    FROM md_tenants t
+    WHERE ($1::uuid IS NULL OR t.id=$1)
+      AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
+      AND $3::boolean
+    ORDER BY t.slug LIMIT $4 OFFSET $5
+  `,[scopedTenant,search,statusFilter,pageSize,(page-1)*pageSize]);
+  const {rows:counts}=await this.db.query<{total:string}>(`
+    SELECT count(*)::text AS total FROM md_tenants t
+    WHERE ($1::uuid IS NULL OR t.id=$1)
+      AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
+      AND $3::boolean
+  `,[scopedTenant,search,statusFilter]);
   return {tenants:rows.map(t=>({
    tenantId:t.slug,name:t.name,description:'',status:'ACTIVE' as const,
    createdAt:t.created_at??new Date(0),updatedAt:t.created_at??new Date(0),
