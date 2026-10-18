@@ -156,7 +156,7 @@ export default function ConnectorAppWorkspace({
         fieldLabels={configFields(app.ConfigFields__c).labels}
         credentials={matched} canManage={canManageCredentials && licensed}
         canManageSecrets={canManageSecrets} canTest={canTest && licensed}
-        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest}/>
+        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest} onOAuthAuthorize={onOAuthAuthorize}/>
     </>}
     {section === 'licence' && <section className="surface" style={{padding:18}}>
       <h2>App Licence</h2>
