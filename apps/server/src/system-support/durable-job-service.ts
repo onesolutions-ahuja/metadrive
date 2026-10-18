@@ -72,7 +72,7 @@ export class DurableJobService {
    throw new Error('Invalid retry delay');
   const {rowCount}=await this.db.query(`
    UPDATE md_durable_jobs SET
-    status=CASE WHEN attempt>=max_attempts THEN 'failed' ELSE 'queued' END,
+    status=CASE WHEN attempt>=max_attempts OR $4='FLOW_RECONCILIATION_REQUIRED' THEN 'failed' ELSE 'queued' END,
     scheduled_at=now()+($5::integer * interval '1 second'),lease_owner=NULL,lease_until=NULL,
     error_code=$4,updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
@@ -92,6 +92,23 @@ export class DurableJobService {
   const {rowCount}=await this.db.query(`
    UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
+  if(!rowCount)throw new Error('Failed job not found');
+ }
+
+ /** Record an operator decision without silently replaying ambiguous side effects. */
+ async reconcileFailed(tenantId:string,id:string,actorId:string,decision:'acknowledge'|'retry'){
+  if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
+  const {rowCount}=await this.db.query(`
+    UPDATE md_durable_jobs SET
+      status=CASE WHEN $4='retry' THEN 'queued' ELSE 'cancelled' END,
+      attempt=CASE WHEN $4='retry' THEN 0 ELSE attempt END,
+      scheduled_at=CASE WHEN $4='retry' THEN now() ELSE scheduled_at END,
+      lease_owner=NULL,lease_until=NULL,
+      error_code=CASE WHEN $4='retry' THEN NULL ELSE error_code END,
+      updated_at=now()
+    WHERE tenant_id=$1 AND id=$2 AND status='failed'
+      AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
+  `,[tenantId,id,actorId,decision]);
   if(!rowCount)throw new Error('Failed job not found');
  }
 
