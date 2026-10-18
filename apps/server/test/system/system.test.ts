@@ -626,3 +626,29 @@ test('SQL Flow validation fails closed without permission',async()=>{
  const rbac={require:async()=>{throw new Error('Permission denied')}} as unknown as RbacEngine;
  await assert.rejects(()=>new FlowRuntime({} as SqlPersistence,rbac).validateDraft('tenant','user','TestFlow',{}),/Permission denied/);
 });
+
+test('Flow interview cancellation preserves tenant scope and durable run row',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const checks:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+  assert.match(sql,/UPDATE md_flow_runs/);
+  assert.match(sql,/status='cancelled'/);
+  assert.match(sql,/status='pending'/);
+  checks.push(args);
+  return {rowCount:1,rows:[{id:args[1]}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(t:string,u:string,r:string,a:string)=>{
+  assert.deepEqual([t,u,r,a],['tenant','user','FlowDefinition','manage']);
+ }} as unknown as RbacEngine;
+ const id='c439f882-7316-4cf1-86fb-81d95b135c97';
+ const value=await new FlowRuntime(db,rbac).cancelInterview('tenant','user',id);
+ assert.equal(value.cancelled,true);
+ assert.deepEqual(checks,[['tenant',id]]);
+});
+test('Flow interview cancellation rejects unauthorised or malformed requests',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const db={query:async()=>{throw new Error('Should not write SQL')}} as unknown as SqlPersistence;
+ const denied={require:async()=>{throw new Error('Permission denied')}} as unknown as RbacEngine;
+ await assert.rejects(()=>new FlowRuntime(db,denied).cancelInterview('tenant','user','c439f882-7316-4cf1-86fb-81d95b135c97'),/Permission denied/);
+ await assert.rejects(()=>new FlowRuntime(db,denied).cancelInterview('tenant','user','not-an-id'),/Invalid interview ID/);
+});
