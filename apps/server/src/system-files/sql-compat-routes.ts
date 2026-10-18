@@ -38,6 +38,77 @@ export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rba
    users:users.rows.map(u=>({id:u.id,name:u.email,username:u.email,role:'',roleId:'',profileId:'',permissionSetIds:[],permissionSetGroupIds:[],timeZone:'UTC',locale:'en-GB'})),
    sharingSettings:{}});
  }));
+ app.put('/api/metadata/permissions',wrap(async(req,res)=>{
+  const a=req.actor!,body=req.body;
+  await rbac.require(a.tenant_id,a.user_id,'PermissionSet','manage');
+  if(!body||typeof body!=='object'||Array.isArray(body)||
+   !Array.isArray(body.permissionSets)||!Array.isArray(body.users)||!Array.isArray(body.roles)||
+   body.permissionSets.length>200||body.users.length>1000||body.roles.length>200)
+   throw Error('Invalid OneEngine permissions metadata');
+  // Unsupported administrative structures must not be silently accepted or discarded.
+  for(const key of ['profiles','permissionSetGroups','publicGroups','queues','sharingRules']){
+   if(!Array.isArray(body[key])||body[key].length)
+    throw Error('Unsupported permission collection: '+key);
+  }
+  if(body.sharingSettings&&Object.keys(body.sharingSettings).length)
+   throw Error('Sharing Settings require the separate server-side Record Policy engine');
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const safe=/^[A-Za-z][A-Za-z0-9_]*$/;
+  const validFlags=['read','create','edit','delete','viewAll','modifyAll'];
+  await db.transaction(async client=>{
+   const sets=await client.query<{id:string;api_name:string}>(
+    'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 FOR UPDATE',[a.tenant_id]);
+   const setIds=new Set(sets.rows.map(x=>x.id));
+   const objects=await client.query<{api_name:string}>(
+    'SELECT api_name FROM md_object_definitions WHERE tenant_id=$1',[a.tenant_id]);
+   const objectNames=new Set(objects.rows.map(x=>x.api_name));
+   const fields=await client.query<{object_api:string;api_name:string}>(
+    'SELECT object_api,api_name FROM md_field_definitions WHERE tenant_id=$1',[a.tenant_id]);
+   const fieldNames=new Set(fields.rows.map(x=>x.object_api+'.'+x.api_name));
+   const seenSets=new Set<string>();
+   for(const set of body.permissionSets){
+    if(!set||!uuid.test(set.id)||!setIds.has(set.id)||seenSets.has(set.id)||
+      !set.objectPermissions||typeof set.objectPermissions!=='object'||Array.isArray(set.objectPermissions)||
+      !set.fieldPermissions||typeof set.fieldPermissions!=='object'||Array.isArray(set.fieldPermissions))
+     throw Error('Invalid or foreign permission set');
+    seenSets.add(set.id);
+    if((set.systemPermissions?.length??0)||(set.recordTypePermissions&&Object.keys(set.recordTypePermissions).length)||
+      (set.appPermissions&&Object.keys(set.appPermissions).length)||
+      (set.tabPermissions&&Object.keys(set.tabPermissions).length))
+      throw Error('Permission collection not supported by OneEngine SQL runtime');
+    const grants=[...Object.entries(set.objectPermissions).map(([k,v])=>[k,v,false] as const),
+      ...Object.entries(set.fieldPermissions).map(([k,v])=>[k,v,true] as const)];
+    if(grants.length>3000)throw Error('Too many permission updates');
+    for(const [resource,flags,field] of grants){
+     if(!field&&(!safe.test(resource)||!objectNames.has(resource))||
+        field&&!fieldNames.has(resource)||!flags||typeof flags!=='object'||Array.isArray(flags))
+      throw Error('Invalid permission resource');
+     for(const [action,allow] of Object.entries(flags)){
+      if(!validFlags.includes(action)||typeof allow!=='boolean')throw Error('Invalid permission action');
+      if(field&&['viewAll','modifyAll'].includes(action))throw Error('Invalid Field permission action');
+      await client.query(`INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+       VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,permission_set_id,resource,action)
+       DO UPDATE SET effect=EXCLUDED.effect`,
+       [a.tenant_id,set.id,resource,action,allow?'allow':'deny']);
+     }
+    }
+   }
+   for(const user of body.users){
+    if(!user||!uuid.test(user.id)||!Array.isArray(user.permissionSetIds)||
+      user.permissionSetIds.length>100||user.permissionSetIds.some((id:unknown)=>typeof id!=='string'||!setIds.has(id)))
+     throw Error('Invalid permission assignment');
+    const found=await client.query('SELECT id FROM md_users WHERE tenant_id=$1 AND id=$2',[a.tenant_id,user.id]);
+    if(!found.rowCount)throw Error('User outside tenant');
+    await client.query('DELETE FROM md_permission_assignments WHERE tenant_id=$1 AND user_id=$2',[a.tenant_id,user.id]);
+    for(const id of new Set<string>(user.permissionSetIds))
+     await client.query('INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id) VALUES($1,$2,$3)',
+      [a.tenant_id,user.id,id]);
+   }
+   await client.query('INSERT INTO md_tenant_security_events(tenant_id,actor_id,event_type) VALUES($1,$2,$3)',
+    [a.tenant_id,a.user_id,'oneengine_permission_policy_updated']);
+  });
+  res.json({...body,tenantId:a.tenant_id});
+ }));
  app.get('/api/connector-apps/catalog',wrap(async(req,res)=>{
   const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'AppExchange','read');
   const result=await db.query<{api_name:string;label:string;installed:boolean;licenced:boolean}>(
