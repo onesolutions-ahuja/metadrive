@@ -70,5 +70,11 @@ export async function publishSimpleFlow(
  await client.query('UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND active=true',
   [tenantId,apiName]);
  await client.query('UPDATE md_flow_definitions SET active=true WHERE tenant_id=$1 AND id=$2',[tenantId,flowId]);
+ const dev=await client.query<{id:string}>(
+  "SELECT id FROM md_permission_sets WHERE tenant_id=$1 AND api_name='OneEngineDeveloper'",[tenantId]);
+ if(!dev.rows[0])throw Error('OneEngine Developer permission set missing');
+ await client.query(`INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+  VALUES($1,$2,$3,'execute','allow') ON CONFLICT DO NOTHING`,
+  [tenantId,dev.rows[0].id,'Flow:'+apiName]);
  return {apiName,label:flow.label,flowType:String(flow.flowType),status:'Active',versionNumber:version,elements,connectors:edges};
 }
