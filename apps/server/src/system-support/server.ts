@@ -759,6 +759,17 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    const record=await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
+    res.json({record,lightningPage:null});
+  }));
+  // Historical events are reported only if captured; never fabricate changes.
+  app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
+    res.json({history:[]});
+  }));
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
@@ -769,14 +780,17 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
-    res.status(201).json({id});
+    res.status(201).json({id,record:{Id:id}});
   }));
-  app.patch('/api/records/:objectApi/:id',route(async(req,res)=>{
+  const updateRecord=route(async(req,res)=>{
     const actor=req.actor!;
-    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
-    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body);
-    res.status(204).end();
-  }));
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid record values');
+    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,
+      req.body,req.get('if-unmodified-since'));
+    res.json({record:{Id:req.params.id}});
+  });
+  app.patch('/api/records/:objectApi/:id',updateRecord);
+  app.put('/api/records/:objectApi/:id',updateRecord);
   app.put('/api/records/:objectApi/:id/owner',route(async(req,res)=>{
     const actor=req.actor!;
     if(typeof req.body?.ownerId!=='string')throw new Error('Invalid owner ID');
@@ -792,7 +806,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
-    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict')res.status(409).json({error:err.message});
+    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
