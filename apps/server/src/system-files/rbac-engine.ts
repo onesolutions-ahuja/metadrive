@@ -37,6 +37,49 @@ export class RbacEngine {
   async allowed(tenantId:string,userId:string,resource:string,action:string):Promise<boolean> {
     return (await this.allowedMany(tenantId,userId,[{resource,action}]))[0];
   }
+  /** Read actual tenant RBAC definitions; never manufacture profiles or grants. */
+  async describe(tenantId:string,userId:string) {
+    await this.require(tenantId,userId,'Security','read');
+    const [sets,roles,assignments,users]=await Promise.all([
+      this.db.query<{id:string;api_name:string}>(
+        'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[tenantId]),
+      this.db.query<{id:string;api_name:string;label:string;parent_role_id:string|null}>(
+        'SELECT id,api_name,label,parent_role_id FROM md_roles WHERE tenant_id=$1 ORDER BY label',[tenantId]),
+      this.db.query<{permission_set_id:string;resource:string;action:string;effect:string}>(
+        'SELECT permission_set_id,resource,action,effect FROM md_permission_rules WHERE tenant_id=$1 ORDER BY resource,action',[tenantId]),
+      this.db.query<{id:string;email:string}>(
+        'SELECT id,email FROM md_users WHERE tenant_id=$1 ORDER BY email',[tenantId])
+    ]);
+    const bySet=new Map<string,string[]>();
+    for(const rule of assignments.rows){
+      if(rule.effect!=='allow')continue;
+      const entries=bySet.get(rule.permission_set_id)??[];
+      entries.push(rule.resource+':'+rule.action);
+      bySet.set(rule.permission_set_id,entries);
+    }
+    const emptyRecordAccess={};
+    return {
+      tenantId,
+      profiles:[],
+      permissionSets:sets.rows.map(p=>({
+        id:p.id,apiName:p.api_name,label:p.api_name,license:'',description:'',
+        systemPermissions:bySet.get(p.id)??[],
+        objectPermissions:emptyRecordAccess,recordTypePermissions:{},
+        fieldPermissions:{}
+      })),
+      permissionSetGroups:[],
+      roles:roles.rows.map(p=>({
+        id:p.id,apiName:p.api_name,name:p.label,parentRoleId:p.parent_role_id
+      })),
+      publicGroups:[],queues:[],sharingRules:[],
+      users:users.rows.map(u=>({
+        id:u.id,name:u.email,username:u.email,role:'',roleId:'',
+        profileId:'',permissionSetIds:[],permissionSetGroupIds:[],
+        timeZone:'UTC',locale:'en-GB'
+      })),
+      sharingSettings:{}
+    };
+  }
   async require(tenantId:string,userId:string,resource:string,action:string) {
     if(!(await this.allowed(tenantId,userId,resource,action))) throw new Error('Permission denied');
   }
