@@ -20,7 +20,7 @@ const appDraftFromMetadata = (app: AppDraft): AppDraft => ({
   navigationPageApiNames: [...(app.navigationPageApiNames ?? [])],
   navigationOrder: reconcileNavigationOrder(app.navigationItems ?? [], app.navigationPageApiNames ?? [], app.navigationOrder ?? []),
   utilityItems: [...(app.utilityItems ?? [])],
-  brandColor: app.brandColor || '#0176d3'
+  brandColor: app.brandColor || '#1d4ed8'
 });
 
 const emptyApp = (): AppDraft => ({
@@ -30,7 +30,7 @@ const emptyApp = (): AppDraft => ({
   navigationItems: [],
   navigationPageApiNames: [],
   navigationOrder: [],
-  brandColor: '#0176d3',
+  brandColor: '#1d4ed8',
   utilityItems: []
 });
 

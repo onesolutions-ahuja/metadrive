@@ -1,0 +1,55 @@
+name: Frontend visual contract
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'scripts/check-ui-design-tokens.mjs'
+      - 'scripts/marketing-visual-smoke.mjs'
+      - '.github/workflows/frontend-visual-contract.yml'
+      - 'package-lock.json'
+      - 'package.json'
+  workflow_dispatch:
+concurrency:
+  group: frontend-ui-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  frontend-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check shared UI design contract
+        run: node scripts/check-ui-design-tokens.mjs
+      - name: Build frontend
+        run: npm run build --workspace apps/web
+
+  marketing-browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install browser test tooling
+        run: npm install --no-save --package-lock=false playwright && npx playwright install --with-deps chromium
+      - name: Start marketing preview
+        run: nohup npm run dev --workspace apps/web -- --host 127.0.0.1 --port 4173 > /tmp/metadrive-vite.log 2>&1 &
+      - name: Check marketing responsiveness and screenshots
+        run: node scripts/marketing-visual-smoke.mjs
+      - name: Save visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: marketing-browser-screenshots
+          path: artifacts/*.png
+          if-no-files-found: ignore

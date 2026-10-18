@@ -1,5 +1,5 @@
 .one-ui {
-  --one-accent: #3176cc;
+  --one-accent: var(--md-primary,#1d4ed8);
   --one-radius: 16px;
   --one-gap: 12px;
   --one-pad: 16px;

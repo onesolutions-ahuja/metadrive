@@ -52,7 +52,7 @@
       "label": "Accent colour",
       "kind": "COLOR",
       "displayOrder": 30,
-      "defaultValue": "#3176cc"
+      "defaultValue": "#1d4ed8"
     },
     {
       "propertyKey": "backgroundColor",
