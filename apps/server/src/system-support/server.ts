@@ -287,6 +287,20 @@ export function createSystemServer(db:SqlPersistence) {
     await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
+  app.put('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','edit');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    const object=await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,req.body);
+    res.json({object});
+  }));
+  app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','delete');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    const object=await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi);
+    res.json({object});
+  }));
   app.get('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
