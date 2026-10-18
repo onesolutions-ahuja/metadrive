@@ -31,23 +31,100 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
   if (!continuationId || flow.connectors.some(connector => connector.id === continuationId)) {
     throw Error('New Flow connector ID must be unique.');
   }
+  const outcomes = element.type === 'Decision'
+    ? decisionOutcomeLabels(element.config?.outcomes)
+    : [];
+  const needsTerminal = outcomes.length > 0 && !selected;
+  const terminalId = needsTerminal
+    ? Math.max(element.id, ...flow.elements.map(item => item.id)) + 1
+    : null;
   const elements = [
     ...flow.elements.slice(0, previousIndex + 1),
     element,
+    ...(needsTerminal ? [{ id: terminalId, type: 'End', label: 'End', config: {} }] : []),
     ...flow.elements.slice(previousIndex + 1)
   ];
   if (!selected) {
-    return {
-      ...flow, elements,
-      connectors: [...flow.connectors, { id: continuationId, from: fromId, to: element.id, label: '', kind: 'normal' }]
-    };
+    const first = { id: continuationId, from: fromId, to: element.id, label: '', kind: 'normal' };
+    const branches = needsTerminal ? outcomes.map((label, index) => ({
+      id: continuationId + '-outcome-' + index,
+      from: element.id, to: terminalId, label, kind: 'normal'
+    })) : [];
+    return { ...flow, elements, connectors: [...flow.connectors, first, ...branches] };
   }
   const connectorIndex = flow.connectors.findIndex(connector => connector.id === selected.id);
+  const continuations = outcomes.length ? outcomes.map((label, index) => ({
+    id: continuationId + '-outcome-' + index,
+    from: element.id, to: selected.to, label, kind: 'normal'
+  })) : [{ id: continuationId, from: element.id, to: selected.to, label: '', kind: 'normal' }];
+  if (continuations.some(item => flow.connectors.some(existing => existing.id === item.id)))
+    throw Error('New Flow connector ID must be unique.');
   const connectors = [
     ...flow.connectors.slice(0, connectorIndex),
     { ...selected, to: element.id },
-    { id: continuationId, from: element.id, to: selected.to, label: '', kind: 'normal' },
+    ...continuations,
     ...flow.connectors.slice(connectorIndex + 1)
   ];
   return { ...flow, elements, connectors };
+}
+
+/** Default is the runtime's special fallback outcome; named outcomes use their visible labels. */
+export function decisionOutcomeLabels(outcomes) {
+  if (!Array.isArray(outcomes)) return ['Default'];
+  const labels = outcomes.map(item => item?.name === 'Default' ? 'Default' : item?.label || item?.name)
+    .filter(label => typeof label === 'string' && label.trim());
+  if (!labels.includes('Default')) labels.push('Default');
+  return [...new Set(labels)];
+}
+
+/** Reconcile Decision outcomes without replacing existing configured branch destinations. */
+export function reconcileDecisionOutcomePaths(flow, decisionId, nextOutcomes, connectorPrefix) {
+  const node = flow.elements.find(item => item.id === decisionId);
+  if (!node || node.type !== 'Decision') throw Error('Choose a Decision element.');
+  const old = Array.isArray(node.config?.outcomes) ? node.config.outcomes : [];
+  const oldLabels = decisionOutcomeLabels(old);
+  const nextLabels = decisionOutcomeLabels(nextOutcomes);
+  if (nextLabels.length !== new Set(nextLabels).size)
+    throw Error('Decision outcomes require unique labels.');
+  const normal = flow.connectors.filter(item => item.from === decisionId && item.kind === 'normal');
+  const kept = new Set();
+  const connectors = [...flow.connectors];
+  // Match unchanged outcome names first, then rename a single unmatched outcome in place.
+  for (const label of nextLabels) {
+    const found = normal.find(edge => edge.label === label && !kept.has(edge.id));
+    if (found) kept.add(found.id);
+  }
+  const removed = oldLabels.filter(label => !nextLabels.includes(label) && label !== 'Default');
+  const added = nextLabels.filter(label => !oldLabels.includes(label) && label !== 'Default');
+  if (removed.length === 1 && added.length === 1) {
+    const renamed = normal.find(edge => edge.label === removed[0] && !kept.has(edge.id));
+    if (renamed) {
+      connectors[connectors.findIndex(edge => edge.id === renamed.id)] = { ...renamed, label: added[0] };
+      kept.add(renamed.id);
+    }
+  }
+  const active = new Set(nextLabels);
+  let updated = connectors.filter(edge => edge.from !== decisionId || edge.kind !== 'normal'
+    || active.has(edge.label));
+  const linked = new Set(updated.filter(edge => edge.from === decisionId && edge.kind === 'normal')
+    .map(edge => edge.label));
+  const missing = nextLabels.filter(label => !linked.has(label));
+  let elements = flow.elements.map(item => item.id === decisionId
+    ? { ...item, config: { ...item.config, outcomes: nextOutcomes } } : item);
+  if (missing.length) {
+    let end = elements.find(item => item.type === 'End');
+    if (!end) {
+      end = { id: Math.max(...elements.map(item => item.id), 0) + 1, type: 'End', label: 'End', config: {} };
+      elements = [...elements, end];
+    }
+    const ids = new Set(updated.map(item => item.id));
+    for (let index = 0; index < missing.length; index++) {
+      const label = missing[index];
+      let id = connectorPrefix + '-' + index;
+      while (ids.has(id)) id += '-next';
+      ids.add(id);
+      updated.push({ id, from: decisionId, to: end.id, label, kind: 'normal' });
+    }
+  }
+  return { ...flow, elements, connectors: updated };
 }
