@@ -228,6 +228,32 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({users:rows.map(r=>({id:r.id,name:r.display_name||r.email,email:r.email,active:r.enabled,
       lockedUntil:r.locked_until?new Date(r.locked_until).getTime():null}))});
   }));
+  // Security administration: tenant-scoped account locks and session revocation.
+  const setAccountLock=route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const id=req.params.id;
+    if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))
+      throw new Error('Invalid user ID');
+    if(id===actor.user_id)throw new Error('Cannot alter own account lock');
+    const locking=req.path.endsWith('/lock');
+    const duration=req.body?.durationMinutes;
+    if(locking && (!Number.isInteger(duration)||duration<1||duration>1440))
+      throw new Error('Invalid account lock duration');
+    await db.transaction(async client=>{
+      const updated=await client.query(`UPDATE md_users SET locked_until=${locking?"now() + ($3::integer * interval '1 minute')":"NULL"}
+        WHERE tenant_id=$1 AND id=$2 RETURNING id`,locking
+        ?[actor.tenant_id,id,duration]:[actor.tenant_id,id]);
+      if(!updated.rowCount)throw new Error('User not found');
+      if(locking)for(const table of ['md_sessions','md_refresh_sessions'])
+        await client.query('UPDATE '+table+' SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,id]);
+      await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,subject_user_id) VALUES($1,$2,$3,$4)',
+        [actor.tenant_id,actor.user_id,locking?'UserLocked':'UserUnlocked',id]);
+    });
+    res.json({success:true});
+  });
+  app.post('/api/auth/users/:id/lock',setAccountLock);
+  app.post('/api/auth/users/:id/unlock',setAccountLock);
   app.get('/api/auth/security-events',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
