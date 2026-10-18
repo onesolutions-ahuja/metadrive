@@ -1,6 +1,7 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
 import {seedFreshCoreObjects} from './fresh-core-objects.js';
+import {seedFreshCoreProfiles} from './fresh-core-profiles.js';
 
 export type TenantRequest={
   slug:string;
@@ -32,19 +33,16 @@ export class TenantProvisioning {
       const role=await client.query<{id:string}>(
         'INSERT INTO md_roles (tenant_id,api_name,label) VALUES ($1,$2,$3) RETURNING id',
         [tenantId,'TenantDeveloper','Tenant Developer']);
+      await seedFreshCoreProfiles(client,tenantId);
       const permissionSet=await client.query<{id:string}>(
-        'INSERT INTO md_permission_sets (tenant_id,api_name) VALUES ($1,$2) RETURNING id',
-        [tenantId,'TenantDeveloper']);
+        'SELECT id FROM md_permission_sets WHERE tenant_id=$1 AND api_name=$2',
+        [tenantId,'Developer']);
       await client.query(
         'INSERT INTO md_user_roles (tenant_id,user_id,role_id) VALUES ($1,$2,$3)',
         [tenantId,user.rows[0].id,role.rows[0].id]);
       await client.query(
         'INSERT INTO md_role_permission_sets (tenant_id,role_id,permission_set_id) VALUES ($1,$2,$3)',
         [tenantId,role.rows[0].id,permissionSet.rows[0].id]);
-      // Wildcard rights are SQL policy rules, not a hardcoded developer bypass.
-      await client.query(
-        "INSERT INTO md_permission_rules (tenant_id,permission_set_id,resource,action,effect) VALUES ($1,$2,'*','*','allow')",
-        [tenantId,permissionSet.rows[0].id]);
       await seedFreshCoreObjects(client,tenantId);
       return {slug,domain};
     });
