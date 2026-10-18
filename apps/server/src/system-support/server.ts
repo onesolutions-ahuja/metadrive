@@ -956,8 +956,8 @@ export async function startSystemServer() {
   try { await applySystemMigrations(db); await db.verifySchema();
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
-    await reconcileCoreObjectDefaults(db);
-    await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+    await bootstrapFreshTenant(db);
+    await reconcileCoreObjectDefaults(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
     if(firstLogin==='rotated'){
