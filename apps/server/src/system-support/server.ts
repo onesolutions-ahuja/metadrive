@@ -218,6 +218,11 @@ export function createSystemServer(db:SqlPersistence) {
       res.json(await platformTenants.transition(actor.tenant_id,actor.user_id,req.params.slug,operation));
     }));
   }
+  app.post('/api/platform/tenants',route(async(req,res)=>{
+    const actor=req.actor!;
+    const payload=await platformTenants.create(actor.tenant_id,actor.user_id,req.body,req.get('idempotency-key'));
+    res.status(payload.replayed?200:201).json(payload);
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
