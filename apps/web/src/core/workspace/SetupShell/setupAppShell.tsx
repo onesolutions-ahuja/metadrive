@@ -553,7 +553,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
   const saveAccessControl = async (nextAccessControl: AccessControlMetadata) => {
     const omit = (user: AccessControlMetadata['users'][number]) => {
-      const {roleId: _roleId, ...other} = user;
+      const {roleId: _roleId, permissionSetIds: _permissionSetIds, ...other} = user;
       return other;
     };
     const {roles: previousRoles, permissionSets: previousSets, users: previousUsers, ...previousRest} = accessControl;
@@ -563,7 +563,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       throw new Error('This SQL runtime cannot persist these settings yet. No changes have been saved.');
     const rolesChanged = JSON.stringify(previousRoles) !== JSON.stringify(nextRoles) ||
       JSON.stringify(previousUsers.map(user => user.roleId)) !== JSON.stringify(nextUsers.map(user => user.roleId));
-    const setsChanged = JSON.stringify(previousSets) !== JSON.stringify(nextSets);
+    const setsChanged = JSON.stringify(previousSets) !== JSON.stringify(nextSets) ||
+      JSON.stringify(previousUsers.map(user => user.permissionSetIds)) !== JSON.stringify(nextUsers.map(user => user.permissionSetIds));
     if (rolesChanged && setsChanged)
       throw new Error('Save role changes and permission-set changes separately to avoid partial updates.');
     if (!rolesChanged && !setsChanged) return;
@@ -586,7 +587,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       saved = await apiRequest<AccessControlMetadata>('/metadata/permissions/sets', {
         method: 'PUT',
         body: JSON.stringify({permissionSets: nextSets.map(({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions}) =>
-          ({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions}))})
+          ({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions})),
+          users: nextUsers.map(({id, permissionSetIds}) => ({id, permissionSetIds}))})
       });
     }
     setAccessControl(saved);
