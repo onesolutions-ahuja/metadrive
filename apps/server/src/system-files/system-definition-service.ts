@@ -29,7 +29,7 @@ export class SystemDefinitionService {
       ORDER BY label,api_name`,[tenantId,kind]);
     return rows.map(row=>({
       ...(row.properties && typeof row.properties==='object' && !Array.isArray(row.properties) ? row.properties : {}),
-      apiName:row.api_name,label:row.label,revision:row.revision,enabled:row.enabled
+      apiName:row.api_name,id:row.api_name,name:row.api_name,label:row.label,revision:row.revision,enabled:row.enabled
     }));
   }
   async save(tenantId:string,userId:string,kind:DefinitionKind,value:unknown) {
@@ -64,7 +64,7 @@ export class SystemDefinitionService {
     if(Number(expected)!==0)params.push(expected);
     const {rows}=await this.db.query<{revision:number}>(sql,params);
     if(!rows.length)throw new Error('Definition revision conflict');
-    return {apiName,label,revision:rows[0].revision};
+    return {...properties,apiName,id:apiName,name:apiName,label,revision:rows[0].revision,enabled:enabled!==false};
   }
  async remove(tenantId:string,userId:string,kind:DefinitionKind,apiName:string){
   await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'manage');
