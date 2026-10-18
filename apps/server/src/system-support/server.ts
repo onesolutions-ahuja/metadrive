@@ -9,6 +9,7 @@ import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-im
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {PasswordResetService} from './password-reset-service.js';
+import {MfaService} from './mfa-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
@@ -80,6 +81,7 @@ export function createSystemServer(db:SqlPersistence) {
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
+  const mfa=new MfaService(db,rbac,auth,namedCredentials);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
   const definitions=new ObjectDefinitionService(db);
@@ -133,7 +135,10 @@ export function createSystemServer(db:SqlPersistence) {
     const tenantId=await resolveTenant(db,req,tenantSlug);
     if(!tenantId) {res.status(401).json({error:'Invalid credentials or tenant domain'});return;}
     try {
-      const session=await auth.signIn(tenantId,email,password);
+      const userId=await auth.verifyIdentity(tenantId,email,password);
+      const challenge=await mfa.createChallenge(tenantId,userId);
+      if(challenge){res.json(challenge);return;}
+      const session=await auth.issuePasswordSession(tenantId,userId);
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch(error) {
@@ -162,6 +167,11 @@ export function createSystemServer(db:SqlPersistence) {
     const tenantId=await resolveTenant(db,req,req.body?.tenantSlug);
     if(!tenantId){res.status(400).json({error:'Tenant domain is required'});return;}
     res.json(await passwordReset.confirm(tenantId,req.body?.email,req.body?.token,req.body?.newPassword));
+  }));
+  app.post('/api/auth/mfa/verify',route(async(req,res)=>{
+    const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code);
+    res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn});
   }));
   app.use('/api',authorize);
   // Durable notifications: only the addressed user can list or acknowledge them.
@@ -232,6 +242,30 @@ export function createSystemServer(db:SqlPersistence) {
   app.put('/api/auth/password-recovery/settings',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await recoverySettings.save(actor.tenant_id,actor.user_id,req.body));
+  }));
+  app.get('/api/auth/mfa/status',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.status(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/auth/mfa/policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.policy(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/auth/mfa/policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.setPolicy(actor.tenant_id,actor.user_id,req.body?.mode));
+  }));
+  app.post('/api/auth/mfa/enroll',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.enroll(actor.tenant_id,actor.user_id,req.body?.password));
+  }));
+  app.post('/api/auth/mfa/enroll/confirm',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.confirmEnrollment(actor.tenant_id,actor.user_id,req.body?.enrollment_token,req.body?.code));
+  }));
+  app.post('/api/auth/mfa/disable',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.disable(actor.tenant_id,actor.user_id,req.body?.password,req.body?.code));
   }));
   app.get('/api/auth/user-locks',route(async(req,res)=>{
     const actor=req.actor!;
