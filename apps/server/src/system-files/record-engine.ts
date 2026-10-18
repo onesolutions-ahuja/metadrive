@@ -197,6 +197,29 @@ export class RecordEngine {
     return rows.map(row=>row.id);
   }
 
+  /** Numeric aggregation over only records visible to the actor. */
+  async aggregateNumeric(tenantId:string,userId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    if(!['number','currency','percent'].includes(fields[0]?.data_type??''))
+      throw new Error('Invalid numeric aggregate field');
+    const {rows}=await this.db.query<{count:string;sum:string|null;min:string|null;max:string|null;avg:string|null}>(`
+      SELECT count(v.value_number)::text AS count,sum(v.value_number)::text AS sum,
+        min(v.value_number)::text AS min,max(v.value_number)::text AS max,
+        avg(v.value_number)::text AS avg
+      FROM md_record_values v JOIN md_records r
+        ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+        AND md_record_access($1,$4,r.id,'read')`,
+      [tenantId,objectApi,fieldApi,userId]);
+    return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
+  }
+
   /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
   async get(tenantId:string,userId:string,objectApi:string,id:string) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
