@@ -23,8 +23,7 @@ const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
  'object-manager':'Configure object metadata',
  'named-credentials':'Manage named credentials and secrets',
  'approval-processes':'Manage approval definitions',
- 'automation-settings':'Configure process execution policies',
- 'connector-settings':'Manage connector configuration'
+ 'automation-settings':'Configure process execution policies'
 };
 export function resolveSystemWorkspace(id:string){
  if(!supported.has(id))return undefined;
