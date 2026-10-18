@@ -57,9 +57,8 @@ export class FlowRuntime {
       ids.add(node.id);
       const type=String(node.type??'');
       types.set(node.id,type);
-      if(!(data.flowType==='Screen Flow'
-        ?['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','Screen','End'].includes(type)
-        :['Start','Assignment','Decision','CreateRecord','End'].includes(type))){
+      if(!['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','End',
+        ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type)){
         errors.push('Unsupported SQL Flow element: '+type);
       }
     }
@@ -367,11 +366,15 @@ export class FlowRuntime {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     const definition=await this.loadActive(tenantId,flowApi);
-    const {rows}=await this.db.query<{flow_type:string}>(
-      'SELECT flow_type FROM md_flow_definitions WHERE tenant_id=$1 AND id=$2',[tenantId,definition.id]);
+    const {rows}=await this.db.query<{flow_type:string;has_editor:boolean}>(`
+      SELECT flow_type,EXISTS(SELECT 1 FROM md_flow_editor_values x
+        WHERE x.tenant_id=f.tenant_id AND x.flow_id=f.id) AS has_editor
+      FROM md_flow_definitions f WHERE f.tenant_id=$1 AND f.id=$2`,[tenantId,definition.id]);
     const id=await this.start(tenantId,flowApi,userId,inputs);
-    return rows[0]?.flow_type==='Screen Flow'
-      ?this.advanceInterview(tenantId,userId,id,{}) : this.run(tenantId,id,userId);
+    // Authored Screen/Autolaunched Flows both use the one normalized action engine.
+    // SQL-only definitions from before the Builder migration retain their legacy adapter.
+    return rows[0]?.has_editor?this.advanceInterview(tenantId,userId,id,{})
+      :this.run(tenantId,id,userId);
   }
 
   /** Resume a Screen Flow from durable SQL state. The caller must own the interview. */
@@ -388,7 +391,8 @@ export class FlowRuntime {
         WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r`,[tenantId,runId]);
       const active=rows[0];
       if(!active||active.status!=='pending'||active.started_by!==userId
-        ||active.flow_type!=='Screen Flow')throw new Error('Pending Screen Flow interview not found');
+        ||!['Screen Flow','Autolaunched Flow'].includes(active.flow_type))
+        throw new Error('Pending Flow interview not found');
       await this.rbac!.require(tenantId,userId,'Flow:'+active.api_name,'execute');
       const doc=await client.query<MetadataValueRow>(
         'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
@@ -511,7 +515,7 @@ export class FlowRuntime {
           const outputs:Record<string,Scalar>={};
           for(const resource of resources)
             if(resource.availableForOutput&&Object.hasOwn(vars,resource.name))outputs[resource.name]=vars[resource.name];
-          return {completed:true,outputs};
+          return {id:runId,status:'completed' as const,completed:true,outputs};
         }
         if(node.type==='Assignment'){
           set(node.config.variable,evaluate(node.config.value??null));
