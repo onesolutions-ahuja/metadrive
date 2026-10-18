@@ -187,6 +187,23 @@ try{
  assert.equal(calloutCount,1);
  assert.equal((await records.get(tenantId,userId,'AuditItem__c',complete.outputs.RecordId)).Name,'Screen Sale');
  await assert.rejects(()=>supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{}),/not found/);
+ // A rejected callout follows its metadata fault edge and must not create a sale.
+ const rejectedFlows=new FlowRuntime(db,new RbacEngine(db),records,
+  async()=>{throw new Error('Payment declined');});
+ const originalRecords=await db.query(
+  "SELECT count(*)::integer AS total FROM md_records WHERE tenant_id=$1 AND object_api='AuditItem__c'",[tenantId]);
+ const declined=await rejectedFlows.execute(tenantId,checkout.apiName,userId);
+ const secondDeclined=await rejectedFlows.advanceInterview(tenantId,userId,declined.interviewId,
+  {values:{Amount:15}});
+ assert.equal(secondDeclined.screen.id,3);
+ const declinedEnd=await rejectedFlows.advanceInterview(tenantId,userId,declined.interviewId,
+  {values:{Confirmed:true}});
+ assert.equal(declinedEnd.completed,true);
+ assert.equal(declinedEnd.outputs.RecordId,undefined);
+ const afterDecline=await db.query(
+  "SELECT count(*)::integer AS total FROM md_records WHERE tenant_id=$1 AND object_api='AuditItem__c'",[tenantId]);
+ assert.equal(afterDecline.rows[0].total,originalRecords.rows[0].total,
+  'A declined card callout must not persist a record');
  const debug=await supportedFlows.debugGraph(tenantId,userId,checkout.apiName,{});
  assert.equal(debug.status,'waiting');
  assert.equal(calloutCount,1);
