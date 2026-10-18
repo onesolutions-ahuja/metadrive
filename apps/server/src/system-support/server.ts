@@ -10,6 +10,7 @@ import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
 import { RoleAdministration } from './role-administration.js';
+import { PermissionSetAdministration } from './permission-set-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
@@ -70,6 +71,7 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const roleAdministration=new RoleAdministration(db,rbac);
+  const permissionSetAdministration=new PermissionSetAdministration(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -363,6 +365,10 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await rbac.describe(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/metadata/permissions/sets',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await permissionSetAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.put('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
@@ -954,10 +960,6 @@ export async function startSystemServer() {
   try { await applySystemMigrations(db); await db.verifySchema();
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
-    const componentTenants=await seedBundledComponentsForExistingTenants(db);
-    console.info('Bundled component seeder: existing tenants backfilled:',componentTenants);
-    const productImageTenants=await seedProductImageFieldForExistingTenants(db);
-    console.info('Product image field seeder: existing tenants backfilled:',productImageTenants);
     await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);

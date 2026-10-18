@@ -1,4 +1,5 @@
 import type { SqlPersistence } from './sql-persistence.js';
+import {toDisplayedPermission} from '../system-support/permission-resource-map.js';
 
 export type PermissionCheck = {resource:string;action:string};
 
@@ -44,7 +45,7 @@ export class RbacEngine {
   /** Read actual tenant RBAC definitions; never manufacture profiles or grants. */
   async describe(tenantId:string,userId:string) {
     await this.require(tenantId,userId,'Security','read');
-    const [sets,roles,assignments,users,profiles,assignedProfiles,assignedRoles]=await Promise.all([
+    const [sets,roles,assignments,users,profiles,assignedProfiles,assignedRoles,userSets,objects,fields]=await Promise.all([
       this.db.query<{id:string;api_name:string}>(
         'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[tenantId]),
       this.db.query<{id:string;api_name:string;label:string;parent_role_id:string|null}>(
@@ -58,13 +59,27 @@ export class RbacEngine {
       this.db.query<{user_id:string;profile_id:string}>(
         'SELECT user_id,profile_id FROM md_user_profiles WHERE tenant_id=$1',[tenantId]),
       this.db.query<{user_id:string;role_id:string}>(
-        'SELECT user_id,role_id FROM md_user_roles WHERE tenant_id=$1',[tenantId])
+        'SELECT user_id,role_id FROM md_user_roles WHERE tenant_id=$1',[tenantId]),
+      this.db.query<{user_id:string;permission_set_id:string}>(
+        'SELECT user_id,permission_set_id FROM md_permission_assignments WHERE tenant_id=$1',[tenantId]),
+      this.db.query<{api_name:string}>(
+        'SELECT api_name FROM md_object_definitions WHERE tenant_id=$1',[tenantId]),
+      this.db.query<{object_api:string;api_name:string}>(
+        'SELECT object_api,api_name FROM md_field_definitions WHERE tenant_id=$1',[tenantId])
     ]);
-    const bySet=new Map<string,string[]>();
+    const objectNames=new Set(objects.rows.map(o=>o.api_name));
+    const fieldNames=new Set(fields.rows.map(f=>f.object_api+'.'+f.api_name));
+    const bySet=new Map<string,{systemPermissions:string[];objectPermissions:Record<string,Record<string,boolean>>;fieldPermissions:Record<string,Record<string,boolean>>}>();
     for(const rule of assignments.rows){
       if(rule.effect!=='allow')continue;
-      const entries=bySet.get(rule.permission_set_id)??[];
-      entries.push(rule.resource+':'+rule.action);
+      const entries=bySet.get(rule.permission_set_id)??{systemPermissions:[],objectPermissions:{},fieldPermissions:{}};
+      if(rule.resource.startsWith('Object:')||objectNames.has(rule.resource)){
+        const key=rule.resource.startsWith('Object:')?rule.resource.slice(7):rule.resource;
+        (entries.objectPermissions[key]??={})[rule.action]=true;
+      }else if(rule.resource.startsWith('Field:')||fieldNames.has(rule.resource)){
+        const key=rule.resource.startsWith('Field:')?rule.resource.slice(6):rule.resource;
+        (entries.fieldPermissions[key]??={})[rule.action]=true;
+      }else entries.systemPermissions.push(toDisplayedPermission(rule.resource,rule.action));
       bySet.set(rule.permission_set_id,entries);
     }
     const emptyRecordAccess={};
@@ -74,9 +89,9 @@ export class RbacEngine {
         systemPermissions:[],objectPermissions:{},recordTypePermissions:{},fieldPermissions:{}})),
       permissionSets:sets.rows.map(p=>({
         id:p.id,apiName:p.api_name,label:p.api_name,license:'',description:'',
-        systemPermissions:bySet.get(p.id)??[],
-        objectPermissions:emptyRecordAccess,recordTypePermissions:{},
-        fieldPermissions:{}
+        systemPermissions:bySet.get(p.id)?.systemPermissions??[],
+        objectPermissions:bySet.get(p.id)?.objectPermissions??emptyRecordAccess,recordTypePermissions:{},
+        fieldPermissions:bySet.get(p.id)?.fieldPermissions??{}
       })),
       permissionSetGroups:[],
       roles:roles.rows.map(p=>({
@@ -85,7 +100,7 @@ export class RbacEngine {
       publicGroups:[],queues:[],sharingRules:[],
       users:users.rows.map(u=>({
         id:u.id,name:u.email,username:u.email,role:'',roleId:assignedRoles.rows.find(r=>r.user_id===u.id)?.role_id??'',
-        profileId:assignedProfiles.rows.find(p=>p.user_id===u.id)?.profile_id??'',permissionSetIds:[],permissionSetGroupIds:[],
+        profileId:assignedProfiles.rows.find(p=>p.user_id===u.id)?.profile_id??'',permissionSetIds:userSets.rows.filter(p=>p.user_id===u.id).map(p=>p.permission_set_id),permissionSetGroupIds:[],
         timeZone:'UTC',locale:'en-GB'
       })),
       sharingSettings:{}

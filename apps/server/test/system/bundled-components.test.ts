@@ -22,10 +22,3 @@ test('bundled component seed never overwrites tenant customisations and is tenan
     assert.equal(write.args[2],'one-bundled:'+write.args[1]);
   }
 });
-
-test('system startup wires the idempotent existing-tenant component and Product image seeders', async()=>{
-  const source=await readFile(new URL('../../src/system-support/server.ts',import.meta.url),'utf8');
-  const startup=source.slice(source.indexOf('export async function startSystemServer()'));
-  assert.match(startup,/await seedBundledComponentsForExistingTenants\(db\)/);
-  assert.match(startup,/await seedProductImageFieldForExistingTenants\(db\)/);
-});

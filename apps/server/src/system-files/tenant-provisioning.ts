@@ -62,7 +62,7 @@ export class TenantProvisioning {
         [tenantId,'TenantDeveloper','Tenant Developer']);
       const permissionSet=await client.query<{id:string}>(
         'INSERT INTO md_permission_sets (tenant_id,api_name) VALUES ($1,$2) RETURNING id',
-        [tenantId,'TenantDeveloper']);
+        [tenantId,'OneEngine']);
       await client.query(
         'INSERT INTO md_user_roles (tenant_id,user_id,role_id) VALUES ($1,$2,$3)',
         [tenantId,user.rows[0].id,role.rows[0].id]);
