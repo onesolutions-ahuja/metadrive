@@ -57,7 +57,7 @@ export class FlowRuntime {
       ids.add(node.id);
       const type=String(node.type??'');
       types.set(node.id,type);
-      if(!['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','End',
+      if(!['Start','Assignment','Decision','Create Records','CreateRecord','Update Records','HTTP Callout','End',
         ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type)){
         errors.push('Unsupported SQL Flow element: '+type);
       }
@@ -67,6 +67,22 @@ export class FlowRuntime {
         continue;
       }
       const properties=config as Record<string,unknown>;
+      if(type==='Update Records'){
+        if(typeof properties.object!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.object))
+          errors.push('Update Records requires a valid Object API name');
+        if(typeof properties.recordId!=='string'||!properties.recordId.trim())
+          errors.push('Update Records requires an explicit record ID or Flow resource reference; bulk updates are not supported');
+        if(!Array.isArray(properties.fieldValues)||!properties.fieldValues.length)
+          errors.push('Update Records requires field assignments');
+        else for(const entry of properties.fieldValues){
+          const field=(entry&&typeof entry==='object'&&!Array.isArray(entry))
+            ?String((entry as Record<string,unknown>).field??''):'';
+          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
+            errors.push('Update Records field assignment must use a valid API name');
+        }
+        if(properties.conditions&&Array.isArray(properties.conditions)&&properties.conditions.length)
+          errors.push('Update Records filter-based bulk updates are not supported');
+      }
       if(type==='HTTP Callout'){
         if(typeof properties.namedCredentialId!=='string'
           ||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(properties.namedCredentialId))
@@ -568,6 +584,26 @@ export class FlowRuntime {
           if(typeof node.config.resultVariable==='string'&&node.config.resultVariable)
             set(node.config.resultVariable,id);
           history=[]; // Back must not replay side effects.
+        }else if(node.type==='Update Records'){
+          if(!this.records)throw new Error('Flow record engine unavailable');
+          const object=String(node.config.object??'');
+          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(object))throw new Error('Invalid Flow Object');
+          const recordId=evaluate(node.config.recordId);
+          if(typeof recordId!=='string'||!/^[0-9a-f-]{36}$/i.test(recordId))
+            throw new Error('Update Records requires a resolved record ID');
+          if(Array.isArray(node.config.conditions)&&node.config.conditions.length)
+            throw new Error('Bulk Update Records is not supported');
+          const assignments=node.config.fieldValues;
+          if(!Array.isArray(assignments)||!assignments.length)throw new Error('Update Records requires field assignments');
+          const fields:Record<string,unknown>={};
+          for(const item of assignments as Array<Record<string,unknown>>){
+            const field=String(item.field??item.apiName??'');
+            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||Object.hasOwn(fields,field))
+              throw new Error('Invalid or duplicate Update Records field');
+            fields[field]=evaluate(item.value??null);
+          }
+          await this.records.updateInTransaction(client,tenantId,userId,object,recordId,fields);
+          history=[]; // Back must never replay an update.
         }else if(node.type==='HTTP Callout'){
           if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
           const stableKey=runId+'-'+node.id;
@@ -686,7 +722,7 @@ export class FlowRuntime {
         };
         const matched=conditions.find(option=>option.name!=='Default'&&match(option));
         outcome=String(matched?.label??matched?.name??'Default');
-      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord'].includes(node.type)){
+      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord','Update Records'].includes(node.type)){
         throw new Error('Cannot safely debug unsupported Flow action: '+node.type);
       }
       const available=edges.filter(edge=>edge.from===current&&edge.kind==='normal');
