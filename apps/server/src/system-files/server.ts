@@ -4,6 +4,7 @@ import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
 import { RbacEngine } from './rbac-engine.js';
+import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from './system-definition-service.js';
 import { RecordEngine } from './record-engine.js';
 import { ComponentRuntime } from './component-runtime.js';
@@ -58,6 +59,7 @@ export function createSystemServer(db:SqlPersistence) {
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
+  const namedCredentials=new NamedCredentialService(db,rbac);
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
@@ -197,6 +199,19 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  app.get('/api/named-credentials/readiness',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await namedCredentials.readiness(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/named-credentials',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({credentials:await namedCredentials.list(actor.tenant_id,actor.user_id)});
+  }));
+  app.post('/api/named-credentials',route(async(req,res)=>{
+    const actor=req.actor!;
+    const credential=await namedCredentials.create(actor.tenant_id,actor.user_id,req.body);
+    res.status(201).json({credential});
   }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
   const definitionPaths:Record<string,DefinitionKind>={
