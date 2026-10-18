@@ -486,3 +486,100 @@ test('Object relationship dependency discovery reads tenant-scoped SQL with no i
  assert.deepEqual((await engine.fieldDependencies('tenant','Sale__c')).fields,[{fieldApiName:'CustomerId',dependencies:['Customer__c']}]);
  assert.ok(calls.every(args=>args[0]==='tenant'));
 });
+
+test('Flow logs expose only the caller tenant failed SQL runs with RBAC',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const calls:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+   calls.push(args);
+   assert.match(sql,/r.tenant_id=\$1/);
+   if(sql.includes("status='failed'"))return {rows:[{
+     id:'r1',api_name:'ORDER_FLOW',label:'Order Flow',started_by:'user',
+     finished_at:new Date('2026-10-18T12:00:00Z'),started_at:new Date('2026-10-18T11:00:00Z'),
+     error_code:'FAILED_ACTION'
+   }]};
+   return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(t:string,u:string,resource:string,action:string)=>{
+   assert.deepEqual([t,u,resource,action],['tenant','user','FlowDefinition','read']);
+ }} as unknown as RbacEngine;
+ const result=await new FlowRuntime(db,rbac).failedLogs('tenant','user');
+ assert.equal(result.logs[0].error,'FAILED_ACTION');
+ assert.equal(result.logs[0].flowApiName,'ORDER_FLOW');
+ assert.deepEqual(calls,[['tenant']]);
+});
+test('Pending Flow interviews use SQL pending runs rather than fabricated sample records',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const db={query:async(sql:string,args:unknown[])=>{
+   assert.match(sql,/status='pending'/);
+   assert.deepEqual(args,['tenant']);
+   return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ assert.deepEqual(await new FlowRuntime(db,rbac).pendingInterviews('tenant','user'),{interviews:[]});
+});
+
+test('AppExchange catalog uses SQL tenant installations and entitlements',async()=>{
+ const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
+ const db={query:async(sql:string,args:unknown[])=>{
+   assert.match(sql,/md_app_installations/);
+   assert.match(sql,/md_app_entitlements/);
+   assert.deepEqual(args,['tenant']);
+   return {rows:[{id:'app1',api_name:'CUSTOM_APP',label:'Custom App',installed:true,
+     expires_at:null,licensed:true}]};
+ }} as unknown as SqlPersistence;
+ const value=await new AppRuntime(db).marketplace('tenant');
+ assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
+   CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
+});
+
+test('Flow deactivation changes SQL state only for caller tenant and requires OneEngine manage',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const calls:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+  calls.push(args);
+  if(sql.includes('UPDATE md_flow_definitions')){
+   assert.match(sql,/tenant_id=\$1/);return {rows:[],rowCount:1};
+  }
+  if(sql.includes('SELECT id,api_name,label,flow_type')){
+   return {rows:[{id:'f1',api_name:'MyFlow',label:'My Flow',flow_type:'Autolaunched Flow',version:2,active:false}]};
+  }
+  throw Error('Unexpected SQL');
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+  assert.deepEqual([tenant,user,resource,action],['tenant','user','FlowDefinition','manage']);
+ }} as unknown as RbacEngine;
+ const result=await new FlowRuntime(db,rbac).deactivate('tenant','user','MyFlow');
+ assert.equal(result.flow.status,'Draft');
+ assert.deepEqual(calls[0],['tenant','MyFlow']);
+});
+
+test('Tenant company settings save validated SQL JSON under the authenticated tenant',async()=>{
+ const {PlatformTenantService}=await import('../../src/system-files/platform-tenant-service.js');
+ const queries:Array<{sql:string;args:unknown[]}>= [];
+ const db={query:async(sql:string,args:unknown[])=>{
+   queries.push({sql,args});
+   return {rows:[{properties:{legalName:'Example Ltd'}}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+   assert.deepEqual([tenant,user,resource,action],['tenant','user','TenantSettings','manage']);
+ }} as unknown as RbacEngine;
+ const svc=new PlatformTenantService(db,rbac);
+ assert.deepEqual(await svc.saveSetting('tenant','user','company-profile',{legalName:'Example Ltd'}),{legalName:'Example Ltd'});
+ assert.deepEqual(queries[0].args,['tenant','company-profile',JSON.stringify({legalName:'Example Ltd'})]);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','company-profile',{password:'not-a-setting'}),/Invalid company profile/);
+ assert.equal(queries.length,1);
+});
+test('Tenant currency validation rejects duplicate ISO codes and invalid rates before SQL writes',async()=>{
+ const {PlatformTenantService}=await import('../../src/system-files/platform-tenant-service.js');
+ const db={query:async()=>{throw Error('No database write expected')}} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const svc=new PlatformTenantService(db,rbac);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','currencies',{
+   corporateCurrency:'GBP',standardVatRate:20,
+   currencies:[{currencyIsoCode:'GBP',conversionRate:1},{currencyIsoCode:'GBP',conversionRate:2}]
+ }),/Invalid currency/);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','automation-settings',{
+   autoRetryFailedFlows:true,maxRetryAttempts:10000,conversationIdleMinutes:5
+ }),/Invalid automation settings/);
+});

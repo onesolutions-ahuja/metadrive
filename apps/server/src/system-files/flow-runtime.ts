@@ -34,6 +34,60 @@ export class FlowRuntime {
       [tenantId]);
     return rows.map(row=>({id:row.id,apiName:row.api_name,label:row.label??row.api_name,flowType:row.flow_type??'Autolaunched Flow',resources:[],versionNumber:row.version,status:row.active?'Active':'Draft'}));
   }
+  /** Durable run telemetry from shared SQL Flow run records, tenant scoped. */
+  async failedLogs(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string|null;started_by:string;finished_at:Date|null;
+      started_at:Date;error_code:string|null
+    }>(`
+      SELECT r.id,f.api_name,f.label,r.started_by,r.finished_at,r.started_at,r.error_code
+      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.status='failed'
+      ORDER BY r.started_at DESC LIMIT 100
+    `,[tenantId]);
+    return {logs:rows.map(r=>({
+      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
+      trigger:'Manual' as const,failedAt:new Date(r.finished_at??r.started_at).toISOString(),
+      error:r.error_code??'Execution failed',userId:r.started_by
+    }))};
+  }
+  async pendingInterviews(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string|null;version:number;flow_type:string;
+      started_by:string;email:string;started_at:Date
+    }>(`
+      SELECT r.id,f.api_name,f.label,f.version,f.flow_type,r.started_by,u.email,r.started_at
+      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
+      JOIN md_users u ON u.id=r.started_by AND u.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.status='pending'
+      ORDER BY r.started_at DESC LIMIT 100
+    `,[tenantId]);
+    return {interviews:rows.map(r=>({
+      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
+      versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const:'wait' as const,
+      userId:r.started_by,userName:r.email,screenLabel:null,recordId:null,
+      createdAt:new Date(r.started_at).toISOString(),
+      expiresAt:new Date(new Date(r.started_at).getTime()+86400000).toISOString(),
+      waitUntil:null,retryAt:null,attempts:0
+    }))};
+  }
+  async deactivate(tenantId:string,userId:string,apiName:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    const {rowCount}=await this.db.query(
+      'UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND active=true',
+      [tenantId,apiName]);
+    if(!rowCount)throw new Error('Active flow not found');
+    const rows=await this.list(tenantId);
+    const flow=rows.find(item=>item.apiName===apiName);
+    if(!flow)throw new Error('Flow not found');
+    return {flow};
+  }
   async loadActive(tenantId:string,apiName:string) {
     const {rows}=await this.db.query<{id:string;version:number}>(
       'SELECT id,version FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND active=true ORDER BY version DESC LIMIT 1',

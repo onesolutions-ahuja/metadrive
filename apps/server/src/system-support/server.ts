@@ -174,6 +174,32 @@ export function createSystemServer(db:SqlPersistence) {
       throw error;
     }
   }));
+  app.get('/api/tenant/company-profile',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({profile:await platformTenants.getSetting(actor.tenant_id,actor.user_id,'company-profile')});
+  }));
+  app.put('/api/tenant/company-profile',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({profile:await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'company-profile',req.body)});
+  }));
+  app.get('/api/metadata/currencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.getSetting(actor.tenant_id,actor.user_id,'currencies')??
+      {corporateCurrency:'USD',standardVatRate:20,currencies:[{currencyIsoCode:'USD',conversionRate:1}]});
+  }));
+  app.put('/api/metadata/currencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'currencies',req.body));
+  }));
+  app.get('/api/metadata/automation-settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.getSetting(actor.tenant_id,actor.user_id,'automation-settings')??
+      {autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15});
+  }));
+  app.put('/api/metadata/automation-settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'automation-settings',req.body));
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
@@ -319,6 +345,36 @@ export function createSystemServer(db:SqlPersistence) {
       res.status(204).end();
     }));
   }
+  app.get('/api/connector-apps/capabilities',route(async(req,res)=>{
+    const actor=req.actor!;
+    const decisions=await rbac.allowedMany(actor.tenant_id,actor.user_id,[
+      {resource:'AppExchange',action:'read'},
+      {resource:'AppExchange',action:'manage'},
+      {resource:'NamedCredential',action:'read'},
+      {resource:'NamedCredential',action:'manage'},
+      {resource:'AppExchange',action:'install'},
+      {resource:'Licence',action:'manage'}
+    ]);
+    res.json({view:decisions[0],edit:decisions[1],secrets:decisions[2],
+      test:decisions[3],install:decisions[4]||decisions[1],licence:decisions[5]});
+  }));
+  app.get('/api/connector-apps/catalog',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
+    res.json(await apps.marketplace(actor.tenant_id));
+  }));
+  app.get('/api/metadata/flow-logs',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.failedLogs(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.pendingInterviews(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/metadata/flows/:apiName/deactivate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.deactivate(actor.tenant_id,actor.user_id,req.params.apiName));
+  }));
   app.get('/api/metadata/flows',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
