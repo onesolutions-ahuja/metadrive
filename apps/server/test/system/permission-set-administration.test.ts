@@ -87,3 +87,12 @@ test('OneEngine wildcard permits individual object and field restrictions throug
  assert.ok(rules.some(rule=>rule.resource==='Invoice.Total'&&rule.action==='edit'&&rule.effect==='deny'));
  assert.ok(!rules.some(rule=>rule.resource==='Invoice'&&rule.action==='read'));
 });
+
+test('central RBAC supports a Flow execute grant for named Flow instances',async()=>{
+ const queries:string[]=[];
+ const db={query:async(sql:string)=>{queries.push(sql);return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};}} as unknown as SqlPersistence;
+ const {RbacEngine}=await import('../../src/system-files/rbac-engine.js');
+ assert.equal(await new RbacEngine(db).allowed('tenant','user','Flow:ONEposCheckout','execute'),true);
+ assert.match(queries[0],/q\.resource LIKE 'Flow:%'/);
+ assert.match(queries[0],/THEN 'Flow'/);
+});
