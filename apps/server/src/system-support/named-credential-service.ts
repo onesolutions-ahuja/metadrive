@@ -1,9 +1,25 @@
+import nodemailer from 'nodemailer';
 import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {request as secureRequest} from 'node:https';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+
+const publicIp=(address:string)=>{
+   if(isIP(address)===4){
+    const [a,b]=address.split('.').map(Number);
+    return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||
+      a===192&&b===168||a===100&&b>=64&&b<=127||a===198&&b>=18&&b<=19||
+      a===192&&b===0||a===192&&b===88||a===192&&b===0||a===198&&b===51||
+      a===203&&b===0);
+   }
+   if(isIP(address)===6){
+    const v=address.toLowerCase();
+    return !(/^(::|fc|fd|fe8|fe9|fea|feb)/.test(v)||v.includes(':ffff:'));
+   }
+   return false;
+  };
 
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {
@@ -80,7 +96,7 @@ export class NamedCredentialService {
    encrypted=Buffer.concat([iv,cipher.update(secret,'utf8'),cipher.final(),cipher.getAuthTag()]);
   }
   let encryptedConfiguration:Buffer|null=null;
-  const config=x.configuration as Record<string,string>|undefined;
+  const config={...(x.configuration as Record<string,string>|undefined),...(typeof x.username==='string'&&x.username?{username:x.username}:{})};
   if(config && Object.keys(config).length){
    if(!this.key())throw new Error('Credential encryption is not configured');
    const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.key()!,iv);
@@ -171,7 +187,7 @@ export class NamedCredentialService {
    return Buffer.concat([iv,cipher.update(plain,'utf8'),cipher.final(),cipher.getAuthTag()]);
   };
   const encrypted=x.secret?encrypt(x.secret as string):null;
-  const configuration=x.configuration as Record<string,string>|undefined;
+  const configuration={...(x.configuration as Record<string,string>|undefined),...(typeof x.username==='string'&&x.username?{username:x.username}:{})};
   const encryptedConfig=configuration&&Object.keys(configuration).length
     ?encrypt(JSON.stringify(configuration)):null;
   const result=await this.db.query(
@@ -186,6 +202,55 @@ export class NamedCredentialService {
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
  
+ /** Deliver tenant recovery mail using the saved encrypted SMTP credential.
+  * Public DNS and TLS certificate validation protect outbound platform traffic.
+  */
+ async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
+  if(!/^[0-9a-f-]{36}$/i.test(id)||!from||!to||
+    /[\r\n]/.test(from+to+subject)||subject.length>300||body.length>10000)
+   throw new Error('Invalid recovery email');
+  const {rows}=await this.db.query<{
+   base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
+   configuration_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
+  }>(`SELECT base_url,auth_type,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled
+      FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP'`,[tenantId,id]);
+  const row=rows[0];
+  if(!row?.enabled||row.auth_type!=='Basic')throw new Error('SMTP credential unavailable');
+  const endpoint=new URL(row.base_url);
+  const port=endpoint.port|| (endpoint.protocol==='smtps:'?'465':'587');
+  if(!['smtp:','smtps:'].includes(endpoint.protocol)||!['465','587'].includes(port)||
+    endpoint.username||endpoint.password||endpoint.pathname!=='/'||endpoint.search||endpoint.hash||
+    isIP(endpoint.hostname)||endpoint.hostname==='localhost'||endpoint.hostname.endsWith('.local'))
+   throw new Error('Invalid SMTP destination');
+  const addresses=await lookup(endpoint.hostname,{all:true,verbatim:true});
+  if(!addresses.length||addresses.some(a=>!publicIp(a.address)))
+   throw new Error('SMTP destination resolves to restricted network');
+  const key=this.keyFor(row.encryption_key_id);
+  const decrypt=(encrypted:Buffer|null)=>{
+   if(!key||!encrypted||encrypted.length<29)throw new Error('SMTP credential cannot be decrypted');
+   const decipher=createDecipheriv('aes-256-gcm',key,encrypted.subarray(0,12));
+   decipher.setAuthTag(encrypted.subarray(-16));
+   return Buffer.concat([decipher.update(encrypted.subarray(12,-16)),decipher.final()]).toString('utf8');
+  };
+  const secret=decrypt(row.secret_ciphertext);
+  let config:Record<string,unknown>;
+  try {config=JSON.parse(decrypt(row.configuration_ciphertext)) as Record<string,unknown>;}
+  catch{throw new Error('Invalid SMTP configuration');}
+  const username=config.username;
+  if(typeof username!=='string'||!username||username.length>254)
+   throw new Error('SMTP username missing');
+  const address=addresses[0];
+  const transport=nodemailer.createTransport({
+   host:address.address,port:Number(port),secure:port==='465',requireTLS:true,
+   auth:{user:username,pass:secret},
+   tls:{servername:endpoint.hostname,rejectUnauthorized:true,minVersion:'TLSv1.2'},
+   connectionTimeout:15000,greetingTimeout:15000,socketTimeout:15000,
+   pool:false
+  });
+  try {await transport.sendMail({from,to,subject,text:body});}
+  finally{transport.close();}
+ }
+
  /** One reusable, host-independent outbound HTTP transport. Credential secrets are never returned to a Flow. */
  async callout(tenantId:string,userId:string,config:Record<string,unknown>,
    variables:Record<string,string|number|boolean|null>,idempotencyKey:string){
@@ -218,20 +283,6 @@ export class NamedCredentialService {
   if(isIP(destination.hostname)||destination.hostname==='localhost'||destination.hostname.endsWith('.local'))
     throw new Error('Direct IP and local network callouts are prohibited');
   const resolved=await lookup(destination.hostname,{all:true,verbatim:true});
-  const publicIp=(address:string)=>{
-   if(isIP(address)===4){
-    const [a,b]=address.split('.').map(Number);
-    return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||
-      a===192&&b===168||a===100&&b>=64&&b<=127||a===198&&b>=18&&b<=19||
-      a===192&&b===0||a===192&&b===88||a===192&&b===0||a===198&&b===51||
-      a===203&&b===0);
-   }
-   if(isIP(address)===6){
-    const v=address.toLowerCase();
-    return !(/^(::|fc|fd|fe8|fe9|fea|feb)/.test(v)||v.includes(':ffff:'));
-   }
-   return false;
-  };
   if(!resolved.length||resolved.some(x=>!publicIp(x.address)))
     throw new Error('HTTP Callout destination resolves to a restricted network');
   const header:Record<string,string>={'Accept':'application/json'};
