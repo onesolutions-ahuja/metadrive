@@ -33,7 +33,6 @@
     "/named-credentials/${encodeURIComponent(id)}/test",
     "/platform/recovery/cases/",
     "/platform/tenants/",
-    "/records/${encodeURIComponent(route.objectApiName)}/${encodeURIComponent(route.recordId)}/history",
     "/reports/",
     "/tenant/developer-account",
     "/tenant/developer-account/activate",
