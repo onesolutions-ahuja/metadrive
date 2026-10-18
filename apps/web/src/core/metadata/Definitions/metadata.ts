@@ -1136,6 +1136,7 @@ export const setupShortcuts = [
 ];
 
 export const flowElementMetadata = [
+  { type: 'End', group: 'Logic', icon: '■' },
   { type: 'Screen', group: 'Interaction', icon: '▣' },
   { type: 'Decision', group: 'Logic', icon: '◇' },
   { type: 'Assignment', group: 'Logic', icon: '⇄' },
