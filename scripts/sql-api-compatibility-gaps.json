@@ -8,7 +8,6 @@
     "/auth/mfa/policy",
     "/auth/mfa/status",
     "/auth/mfa/verify",
-    "/auth/password-recovery/settings",
     "/auth/password-reset/confirm",
     "/auth/password-reset/request",
     "/auth/security-events",
