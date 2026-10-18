@@ -115,4 +115,106 @@ export class PageRuntime {
       WHERE p.tenant_id=$1 AND p.api_name=$2) AS found`,[tenantId,pageApi]);
     return rows[0]?.found?{page:await this.metadata(tenantId,pageApi)}:this.loadLegacy(tenantId,pageApi);
   }
+
+  /** Transactional draft publishing and component persistence; no JSON columns. */
+  async save(tenantId:string,previousApiName:string,raw:unknown){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid Page metadata');
+    const p=raw as Record<string,unknown>;
+    const id=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length<=128;
+    if(!id(p.apiName)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(p.apiName)
+      ||!id(p.label)||!['Record Page','App Page','Home Page'].includes(String(p.pageType))
+      ||!['template','free-canvas'].includes(String(p.layoutMode))
+      ||!['Active','Draft'].includes(String(p.status))||typeof p.targetObject!=='string'
+      ||!Number.isInteger(p.canvasWidth)||!Number.isInteger(p.canvasHeight)
+      ||Number(p.canvasWidth)<320||Number(p.canvasWidth)>10000
+      ||Number(p.canvasHeight)<320||Number(p.canvasHeight)>10000
+      ||!Array.isArray(p.devices)||!p.devices.length||p.devices.length>2
+      ||p.devices.some(v=>v!=='Desktop'&&v!=='Phone')
+      ||!Array.isArray(p.components)||p.components.length>400
+      ||!Array.isArray(p.activationAssignments??[])||(p.activationAssignments as unknown[]).length>200)
+      throw new Error('Invalid Page metadata');
+    if(p.pageType==='Record Page'){
+      const found=await this.db.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[tenantId,p.targetObject]);
+      if(!found.rowCount)throw new Error('Invalid Page target object');
+    }
+    const components=p.components as Array<Record<string,unknown>>;
+    const keys=new Set<string>();
+    for(const c of components){
+      if(!c||typeof c!=='object'||Array.isArray(c)||!id(c.id)||!id(c.type)
+        ||typeof c.label!=='string'||c.label.length>200||keys.has(c.id))throw new Error('Invalid Page component');
+      keys.add(c.id);
+    }
+    const assignments=p.activationAssignments as Array<Record<string,unknown>>|undefined ?? [];
+    if(p.status==='Active'&&p.pageType!=='App Page'&&!assignments.length)
+      throw new Error('Invalid Page activation');
+    const assignmentIds=new Set<string>();
+    for(const a of assignments){
+      if(!a||typeof a!=='object'||Array.isArray(a)||!id(a.id)||assignmentIds.has(a.id)
+        ||!['Org Default','App Default','App and Profile','App, Record Type, and Profile'].includes(String(a.scope))
+        ||!Array.isArray(a.formFactors)||!a.formFactors.length
+        ||a.formFactors.some(v=>v!=='Desktop'&&v!=='Phone')
+        ||(a.scope!=='Org Default'&&!id(a.appId))
+        ||(['App and Profile','App, Record Type, and Profile'].includes(String(a.scope))&&!id(a.profileId))
+        ||(a.scope==='App, Record Type, and Profile'&&!id(a.recordTypeId)))
+        throw new Error('Invalid Page activation');
+      assignmentIds.add(a.id);
+    }
+    await this.db.transaction(async client=>{
+      const existing=await client.query<{id:string}>(
+        'SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,previousApiName]);
+      let pageId=existing.rows[0]?.id;
+      if(pageId){
+        const managed=await client.query(
+          'SELECT 1 FROM md_app_seed_pages WHERE tenant_id=$1 AND page_id=$2 LIMIT 1',[tenantId,pageId]);
+        if(managed.rowCount)throw new Error('Invalid managed Page update');
+        await client.query('UPDATE md_page_definitions SET api_name=$3,title=$4 WHERE tenant_id=$1 AND id=$2',
+          [tenantId,pageId,p.apiName,p.label]);
+      }else{
+        if(p.apiName!==previousApiName)throw new Error('Page not found');
+        const inserted=await client.query<{id:string}>(
+          'INSERT INTO md_page_definitions(tenant_id,api_name,title,enabled) VALUES($1,$2,$3,true) RETURNING id',
+          [tenantId,p.apiName,p.label]);
+        pageId=inserted.rows[0].id;
+      }
+      const before=await client.query<{revision:number}>(
+        'SELECT revision FROM md_lightning_page_details WHERE tenant_id=$1 AND page_id=$2 FOR UPDATE',[tenantId,pageId]);
+      const rev=before.rows[0]?.revision??0;
+      if(p.revision!==undefined&&p.revision!==rev)throw new Error('Page revision conflict');
+      await client.query(`INSERT INTO md_lightning_page_details
+        (tenant_id,page_id,page_type,target_object,layout_mode,template,canvas_width,canvas_height,status,devices,revision)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT(tenant_id,page_id) DO UPDATE SET
+          page_type=EXCLUDED.page_type,target_object=EXCLUDED.target_object,
+          layout_mode=EXCLUDED.layout_mode,template=EXCLUDED.template,
+          canvas_width=EXCLUDED.canvas_width,canvas_height=EXCLUDED.canvas_height,
+          status=EXCLUDED.status,devices=EXCLUDED.devices,revision=EXCLUDED.revision,updated_at=now()`,
+        [tenantId,pageId,p.pageType,p.targetObject,p.layoutMode,p.template??null,
+          p.canvasWidth,p.canvasHeight,p.status,p.devices,rev+1]);
+      await client.query('DELETE FROM md_lightning_page_nodes WHERE tenant_id=$1 AND page_id=$2',[tenantId,pageId]);
+      await client.query('DELETE FROM md_lightning_page_activation WHERE tenant_id=$1 AND page_id=$2',[tenantId,pageId]);
+      for(const [index,c] of components.entries()){
+        await client.query(`INSERT INTO md_lightning_page_nodes
+          (tenant_id,page_id,component_key,component_type,label,region,visible,sort_order)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [tenantId,pageId,c.id,c.type,c.label,c.region??'main',c.visible!==false,index]);
+        const extra=Object.fromEntries(Object.entries(c).filter(([key])=>
+          !['id','type','label','region','visible','properties'].includes(key)));
+        const props:Array<{path:string;kind:string;text:string|null}>=[];
+        encodePageValue(c.properties??{},'/props',props);
+        encodePageValue(extra,'/extra',props);
+        for(const item of props){
+          if(item.path.length>1024)throw new Error('Invalid Page property path');
+          await client.query(`INSERT INTO md_lightning_page_node_properties
+            (tenant_id,page_id,component_key,property_path,value_kind,value_text)
+            VALUES($1,$2,$3,$4,$5,$6)`,[tenantId,pageId,c.id,item.path,item.kind,item.text]);
+        }
+      }
+      for(const [index,a] of assignments.entries())await client.query(`INSERT INTO md_lightning_page_activation
+        (tenant_id,page_id,assignment_id,scope,app_api,profile_id,record_type_id,desktop,phone,sort_order)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [tenantId,pageId,a.id,a.scope,a.appId??null,a.profileId??null,a.recordTypeId??null,
+          (a.formFactors as string[]).includes('Desktop'),(a.formFactors as string[]).includes('Phone'),index]);
+    });
+    return this.metadata(tenantId,p.apiName);
+  }
 }
