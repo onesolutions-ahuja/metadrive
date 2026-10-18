@@ -60,6 +60,23 @@ export class NamedCredentialService {
   const key=Buffer.from(raw,'base64');
   return key.length===32?key:null;
  }
+ /** Opaque tenant metadata encryption shared by MFA and Named Credentials.
+  * Callers keep key identity in relational SQL and never expose ciphertext to clients.
+  */
+ encryptOpaque(value:string):{ciphertext:Buffer;keyId:string}{
+  const key=this.key();
+  if(!key)throw new Error('Credential encryption is not configured');
+  const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);
+  return {ciphertext:Buffer.concat([iv,cipher.update(value,'utf8'),cipher.final(),cipher.getAuthTag()]),
+   keyId:this.activeKeyId()};
+ }
+ decryptOpaque(ciphertext:Buffer,keyId:string):string{
+  const key=this.keyFor(keyId);
+  if(!key||!ciphertext||ciphertext.length<29)throw new Error('Credential encryption key is unavailable');
+  const decipher=createDecipheriv('aes-256-gcm',key,ciphertext.subarray(0,12));
+  decipher.setAuthTag(ciphertext.subarray(-16));
+  return Buffer.concat([decipher.update(ciphertext.subarray(12,-16)),decipher.final()]).toString('utf8');
+ }
  async readiness(tenantId:string,userId:string){
   return {canManage:await this.rbac.allowed(tenantId,userId,'NamedCredential','manage'),
    encryptionReady:Boolean(this.key())};
