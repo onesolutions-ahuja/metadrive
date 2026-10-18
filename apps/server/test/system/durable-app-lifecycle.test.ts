@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFileSync} from 'node:fs';
+
+test('app uninstall cancels tenant app jobs in the uninstall transaction',()=>{
+ const source=readFileSync(new URL('../../src/system-files/app-runtime.ts',import.meta.url),'utf8');
+ const section=source.slice(source.indexOf('async uninstall('),source.indexOf('async homePage('));
+ assert.match(section,/this\.db\.transaction\(async client/);
+ assert.match(section,/UPDATE md_durable_jobs SET status='cancelled'/);
+ assert.match(section,/tenant_id=\$1 AND app_api_name=\$2/);
+ assert.match(section,/DELETE FROM md_app_installations/);
+ assert.ok(section.indexOf('UPDATE md_durable_jobs')<section.indexOf('DELETE FROM md_app_installations'));
+});
+
+test('durable Flow dispatch requires valid licence expiry and current actor',()=>{
+ const source=readFileSync(new URL('../../src/system-support/flow-job-handler.ts',import.meta.url),'utf8');
+ assert.match(source,/md_users WHERE tenant_id=\$1 AND id=\$2 AND enabled=true/);
+ assert.match(source,/e\.active=true/);
+ assert.match(source,/e\.expires_at IS NULL OR e\.expires_at>now\(\)/);
+ assert.match(source,/active=true AND archived=false/);
+ assert.match(source,/rbac\.allowed\(/);
+});
