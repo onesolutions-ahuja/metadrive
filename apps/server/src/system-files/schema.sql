@@ -267,3 +267,29 @@ CREATE TABLE IF NOT EXISTS md_record_history (
  FOREIGN KEY(tenant_id,changed_by) REFERENCES md_users(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS md_record_history_lookup ON md_record_history(tenant_id,object_api,record_id,changed_at DESC);
+
+CREATE TABLE IF NOT EXISTS md_dashboard_subscriptions (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ dashboard_api text NOT NULL,
+ created_by uuid NOT NULL,
+ label text NOT NULL,
+ frequency text NOT NULL CHECK(frequency IN ('Daily','Weekly')),
+ local_time text NOT NULL,
+ time_zone text NOT NULL,
+ day_of_week integer CHECK(day_of_week BETWEEN 0 AND 6),
+ recipient_user_ids uuid[] NOT NULL DEFAULT '{}',
+ named_credential_id uuid,
+ from_email text NOT NULL DEFAULT '',
+ active boolean NOT NULL DEFAULT false,
+ save_snapshots boolean NOT NULL DEFAULT false,
+ next_run_at timestamptz NOT NULL,
+ last_run_at timestamptz,
+ last_run_status text NOT NULL DEFAULT 'Never' CHECK(last_run_status IN ('Never','Success','Failed')),
+ last_run_error text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,created_by) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,named_credential_id) REFERENCES md_named_credentials(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_dashboard_subscriptions_due ON md_dashboard_subscriptions(tenant_id,active,next_run_at);
