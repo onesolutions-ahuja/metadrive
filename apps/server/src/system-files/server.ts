@@ -12,6 +12,7 @@ import { ComponentRuntime } from './component-runtime.js';
 import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
+import {loadTrustedAppSeed} from '../app-seeders/index.js';
 import { TenantProvisioning } from './tenant-provisioning.js';
 import {PlatformTenantService} from './platform-tenant-service.js';
 import {rotateFirstLoginPassword} from './first-login-rotation.js';
@@ -66,7 +67,7 @@ export function createSystemServer(db:SqlPersistence) {
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records);
-  const apps=new AppRuntime(db);
+  const apps=new AppRuntime(db,loadTrustedAppSeed);
   const platformTenants=new PlatformTenantService(db,rbac);
 
   // CORS is granted only to origins registered for a SQL tenant.
