@@ -8,6 +8,7 @@ import {metadataReference,resolveMetadataProperties} from '../src/core/metadata/
 import {buildChatterView} from '../src/core/records/RecordWorkspace/chatterRecordAdapter';
 import {presentPageRecords} from '../src/core/records/RecordWorkspace/recordPresentationAdapters';
 import type {ObjectMetadata,FlowDefinitionMetadata} from '../src/core/metadata/Definitions/metadata';
+import {pageLayoutForRecord} from '../src/core/records/RecordWorkspace/recordMetadataUtils';
 
 const object={id:'object-id',apiName:'RenamedObject',fields:[{id:'field-id',apiName:'RenamedPrice'}]} as ObjectMetadata;
 const flow={id:'flow-id',apiName:'RenamedFlow'} as FlowDefinitionMetadata;
@@ -98,4 +99,25 @@ test('compatibility registration uses the same renderer and all registered JSX c
  const canonical=components.find((c:any)=>c.apiName==='OneConversation');
  assert.equal(alias.jsxFile,canonical.jsxFile);assert.deepEqual(alias.defaults.actionFlows,{});
  for(const definition of components){const built=await buildBundledComponent(definition);assert.ok(built.compiledJs);assert.ok(built.cssSource);}
+});
+
+test('record page layout assignments resolve profile, type and wildcard defaults',()=>{
+ const layouts=['fallback','specific','type','profile','wildcard'].map(id=>({
+   id,label:id,sections:[],actions:['New','Edit'],relatedLists:[],customLinks:[]
+ }));
+ const object={
+   apiName:'Order__c',fields:[],recordTypes:[{id:'retail',isDefault:true}],
+   pageLayouts:layouts,pageLayoutAssignments:[
+     {profileId:'manager',recordTypeId:'retail',pageLayoutId:'specific'},
+     {profileId:'*',recordTypeId:'retail',pageLayoutId:'type'},
+     {profileId:'manager',recordTypeId:'*',pageLayoutId:'profile'},
+     {profileId:'*',recordTypeId:'*',pageLayoutId:'wildcard'}
+   ]
+ } as unknown as ObjectMetadata;
+ assert.equal(pageLayoutForRecord(object,'retail','manager')?.id,'specific');
+ assert.equal(pageLayoutForRecord(object,'retail','cashier')?.id,'type');
+ assert.equal(pageLayoutForRecord(object,'wholesale','manager')?.id,'profile');
+ assert.equal(pageLayoutForRecord(object,'wholesale','cashier')?.id,'wildcard');
+ assert.equal(pageLayoutForRecord({...object,pageLayoutAssignments:[]},'','manager')?.id,'fallback');
+ assert.equal(pageLayoutForRecord(object,'','cashier')?.id,'type');
 });
