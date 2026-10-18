@@ -159,3 +159,84 @@ CREATE TABLE IF NOT EXISTS md_tenant_provisioning_requests (actor_tenant_id uuid
 
 -- Versioned, tenant-bound route aliases for installed apps.
 CREATE TABLE IF NOT EXISTS md_app_route_aliases (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_api text NOT NULL REFERENCES md_apps(api_name), slug text NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'), kind text NOT NULL CHECK (kind IN ('App Home','App Page','Record List')), target_api text NOT NULL, status text NOT NULL DEFAULT 'Active' CHECK (status IN ('Active','Disabled')), version integer NOT NULL DEFAULT 1 CHECK (version>=1), updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,app_api,slug));
+
+-- Tenant-scoped relational Page Layout metadata. No prior layouts or records are changed.
+CREATE TABLE IF NOT EXISTS md_object_layout_versions (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  revision integer NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id,object_api),
+  FOREIGN KEY (tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layouts (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL CHECK (length(layout_id) BETWEEN 1 AND 128),
+  label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id),
+  FOREIGN KEY (tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_sections (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL,
+  section_id text NOT NULL CHECK (length(section_id) BETWEEN 1 AND 128),
+  label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
+  columns smallint NOT NULL CHECK (columns IN (1,2)),
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,section_id),
+  FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_fields (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL,
+  section_id text NOT NULL,
+  field_api text NOT NULL,
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,section_id,field_api),
+  FOREIGN KEY (tenant_id,object_api,layout_id,section_id) REFERENCES md_object_page_layout_sections(tenant_id,object_api,layout_id,section_id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id,object_api,field_api) REFERENCES md_field_definitions(tenant_id,object_api,api_name)
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_actions (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL,
+  action_name text NOT NULL CHECK (length(action_name) BETWEEN 1 AND 128),
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,action_name),
+  FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_related_lists (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL,
+  list_name text NOT NULL CHECK (length(list_name) BETWEEN 1 AND 128),
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,list_name),
+  FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_links (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  layout_id text NOT NULL,
+  link_id text NOT NULL CHECK (length(link_id) BETWEEN 1 AND 128),
+  label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
+  url text NOT NULL CHECK (length(url) BETWEEN 1 AND 2048),
+  open_in_new_window boolean NOT NULL DEFAULT false,
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,link_id),
+  FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_page_layout_assignments (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  profile_id text NOT NULL CHECK (length(profile_id) BETWEEN 1 AND 128),
+  record_type_id text NOT NULL CHECK (length(record_type_id) BETWEEN 1 AND 128),
+  layout_id text NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,profile_id,record_type_id),
+  FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_object_page_layout_fields_lookup ON md_object_page_layout_fields(tenant_id,object_api,layout_id);
