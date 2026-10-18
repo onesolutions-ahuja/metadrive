@@ -20,6 +20,7 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'GET /api/connector-apps/catalog','POST /api/apps/:apiName/install',
   'POST /api/apps/:apiName/update','POST /api/apps/:apiName/uninstall',
   'POST /api/flows/:apiName/screen/start','POST /api/flow-interviews/:id/next',
+  'GET /api/approvals/inbox','POST /api/approvals/:id/decision',
   'GET /api/notifications','POST /api/notifications/:id/read',
   'GET /api/metadata/route-aliases','PUT /api/metadata/route-aliases/:appId/:slug',
   'DELETE /api/metadata/route-aliases/:appId/:slug','GET /api/routes/resolve/:appId/:slug',
