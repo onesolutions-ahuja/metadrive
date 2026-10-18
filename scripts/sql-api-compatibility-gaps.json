@@ -3,8 +3,6 @@
   "unmatchedPaths": [
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
     "/platform/recovery/cases/",
-    "/tenant/developer-account",
-    "/tenant/developer-account/activate",
     "/tenant/recovery/contacts"
   ]
 }
