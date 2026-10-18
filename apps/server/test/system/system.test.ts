@@ -606,3 +606,23 @@ test('Field update rejects datatype changes instead of silently discarding metad
  }} as unknown as SqlPersistence;
  await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',{label:'Total',dataType:'Text'}),/datatype migration/);
 });
+
+test('SQL Flow draft validator rejects unsupported actions and broken branches',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const draft={
+  apiName:'TestFlow',flowType:'Autolaunched Flow',
+  elements:[{id:1,type:'Start'},{id:2,type:'UnsupportedWebhook'},{id:3,type:'End'}],
+  connectors:[{from:1,to:2,kind:'normal'}]
+ };
+ const result=await runtime.validateDraft('tenant','user','TestFlow',draft);
+ assert.equal(result.valid,false);
+ assert.ok(result.errors.some(e=>e.includes('Unsupported SQL Flow element')));
+ assert.ok(result.errors.some(e=>e.includes('No reachable End')));
+});
+test('SQL Flow validation fails closed without permission',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const rbac={require:async()=>{throw new Error('Permission denied')}} as unknown as RbacEngine;
+ await assert.rejects(()=>new FlowRuntime({} as SqlPersistence,rbac).validateDraft('tenant','user','TestFlow',{}),/Permission denied/);
+});
