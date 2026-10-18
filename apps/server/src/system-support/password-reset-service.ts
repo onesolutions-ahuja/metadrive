@@ -37,7 +37,20 @@ export class PasswordResetService {
   if(!inserted)return {message:acknowledgement};
   const subject=setting.policy?.templates?.email?.subject||'Password recovery';
   const text=setting.policy?.templates?.email?.body||'Your verification code is {!Verification.Value}.';
-  const rendered=text.replaceAll('{!Verification.Value}',token).replaceAll('{!Verification.ExpiryMinutes}','15');
+  let verification=token;
+  if(setting.policy?.method==='LINK'){
+   const configured=process.env.METADRIVE_PASSWORD_RESET_ORIGIN;
+   if(!configured)throw new Error('Password recovery link origin is not configured');
+   const url=new URL(configured);
+   if(url.protocol!=='https:'||url.username||url.password||url.hash)
+    throw new Error('Invalid password recovery link origin');
+   url.searchParams.set('resetEmail',email);
+   url.searchParams.set('resetToken',token);
+   verification=url.toString();
+  }
+  const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
+   .replaceAll('{!Verification.Value}',verification)
+   .replaceAll('{!Verification.ExpiryMinutes}','15');
   try {await this.send(tenantId,setting.smtp_credential_id,setting.from_email,email,
     subject,rendered);}
   catch(error){
