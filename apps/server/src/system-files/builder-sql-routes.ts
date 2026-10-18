@@ -31,8 +31,40 @@ export function registerBuilderSqlRoutes(app:Express,db:SqlPersistence,rbac:Rbac
   app.post('/api/metadata/'+path+'/:apiName/validate',wrap(async(req,res)=>{
    const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,permission(kind),'read');
    const body=req.body;
-   const valid=body&&typeof body==='object'&&!Array.isArray(body)&&body.apiName===req.params.apiName;
-   res.json({valid:Boolean(valid),errors:valid?[]:[{message:'Invalid definition'}]});
+   const errors:string[]=[];
+   if(!body||typeof body!=='object'||Array.isArray(body)||body.apiName!==req.params.apiName)errors.push('Invalid definition identity');
+   else if(kind==='flow'){
+    if(!Array.isArray(body.elements)||!Array.isArray(body.connectors)||!Array.isArray(body.resources))
+     errors.push('Flow elements, connectors and resources must be arrays');
+    else {
+     const nodes=new Set<string>();
+     for(const el of body.elements){
+      if(!el||typeof el!=='object'||typeof el.apiName!=='string'||!safe.test(el.apiName))errors.push('Invalid Flow element name');
+      else if(nodes.has(el.apiName))errors.push('Duplicate Flow element: '+el.apiName);
+      else nodes.add(el.apiName);
+     }
+     if(body.elements.filter((el:Record<string,unknown>)=>el?.type==='Start'||el?.elementType==='Start').length!==1)
+      errors.push('Flow requires exactly one Start element');
+     for(const connection of body.connectors){
+      if(!connection||typeof connection!=='object') {errors.push('Invalid Flow connector');continue;}
+      const from=connection.sourceApiName??connection.source;
+      const to=connection.targetApiName??connection.target;
+      if(typeof from!=='string'||typeof to!=='string'||!nodes.has(from)||!nodes.has(to))errors.push('Flow connector references missing element');
+     }
+    }
+   }else{
+    if(!Array.isArray(body.components))errors.push('Page components must be an array');
+    else{
+     const ids=new Set<string>();
+     for(const component of body.components){
+      if(!component||typeof component!=='object'||typeof component.id!=='string'||!component.id)
+       errors.push('Page component ID required');
+      else if(ids.has(component.id))errors.push('Duplicate Page component ID: '+component.id);
+      else ids.add(component.id);
+     }
+    }
+   }
+   res.json({valid:errors.length===0,errors:errors.map(message=>({message}))});
   }));
   app.delete('/api/metadata/'+path+'/:apiName',wrap(async(req,res)=>{
    const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,permission(kind),'delete');
