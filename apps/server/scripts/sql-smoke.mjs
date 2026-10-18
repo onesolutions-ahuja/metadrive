@@ -3,8 +3,8 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 const built=new URL('../dist-system/system-files/',import.meta.url);
 const support=new URL('../dist-system/system-support/',import.meta.url);
-const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService}]=await Promise.all([
- 'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js'
+const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService},{PageRuntime}]=await Promise.all([
+ 'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js','page-runtime.js'
 ].map(file=>import(new URL(file,file==='system-migrations.js'?support:built).href)));
 
 const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
@@ -36,5 +36,22 @@ try{
  await db.query('INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
   [tenantId,set.rows[0].id,'SystemDefinition:reports','read','allow']);
  assert.equal((await svc.list(tenantId,userId,'reports')).length,1);
+ const aliasApp=await db.query('INSERT INTO md_apps(api_name,label) VALUES($1,$2) RETURNING id',['CIApp','CI App']);
+ await db.query('INSERT INTO md_app_installations(tenant_id,app_id) VALUES($1,$2)',[tenantId,aliasApp.rows[0].id]);
+ await db.query('INSERT INTO md_app_entitlements(tenant_id,app_id,active) VALUES($1,$2,true)',[tenantId,aliasApp.rows[0].id]);
+ const pageRuntime=new PageRuntime(db);
+ const route=await pageRuntime.saveAlias(tenantId,userId,'CIApp','sales-home',{
+   appId:'CIApp',slug:'sales-home',kind:'App Home',targetApiName:'CIApp',expectedVersion:0
+ });
+ assert.equal(route.alias.version,1);
+ assert.equal((await pageRuntime.listAliases(tenantId)).aliases.length,1);
+ assert.equal((await pageRuntime.resolveAlias(tenantId,'CIApp','sales-home')).path,'/une/apps/CIApp/home');
+ await assert.rejects(()=>pageRuntime.saveAlias(tenantId,userId,'CIApp','sales-home',{
+   appId:'CIApp',slug:'sales-home',kind:'App Home',targetApiName:'CIApp',expectedVersion:0
+ }),/version conflict/);
+ await pageRuntime.disableAlias(tenantId,userId,'CIApp','sales-home',1);
+ await assert.rejects(()=>pageRuntime.resolveAlias(tenantId,'CIApp','sales-home'),/not available/);
+ const audit=await db.query('SELECT operation,version FROM md_route_alias_audit WHERE tenant_id=$1 ORDER BY id',[tenantId]);
+ assert.deepEqual(audit.rows.map(row=>row.operation),['save','disable']);
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
