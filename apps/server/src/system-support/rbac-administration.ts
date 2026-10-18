@@ -49,6 +49,8 @@ export class RbacAdministration{
    if(!platform&&next.permissionSets.some(p=>p.apiName==='PlatformDeveloper'))throw Error('Permission denied');
    for(const p of next.permissionSets)if(p.navigationDefaultAccess==='Allow'&&previous.permissionSets.find(old=>old.id===p.id)?.navigationDefaultAccess!=='Allow')
     await currentRbac.require(tenant,actor,'*','*');
+   const roleLinks=await tx.query<{role_id:string;permission_set_id:string}>(
+    'SELECT role_id,permission_set_id FROM md_role_permission_sets WHERE tenant_id=$1',[tenant]);
    const platformChanged=platform&&stable(platform)!==stable(next.permissionSets.find(p=>p.id===platform.id));
    // Platform policy assignment can also flow through inherited profiles or set groups.
    // Protect changes to those links even when no user is assigned yet.
@@ -59,6 +61,7 @@ export class RbacAdministration{
    const platformLinked=platform&&stable(platformLinks(previous))!==stable(platformLinks(next));
    const holdsPlatform=(state:Snapshot,u:Snapshot['users'][number])=>
     u.permissionSetIds.includes(platform!.id)||
+    Boolean(u.roleId&&roleLinks.rows.some(link=>link.role_id===u.roleId&&link.permission_set_id===platform!.id))||
     Boolean(state.profiles.find(p=>p.id===u.profileId)?.inheritedPermissionSetIds.includes(platform!.id))||
     u.permissionSetGroupIds.some(id=>Boolean(state.permissionSetGroups.find(g=>g.id===id)?.permissionSetIds.includes(platform!.id)));
    const platformAssigned=platform&&next.users.some(u=>{
@@ -114,8 +117,6 @@ export class RbacAdministration{
    }
    // Changes to existing assignment links can delegate grants without changing any
    // permission-set rules. Check these as strictly as newly authored grants.
-   const roleLinks=await tx.query<{role_id:string;permission_set_id:string}>(
-    'SELECT role_id,permission_set_id FROM md_role_permission_sets WHERE tenant_id=$1',[tenant]);
    const effectiveSources=(state:Snapshot,u:Snapshot['users'][number])=>{
     const sources=new Set<string>(u.permissionSetIds);
     if(u.profileId){
