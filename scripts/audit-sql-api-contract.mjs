@@ -12,5 +12,11 @@ const calls=[];
 for(const file of files){const txt=fs.readFileSync(file,'utf8');for(const m of txt.matchAll(/(?:apiRequest|request)\s*(?:<[^\n]*?>)?\s*\(\s*(['"`])(\/[^'"`\n]+)\1/g))calls.push({file,path:m[2].split('?')[0]});}
 const matches=(route,target)=>{const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
 const missed=[...new Map(calls.filter(x=>!routes.some(r=>matches(r.path,x.path))).map(x=>[x.path,x])).values()].sort((a,b)=>a.path.localeCompare(b.path));
+const baseline=JSON.parse(fs.readFileSync('scripts/sql-api-compatibility-gaps.json','utf8')).unmatchedPaths;
+const unexpected=missed.filter(x=>!baseline.includes(x.path));
+if(unexpected.length){
+ console.error('New frontend endpoints without matching SQL routes:',unexpected);
+ process.exitCode=1;
+}
 console.log(JSON.stringify({frontendFiles:files.length,staticCalls:calls.length,serverRoutes:routes.length,unmatched:missed},null,2));
 if(process.argv.includes('--strict')&&missed.length)process.exitCode=1;
