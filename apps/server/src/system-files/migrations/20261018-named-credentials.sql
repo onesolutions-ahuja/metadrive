@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS md_named_credentials (
  auth_type text NOT NULL,
  header_name text NOT NULL DEFAULT '',
  secret_ciphertext bytea,
+ configuration_ciphertext bytea,
  enabled boolean NOT NULL DEFAULT true,
  updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(tenant_id,name),UNIQUE(tenant_id,id)
