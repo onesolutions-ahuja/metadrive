@@ -26,7 +26,7 @@ test('permission set rejects wildcard grants and malformed fields',async()=>{
  const db={transaction:async()=>{throw Error('SQL should not be reached')}} as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  const service=new PermissionSetAdministration(db,rbac);
- await assert.rejects(()=>service.save('tenant','admin',{permissionSets:[{...set,systemPermissions:['*:*']}]}),/Invalid system permission|Wildcard/);
+ await assert.rejects(()=>service.save('tenant','admin',{permissionSets:[{...set,systemPermissions:['Security:*']}]}),/Invalid system permission|Wildcard/);
  await assert.rejects(()=>service.save('tenant','admin',{permissionSets:[{...set,fieldPermissions:{'Invoice..Total':{edit:true}}}]}),/Invalid field grant/);
 });
 test('permission set write checks OneEngine Security manage first',async()=>{
