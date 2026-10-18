@@ -26,7 +26,7 @@ Page, Dashboard, Report, Flow and other Builders load only when opened. Publishe
 Load only required modules, routes and metadata. Uninstalled apps never initialise. Unopened optional apps must not burden startup or frontend memory. Use secure tenant-aware caching.
 
 ## 8. SQL Source of Truth
-Store active metadata, settings, permissions, installations and business data in SQL. Store metadata and business records in relational SQL columns/tables only; do not store runtime state, metadata or records in JSON/JSONB files or columns.
+Store active metadata, settings, permissions, installations and business data in SQL. Store metadata and business records in relational SQL columns/tables. **The only approved JSONB exception is component property metadata** in the shared component-property tables; it must be schema-validated, tenant-scoped and configurable through the universal property engine. No other metadata, runtime state, settings, security policies, events or business records may introduce JSON/JSONB storage. Existing non-component JSONB columns are migration debt, not approved exceptions: migrate them to typed relational tables with dual-read/write compatibility, validation, rollback and tenant-data preservation before dropping legacy columns.
 
 ## 9. Independent Seeders
 Separate Core, shared dependency and per-app seeders. Include Objects, Fields, Components, properties, Pages, Flows, Actions, navigation and RBAC. Seeders must be versioned, idempotent, tenant-aware and upgrade-safe. Never duplicate metadata or overwrite user customisations.
