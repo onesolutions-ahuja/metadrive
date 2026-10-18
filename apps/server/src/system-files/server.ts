@@ -177,6 +177,22 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Set-Cookie',`${tokenCookie}=; HttpOnly; Path=/api/auth; Max-Age=0; SameSite=Lax`);
     res.status(204).end();
   }));
+  app.post('/api/connector-apps/:appKey/licence',route(async(req,res)=>{
+    const a=req.actor!,appKey=req.params.appKey;
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(appKey))throw Error('Invalid Connector key');
+    await platformTenants.requirePlatformOperator(a.tenant_id,a.user_id);
+    await db.transaction(async client=>{
+      const {rows}=await client.query<{id:string}>(
+       'SELECT id FROM md_apps WHERE api_name=$1 AND enabled=true FOR UPDATE',[appKey]);
+      if(!rows[0])throw Error('Connector App not found');
+      await client.query(`INSERT INTO md_app_entitlements(tenant_id,app_id,active,expires_at)
+       VALUES($1,$2,true,NULL) ON CONFLICT(tenant_id,app_id)
+       DO UPDATE SET active=true,expires_at=NULL`,[a.tenant_id,rows[0].id]);
+      await client.query('INSERT INTO md_tenant_security_events(tenant_id,actor_id,event_type) VALUES($1,$2,$3)',
+       [a.tenant_id,a.user_id,'connector_licence_granted']);
+    });
+    res.json({appKey,licensed:true});
+  }));
   app.post('/api/platform/tenants',route(async(req,res)=>{
     const a=req.actor!,body=req.body??{};
     const key=req.get('Idempotency-Key');
