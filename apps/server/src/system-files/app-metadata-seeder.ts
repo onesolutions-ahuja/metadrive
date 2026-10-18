@@ -25,7 +25,12 @@ async function grant(client:PoolClient,tenantId:string,permissionSetId:string,re
 /** Must be called in the AppExchange installation transaction AFTER entitlement validation.
  * Pre-existing metadata is never overwritten, and incompatible field definitions fail closed.
  */
-export async function seedIndependentAppMetadata(client:PoolClient,tenantId:string,seed:AppSeedDefinition){
+async function own(client:PoolClient,tenantId:string,appId:string|undefined,kind:string,apiName:string,objectApi=''){
+ if(!appId)return;
+ await client.query(`INSERT INTO md_app_owned_definitions(tenant_id,app_id,kind,api_name,object_api)
+  VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,[tenantId,appId,kind,apiName,objectApi]);
+}
+export async function seedIndependentAppMetadata(client:PoolClient,tenantId:string,seed:AppSeedDefinition,appId?:string){
  const objects=seed.objects??[],components=seed.components??[],pages=seed.pages??[],flows=seed.flows??[],actions=seed.actions??[];
  for(const [kind,items] of Object.entries({objects,components,pages,flows,actions}))
   unique(items.map(x=>x.apiName),kind);
@@ -41,9 +46,11 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
  for(const obj of objects){
   const {rows}=await client.query<{id:string}>(
    'SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,obj.apiName]);
-  if(!rows.length)await client.query(
-   'INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system) VALUES($1,$2,$3,false)',
-   [tenantId,obj.apiName,obj.label]);
+  if(!rows.length){
+   await client.query('INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system) VALUES($1,$2,$3,false)',
+    [tenantId,obj.apiName,obj.label]);
+   await own(client,tenantId,appId,'object',obj.apiName);
+  }
   await grant(client,tenantId,setId,obj.apiName);
  }
  for(const obj of objects)for(const field of obj.fields){
@@ -62,6 +69,7 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
    await client.query(
     'INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
     [tenantId,obj.apiName,field.apiName,field.label,field.dataType,related,max,field.required??false]);
+   await own(client,tenantId,appId,'field',field.apiName,obj.apiName);
   }
   await grant(client,tenantId,setId,obj.apiName+'.'+field.apiName);
  }
@@ -71,9 +79,11 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
    'SELECT renderer_key FROM md_component_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',
    [tenantId,c.apiName]);
   if(rows.length&&rows[0].renderer_key!==c.rendererKey)throw new Error('Incompatible component: '+c.apiName);
-  if(!rows.length)await client.query(
-   'INSERT INTO md_component_definitions(tenant_id,api_name,renderer_key) VALUES($1,$2,$3)',
-   [tenantId,c.apiName,c.rendererKey]);
+  if(!rows.length){
+   await client.query('INSERT INTO md_component_definitions(tenant_id,api_name,renderer_key) VALUES($1,$2,$3)',
+    [tenantId,c.apiName,c.rendererKey]);
+   await own(client,tenantId,appId,'component',c.apiName);
+  }
   await grant(client,tenantId,setId,'ComponentDefinition:'+c.apiName);
  }
  for(const p of pages){
@@ -81,9 +91,11 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
   const {rows}=await client.query<{id:string}>(
    'SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',
    [tenantId,p.apiName]);
-  if(!rows.length)await client.query(
-   'INSERT INTO md_page_definitions(tenant_id,api_name,title) VALUES($1,$2,$3)',
-   [tenantId,p.apiName,p.title]);
+  if(!rows.length){
+   await client.query('INSERT INTO md_page_definitions(tenant_id,api_name,title) VALUES($1,$2,$3)',
+    [tenantId,p.apiName,p.title]);
+   await own(client,tenantId,appId,'page',p.apiName);
+  }
   await grant(client,tenantId,setId,'PageDefinition:'+p.apiName);
  }
  for(const f of flows){
@@ -92,9 +104,11 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
   const {rows}=await client.query<{id:string}>(
    'SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND version=$3 FOR UPDATE',
    [tenantId,f.apiName,f.version]);
-  if(!rows.length)await client.query(
-   'INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active) VALUES($1,$2,$3,$4,$5,false)',
-   [tenantId,f.apiName,f.label,f.flowType??'Autolaunched Flow',f.version]);
+  if(!rows.length){
+   await client.query('INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active) VALUES($1,$2,$3,$4,$5,false)',
+    [tenantId,f.apiName,f.label,f.flowType??'Autolaunched Flow',f.version]);
+   await own(client,tenantId,appId,'flow',f.apiName);
+  }
   await grant(client,tenantId,setId,'FlowDefinition:'+f.apiName);
   await client.query("INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,'execute','allow') ON CONFLICT DO NOTHING",[tenantId,setId,'Flow:'+f.apiName]);
  }
