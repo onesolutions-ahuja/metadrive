@@ -8,6 +8,26 @@ walk(root);
 const routes=[...server.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]\/api([^'"]+)['"]/g)].map(m=>({method:m[1].toUpperCase(),path:m[2]}));
 const kinds=['platform-events','email-alerts','approval-processes','dashboards','dashboard-folders','dashboard-territories','reports','report-folders','connector-providers','integration-connections'];
 for(const name of kinds)for(const method of ['GET','POST','PUT','DELETE'])routes.push({method,path:(name.startsWith('connector')||name.startsWith('integration')?'':'/metadata')+'/'+name+(method==='PUT'||method==='DELETE'?'/:apiName':'')});
+// Required visual Builder contracts are method-sensitive. The generic path-only
+// compatibility baseline must never hide a missing operational save/edit route.
+const dynamic=fs.readFileSync('apps/server/src/system-support/dynamic-api-routes.ts','utf8');
+const builderRoutes=[
+ ['GET','/metadata/apps'],['POST','/metadata/apps'],['PUT','/metadata/apps/:apiName'],
+ ['DELETE','/metadata/apps/:apiName'],
+ ['GET','/metadata/pages'],['GET','/metadata/pages/:apiName'],
+ ['PUT','/metadata/pages/:apiName'],['DELETE','/metadata/pages/:apiName'],
+ ['GET','/metadata/flows'],['GET','/metadata/flows/list'],
+ ['GET','/metadata/flows/:apiName'],['PUT','/metadata/flows/:apiName'],
+ ['DELETE','/metadata/flows/:apiName'],['POST','/metadata/flows/:apiName/validate']
+];
+for(const [method,route] of builderRoutes){
+ const registered=[...server.matchAll(/app\\.(get|post|put|patch|delete)\\(\\s*['"]\\/api([^'"]+)['"]/g),
+  ...dynamic.matchAll(/app\\.(get|post|put|patch|delete)\\(\\s*['"]\\/api([^'"]+)['"]/g)]
+  .some(match=>match[1].toUpperCase()===method&&match[2]===route);
+ if(!registered)throw new Error('Missing required Builder API contract: '+method+' /api'+route);
+}
+if(!server.includes("'GET,POST,PUT,PATCH,DELETE,OPTIONS'"))
+ throw new Error('Builder PUT methods must be allowed by tenant-scoped CORS preflight');
 const calls=[];
 for(const file of files){const txt=fs.readFileSync(file,'utf8');for(const m of txt.matchAll(/(?:apiRequest|request)\s*(?:<[^\n]*?>)?\s*\(\s*(['"`])(\/[^'"`\n]+)\1/g))calls.push({file,path:m[2].split('?')[0]});}
 const matches=(route,target)=>{if(target.endsWith('/')&&route.startsWith(target)){const rest=route.slice(target.length);if(rest&&rest.split('/').every(part=>part.startsWith(':')))return true;}const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
