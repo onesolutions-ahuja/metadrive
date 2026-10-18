@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {FRESH_CORE_OBJECTS,seedFreshCoreObjects} from '../../src/system-files/fresh-core-objects.js';
-import {FRESH_STANDARD_FIELDS} from '../../src/system-files/fresh-standard-fields.js';
+import {FRESH_CORE_OBJECTS,seedFreshCoreObjects} from '../../src/app-seeders/fresh-core-objects.js';
+import {FRESH_STANDARD_FIELDS} from '../../src/app-seeders/fresh-standard-fields.js';
 
 test('fresh core contains precisely the approved 12 standard and 10 system objects',()=>{
  assert.equal(FRESH_CORE_OBJECTS.length,22);
