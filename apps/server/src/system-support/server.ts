@@ -8,6 +8,7 @@ import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-co
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
+import {PasswordResetService} from './password-reset-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
@@ -79,6 +80,8 @@ export function createSystemServer(db:SqlPersistence) {
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
+  const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
+    namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
@@ -149,6 +152,16 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
+  }));
+  app.post('/api/auth/password-reset/request',route(async(req,res)=>{
+    const tenantId=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenantId){res.status(400).json({error:'Tenant domain is required'});return;}
+    res.status(202).json(await passwordReset.request(tenantId,req.body?.email));
+  }));
+  app.post('/api/auth/password-reset/confirm',route(async(req,res)=>{
+    const tenantId=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenantId){res.status(400).json({error:'Tenant domain is required'});return;}
+    res.json(await passwordReset.confirm(tenantId,req.body?.email,req.body?.token,req.body?.newPassword));
   }));
   app.use('/api',authorize);
   // Durable notifications: only the addressed user can list or acknowledge them.
