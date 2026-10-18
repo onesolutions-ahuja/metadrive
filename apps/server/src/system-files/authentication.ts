@@ -26,7 +26,7 @@ export class AuthenticationService {
       const mfaGate=await client.query<{mode:string}>(
         'SELECT mode FROM md_tenant_mfa_policies WHERE tenant_id=$1',[tenantId]);
       const enrolled=await client.query('SELECT 1 FROM md_user_mfa WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
-      if((mfaGate.rows[0]?.mode==='Required'||(mfaGate.rows[0]?.mode==='Optional'&&enrolled.rowCount))&&!mfa_verified)
+      if((mfaGate.rows[0]?.mode==='Required'||(mfaGate.rows[0]?.mode==='Optional'&&(enrolled.rowCount??0)>0))&&!mfaVerified)
         throw new Error('Invalid session');
       await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenantId,userId,fingerprint(access),ACCESS_SECONDS,mfaVerified]);
