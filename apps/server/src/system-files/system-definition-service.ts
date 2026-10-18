@@ -39,6 +39,14 @@ export class SystemDefinitionService {
     if(typeof body.apiName!=='string'||! /^[A-Za-z][A-Za-z0-9_]*$/.test(body.apiName)
       ||typeof body.label!=='string'||!body.label.trim())throw new Error('Invalid definition');
     const {apiName,label,revision,enabled,...properties}=body;
+    // Optional metadata must not become an unencrypted credential store.
+    const hasSecret=(value:unknown):boolean=>{
+      if(Array.isArray(value))return value.some(hasSecret);
+      if(value && typeof value==='object')return Object.entries(value).some(([key,v])=>
+        /(?:secret|password|access.?token|refresh.?token|private.?key|api.?key)/i.test(key)||hasSecret(v));
+      return false;
+    };
+    if(hasSecret(properties))throw new Error('Credential secrets require the encrypted credential service');
     if(JSON.stringify(properties).length>65536)throw new Error('Invalid definition size');
     const expected=revision===undefined?0:revision;
     if(!Number.isSafeInteger(expected)||Number(expected)<0)throw new Error('Invalid definition revision');
