@@ -158,8 +158,11 @@ export class FlowRuntime {
         stack.push(...(outgoing.get(id)??[]));
       }
       if(![...visited].some(id=>types.get(id)==='End'))errors.push('No reachable End element');
-      for(const id of visited)if(!canFinish.has(id))
-        errors.push('Flow path cannot reach End from element: '+id);
+      for(const id of visited){
+        if(!canFinish.has(id))errors.push('Flow path cannot reach End from element: '+id);
+        if(types.get(id)!=='End'&&!(connectors.get(id)??[]).some(edge=>edge.kind==='normal'))
+          errors.push('Flow element requires a normal outgoing path: '+id);
+      }
       for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
     }
     for(const raw of nodes){
