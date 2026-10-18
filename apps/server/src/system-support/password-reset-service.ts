@@ -3,9 +3,11 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {AuthenticationService} from '../system-files/authentication.js';
 import {secureRecoveryHash} from './mfa-crypto.js';
 import {openSmtpTransport} from './named-credential-transport.js';
-type Settings={smtp_credential_id:string|null;from_email:string;policy:{
- method:'OTP'|'LINK';templates?:{email?:{subject:string;body:string}}}};
- configuration_ciphertext:Buffer|null;protocol:string};
+type Settings={
+ smtp_credential_id:string|null;
+ from_email:string;
+ policy:{method:'OTP'|'LINK';templates?:{email?:{subject:string;body:string}}};
+};
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const response={message:'If the account has password recovery enabled, verification instructions will be emailed.'};
 function render(text:string,tenant:string,code:string){
