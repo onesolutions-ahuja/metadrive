@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {readdirSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import type {SqlPersistence} from './sql-persistence.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
 /** Versioned, additive SQL system migrations; existing business records are untouched. */
 export async function applySystemMigrations(db:SqlPersistence) {
