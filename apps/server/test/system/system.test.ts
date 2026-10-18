@@ -553,3 +553,33 @@ test('Flow deactivation changes SQL state only for caller tenant and requires On
  assert.equal(result.flow.status,'Draft');
  assert.deepEqual(calls[0],['tenant','MyFlow']);
 });
+
+test('Tenant company settings save validated SQL JSON under the authenticated tenant',async()=>{
+ const {PlatformTenantService}=await import('../../src/system-files/platform-tenant-service.js');
+ const queries:Array<{sql:string;args:unknown[]}>= [];
+ const db={query:async(sql:string,args:unknown[])=>{
+   queries.push({sql,args});
+   return {rows:[{properties:{legalName:'Example Ltd'}}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+   assert.deepEqual([tenant,user,resource,action],['tenant','user','TenantSettings','manage']);
+ }} as unknown as RbacEngine;
+ const svc=new PlatformTenantService(db,rbac);
+ assert.deepEqual(await svc.saveSetting('tenant','user','company-profile',{legalName:'Example Ltd'}),{legalName:'Example Ltd'});
+ assert.deepEqual(queries[0].args,['tenant','company-profile',JSON.stringify({legalName:'Example Ltd'})]);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','company-profile',{password:'not-a-setting'}),/Invalid company profile/);
+ assert.equal(queries.length,1);
+});
+test('Tenant currency validation rejects duplicate ISO codes and invalid rates before SQL writes',async()=>{
+ const {PlatformTenantService}=await import('../../src/system-files/platform-tenant-service.js');
+ const db={query:async()=>{throw Error('No database write expected')}} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const svc=new PlatformTenantService(db,rbac);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','currencies',{
+   corporateCurrency:'GBP',standardVatRate:20,
+   currencies:[{currencyIsoCode:'GBP',conversionRate:1},{currencyIsoCode:'GBP',conversionRate:2}]
+ }),/Invalid currency/);
+ await assert.rejects(()=>svc.saveSetting('tenant','user','automation-settings',{
+   autoRetryFailedFlows:true,maxRetryAttempts:10000,conversationIdleMinutes:5
+ }),/Invalid automation settings/);
+});
