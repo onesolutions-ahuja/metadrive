@@ -128,3 +128,47 @@ export function reconcileDecisionOutcomePaths(flow, decisionId, nextOutcomes, co
   }
   return { ...flow, elements, connectors: updated };
 }
+
+/**
+ * Explicit, non-destructive repair for legacy Draft graphs made before Start -> End
+ * defaults existed. Existing nodes and valid connector targets are never removed.
+ */
+export function completeFlowEndPaths(flow, connectorPrefix) {
+  if (!flow || !Array.isArray(flow.elements) || !Array.isArray(flow.connectors))
+    throw Error('Invalid Flow graph.');
+  if (flow.status === 'Active') throw Error('Create a draft version before editing an active Flow.');
+  let elements = [...flow.elements];
+  const connectors = [...flow.connectors];
+  const nextId = () => Math.max(0, ...elements.map(item => item.id)) + 1;
+  let terminal = elements.find(item => item.type === 'End');
+  const getEnd = () => {
+    if (!terminal) {
+      terminal = { id: nextId(), type: 'End', label: 'End', config: {} };
+      elements.push(terminal);
+    }
+    return terminal.id;
+  };
+  const used = new Set(connectors.map(item => item.id));
+  const link = (from, label) => {
+    let id = connectorPrefix + '-' + connectors.length;
+    while (used.has(id)) id += '-next';
+    used.add(id);
+    connectors.push({ id, from, to: getEnd(), label, kind: 'normal' });
+  };
+  for (const node of flow.elements) {
+    if (node.type === 'End') continue;
+    const paths = connectors.filter(edge => edge.from === node.id && edge.kind === 'normal');
+    if (node.type === 'Decision') {
+      const labels = decisionOutcomeLabels(node.config?.outcomes);
+      // Reuse an unlabeled default connector without rewiring its target.
+      const defaultEdge = paths.find(edge => !edge.label);
+      if (defaultEdge && !paths.some(edge => edge.label === 'Default'))
+        connectors[connectors.findIndex(edge => edge.id === defaultEdge.id)] = { ...defaultEdge, label: 'Default' };
+      const current = new Set(connectors.filter(edge => edge.from === node.id && edge.kind === 'normal').map(edge => edge.label));
+      for (const label of labels) if (!current.has(label)) link(node.id, label);
+    } else if (!paths.length && !connectors.some(edge => edge.from === node.id)) {
+      link(node.id, '');
+    }
+  }
+  return { ...flow, elements, connectors };
+}
