@@ -135,6 +135,32 @@ export class ObjectDefinitionService {
       dependencies:rows.filter(row=>row.api_name===field.apiName&&row.related_object!==null).map(row=>row.related_object as string)
     }))};
   }
+  /** Immutable snapshots captured by SQL triggers, including changes made by seeders. */
+  async history(tenantId:string,apiName:string,limit=100){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!Number.isSafeInteger(limit)||limit<1||limit>100)
+      throw new Error('Invalid metadata history');
+    const {rows}=await this.db.query<{revision:string;action:string;actor_user_id:string|null;
+      created_at:Date;snapshot:unknown}>(`
+      SELECT revision::text,action,actor_user_id,created_at,snapshot
+      FROM md_object_metadata_history WHERE tenant_id=$1 AND object_api=$2
+      ORDER BY revision DESC LIMIT $3`,[tenantId,apiName,limit]);
+    return {history:rows.map(r=>({objectApiName:apiName,revision:Number(r.revision),
+      action:r.action,actorUserId:r.actor_user_id??'',at:new Date(r.created_at).toISOString(),
+      beforeRevision:Number(r.revision)>1?Number(r.revision)-1:null,
+      afterRevision:r.snapshot?Number(r.revision):null}))};
+  }
+  async historyRevision(tenantId:string,apiName:string,revision:number){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!Number.isSafeInteger(revision)||revision<1)
+      throw new Error('Invalid metadata revision');
+    const {rows}=await this.db.query<{revision:string;snapshot:unknown}>(`
+      SELECT revision::text,snapshot FROM md_object_metadata_history
+      WHERE tenant_id=$1 AND object_api=$2 AND revision IN ($3::bigint,($3::bigint - 1))
+      ORDER BY revision DESC`,[tenantId,apiName,revision]);
+    const current=rows.find(r=>Number(r.revision)===revision);
+    if(!current)throw new Error('Metadata revision not found');
+    const before=rows.find(r=>Number(r.revision)===revision-1);
+    return {change:{revision,after:current.snapshot??undefined,before:before?.snapshot??undefined}};
+  }
   async get(tenantId:string,apiName:string) {
     const objects=await this.list(tenantId);
     const object=objects.find(item=>item.apiName===apiName);
