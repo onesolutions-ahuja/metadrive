@@ -1,5 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
+import {TenantProvisioning} from './tenant-provisioning.js';
 
 export class PlatformTenantService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
@@ -72,6 +73,21 @@ export class PlatformTenantService {
  }
  private async requirePlatform(tenantId:string,userId:string){
   if(!(await this.platformScope(tenantId,userId)))throw new Error('Permission denied');
+ }
+ async create(tenantId:string,userId:string,body:unknown,idempotencyKey:unknown) {
+  await this.requirePlatform(tenantId,userId);
+  if(!body||typeof body!=='object'||Array.isArray(body)||typeof idempotencyKey!=='string')
+    throw new Error('Invalid tenant');
+  const x=body as Record<string,unknown>;
+  if(typeof x.tenantId!=='string'||typeof x.tenantName!=='string'
+    ||typeof x.adminName!=='string'||typeof x.email!=='string'
+    ||typeof x.password!=='string'||typeof x.developerDomain!=='string'||!x.developerDomain.trim())
+    throw new Error('Invalid tenant provisioning request: a developer domain is required');
+  const result=await new TenantProvisioning(this.db).provision({
+    slug:x.tenantId.toLowerCase(),name:x.tenantName,domain:x.developerDomain.toLowerCase(),
+    developerEmail:x.email,developerPassword:x.password,developerName:x.adminName
+  },{actorTenantId:tenantId,actorUserId:userId,idempotencyKey});
+  return {...await this.get(tenantId,userId,result.slug),replayed:result.replayed};
  }
  async get(tenantId:string,userId:string,slug:string) {
   const platform=await this.platformScope(tenantId,userId);
