@@ -588,7 +588,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         method: 'PUT',
         body: JSON.stringify({permissionSets: nextSets.map(({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions}) =>
           ({id, apiName, label, systemPermissions, objectPermissions, fieldPermissions})),
-          users: nextUsers.map(({id, permissionSetIds}) => ({id, permissionSetIds}))})
+          ...(JSON.stringify(previousUsers.map(user => user.permissionSetIds)) !== JSON.stringify(nextUsers.map(user => user.permissionSetIds))
+            ? {users: nextUsers.map(({id, permissionSetIds}) => ({id, permissionSetIds}))} : {})})
       });
     }
     setAccessControl(saved);
