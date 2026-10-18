@@ -907,6 +907,13 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  // Shared import pipeline: tenant actor and OneEngine Object/Field/Record rights are
+  // enforced inside the generic Record Engine for each row of one SQL transaction.
+  app.post('/api/records/:objectApi/import',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await records.importRecords(actor.tenant_id,actor.user_id,
+      req.params.objectApi,req.body?.records));
+  }));
   app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     const record=await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
