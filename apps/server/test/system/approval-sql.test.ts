@@ -11,7 +11,7 @@ test('SQL approvals enforce tenant and reviewer on inbox and decisions',async()=
  const app=express();app.use(express.json());
  app.use((req,_res,next)=>{(req as typeof req&{actor:unknown}).actor={tenant_id:'tenant',user_id:'reviewer'};next();});
  registerApprovalSqlRoutes(app,db,rbac);
- const server=app.listen(0,'127.0.0.1');
+ const server=await new Promise<import('node:http').Server>(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
  try{
   const url='http://127.0.0.1:'+(server.address() as import('node:net').AddressInfo).port;
   const inbox=await fetch(url+'/api/approvals/inbox');assert.equal(inbox.status,200);
