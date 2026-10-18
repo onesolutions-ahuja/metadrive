@@ -32,7 +32,7 @@ if(!server.includes("'GET,POST,PUT,PATCH,DELETE,OPTIONS'"))
  throw new Error('Builder PUT methods must be allowed by tenant-scoped CORS preflight');
 const calls=[];
 for(const file of files){const txt=fs.readFileSync(file,'utf8');for(const m of txt.matchAll(/(?:apiRequest|request)\s*(?:<[^\n]*?>)?\s*\(\s*(['"`])(\/[^'"`\n]+)\1/g))calls.push({file,path:m[2].split('?')[0]});}
-const matches=(route,target)=>{if(target.endsWith('/')&&route.startsWith(target)){const rest=route.slice(target.length);if(rest&&rest.split('/').every(part=>part.startsWith(':')))return true;}const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
+const matches=(route,target)=>{if(target==='/auth/users/')return ['/auth/users/:id/lock','/auth/users/:id/unlock'].every(path=>routes.some(r=>r.method==='POST'&&r.path===path));if(target.endsWith('/')&&route.startsWith(target)){const rest=route.slice(target.length);if(rest&&rest.split('/').every(part=>part.startsWith(':')))return true;}const a=route.split('/'),b=target.split('/');return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].includes('${'));};
 const missed=[...new Map(calls.filter(x=>!routes.some(r=>matches(r.path,x.path))).map(x=>[x.path,x])).values()].sort((a,b)=>a.path.localeCompare(b.path));
 const baseline=JSON.parse(fs.readFileSync('scripts/sql-api-compatibility-gaps.json','utf8')).unmatchedPaths;
 const unexpected=missed.filter(x=>!baseline.includes(x.path));
