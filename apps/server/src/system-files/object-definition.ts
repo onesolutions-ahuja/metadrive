@@ -89,7 +89,7 @@ export class ObjectDefinitionService {
     };
     return objects.map(obj=>({
       id:obj.id,apiName:obj.api_name,label:obj.label,pluralLabel:obj.label,
-      kind:obj.is_system?'Standard Object' as const:'Custom Object' as const,
+      kind:obj.is_system?'System Object' as const:'Standard Object' as const,
       description:'',
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
