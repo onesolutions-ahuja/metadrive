@@ -25,6 +25,8 @@ try{
  await db.query(identity);await db.query(identity);
  assert.equal((await db.query('SELECT api_name FROM md_permission_sets WHERE tenant_id=$1 AND id=$2',[t,one])).rows[0].api_name,'OneEngine');
  assert.equal((await db.query('SELECT count(*)::int AS n FROM md_permission_assignments WHERE tenant_id=$1 AND user_id=$2 AND permission_set_id=$3',[t,developer,one])).rows[0].n,1);
+ // Seed an unassigned platform-only identity to test indirect-delegation protection.
+ const platformId=(await db.query("INSERT INTO md_permission_sets(tenant_id,api_name) VALUES($1,'PlatformDeveloper') RETURNING id",[t])).rows[0].id;
  const objects=new ObjectDefinitionService(db);
  await objects.create(t,'Invoice','Invoice',[
   {apiName:'Name',label:'Name',dataType:'Text(80)',required:true},
@@ -58,6 +60,13 @@ try{
  assert.equal(await rbac.allowed(t,cashier,'Flow:Checkout','execute'),true);
  assert.equal(await rbac.allowed(t,cashier,'App:RbacTest','read'),true);
  assert.equal(await rbac.allowed(t,cashier,'Tab:Invoice','read'),true);
+ // Tenant admins must not confer platform authority through profile inheritance or set groups.
+ await assert.rejects(()=>save(s=>{s.permissionSetGroups.find(g=>g.id===group).permissionSetIds.push(platformId);}),/Permission denied/);
+ await assert.rejects(()=>save(s=>{s.profiles.find(p=>p.id===profile).inheritedPermissionSetIds.push(platformId);}),/Permission denied/);
+ await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).permissionSetIds.push(platformId);}),/Permission denied/);
+ await assert.rejects(()=>save(s=>{
+  s.permissionSetGroups.push({...s.permissionSetGroups[0],id:randomUUID(),apiName:'DormantPlatformGroup',permissionSetIds:[platformId]});
+ }),/Permission denied/);
  await assert.rejects(()=>admin.save(t,cashier,state),/Permission denied/);
  const mine=await records.create(t,cashier,'Invoice',{Name:'Cashier invoice',Total:20,RecordTypeId:'master'});
  assert.equal((await records.list(t,cashier,'Invoice')).total,1);
