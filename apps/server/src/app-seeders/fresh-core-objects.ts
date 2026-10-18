@@ -553,11 +553,12 @@ export async function seedCoreObjectsForExistingTenants(db:SqlPersistence):Promi
     if(applied.rows[0]){
       if(applied.rows[0].checksum!==checksum)
         throw new Error('Core object seeder changed after application; create a new seed version');
-      return 0;
+      // A prior deployment can have recorded this version before a tenant was restored.
+      // Reconcile missing definitions safely; INSERTs never overwrite customisations.
     }
     const {rows:tenants}=await client.query<{id:string}>('SELECT id FROM md_tenants ORDER BY id');
     for(const tenant of tenants)await seedFreshCoreObjects(client,tenant.id);
-    await client.query('INSERT INTO md_system_migrations(version,checksum) VALUES($1,$2)',
+    if(!applied.rows[0])await client.query('INSERT INTO md_system_migrations(version,checksum) VALUES($1,$2)',
       [CORE_OBJECTS_SEED_VERSION,checksum]);
     return tenants.length;
   });
