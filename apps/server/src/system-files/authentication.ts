@@ -32,10 +32,31 @@ export class AuthenticationService {
     return {accessToken:access,refreshToken:refresh,expiresIn:ACCESS_SECONDS};
   }
   async signIn(tenantId:string,email:string,password:string) {
+    const emailHash=fingerprint(email.trim().toLowerCase());
+    const {rows:throttle}=await this.db.query<{blocked:boolean}>(`
+     SELECT locked_until>now() AS blocked FROM md_login_attempt_counters
+     WHERE tenant_id=$1 AND email_hash=$2`,[tenantId,emailHash]);
+    if(throttle[0]?.blocked)throw Error('Invalid credentials');
     const {rows}=await this.db.query<{id:string,password_hash:string,enabled:boolean}>(
       'SELECT id,password_hash,enabled FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2)',[tenantId,email]);
     const user=rows[0];
-    if(!user?.enabled || !(await this.verifyPassword(password,user.password_hash))) throw new Error('Invalid credentials');
+    if(!user?.enabled||!(await this.verifyPassword(password,user.password_hash))){
+      await this.db.query(`INSERT INTO md_login_attempt_counters(tenant_id,email_hash,failures,locked_until)
+       VALUES($1,$2,1,NULL) ON CONFLICT(tenant_id,email_hash) DO UPDATE SET
+       failures=CASE WHEN md_login_attempt_counters.updated_at>now()-interval '15 minutes'
+         THEN LEAST(md_login_attempt_counters.failures+1,100) ELSE 1 END,
+       locked_until=CASE WHEN md_login_attempt_counters.updated_at>now()-interval '15 minutes'
+         AND md_login_attempt_counters.failures>=4 THEN now()+interval '15 minutes' ELSE NULL END,
+       updated_at=now()`,[tenantId,emailHash]);
+      await this.db.query(`INSERT INTO md_auth_security_events(tenant_id,actor_user_id,action,details)
+       VALUES($1,$2,'login_failed',$3::jsonb)`,
+       [tenantId,user?.id??null,JSON.stringify({emailHash})]);
+      throw Error('Invalid credentials');
+    }
+    const manual=await this.db.query('SELECT 1 FROM md_user_security_locks WHERE tenant_id=$1 AND user_id=$2 AND locked_until>now()',
+     [tenantId,user.id]);
+    if(manual.rowCount)throw Error('Invalid credentials');
+    await this.db.query('DELETE FROM md_login_attempt_counters WHERE tenant_id=$1 AND email_hash=$2',[tenantId,emailHash]);
     const {rows:security}=await this.db.query<{mode:string;secret_ciphertext:Buffer|null}>(
      `SELECT COALESCE(p.mode,'Disabled') AS mode,t.secret_ciphertext
       FROM md_users u LEFT JOIN md_tenant_mfa_policy p ON p.tenant_id=u.tenant_id
@@ -55,7 +76,10 @@ export class AuthenticationService {
       });
       return {mfa_required:true as const,challenge_token:challenge};
     }
-    return this.issue(tenantId,user.id);
+    const issued=await this.issue(tenantId,user.id);
+    await this.db.query(`INSERT INTO md_auth_security_events(tenant_id,actor_user_id,action)
+     VALUES($1,$2,'login_success')`,[tenantId,user.id]);
+    return issued;
   }
   async verifyMfaChallenge(token:string,code:string) {
     if(!/^[a-zA-Z0-9_-]{35,}$/.test(token)||!/^[0-9]{6}$/.test(code))
@@ -68,6 +92,8 @@ export class AuthenticationService {
             ON t.tenant_id=c.tenant_id AND t.user_id=c.user_id AND t.pending=false
           JOIN md_users u ON u.tenant_id=c.tenant_id AND u.id=c.user_id AND u.enabled=true
           WHERE c.token_hash=$1 AND c.expires_at>now() AND c.attempts<5
+           AND NOT EXISTS(SELECT 1 FROM md_user_security_locks l WHERE l.tenant_id=c.tenant_id
+            AND l.user_id=c.user_id AND l.locked_until>now())
           FOR UPDATE OF c,t`,[fingerprint(token)]);
       const item=rows[0];
       if(!item)return null;
@@ -80,7 +106,10 @@ export class AuthenticationService {
       return {tenantId:item.tenant_id,userId:item.user_id};
     });
     if(!identity)throw Error('Invalid MFA code');
-    return this.issue(identity.tenantId,identity.userId);
+    const issued=await this.issue(identity.tenantId,identity.userId);
+    await this.db.query(`INSERT INTO md_auth_security_events(tenant_id,actor_user_id,action)
+     VALUES($1,$2,'mfa_login_success')`,[identity.tenantId,identity.userId]);
+    return issued;
   }
   async refresh(token:string) {
     if(!/^[a-zA-Z0-9_-]{35,}$/.test(token)) throw new Error('Invalid session');
@@ -91,7 +120,10 @@ export class AuthenticationService {
         [fingerprint(token)]);
       if(!old.rows[0]) throw new Error('Invalid session');
       const {tenant_id,user_id}=old.rows[0];
-      const enabled=await client.query('SELECT id FROM md_users WHERE id=$1 AND tenant_id=$2 AND enabled=true',[user_id,tenant_id]);
+      const enabled=await client.query(`SELECT u.id FROM md_users u
+       WHERE u.id=$1 AND u.tenant_id=$2 AND u.enabled=true
+        AND NOT EXISTS(SELECT 1 FROM md_user_security_locks l WHERE l.tenant_id=u.tenant_id
+          AND l.user_id=u.id AND l.locked_until>now())`,[user_id,tenant_id]);
       if(!enabled.rowCount) throw new Error('Invalid session');
       await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
         [tenant_id,user_id,fingerprint(nextAccess),ACCESS_SECONDS]);
@@ -103,7 +135,11 @@ export class AuthenticationService {
   }
   async authenticate(token:string) {
     const {rows}=await this.db.query<{tenant_id:string,user_id:string}>(
-      'SELECT s.tenant_id,s.user_id FROM md_sessions s JOIN md_users u ON u.id=s.user_id AND u.tenant_id=s.tenant_id AND u.enabled=true WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL',
+      `SELECT s.tenant_id,s.user_id FROM md_sessions s
+       JOIN md_users u ON u.id=s.user_id AND u.tenant_id=s.tenant_id AND u.enabled=true
+       WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL
+       AND NOT EXISTS(SELECT 1 FROM md_user_security_locks l WHERE l.tenant_id=s.tenant_id
+        AND l.user_id=s.user_id AND l.locked_until>now())`,
       [fingerprint(token)]);
     if(!rows[0]) throw new Error('Invalid session');
     return rows[0];
