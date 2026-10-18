@@ -1,6 +1,6 @@
 import type { SqlPersistence } from '../system-files/sql-persistence.js';
 import type { RbacEngine } from '../system-files/rbac-engine.js';
-import {toPermissionRule} from './permission-resource-map.js';
+import {toPermissionRule,systemPermissionBindings} from './permission-resource-map.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const name=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
@@ -10,20 +10,36 @@ type SetRow={id:string;apiName:string;label:string;systemPermissions:string[];
 const objectActions=['read','create','edit','delete','viewAll','modifyAll'];
 const fieldActions=['read','edit','create','delete'];
 const validResource=(part:string)=>name.test(part)&&!part.includes('*');
-function parseRules(set:SetRow) {
- const rules:Array<{resource:string;action:string}>=[];
- const append=(resource:string,action:string)=>{if(resource.includes('*')||action.includes('*'))throw Error('Wildcard grants require separate privileged policy workflow');rules.push({resource,action});};
+type GrantRule={resource:string;action:string;effect:'allow'|'deny'};
+function parseRules(set:SetRow):GrantRule[] {
+ const rules:GrantRule[]=[];
+ const wildcard=set.systemPermissions.includes('*:*');
+ const append=(resource:string,action:string,effect:'allow'|'deny'='allow')=>{
+   if(resource.includes('*')||action.includes('*'))throw Error('Use the dedicated wildcard policy entry');
+   rules.push({resource,action,effect});
+ };
+ if(wildcard)rules.push({resource:'*',action:'*',effect:'allow'});
  for(const item of set.systemPermissions){
-   if(item==='*:*'){rules.push({resource:'*',action:'*'});continue;}
+   if(item==='*:*')continue;
    if(typeof item!=='string'||item.length>150)throw Error('Invalid system permission');
    const rule=toPermissionRule(item);
-   append(rule.resource,rule.action);
+   if(!wildcard||!Object.hasOwn(systemPermissionBindings,item))append(rule.resource,rule.action);
+ }
+ if(wildcard){
+   // A missing checkbox disables the corresponding grant even though the
+   // wildcard still allows other resources. The central evaluator honours deny first.
+   for(const key of Object.keys(systemPermissionBindings)){
+     if(set.systemPermissions.includes(key))continue;
+     const rule=toPermissionRule(key);
+     append(rule.resource,rule.action,'deny');
+   }
  }
  for(const [obj,actions] of Object.entries(set.objectPermissions)){
    if(!validResource(obj)||!value(actions))throw Error('Invalid object grant');
    for(const [action,enabled] of Object.entries(actions)){
      if(!objectActions.includes(action)||typeof enabled!=='boolean')throw Error('Invalid object grant');
-     if(enabled)append(obj,action);
+     if(wildcard){if(!enabled)append(obj,action,'deny');}
+     else if(enabled)append(obj,action);
    }
  }
  for(const [field,actions] of Object.entries(set.fieldPermissions)){
@@ -31,10 +47,11 @@ function parseRules(set:SetRow) {
    if(parts.length!==2||parts.some(part=>!validResource(part))||!value(actions))throw Error('Invalid field grant');
    for(const [action,enabled] of Object.entries(actions)){
      if(!fieldActions.includes(action)||typeof enabled!=='boolean')throw Error('Invalid field grant');
-     if(enabled)append(field,action);
+     if(wildcard){if(!enabled)append(field,action,'deny');}
+     else if(enabled)append(field,action);
    }
  }
- if(new Set(rules.map(r=>r.resource+':'+r.action)).size!==rules.length||rules.length>2500)
+ if(new Set(rules.map(r=>r.resource+':'+r.action)).size!==rules.length||rules.length>3000)
    throw Error('Duplicate or excessive permission rules');
  return rules;
 }
@@ -86,24 +103,33 @@ export class PermissionSetAdministration {
        const protectedGrants=current.rows.filter(row=>row.effect==='allow'&&(row.resource==='*'||row.action==='*'));
        if(protectedGrants.some(rule=>rule.resource!=='*'||rule.action!=='*'))
          throw Error('Scoped wildcard grants require a dedicated policy editor');
-       const retainsManage=s.rules.some(rule=>(rule.resource==='Security'&&rule.action==='manage')||
-         (rule.resource==='*'&&rule.action==='*'));
-       if(selfSets.has(s.entry.id)&&!retainsManage)
+       const hasWildcard=s.rules.some(rule=>rule.resource==='*'&&rule.action==='*'&&rule.effect==='allow');
+       const deniesManage=s.rules.some(rule=>rule.resource==='Security'&&rule.action==='manage'&&rule.effect==='deny');
+       const retainsManage=s.rules.some(rule=>rule.effect==='allow'&&(
+         (rule.resource==='Security'&&rule.action==='manage')||
+         (rule.resource==='*'&&rule.action==='*')));
+       if(selfSets.has(s.entry.id)&&(!retainsManage||deniesManage))
          throw Error('Cannot revoke your own administration permission');
-       // Explicit deny rows remain preserved; supported allow grants, including full access, are configurable.
-       const desired=new Set(s.rules.map(rule=>rule.resource+':'+rule.action));
+       // Replace only rules controlled by this form. A custom deny policy on a
+       // non-wildcard set is preserved for its separate privileged editor.
+       const desired=new Map(s.rules.map(rule=>[rule.resource+':'+rule.action,rule]));
        for(const rule of current.rows){
-         if(rule.effect!=='allow')continue;
-         if(!desired.has(rule.resource+':'+rule.action))
-           await tx.query("DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action=$4 AND effect='allow'",
+         const key=rule.resource+':'+rule.action;
+         if(rule.effect==='deny'&&!hasWildcard)continue;
+         if(!desired.has(key))
+           await tx.query('DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action=$4',
              [tenant,s.entry.id,rule.resource,rule.action]);
        }
        for(const rule of s.rules){
-         const found=current.rows.find(row=>row.resource===rule.resource&&row.action===rule.action);
-         if(found?.effect==='deny')throw Error('Explicit deny must be edited through privileged policy workflow');
-         if(!found)await tx.query(
-           "INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,'allow')",
-           [tenant,s.entry.id,rule.resource,rule.action]);
+         const existingRule=current.rows.find(row=>row.resource===rule.resource&&row.action===rule.action);
+         if(existingRule?.effect==='deny'&&!hasWildcard)
+           throw Error('Explicit deny must be edited through privileged policy workflow');
+         if(!existingRule)await tx.query(
+           'INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
+           [tenant,s.entry.id,rule.resource,rule.action,rule.effect]);
+         else if(existingRule.effect!==rule.effect)await tx.query(
+           'UPDATE md_permission_rules SET effect=$5 WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action=$4',
+           [tenant,s.entry.id,rule.resource,rule.action,rule.effect]);
        }
      }
      if(users){
