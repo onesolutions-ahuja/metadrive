@@ -8,6 +8,8 @@ import { RbacEngine } from '../system-files/rbac-engine.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {RecordCollaborationService} from './record-collaboration-service.js';
+
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
@@ -60,6 +62,7 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
+  const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const definitions=new ObjectDefinitionService(db);
@@ -702,6 +705,24 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
 
+  app.get('/api/records/:objectApi/:id/activities',route(async(req,res)=>{
+    res.json(await collaboration.listActivities(req.actor!,req.params.objectApi,req.params.id));
+  }));
+  app.post('/api/records/:objectApi/:id/activities',route(async(req,res)=>{
+    res.status(201).json(await collaboration.addActivity(req.actor!,req.params.objectApi,req.params.id,req.body));
+  }));
+  app.patch('/api/records/:objectApi/:id/activities/:activityId',route(async(req,res)=>{
+    res.json(await collaboration.updateActivity(req.actor!,req.params.objectApi,req.params.id,req.params.activityId,req.body?.status));
+  }));
+  app.get('/api/records/:objectApi/:id/chatter',route(async(req,res)=>{
+    res.json(await collaboration.listPosts(req.actor!,req.params.objectApi,req.params.id));
+  }));
+  app.post('/api/records/:objectApi/:id/chatter',route(async(req,res)=>{
+    res.status(201).json(await collaboration.addPost(req.actor!,req.params.objectApi,req.params.id,req.body?.body));
+  }));
+  app.post('/api/records/:objectApi/:id/chatter/:postId/comments',route(async(req,res)=>{
+    res.status(201).json(await collaboration.addComment(req.actor!,req.params.objectApi,req.params.id,req.params.postId,req.body?.body));
+  }));
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
