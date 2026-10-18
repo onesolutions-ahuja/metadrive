@@ -105,6 +105,40 @@ try{
   "SELECT count(*)::integer AS n FROM md_lightning_page_details d JOIN md_page_definitions p ON p.tenant_id=d.tenant_id AND p.id=d.page_id WHERE p.tenant_id=$1 AND p.api_name='AuditItem_Record_Page'",[tenantId]);
  assert.equal(stillSaved.rows[0]?.n,1,'Page soft-deletion removed customer metadata');
 
+ // Tenant self-service live usage contains only SQL counts, not business or credential secrets.
+ const usage=await http('/tenant/usage',{token});
+ assert.equal(usage.status,200,JSON.stringify(usage));
+ assert.equal(usage.body?.usage?.counts?.records>=1,true);
+ assert.equal(usage.body?.usage?.enforcement,'advisory_only');
+ assert.equal(usage.body?.usage?.storageBytes,null);
+ const emptyDomains=await http('/tenant/domains',{token});
+ assert.equal(emptyDomains.status,200,JSON.stringify(emptyDomains));
+ const domain='dynamic-http-fixture.example.org';
+ const newClaim=await http('/tenant/domains',{method:'POST',token,body:{hostname:domain}});
+ assert.equal(newClaim.status,201,JSON.stringify(newClaim));
+ assert.equal(newClaim.body?.status,'PENDING');
+ const {rows:unverified}=await db.query('SELECT domain FROM md_tenant_domains WHERE tenant_id=$1 AND domain=$2',[tenantId,domain]);
+ assert.equal(unverified.length,0,'Unverified domain became an authenticated origin');
+ const domainList=await http('/tenant/domains',{token});
+ assert.equal(domainList.status,200,JSON.stringify(domainList));
+ assert.equal(domainList.body?.domains?.find(d=>d.hostname===domain)?.status,'PENDING');
+ const deletedClaim=await http('/tenant/domains/'+domain,{method:'DELETE',token});
+ assert.equal(deletedClaim.status,204,JSON.stringify(deletedClaim));
+ const deniedPlatform=await http('/platform/tenants/ci-isolated-tenant/usage',{token});
+ assert.notEqual(deniedPlatform.status,200,'Tenant Developer was granted Platform Developer authority');
+ const {rows:platformSets}=await db.query(`INSERT INTO md_permission_sets(tenant_id,api_name)
+  VALUES($1,'PlatformDeveloper') ON CONFLICT(tenant_id,api_name)
+  DO UPDATE SET api_name=EXCLUDED.api_name RETURNING id`,[tenantId]);
+ await db.query(`INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id)
+  VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[tenantId,userId,platformSets[0].id]);
+ const changedTargets=await http('/platform/tenants/ci-isolated-tenant/usage-targets',{
+  method:'PATCH',token,body:{users:1,records:1,objects:1,flows:1}});
+ assert.equal(changedTargets.status,200,JSON.stringify(changedTargets));
+ assert.equal(changedTargets.body?.usage?.targets?.records,1);
+ assert.ok(changedTargets.body?.usage?.warnings?.includes('records'));
+ const platformDomains=await http('/platform/tenants/ci-isolated-tenant/domains',{token});
+ assert.equal(platformDomains.status,200,JSON.stringify(platformDomains));
+
  // Exercise concrete path substitutions from dynamic frontend calls against the live HTTP runtime.
  // A domain 400/403/404 is allowed for deliberately absent fixtures, never the generic SQL 404.
  const checks=[
