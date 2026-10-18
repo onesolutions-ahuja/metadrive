@@ -209,7 +209,12 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/pages',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
-    res.json({pages:await pages.list(actor.tenant_id)});
+    const live=await pages.list(actor.tenant_id);
+    const drafts=await db.query<{api_name:string;definition:Record<string,unknown>}>(
+      "SELECT api_name,definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='page'",[actor.tenant_id]);
+    const map=new Map(live.map(p=>[p.apiName,p as Record<string,unknown>]));
+    for(const p of drafts.rows)map.set(p.api_name,p.definition);
+    res.json({pages:[...map.values()]});
   }));
   app.get('/api/named-credentials/readiness',route(async(req,res)=>{
     const actor=req.actor!;
@@ -277,12 +282,22 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flows:await flows.list(actor.tenant_id)});
+    const live=await flows.list(actor.tenant_id);
+    const drafts=await db.query<{api_name:string;definition:Record<string,unknown>}>(
+      "SELECT api_name,definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='flow'",[actor.tenant_id]);
+    const map=new Map(live.map(f=>[f.apiName,f as Record<string,unknown>]));
+    for(const f of drafts.rows)map.set(f.api_name,f.definition);
+    res.json({flows:[...map.values()]});
   }));
   app.get('/api/metadata/flows/list',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flows:await flows.list(actor.tenant_id)});
+    const live=await flows.list(actor.tenant_id);
+    const drafts=await db.query<{api_name:string;definition:Record<string,unknown>}>(
+      "SELECT api_name,definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='flow'",[actor.tenant_id]);
+    const map=new Map(live.map(f=>[f.apiName,f as Record<string,unknown>]));
+    for(const f of drafts.rows)map.set(f.api_name,f.definition);
+    res.json({flows:[...map.values()]});
   }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -292,7 +307,11 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/pages/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
-    res.json(await pages.load(actor.tenant_id,req.params.apiName));
+    const draft=await db.query<{definition:Record<string,unknown>}>(
+      "SELECT definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='page' AND api_name=$2",
+      [actor.tenant_id,req.params.apiName]);
+    if(draft.rows[0])res.json({page:draft.rows[0].definition});
+    else res.json(await pages.load(actor.tenant_id,req.params.apiName));
   }));
   app.post('/api/flows/:apiName/execute',route(async(req,res)=>{
     const actor=req.actor!;
@@ -303,7 +322,11 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flow:await flows.loadActive(actor.tenant_id,req.params.apiName)});
+    const draft=await db.query<{definition:Record<string,unknown>}>(
+      "SELECT definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='flow' AND api_name=$2",
+      [actor.tenant_id,req.params.apiName]);
+    if(draft.rows[0])res.json({flow:draft.rows[0].definition});
+    else res.json({flow:await flows.loadActive(actor.tenant_id,req.params.apiName)});
   }));
   app.post('/api/apps/:apiName/install',route(async(req,res)=>{
     const actor=req.actor!;
