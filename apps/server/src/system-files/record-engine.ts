@@ -167,11 +167,12 @@ export class RecordEngine {
   }
   /** Typed SQL filtering with existing Object, Field and Record authorization. */
   async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
-    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50) {
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50,direction:'asc'|'desc'='asc') {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
       throw new Error('Invalid field reference');
     if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
     if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
     const {rows:fields}=await this.db.query<{data_type:string}>(
@@ -192,7 +193,7 @@ export class RecordEngine {
       WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
         AND v.${column} ${ops[operator]} $4::${casts[column]}
         AND md_record_access($1,$5,r.id,'read')
-      ORDER BY v.${column},r.id LIMIT $6
+      ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
     `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
     return rows.map(row=>row.id);
   }
