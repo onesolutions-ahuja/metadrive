@@ -1,6 +1,7 @@
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
+import {AuthenticationService} from './authentication.js';
 type Req=Request&{actor?:{tenant_id:string;user_id:string}};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
 const companyColumns={
@@ -16,6 +17,45 @@ const defaults:Record<CompanyKey,string>=Object.fromEntries(
 ) as Record<CompanyKey,string>;
 const code=/^[A-Z]{3}$/;
 export function registerTenantSettingsRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
+ app.get('/api/tenant/developer-account',wrap(async(req,res)=>{
+  const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'Tenant','read');
+  const {rows}=await db.query<{id:string;email:string;enabled:boolean}>(`
+    SELECT u.id,u.email,u.enabled FROM md_users u JOIN md_user_roles ur
+      ON ur.tenant_id=u.tenant_id AND ur.user_id=u.id
+    JOIN md_roles role ON role.tenant_id=ur.tenant_id AND role.id=ur.role_id
+    WHERE u.tenant_id=$1 AND role.api_name='TenantDeveloper' ORDER BY u.id LIMIT 1`,
+    [a.tenant_id]);
+  const developer=rows[0];
+  res.json(developer?{seeded:true,userId:developer.id,email:developer.email,active:developer.enabled,
+    activated:developer.enabled,tenantControlled:true,initialPermissions:'OneEngineDeveloper'}:{seeded:false});
+ }));
+ app.post('/api/tenant/developer-account/activate',wrap(async(req,res)=>{
+  const a=req.actor!,password=req.body?.password;
+  await rbac.require(a.tenant_id,a.user_id,'Tenant','manage');
+  if(typeof password!=='string'||password.length<12||password.length>256)throw Error('Invalid developer password');
+  const hash=await new AuthenticationService(db).hashPassword(password);
+  await db.transaction(async client=>{
+   const {rows}=await client.query<{id:string;enabled:boolean}>(`
+    SELECT u.id,u.enabled FROM md_users u JOIN md_user_roles ur
+      ON ur.tenant_id=u.tenant_id AND ur.user_id=u.id
+    JOIN md_roles role ON role.tenant_id=ur.tenant_id AND role.id=ur.role_id
+    WHERE u.tenant_id=$1 AND role.api_name='TenantDeveloper' FOR UPDATE OF u`,[a.tenant_id]);
+   if(rows.length!==1)throw Error('Tenant developer identity is missing or ambiguous');
+   if(rows[0].enabled)throw Error('Developer account is already active');
+   await client.query('UPDATE md_users SET enabled=true,password_hash=$3 WHERE tenant_id=$1 AND id=$2',
+    [a.tenant_id,rows[0].id,hash]);
+   await client.query('INSERT INTO md_tenant_security_events(tenant_id,actor_id,target_user_id,event_type) VALUES($1,$2,$3,$4)',
+    [a.tenant_id,a.user_id,rows[0].id,'developer_account_activation']);
+  });
+  res.json({activated:true});
+ }));
+ app.get('/api/tenant/recovery/contacts',wrap(async(req,res)=>{
+  const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'Tenant','read');
+  const {rows}=await db.query<{email:string;enrolled_at:Date;verified_at:Date|null}>(`
+   SELECT email,enrolled_at,verified_at FROM md_tenant_recovery_contacts
+    WHERE tenant_id=$1 ORDER BY enrolled_at`,[a.tenant_id]);
+  res.json({contacts:rows.map(r=>({email:r.email,verified:Boolean(r.verified_at),enrolledAt:r.enrolled_at}))});
+ }));
  app.get('/api/tenant/company-profile',wrap(async(req,res)=>{
   const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'Tenant','read');
   const {rows}=await db.query<Record<string,string>>(
