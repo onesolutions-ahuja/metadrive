@@ -64,6 +64,11 @@ try{
  await assert.rejects(()=>save(s=>{s.permissionSetGroups.find(g=>g.id===group).permissionSetIds.push(platformId);}),/Permission denied/);
  await assert.rejects(()=>save(s=>{s.profiles.find(p=>p.id===profile).inheritedPermissionSetIds.push(platformId);}),/Permission denied/);
  await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).permissionSetIds.push(platformId);}),/Permission denied/);
+ const platformRole=randomUUID();
+ await save(s=>{s.roles.push({id:platformRole,apiName:'LegacyPlatformRole',name:'Platform-linked role',parentRoleId:null});});
+ await db.query('INSERT INTO md_role_permission_sets(tenant_id,role_id,permission_set_id) VALUES($1,$2,$3)',[t,platformRole,platformId]);
+ await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).roleId=platformRole;}),/Permission denied/);
+
  await assert.rejects(()=>save(s=>{
   s.permissionSetGroups.push({...s.permissionSetGroups[0],id:randomUUID(),apiName:'DormantPlatformGroup',permissionSetIds:[platformId]});
  }),/Permission denied/);
