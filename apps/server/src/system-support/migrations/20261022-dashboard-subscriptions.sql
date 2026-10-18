@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS md_dashboard_subscriptions(
  save_snapshots boolean NOT NULL DEFAULT true,
  next_run_at timestamptz NOT NULL,
  last_run_at timestamptz,
- last_run_status text NOT NULL DEFAULT 'Never' CHECK(last_run_status IN ('Never','Success','Failed')),
+ last_run_status text NOT NULL DEFAULT 'Never' CHECK(last_run_status IN ('Never','Pending','Success','Failed')),
  last_run_error text,
  created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(),
