@@ -731,7 +731,10 @@ function RecordWorkspace({
     try {
       const path = `/records/${encodeURIComponent(object.apiName)}${editingId ? `/${encodeURIComponent(editingId)}` : ''}`;
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
-        apiName !== 'OwnerId' && (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit)
+        apiName !== 'OwnerId' && (object.apiName === 'User'
+          ? ['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password'].includes(apiName)
+            && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
+          : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
       // A record without an assigned type must not submit an empty type ID:
       // the generic API treats an explicitly supplied ID as an assignment request.
