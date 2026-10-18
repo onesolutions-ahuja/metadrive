@@ -59,3 +59,16 @@ export function validateTotp(secret:string,code:unknown,lastCounter=-1,now=Date.
  }
  return null;
 }
+
+/** Decrypt legacy Named Credential ciphertext using the provider-independent active key. */
+export function decryptStoredCredential(ciphertext:Buffer) {
+ const {key}=keyFor();
+ if(ciphertext.length<29)throw new Error('Invalid encrypted credential');
+ const decipher=createDecipheriv('aes-256-gcm',key,ciphertext.subarray(0,12));
+ decipher.setAuthTag(ciphertext.subarray(-16));
+ return Buffer.concat([decipher.update(ciphertext.subarray(12,-16)),decipher.final()]).toString('utf8');
+}
+export function secureRecoveryHash(value:string) {
+ const {key}=keyFor();
+ return createHmac('sha256',key).update(value).digest('hex');
+}
