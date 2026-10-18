@@ -52,6 +52,12 @@ async function cartModule(React:unknown,window:unknown={}) {
   crypto:globalThis.crypto,Intl,URL,BroadcastChannel:undefined};
  vm.runInNewContext(built.code,sandbox);return sandbox.module.exports;
 }
+test('VAT-enabled cart rejects products without an explicit boolean tax classification',async()=>{
+ const source=await readFile(new URL('../src/one/OneShoppingCart/OneShoppingCart.jsx',import.meta.url),'utf8');
+ assert.match(source,/vatRate > 0 && typeof vatValue !== "boolean"/);
+ assert.match(source,/This product has no verified VAT applicability value/);
+ assert.match(source,/vatApplicable: vatValue === true/);
+});
 test('cart formatting does not invent a currency or an age approval outcome',async()=>{
  const m=await cartModule({});
  assert.throws(()=>m.currency(100,undefined));
