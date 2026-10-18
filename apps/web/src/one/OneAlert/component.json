@@ -1,0 +1,76 @@
+{
+  "apiName": "OneAlert",
+  "label": "One-Alert",
+  "category": "Display",
+  "description": "Universal Alert component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneAlert/OneAlert.jsx",
+  "cssFile": "one/OneAlert/OneAlert.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Alert",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Alert",
+          "label": "One-Alert"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Notice"
+    },
+    {
+      "propertyKey": "message",
+      "label": "Message",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "tone",
+      "label": "Tone",
+      "kind": "SELECT",
+      "displayOrder": 320,
+      "defaultValue": "info",
+      "choices": [
+        {
+          "key": "info",
+          "label": "Info"
+        },
+        {
+          "key": "success",
+          "label": "Success"
+        },
+        {
+          "key": "warning",
+          "label": "Warning"
+        },
+        {
+          "key": "danger",
+          "label": "Danger"
+        }
+      ]
+    }
+  ]
+}

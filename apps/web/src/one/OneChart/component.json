@@ -1,0 +1,58 @@
+{
+  "apiName": "OneChart",
+  "label": "One-Chart",
+  "category": "Data",
+  "description": "Universal Chart component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneChart/OneChart.jsx",
+  "cssFile": "one/OneChart/OneChart.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Chart",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Chart",
+          "label": "One-Chart"
+        }
+      ]
+    },
+    {
+      "propertyKey": "chartType",
+      "label": "Chart type",
+      "kind": "SELECT",
+      "displayOrder": 300,
+      "defaultValue": "bar",
+      "choices": [
+        {
+          "key": "bar",
+          "label": "Bar"
+        },
+        {
+          "key": "line",
+          "label": "Line"
+        },
+        {
+          "key": "donut",
+          "label": "Donut"
+        }
+      ]
+    }
+  ]
+}

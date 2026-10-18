@@ -1,0 +1,51 @@
+{
+  "apiName": "OneMetric",
+  "label": "One-Metric",
+  "category": "Display",
+  "description": "Universal Metric component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneMetric/OneMetric.jsx",
+  "cssFile": "one/OneMetric/OneMetric.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Metric",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Metric",
+          "label": "One-Metric"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Metric label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Total"
+    },
+    {
+      "propertyKey": "value",
+      "label": "Metric value",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": "0"
+    }
+  ]
+}

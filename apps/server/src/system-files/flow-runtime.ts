@@ -1,7 +1,6 @@
 import type { SqlPersistence } from './sql-persistence.js';
 import type { RbacEngine } from './rbac-engine.js';
 import type { RecordEngine } from './record-engine.js';
-import type {PoolClient} from 'pg';
 type NodeRow={id:string;api_name:string;node_type:string};
 type EdgeRow={source_api:string;target_api:string;outcome:string};
 type PropRow={node_id:string;api_name:string;value_text:string|null;data_type:string};
@@ -29,11 +28,132 @@ function scalarFrom(text:string|null,type:string):Scalar {
 /** Atomic, bounded SQL Flow executor. Unsupported or dangerous actions fail closed. */
 export class FlowRuntime {
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,private readonly records?:RecordEngine) {}
+  /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
+  async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    if(!draft||typeof draft!=='object'||Array.isArray(draft))throw new Error('Invalid Flow draft');
+    const data=draft as Record<string,unknown>;
+    const errors:string[]=[],warnings:string[]=[];
+    if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
+    if(data.flowType!=='Autolaunched Flow')errors.push('This SQL runtime can validate execution only for Autolaunched Flow');
+    if(!Array.isArray(data.elements)||!Array.isArray(data.connectors)){
+      return {valid:false,errors:['Flow must contain elements and connectors'],warnings};
+    }
+    const nodes=data.elements as unknown[],links=data.connectors as unknown[];
+    if(nodes.length>250||links.length>500)errors.push('Flow graph exceeds allowed size');
+    const ids=new Set<number>(),types=new Map<number,string>();
+    for(const item of nodes){
+      if(!item||typeof item!=='object'||Array.isArray(item)){errors.push('Invalid Flow element');continue;}
+      const node=item as Record<string,unknown>;
+      if(typeof node.id!=='number'||!Number.isSafeInteger(node.id)||ids.has(node.id)){
+        errors.push('Flow element identifiers must be unique integers');continue;
+      }
+      ids.add(node.id);
+      const type=String(node.type??'');
+      types.set(node.id,type);
+      if(!['Start','Assignment','Decision','CreateRecord','End'].includes(type)){
+        errors.push('Unsupported SQL Flow element: '+type);
+      }
+    }
+    if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
+    if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
+    const outgoing=new Map<number,number[]>();
+    for(const link of links){
+      if(!link||typeof link!=='object'||Array.isArray(link)){errors.push('Invalid Flow connector');continue;}
+      const edge=link as Record<string,unknown>;
+      if(typeof edge.from!=='number'||typeof edge.to!=='number'||!ids.has(edge.from)||!ids.has(edge.to)){
+        errors.push('Flow connector references an unknown element');continue;
+      }
+      if(edge.kind!==undefined&&edge.kind!=='normal')errors.push('Unsupported SQL Flow connector type');
+      outgoing.set(edge.from,[...(outgoing.get(edge.from)??[]),edge.to]);
+    }
+    const start=[...types].find(([,type])=>type==='Start')?.[0];
+    if(start!==undefined){
+      const visited=new Set<number>(),stack=[start];
+      while(stack.length){
+        const id=stack.pop()!;
+        if(visited.has(id))continue;
+        visited.add(id);
+        stack.push(...(outgoing.get(id)??[]));
+      }
+      if(![...visited].some(id=>types.get(id)==='End'))errors.push('No reachable End element');
+      for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
+    }
+    return {valid:errors.length===0,errors,warnings};
+  }
   async list(tenantId:string) {
     const {rows}=await this.db.query<{id:string;api_name:string;label:string|null;flow_type:string;version:number;active:boolean}>(
       'SELECT id,api_name,label,flow_type,version,active FROM md_flow_definitions WHERE tenant_id=$1 ORDER BY api_name,version DESC LIMIT 100',
       [tenantId]);
     return rows.map(row=>({id:row.id,apiName:row.api_name,label:row.label??row.api_name,flowType:row.flow_type??'Autolaunched Flow',resources:[],versionNumber:row.version,status:row.active?'Active':'Draft'}));
+  }
+  /** Durable run telemetry from shared SQL Flow run records, tenant scoped. */
+  async failedLogs(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string|null;started_by:string;finished_at:Date|null;
+      started_at:Date;error_code:string|null
+    }>(`
+      SELECT r.id,f.api_name,f.label,r.started_by,r.finished_at,r.started_at,r.error_code
+      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.status='failed'
+      ORDER BY r.started_at DESC LIMIT 100
+    `,[tenantId]);
+    return {logs:rows.map(r=>({
+      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
+      trigger:'Manual' as const,failedAt:new Date(r.finished_at??r.started_at).toISOString(),
+      error:r.error_code??'Execution failed',userId:r.started_by
+    }))};
+  }
+  async pendingInterviews(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string|null;version:number;flow_type:string;
+      started_by:string;email:string;started_at:Date
+    }>(`
+      SELECT r.id,f.api_name,f.label,f.version,f.flow_type,r.started_by,u.email,r.started_at
+      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
+      JOIN md_users u ON u.id=r.started_by AND u.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.status='pending'
+      ORDER BY r.started_at DESC LIMIT 100
+    `,[tenantId]);
+    return {interviews:rows.map(r=>({
+      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
+      versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const:'wait' as const,
+      userId:r.started_by,userName:r.email,screenLabel:null,recordId:null,
+      createdAt:new Date(r.started_at).toISOString(),
+      expiresAt:new Date(new Date(r.started_at).getTime()+86400000).toISOString(),
+      waitUntil:null,retryAt:null,attempts:0
+    }))};
+  }
+  /** Cancel a durable pending interview without deleting its execution history. */
+  async cancelInterview(tenantId:string,userId:string,interviewId:string){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(interviewId))
+      throw new Error('Invalid interview ID');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    const result=await this.db.query(
+      "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status='pending' RETURNING id",
+      [tenantId,interviewId]);
+    if(!result.rowCount)throw new Error('Pending interview not found');
+    return {cancelled:true};
+  }
+  async deactivate(tenantId:string,userId:string,apiName:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    const {rowCount}=await this.db.query(
+      'UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND active=true',
+      [tenantId,apiName]);
+    if(!rowCount)throw new Error('Active flow not found');
+    const rows=await this.list(tenantId);
+    const flow=rows.find(item=>item.apiName===apiName);
+    if(!flow)throw new Error('Flow not found');
+    return {flow};
   }
   async loadActive(tenantId:string,apiName:string) {
     const {rows}=await this.db.query<{id:string;version:number}>(
@@ -42,7 +162,7 @@ export class FlowRuntime {
     if(!rows[0])throw new Error('Active flow not found');
     return rows[0];
   }
-  async start(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={},tx?:PoolClient) {
+  async start(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||Object.keys(inputs).length>100)
@@ -54,7 +174,7 @@ export class FlowRuntime {
       normalized.set(name,value);
     }
     const flow=await this.loadActive(tenantId,flowApi);
-    const persist=async(client:PoolClient)=>{
+    return this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(
         "INSERT INTO md_flow_runs (tenant_id,flow_id,started_by,status) VALUES ($1,$2,$3,'pending') RETURNING id",
         [tenantId,flow.id,userId]);
@@ -66,17 +186,16 @@ export class FlowRuntime {
           [tenantId,id,name,encoded.text,encoded.type]);
       }
       return id;
-    };
-    return tx?persist(tx):this.db.transaction(persist);
+    });
   }
   async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
     const id=await this.start(tenantId,flowApi,userId,inputs);
     return this.run(tenantId,id,userId);
   }
-  async run(tenantId:string,runId:string,userId:string,tx?:PoolClient) {
+  async run(tenantId:string,runId:string,userId:string) {
     if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
     try {
-      const execute=async(client:PoolClient)=>{
+      const outcome=await this.db.transaction(async client=>{
         const row=await client.query<{flow_id:string;started_by:string;status:string;api_name:string}>(
           "SELECT r.flow_id,r.started_by,r.status,f.api_name FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r",
           [tenantId,runId]);
@@ -120,10 +239,8 @@ export class FlowRuntime {
           return value;
         };
         let current=starts[0].api_name;
-        const debugTrace:Array<{elementApiName:string;type:string;status:string}>=[];
         for(let step=0;step<200;step++) {
           const node=nodes.get(current)!;
-          debugTrace.push({elementApiName:node.api_name,type:node.node_type,status:'Completed'});
           let result='default';
           switch(node.node_type) {
             case 'Start': break;
@@ -172,7 +289,7 @@ export class FlowRuntime {
                   throw new Error('Invalid Flow output');
                 outputs[outputName]=resolve(value);
               }
-              return {id:runId,status:'completed' as const,outputs,debugTrace};
+              return {id:runId,status:'completed' as const,...(Object.keys(outputs).length?{outputs}:{})};
             }
             default:throw new Error('Unsupported Flow element: '+node.node_type);
           }
@@ -181,36 +298,15 @@ export class FlowRuntime {
           current=next.target_api;
         }
         throw new Error('Flow exceeded maximum element limit');
-      };
-      return tx?execute(tx):this.db.transaction(execute);
+      });
+      return outcome;
     } catch(error) {
       // Mutations within the transaction were rolled back. The run is durable and failed.
       const message=error instanceof Error?error.message:'Unknown Flow failure';
-      if(!tx)await this.db.query(
+      await this.db.query(
         "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
         [tenantId,runId,message.slice(0,200)]);
       throw error;
     }
   }
-  /** Execute in one rollback-only transaction. SQL record mutations never become visible. */
-  async preview(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
-    class RollbackPreview extends Error {
-      constructor(readonly output:Record<string,unknown>){super('Flow debug rolled back');}
-    }
-    try {
-      await this.db.transaction(async client=>{
-        const runId=await this.start(tenantId,flowApi,userId,inputs,client);
-        const outcome=await this.run(tenantId,runId,userId,client);
-        throw new RollbackPreview(outcome as Record<string,unknown>);
-      });
-    } catch(error) {
-      if(error instanceof RollbackPreview){
-        const {id:_temporaryId,...details}=error.output;
-        return {...details,preview:true,rolledBack:true};
-      }
-      throw error;
-    }
-    throw Error('Flow dry run did not roll back');
-  }
-
 }

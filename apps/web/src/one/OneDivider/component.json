@@ -1,0 +1,37 @@
+{
+  "apiName": "OneDivider",
+  "label": "One-Divider",
+  "category": "Display",
+  "description": "Universal Divider component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneDivider/OneDivider.jsx",
+  "cssFile": "one/OneDivider/OneDivider.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Divider",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Divider",
+          "label": "One-Divider"
+        }
+      ]
+    }
+  ]
+}

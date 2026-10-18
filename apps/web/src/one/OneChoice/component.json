@@ -1,0 +1,73 @@
+{
+  "apiName": "OneChoice",
+  "label": "One-Choice",
+  "category": "Inputs",
+  "description": "Universal Choice component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneChoice/OneChoice.jsx",
+  "cssFile": "one/OneChoice/OneChoice.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Choice",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Choice",
+          "label": "One-Choice"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Field label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Choose"
+    },
+    {
+      "propertyKey": "mode",
+      "label": "Mode",
+      "kind": "SELECT",
+      "displayOrder": 310,
+      "defaultValue": "select",
+      "choices": [
+        {
+          "key": "select",
+          "label": "Select"
+        },
+        {
+          "key": "multiple",
+          "label": "Multiple"
+        },
+        {
+          "key": "radio",
+          "label": "Radio"
+        },
+        {
+          "key": "checkbox",
+          "label": "Checkbox"
+        },
+        {
+          "key": "segmented",
+          "label": "Segmented"
+        }
+      ]
+    }
+  ]
+}

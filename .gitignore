@@ -4,3 +4,4 @@ apps/*/node_modules
 coverage
 *.log
 .DS_Store
+.artifacts/

@@ -1,0 +1,44 @@
+{
+  "apiName": "OneDashboardEmbed",
+  "label": "One-Dashboard",
+  "category": "Data",
+  "description": "Universal DashboardEmbed component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneDashboardEmbed/OneDashboardEmbed.jsx",
+  "cssFile": "one/OneDashboardEmbed/OneDashboardEmbed.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "DashboardEmbed",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "DashboardEmbed",
+          "label": "One-Dashboard"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Dashboard"
+    }
+  ]
+}

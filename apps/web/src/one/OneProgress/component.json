@@ -1,0 +1,51 @@
+{
+  "apiName": "OneProgress",
+  "label": "One-Progress",
+  "category": "Display",
+  "description": "Universal Progress component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneProgress/OneProgress.jsx",
+  "cssFile": "one/OneProgress/OneProgress.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Progress",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Progress",
+          "label": "One-Progress"
+        }
+      ]
+    },
+    {
+      "propertyKey": "value",
+      "label": "Progress",
+      "kind": "NUMBER",
+      "displayOrder": 300,
+      "defaultValue": 40
+    },
+    {
+      "propertyKey": "max",
+      "label": "Maximum",
+      "kind": "NUMBER",
+      "displayOrder": 310,
+      "defaultValue": 100
+    }
+  ]
+}

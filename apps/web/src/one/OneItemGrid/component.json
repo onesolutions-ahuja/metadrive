@@ -1,0 +1,114 @@
+{
+  "apiName": "OneItemGrid",
+  "label": "One-Item-Grid",
+  "category": "Data",
+  "description": "Universal ItemGrid component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 9,
+  "scope": "platform-core",
+  "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
+  "cssFile": "one/OneItemGrid/OneItemGrid.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "ItemGrid",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "ItemGrid",
+          "label": "One-Item-Grid"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Gallery title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Items"
+    },
+    {
+      "propertyKey": "categoryFieldApiName",
+      "label": "Category field API name",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 340
+    },
+    {
+      "propertyKey": "selectedCategory",
+      "label": "Selected category",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 350
+    },
+    {
+      "propertyKey": "filterKey",
+      "label": "Shared filter key",
+      "kind": "TEXT",
+      "defaultValue": "category",
+      "displayOrder": 370
+    },
+    {
+      "propertyKey": "cartTargetKey",
+      "label": "Add items to shared basket key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 390
+    },
+    {
+      "propertyKey": "imageFieldApiName",
+      "label": "Product image field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 400
+    },
+    {
+      "propertyKey": "titleFieldApiName",
+      "label": "Card title field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 410
+    },
+    {
+      "propertyKey": "priceFieldApiName",
+      "label": "Card price field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 420
+    },
+    {
+      "propertyKey": "currencyCode",
+      "label": "Display currency code",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 430
+    },
+    {
+      "propertyKey": "searchKey",
+      "label": "Shared search key",
+      "kind": "TEXT",
+      "defaultValue": "catalogue",
+      "displayOrder": 440
+    },
+    {
+      "propertyKey": "searchFieldApiNames",
+      "label": "Searchable fields (comma-separated)",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 450
+    }
+  ]
+}

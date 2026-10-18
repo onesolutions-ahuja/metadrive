@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {transform} from 'esbuild';
-import {metadataReference,resolveMetadataProperties} from '../src/metadataReferences';
-import {buildChatterView} from '../src/chatterRecordAdapter';
-import {presentPageRecords} from '../src/recordPresentationAdapters';
-import type {ObjectMetadata,FlowDefinitionMetadata} from '../src/metadata';
+import {loadComponentCatalog,buildBundledComponent} from '../../../scripts/component-catalog.mjs';
+import {metadataReference,resolveMetadataProperties} from '../src/core/metadata/Definitions/metadataReferences';
+import {buildChatterView} from '../src/core/records/RecordWorkspace/chatterRecordAdapter';
+import {presentPageRecords} from '../src/core/records/RecordWorkspace/recordPresentationAdapters';
+import type {ObjectMetadata,FlowDefinitionMetadata} from '../src/core/metadata/Definitions/metadata';
 
 const object={id:'object-id',apiName:'RenamedObject',fields:[{id:'field-id',apiName:'RenamedPrice'}]} as ObjectMetadata;
 const flow={id:'flow-id',apiName:'RenamedFlow'} as FlowDefinitionMetadata;
@@ -44,7 +45,7 @@ test('conversation presentation cannot expose another channel or grant send/assi
 });
 
 async function cartModule(React:unknown,window:unknown={}) {
- const source=await readFile(new URL('../src/custom-components/one/OneShoppingCart.jsx',import.meta.url),'utf8');
+ const source=await readFile(new URL('../src/one/OneShoppingCart/OneShoppingCart.jsx',import.meta.url),'utf8');
  const built=await transform(source+'\nexport {currency,makeSnapshot,ShoppingCartTill};',{loader:'jsx',format:'cjs'});
  const sandbox={module:{exports:{} as any},React,window,document:{querySelector:()=>null},
   crypto:globalThis.crypto,Intl,URL,BroadcastChannel:undefined};
@@ -92,11 +93,9 @@ test('secondary object field bindings resolve only within their selected object'
  assert.equal(resolveMetadataProperties({...p,contactsObjectApiName:'metadata:deleted'},[object,contacts],[]).contactNameFieldApiName,'metadata:contact-name');
 });
 test('compatibility registration uses the same renderer and all registered JSX compiles',async()=>{
- const base=new URL('../src/custom-components/',import.meta.url);
- const legacy=JSON.parse(await readFile(new URL('manifest.json',base),'utf8'));
- const one=JSON.parse(await readFile(new URL('one/manifest.json',base),'utf8'));
- const alias=legacy.find((c:any)=>c.apiName==='ChatterInbox');
- assert.equal(alias.jsx,'one/OneConversation.jsx');assert.deepEqual(alias.defaults.actionFlows,{});
- const paths=new Set<string>([...legacy.map((c:any)=>c.jsx),...one.components.map((c:any)=>c.jsxFile)]);
- for(const file of paths){const source=await readFile(new URL(file,base),'utf8');await transform(source,{loader:'jsx',format:'esm'});}
+ const {components}=await loadComponentCatalog();
+ const alias=components.find((c:any)=>c.apiName==='ChatterInbox');
+ const canonical=components.find((c:any)=>c.apiName==='OneConversation');
+ assert.equal(alias.jsxFile,canonical.jsxFile);assert.deepEqual(alias.defaults.actionFlows,{});
+ for(const definition of components){const built=await buildBundledComponent(definition);assert.ok(built.compiledJs);assert.ok(built.cssSource);}
 });

@@ -1,0 +1,285 @@
+{
+  "apiName": "OneConversation",
+  "label": "One-Conversation",
+  "category": "Data",
+  "description": "Universal Conversation component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 6,
+  "scope": "platform-core",
+  "jsxFile": "one/OneConversation/OneConversation.jsx",
+  "cssFile": "one/OneConversation/OneConversation.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Conversation",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Conversation",
+          "label": "One-Conversation"
+        }
+      ]
+    },
+    {
+      "propertyKey": "placeholder",
+      "label": "Composer placeholder",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Write a message…"
+    },
+    {
+      "propertyKey": "viewMode",
+      "label": "Conversation view",
+      "kind": "SELECT",
+      "displayOrder": 310,
+      "defaultValue": "thread",
+      "choices": [
+        {
+          "key": "thread",
+          "label": "Message thread"
+        },
+        {
+          "key": "inbox",
+          "label": "Conversation inbox"
+        }
+      ]
+    },
+    {
+      "propertyKey": "enableNewConversation",
+      "label": "Enable new conversations",
+      "kind": "BOOLEAN",
+      "displayOrder": 315,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 325,
+      "defaultValue": "Conversations"
+    },
+    {
+      "propertyKey": "searchPlaceholder",
+      "label": "Search placeholder",
+      "kind": "TEXT",
+      "displayOrder": 335,
+      "defaultValue": "Search conversations"
+    },
+    {
+      "propertyKey": "conversationsObjectApiName",
+      "label": "Conversation object",
+      "kind": "TEXT",
+      "displayOrder": 340,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "messagesObjectApiName",
+      "label": "Message object",
+      "kind": "TEXT",
+      "displayOrder": 350,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "channelAccountObjectApiName",
+      "label": "Account object",
+      "kind": "TEXT",
+      "displayOrder": 360,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "contactsObjectApiName",
+      "label": "Contact object",
+      "kind": "TEXT",
+      "displayOrder": 370,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "recordPresenterApiName",
+      "label": "Record presentation",
+      "kind": "TEXT",
+      "displayOrder": 380,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "restrictToAssigned",
+      "label": "Restrict to assigned conversations",
+      "kind": "BOOLEAN",
+      "displayOrder": 390,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "enableAssignment",
+      "label": "Enable assignment actions",
+      "kind": "BOOLEAN",
+      "displayOrder": 400,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "messageMaxLength",
+      "label": "Maximum message length",
+      "kind": "NUMBER",
+      "displayOrder": 420,
+      "defaultValue": 4096
+    },
+    {
+      "propertyKey": "emptyTitle",
+      "label": "Empty conversation title",
+      "kind": "TEXT",
+      "displayOrder": 430,
+      "defaultValue": "Select a conversation"
+    },
+    {
+      "propertyKey": "recordViewAdapter",
+      "label": "Record view adapter",
+      "kind": "TEXT",
+      "displayOrder": 440,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "conversationDirectionFieldApiName",
+      "label": "Conversation direction field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 500
+    },
+    {
+      "propertyKey": "conversationAccountFieldApiName",
+      "label": "Conversation account field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 510
+    },
+    {
+      "propertyKey": "conversationFromFieldApiName",
+      "label": "Conversation from field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 520
+    },
+    {
+      "propertyKey": "conversationToFieldApiName",
+      "label": "Conversation to field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 530
+    },
+    {
+      "propertyKey": "conversationOccurredFieldApiName",
+      "label": "Conversation occurred field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 540
+    },
+    {
+      "propertyKey": "conversationBodyFieldApiName",
+      "label": "Conversation body field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 550
+    },
+    {
+      "propertyKey": "conversationContactNameFieldApiName",
+      "label": "Conversation contactName field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 560
+    },
+    {
+      "propertyKey": "conversationAssignedUserFieldApiName",
+      "label": "Conversation assignedUser field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 570
+    },
+    {
+      "propertyKey": "conversationReadAtFieldApiName",
+      "label": "Conversation readAt field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 580
+    },
+    {
+      "propertyKey": "conversationStatusFieldApiName",
+      "label": "Conversation status field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 590
+    },
+    {
+      "propertyKey": "conversationMediaUrlFieldApiName",
+      "label": "Conversation mediaUrl field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 600
+    },
+    {
+      "propertyKey": "conversationMediaNameFieldApiName",
+      "label": "Conversation mediaName field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 610
+    },
+    {
+      "propertyKey": "conversationMediaTypeFieldApiName",
+      "label": "Conversation mediaType field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 620
+    },
+    {
+      "propertyKey": "conversationIncomingValue",
+      "label": "Incoming direction value",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 650
+    },
+    {
+      "propertyKey": "conversationOutgoingValue",
+      "label": "Outgoing direction value",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 660
+    },
+    {
+      "propertyKey": "channelAccessPath",
+      "label": "Permission endpoint",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 670
+    },
+    {
+      "propertyKey": "contactNameFieldApiName",
+      "label": "Contact name field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 680
+    },
+    {
+      "propertyKey": "contactPhoneFieldApiName",
+      "label": "Contact phone field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 690
+    },
+    {
+      "propertyKey": "liveRefreshEnabled",
+      "label": "Refresh live records",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 710
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "apiName": "OneButton",
+  "label": "One-Button",
+  "category": "Actions",
+  "description": "Universal Button component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneButton/OneButton.jsx",
+  "cssFile": "one/OneButton/OneButton.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Button",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Button",
+          "label": "One-Button"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Button label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Continue"
+    },
+    {
+      "propertyKey": "variant",
+      "label": "Variant",
+      "kind": "SELECT",
+      "displayOrder": 310,
+      "defaultValue": "primary",
+      "choices": [
+        {
+          "key": "primary",
+          "label": "Primary"
+        },
+        {
+          "key": "secondary",
+          "label": "Secondary"
+        },
+        {
+          "key": "ghost",
+          "label": "Ghost"
+        },
+        {
+          "key": "danger",
+          "label": "Danger"
+        }
+      ]
+    },
+    {
+      "propertyKey": "disabled",
+      "label": "Disabled",
+      "kind": "BOOLEAN",
+      "displayOrder": 320,
+      "defaultValue": false
+    }
+  ]
+}

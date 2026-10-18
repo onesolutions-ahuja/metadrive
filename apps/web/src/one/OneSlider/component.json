@@ -1,0 +1,65 @@
+{
+  "apiName": "OneSlider",
+  "label": "One-Slider",
+  "category": "Inputs",
+  "description": "Universal Slider component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneSlider/OneSlider.jsx",
+  "cssFile": "one/OneSlider/OneSlider.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Slider",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Slider",
+          "label": "One-Slider"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Range"
+    },
+    {
+      "propertyKey": "min",
+      "label": "Minimum",
+      "kind": "NUMBER",
+      "displayOrder": 310,
+      "defaultValue": 0
+    },
+    {
+      "propertyKey": "max",
+      "label": "Maximum",
+      "kind": "NUMBER",
+      "displayOrder": 320,
+      "defaultValue": 100
+    },
+    {
+      "propertyKey": "step",
+      "label": "Step",
+      "kind": "NUMBER",
+      "displayOrder": 330,
+      "defaultValue": 1
+    }
+  ]
+}

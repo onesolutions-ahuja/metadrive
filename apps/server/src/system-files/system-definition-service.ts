@@ -22,16 +22,6 @@ export class SystemDefinitionService {
   constructor(private readonly db:SqlPersistence, private readonly rbac:RbacEngine){}
   async list(tenantId:string,userId:string,kind:DefinitionKind) {
     await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'read');
-    if(kind==='dashboard-territories'){
-      const {rows}=await this.db.query<{id:string;label:string;parent_territory_id:string|null;created_at:Date;updated_at:Date}>(
-        'SELECT id,label,parent_territory_id,created_at,updated_at FROM md_dashboard_territories WHERE tenant_id=$1 ORDER BY label',
-        [tenantId]);
-      const members=await this.db.query<{territory_id:string;user_id:string}>(
-        'SELECT territory_id,user_id FROM md_dashboard_territory_users WHERE tenant_id=$1',[tenantId]);
-      return rows.map(x=>({id:x.id,apiName:x.id,label:x.label,parentTerritoryId:x.parent_territory_id,
-        userIds:members.rows.filter(m=>m.territory_id===x.id).map(m=>m.user_id),
-        createdAt:x.created_at,updatedAt:x.updated_at}));
-    }
     const {rows}=await this.db.query<{api_name:string;label:string;properties:unknown;revision:number;enabled:boolean}>(`
       SELECT api_name,label,properties,revision,enabled
       FROM md_system_definitions

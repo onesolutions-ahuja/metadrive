@@ -10,16 +10,16 @@
     "dev:server": "npm run dev --workspace apps/server",
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "test": "npm run test:unit",
-    "test:unit": "npm run test:system --workspace apps/server && npm run test:metadata",
-    "check": "node scripts/verify-project-references.mjs && npm run test:sql-api-audit && npm run test:unit && npm run test:login && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist && npm run audit:sql-api",
+    "test:unit": "npm run test:system --workspace apps/server && npm run test:metadata && npm run test:components",
+    "check": "node scripts/audit-duplicate-code.mjs && node scripts/audit-sql-api-contract.mjs && node scripts/verify-system-file-boundaries.mjs && node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs && npm run test:unit && npm run test:login && npm run build && node scripts/verify-web-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
-    "audit:architecture": "node scripts/verify-project-references.mjs",
-    "test:login": "node --import tsx --test apps/web/src/readSubmittedLogin.test.mjs",
+    "audit:architecture": "node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs",
+    "test:login": "node --import tsx --test apps/web/test/authentication/readSubmittedLogin.test.mjs apps/web/test/authentication/login-bootstrap.test.mjs",
     "test:metadata": "node --import tsx --test apps/web/test/metadataBindings.test.ts",
-    "audit:sql-api": "node scripts/audit-sql-api-contract.mjs --fail-new",
-    "audit:sql-api:strict": "node scripts/audit-sql-api-contract.mjs --strict",
-    "test:sql-api-audit": "node --test scripts/audit-sql-api-contract.test.mjs"
+    "audit:sql-routes": "node scripts/audit-sql-api-contract.mjs",
+    "audit:duplicates": "node scripts/audit-duplicate-code.mjs",
+    "test:components": "tsx --tsconfig apps/web/tsconfig.json --test apps/web/test/componentLibraries.test.ts apps/web/test/oneComponentRendering.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

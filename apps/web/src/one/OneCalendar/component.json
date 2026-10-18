@@ -1,0 +1,62 @@
+{
+  "apiName": "OneCalendar",
+  "label": "One-Calendar",
+  "category": "Data",
+  "description": "Universal Calendar component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneCalendar/OneCalendar.jsx",
+  "cssFile": "one/OneCalendar/OneCalendar.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Calendar",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Calendar",
+          "label": "One-Calendar"
+        }
+      ]
+    },
+    {
+      "propertyKey": "view",
+      "label": "Calendar view",
+      "kind": "SELECT",
+      "displayOrder": 300,
+      "defaultValue": "month",
+      "choices": [
+        {
+          "key": "month",
+          "label": "Month"
+        },
+        {
+          "key": "week",
+          "label": "Week"
+        },
+        {
+          "key": "day",
+          "label": "Day"
+        },
+        {
+          "key": "agenda",
+          "label": "Agenda"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "apiName": "OneToggle",
+  "label": "One-Toggle",
+  "category": "Inputs",
+  "description": "Universal Toggle component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneToggle/OneToggle.jsx",
+  "cssFile": "one/OneToggle/OneToggle.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Toggle",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Toggle",
+          "label": "One-Toggle"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Enabled"
+    }
+  ]
+}

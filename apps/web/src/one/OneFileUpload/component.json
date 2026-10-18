@@ -1,0 +1,58 @@
+{
+  "apiName": "OneFileUpload",
+  "label": "One-File-Upload",
+  "category": "Inputs",
+  "description": "Universal FileUpload component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneFileUpload/OneFileUpload.jsx",
+  "cssFile": "one/OneFileUpload/OneFileUpload.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "FileUpload",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "FileUpload",
+          "label": "One-File-Upload"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Field label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Choose files"
+    },
+    {
+      "propertyKey": "accept",
+      "label": "Accepted MIME extensions",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "multiple",
+      "label": "Multiple files",
+      "kind": "BOOLEAN",
+      "displayOrder": 320,
+      "defaultValue": false
+    }
+  ]
+}

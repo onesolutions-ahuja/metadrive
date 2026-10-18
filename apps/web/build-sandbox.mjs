@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 await build({
-  entryPoints: ['src/component-sandbox-frame.tsx'],
+  entryPoints: ['src/core/components/ComponentSandbox/component-sandbox-frame.tsx'],
   outfile: 'public/component-sandbox.js',
   platform: 'browser',
   format: 'iife',

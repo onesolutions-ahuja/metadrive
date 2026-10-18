@@ -1,0 +1,44 @@
+{
+  "apiName": "OneMenu",
+  "label": "One-Menu",
+  "category": "Actions",
+  "description": "Universal Menu component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneMenu/OneMenu.jsx",
+  "cssFile": "one/OneMenu/OneMenu.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Menu",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Menu",
+          "label": "One-Menu"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Menu label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Options"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "apiName": "OneInput",
+  "label": "One-Input",
+  "category": "Inputs",
+  "description": "Universal Input component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 3,
+  "scope": "platform-core",
+  "jsxFile": "one/OneInput/OneInput.jsx",
+  "cssFile": "one/OneInput/OneInput.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Input",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Input",
+          "label": "One-Input"
+        }
+      ]
+    },
+    {
+      "propertyKey": "label",
+      "label": "Field label",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Input"
+    },
+    {
+      "propertyKey": "inputType",
+      "label": "Data type",
+      "kind": "SELECT",
+      "displayOrder": 310,
+      "defaultValue": "text",
+      "choices": [
+        {
+          "key": "text",
+          "label": "Text"
+        },
+        {
+          "key": "email",
+          "label": "Email"
+        },
+        {
+          "key": "password",
+          "label": "Password"
+        },
+        {
+          "key": "number",
+          "label": "Number"
+        },
+        {
+          "key": "currency",
+          "label": "Currency"
+        },
+        {
+          "key": "percent",
+          "label": "Percent"
+        },
+        {
+          "key": "date",
+          "label": "Date"
+        },
+        {
+          "key": "time",
+          "label": "Time"
+        },
+        {
+          "key": "datetime-local",
+          "label": "Datetime-Local"
+        },
+        {
+          "key": "tel",
+          "label": "Tel"
+        },
+        {
+          "key": "url",
+          "label": "Url"
+        },
+        {
+          "key": "search",
+          "label": "Search"
+        },
+        {
+          "key": "barcode",
+          "label": "Barcode"
+        }
+      ]
+    },
+    {
+      "propertyKey": "placeholder",
+      "label": "Placeholder",
+      "kind": "TEXT",
+      "displayOrder": 320,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "required",
+      "label": "Required",
+      "kind": "BOOLEAN",
+      "displayOrder": 330,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "disabled",
+      "label": "Disabled",
+      "kind": "BOOLEAN",
+      "displayOrder": 340,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "value",
+      "label": "Value",
+      "kind": "TEXT",
+      "displayOrder": 350,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "helpText",
+      "label": "Help text",
+      "kind": "TEXT",
+      "displayOrder": 360,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "description",
+      "label": "Description",
+      "kind": "TEXT",
+      "displayOrder": 370,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "multiline",
+      "label": "Multiline",
+      "kind": "BOOLEAN",
+      "displayOrder": 380,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "rows",
+      "label": "Rows",
+      "kind": "NUMBER",
+      "displayOrder": 390,
+      "defaultValue": 2
+    },
+    {
+      "propertyKey": "maxLength",
+      "label": "Maximum length",
+      "kind": "NUMBER",
+      "displayOrder": 400,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "minLength",
+      "label": "Minimum length",
+      "kind": "NUMBER",
+      "displayOrder": 410,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "pattern",
+      "label": "Validation pattern",
+      "kind": "TEXT",
+      "displayOrder": 420,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "autoComplete",
+      "label": "Browser autocomplete",
+      "kind": "TEXT",
+      "displayOrder": 430,
+      "defaultValue": ""
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "apiName": "OneBoard",
+  "label": "One-Board",
+  "category": "Data",
+  "description": "Universal Board component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneBoard/OneBoard.jsx",
+  "cssFile": "one/OneBoard/OneBoard.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Board",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Board",
+          "label": "One-Board"
+        }
+      ]
+    },
+    {
+      "propertyKey": "groupField",
+      "label": "Group by field",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "status"
+    }
+  ]
+}

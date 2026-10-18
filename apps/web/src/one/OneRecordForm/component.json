@@ -1,0 +1,51 @@
+{
+  "apiName": "OneRecordForm",
+  "label": "One-Record-Form",
+  "category": "Data",
+  "description": "Universal RecordForm component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneRecordForm/OneRecordForm.jsx",
+  "cssFile": "one/OneRecordForm/OneRecordForm.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "RecordForm",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "RecordForm",
+          "label": "One-Record-Form"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Form title",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Details"
+    },
+    {
+      "propertyKey": "submitLabel",
+      "label": "Save label",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": "Save"
+    }
+  ]
+}

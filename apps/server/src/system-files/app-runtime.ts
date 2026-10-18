@@ -1,8 +1,7 @@
-import {seedIndependentAppMetadata,type AppSeedDefinition} from './app-metadata-seeder.js';
 import type {SqlPersistence} from './sql-persistence.js';
 export class AppRuntime {
-  constructor(private readonly db:SqlPersistence,private readonly trustedAppSeed?: (appApi:string)=>Promise<AppSeedDefinition|undefined>) {}
-  async install(tenantId:string,appApi:string) {
+  constructor(private readonly db:SqlPersistence) {}
+  async install(tenantId:string,appApi:string,seed?:import('../system-support/app-page-seeder.js').AppPageSeed) {
     await this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(`
         SELECT a.id FROM md_apps a JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
@@ -10,104 +9,13 @@ export class AppRuntime {
           AND (e.expires_at IS NULL OR e.expires_at>now()) FOR UPDATE OF e
       `,[tenantId,appApi]);
       if(!rows[0])throw new Error('App licence or entitlement unavailable');
-      const missing=await client.query<{api_name:string}>(`
-        SELECT required.api_name FROM md_app_dependencies d
-        JOIN md_apps required ON required.id=d.dependency_app_id
-        LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=d.dependency_app_id
-        LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=d.dependency_app_id
-        WHERE d.app_id=$2 AND (i.app_id IS NULL OR e.active IS DISTINCT FROM true
-          OR e.expires_at<=now() OR required.enabled=false)`,[tenantId,rows[0].id]);
-      if(missing.rows.length)throw new Error('Missing installed and entitled app dependencies: '+missing.rows.map(x=>x.api_name).join(', '));
       await client.query('INSERT INTO md_app_installations (tenant_id,app_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
         [tenantId,rows[0].id]);
-      const packaged=await client.query<{version:number;manifest:AppSeedDefinition}>(`
-       SELECT version,manifest FROM md_app_package_versions WHERE app_id=$1
-       ORDER BY version DESC LIMIT 1`,[rows[0].id]);
-      // Manifests come from versioned SQL app packages or trusted lazy server modules.
-      const selected=packaged.rows[0];
-      const seed=selected?.manifest??await this.trustedAppSeed?.(appApi);
-      if(!seed)throw new Error('No trusted app package registered: '+appApi);
-      const size=JSON.stringify(seed).length;
-      if(size>262144||!seed||typeof seed!=='object'||Array.isArray(seed)
-        ||Object.keys(seed).some(k=>!['objects','components','pages','flows','actions'].includes(k))
-        ||Object.values(seed).some(v=>v!==undefined&&!Array.isArray(v)))
-       throw new Error('Invalid app package manifest');
-      await client.query('SELECT app_id FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2 FOR UPDATE',
-       [tenantId,rows[0].id]);
-      await seedIndependentAppMetadata(client,tenantId,seed,rows[0].id);
-      const dev=await client.query<{id:string}>(
-       "SELECT id FROM md_permission_sets WHERE tenant_id=$1 AND api_name='OneEngineDeveloper'",[tenantId]);
-      if(!dev.rows[0])throw Error('OneEngine Developer permission set is missing');
-      for(const action of ['read','manage'])await client.query(`
-       INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
-       VALUES($1,$2,$3,$4,'allow') ON CONFLICT DO NOTHING`,
-       [tenantId,dev.rows[0].id,'App:'+appApi,action]);
-      // Re-enable only metadata which this app's own uninstall previously disabled.
-      await client.query(`UPDATE md_page_definitions p SET enabled=true
-       FROM md_app_owned_definitions o
-       WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page' AND o.disabled_by_uninstall=true
-        AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name`,[tenantId,rows[0].id]);
-      await client.query(`UPDATE md_component_definitions c SET enabled=true
-       FROM md_app_owned_definitions o
-       WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='component' AND o.disabled_by_uninstall=true
-        AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name`,[tenantId,rows[0].id]);
-      await client.query(`UPDATE md_app_owned_definitions SET disabled_by_uninstall=false
-       WHERE tenant_id=$1 AND app_id=$2 AND kind IN ('page','component')`,[tenantId,rows[0].id]);
-      await client.query(`INSERT INTO md_app_installed_versions(tenant_id,app_id,version)
-        VALUES($1,$2,$3) ON CONFLICT(tenant_id,app_id)
-        DO UPDATE SET version=EXCLUDED.version,upgraded_at=now()`,
-       [tenantId,rows[0].id,selected?.version??1]);
+      if(seed){const {seedAppPage}=await import('../system-support/app-page-seeder.js');await seedAppPage(client,tenantId,rows[0].id,seed);}
     });
   }
-  async update(tenantId:string,appApi:string) { await this.install(tenantId,appApi); }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
-      const {rows:blocking}=await client.query<{api_name:string}>(`
-       SELECT dependent.api_name FROM md_apps target
-       JOIN md_app_dependencies d ON d.dependency_app_id=target.id
-       JOIN md_apps dependent ON dependent.id=d.app_id
-       JOIN md_app_installations i ON i.app_id=dependent.id AND i.tenant_id=$1
-       WHERE target.api_name=$2`,[tenantId,appApi]);
-      if(blocking.length)throw new Error('Cannot uninstall app required by: '+blocking.map(x=>x.api_name).join(', '));
-      const {rows:target}=await client.query<{id:string}>(
-       'SELECT id FROM md_apps WHERE api_name=$1',[appApi]);
-      if(!target[0])throw Error('App not found');
-      const appId=target[0].id;
-      // Stop executable business logic and durable interviews without deleting records.
-      await client.query(`UPDATE md_flow_runs r SET status='failed',error_code='app_uninstalled',finished_at=now()
-       FROM md_flow_definitions f JOIN md_app_owned_definitions o
-        ON o.tenant_id=f.tenant_id AND o.kind='flow' AND o.api_name=f.api_name
-       WHERE r.tenant_id=$1 AND o.app_id=$2 AND r.flow_id=f.id
-        AND r.tenant_id=f.tenant_id AND r.status='pending'`,[tenantId,appId]);
-      await client.query(`UPDATE md_screen_interviews i SET status='cancelled',updated_at=now()
-       FROM md_flow_definitions f JOIN md_app_owned_definitions o
-        ON o.tenant_id=f.tenant_id AND o.kind='flow' AND o.api_name=f.api_name
-       WHERE i.tenant_id=$1 AND o.app_id=$2 AND i.flow_id=f.id
-        AND i.tenant_id=f.tenant_id AND i.status='waiting'`,[tenantId,appId]);
-      await client.query(`UPDATE md_flow_definitions f SET active=false
-       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2
-       AND o.kind='flow' AND o.api_name=f.api_name AND f.tenant_id=$1
-       AND f.active=true`,[tenantId,appId]);
-      await client.query(`UPDATE md_app_owned_definitions o SET disabled_by_uninstall=true
-       FROM md_page_definitions p WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page'
-       AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name AND p.enabled=true`,[tenantId,appId]);
-      await client.query(`UPDATE md_page_definitions p SET enabled=false
-       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='page'
-       AND p.tenant_id=o.tenant_id AND p.api_name=o.api_name AND o.disabled_by_uninstall=true`,
-       [tenantId,appId]);
-      await client.query(`UPDATE md_app_owned_definitions o SET disabled_by_uninstall=true
-       FROM md_component_definitions c WHERE o.tenant_id=$1 AND o.app_id=$2 AND o.kind='component'
-       AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name AND c.enabled=true
-       AND NOT EXISTS(SELECT 1 FROM md_page_components pc WHERE pc.tenant_id=$1
-        AND pc.component_api=c.api_name
-        AND NOT EXISTS(SELECT 1 FROM md_app_owned_definitions op
-         JOIN md_page_definitions p ON p.tenant_id=op.tenant_id AND p.api_name=op.api_name
-         WHERE op.tenant_id=$1 AND op.app_id=$2 AND op.kind='page' AND p.id=pc.page_id))`,
-       [tenantId,appId]);
-      await client.query(`UPDATE md_component_definitions c SET enabled=false
-       FROM md_app_owned_definitions o WHERE o.tenant_id=$1 AND o.app_id=$2
-       AND o.kind='component' AND o.disabled_by_uninstall=true
-       AND c.tenant_id=o.tenant_id AND c.api_name=o.api_name`,[tenantId,appId]);
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
         AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,appApi]);
       await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)',
@@ -128,6 +36,122 @@ export class AppRuntime {
     `,[tenantId,appApi,formFactor]);
     if(!rows.length)throw new Error('Permission denied');
     return rows[0].api_name?{apiName:rows[0].api_name}:null;
+  }
+  async marketplace(tenantId:string) {
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string;installed:boolean;expires_at:Date|null;licensed:boolean
+    }>(`
+      SELECT a.id,a.api_name,a.label,(i.app_id IS NOT NULL) AS installed,
+        e.expires_at,(COALESCE(e.active,false) AND
+          (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
+      FROM md_apps a
+      LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+      LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+      WHERE a.enabled=true
+      ORDER BY a.label
+    `,[tenantId]);
+    return {records:rows.map(row=>({
+      Id:row.id,Name:row.label,AppKey__c:row.api_name,
+      CredentialName__c:'',Installed__c:row.installed,
+      LicenceStatus__c:row.licensed?'ACTIVE':'UNLICENSED',
+      ...(row.expires_at?{LicenceExpiresAt__c:new Date(row.expires_at).toISOString()}:{})
+    }))};
+  }
+  /** Tenant app route aliases are independently versioned SQL metadata. */
+  async listAliases(tenantId:string){
+    const {rows}=await this.db.query<{
+      app_api:string;slug:string;kind:string;target_api:string;status:string;version:number
+    }>(`
+      SELECT r.app_api,r.slug,r.kind,r.target_api,r.status,r.version
+      FROM md_app_route_aliases r
+      JOIN md_apps a ON a.api_name=r.app_api
+      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 ORDER BY r.app_api,r.slug
+    `,[tenantId]);
+    return {aliases:rows.map(r=>({
+      appId:r.app_api,slug:r.slug,kind:r.kind,
+      targetApiName:r.target_api,status:r.status,version:r.version
+    }))};
+  }
+  async saveAlias(tenantId:string,appApi:string,slug:string,input:Record<string,unknown>){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(appApi)|| !/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(slug))
+      throw new Error('Invalid route alias');
+    const kind=input.kind,target=input.targetApiName,expected=input.expectedVersion;
+    if(input.appId!==appApi||input.slug!==slug||
+      !['App Home','App Page','Record List'].includes(String(kind))||
+      typeof target!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(target)||
+      !Number.isSafeInteger(expected)||Number(expected)<0)
+      throw new Error('Invalid route alias');
+    if(kind==='App Home'&&target!==appApi)throw new Error('Invalid App Home destination');
+    const {rows:install}=await this.db.query<{id:string}>(`
+      SELECT a.id FROM md_apps a
+      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
+      JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+      WHERE a.api_name=$2 AND a.enabled=true AND e.active=true
+        AND (e.expires_at IS NULL OR e.expires_at>now())
+    `,[tenantId,appApi]);
+    if(!install.length)throw new Error('App not installed or licensed');
+    if(kind!=='App Home'){
+      const query=kind==='App Page'
+        ? 'SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true'
+        : 'SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2';
+      const found=await this.db.query(query,[tenantId,target]);
+      if(!found.rows.length)throw new Error('Route alias destination unavailable');
+    }
+    const version=Number(expected);
+    const {rows}=await this.db.query<{version:number}>(version===0?`
+      INSERT INTO md_app_route_aliases(tenant_id,app_api,slug,kind,target_api,status,version)
+      VALUES($1,$2,$3,$4,$5,'Active',1)
+      ON CONFLICT(tenant_id,app_api,slug) DO NOTHING RETURNING version
+    `:`
+      UPDATE md_app_route_aliases
+      SET kind=$4,target_api=$5,status='Active',version=version+1,updated_at=now()
+      WHERE tenant_id=$1 AND app_api=$2 AND slug=$3 AND version=$6
+      RETURNING version
+    `,version===0?[tenantId,appApi,slug,kind,target]:[tenantId,appApi,slug,kind,target,version]);
+    if(!rows.length)throw new Error('Route alias version conflict');
+    return {appId:appApi,slug,kind,targetApiName:target,status:'Active',version:rows[0].version};
+  }
+  async disableAlias(tenantId:string,appApi:string,slug:string,expectedVersion:unknown){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(appApi)||
+      !/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(slug)||
+      !Number.isSafeInteger(expectedVersion)||Number(expectedVersion)<1)
+      throw new Error('Invalid route alias');
+    const {rowCount}=await this.db.query(`
+      UPDATE md_app_route_aliases
+      SET status='Disabled',version=version+1,updated_at=now()
+      WHERE tenant_id=$1 AND app_api=$2 AND slug=$3 AND version=$4 AND status='Active'
+    `,[tenantId,appApi,slug,expectedVersion]);
+    if(!rowCount)throw new Error('Route alias version conflict');
+  }
+  async resolveAlias(tenantId:string,appApi:string,slug:string){
+    const {rows}=await this.db.query<{kind:string;target_api:string}>(`
+      SELECT r.kind,r.target_api FROM md_app_route_aliases r
+      JOIN md_apps a ON a.api_name=r.app_api
+      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=r.tenant_id
+      JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.app_api=$2 AND r.slug=$3 AND r.status='Active'
+        AND a.enabled=true AND e.active=true
+        AND (e.expires_at IS NULL OR e.expires_at>now())
+    `,[tenantId,appApi,slug]);
+    const record=rows[0];
+    if(!record)throw new Error('Route alias unavailable');
+    const target=record.target_api;
+    if(record.kind!=='App Home'){
+      const sql=record.kind==='App Page'
+        ? 'SELECT 1 FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true'
+        : 'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2';
+      const result=await this.db.query(sql,[tenantId,target]);
+      if(!result.rows.length)throw new Error('Route alias destination unavailable');
+    }
+    const app=encodeURIComponent(appApi),api=encodeURIComponent(target);
+    if(record.kind==='App Home')return {path:'/une/apps/'+app+'/home',kind:record.kind,targetApiName:target};
+    if(record.kind==='App Page')return {path:'/une/apps/'+app+'/pages/'+api,kind:record.kind,targetApiName:target};
+    if(record.kind==='Record List'){
+      const q=new URLSearchParams({filterName:'All'+target+'s',appId:appApi});
+      return {path:'/une/o/'+api+'/list?'+q.toString(),kind:record.kind,targetApiName:target};
+    }
+    throw new Error('Invalid route alias destination');
   }
   async listInstalled(tenantId:string) {
     const {rows}=await this.db.query<{api_name:string;label:string}>(`
