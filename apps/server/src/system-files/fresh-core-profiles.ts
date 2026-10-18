@@ -32,7 +32,7 @@ export async function seedFreshCoreProfiles(client:PoolClient,tenantId:string) {
     for(const resource of ['AppExchange','NamedCredential','Tenant','PermissionSet','Role'])
      rules.push({resource,action:'manage',effect:'allow'});
     // Tenant Developer configures shared metadata engines, not platform-wide policy.
-    const businessObjects=new Set(FRESH_CORE_OBJECTS.map(object=>object.apiName));
+    const businessObjects=new Set<string>(FRESH_CORE_OBJECTS.map(object=>object.apiName));
     for(const resource of ['ObjectDefinition','FieldDefinition','Record','PageDefinition','ComponentDefinition',
       'FlowDefinition','ApprovalRequest','User','AppExchange','NamedCredential','PermissionSet','Role']){
      if(businessObjects.has(resource))continue;
