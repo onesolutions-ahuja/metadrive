@@ -30,7 +30,9 @@ export class DurableJobWorker {
   const due=await this.jobs.claim(this.workerId,batch);
   let completed=0,failed=0;
   for(const job of due){
+   let replayBlocked=false;
    try {
+    if(job.job_type==='flow.execute'&&job.attempt>1)replayBlocked=true;
     const handler=this.handlers.get(job.job_type);
     if(!handler)throw new Error('Unregistered job type');
     if(!await this.authorize(job))throw new Error('Job no longer authorised');
@@ -40,7 +42,7 @@ export class DurableJobWorker {
    } catch {
     // Never serialize arbitrary error text, secrets or other tenant information.
     try {
-     await this.jobs.fail(job.tenant_id,job.id,this.workerId,'JOB_EXECUTION_FAILED',
+     await this.jobs.fail(job.tenant_id,job.id,this.workerId,replayBlocked?'FLOW_RECONCILIATION_REQUIRED':'JOB_EXECUTION_FAILED',
       Math.min(3600,Math.pow(2,Math.min(job.attempt,10))*15));
     } catch {
      // Failed leases are reclaimable by a subsequent worker after expiration.
