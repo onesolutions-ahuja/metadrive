@@ -13,6 +13,7 @@ function parseRules(set:SetRow) {
  const rules:Array<{resource:string;action:string}>=[];
  const append=(resource:string,action:string)=>{if(resource.includes('*')||action.includes('*'))throw Error('Wildcard grants require separate privileged policy workflow');rules.push({resource,action});};
  for(const item of set.systemPermissions){
+   if(item==='*:*')continue; // Existing protected wildcard grants are checked against SQL below.
    if(typeof item!=='string'||item.length>150||!item.includes(':'))throw Error('Invalid system permission');
    const index=item.lastIndexOf(':'),resource=item.slice(0,index),action=item.slice(index+1);
    if(!/^[A-Za-z][A-Za-z0-9_:.-]*$/.test(resource)||!name.test(action))throw Error('Invalid system permission');
@@ -70,10 +71,16 @@ export class PermissionSetAdministration {
          await tx.query('INSERT INTO md_permission_sets(tenant_id,id,api_name) VALUES($1,$2,$3)',
            [tenant,s.entry.id,s.entry.apiName]);
        }
-       if(selfSets.has(s.entry.id)&&!s.rules.some(rule=>rule.resource==='Security'&&rule.action==='manage'))
-         throw Error('Cannot revoke your own administration permission');
        const current=await tx.query<{resource:string;action:string;effect:string}>(
          'SELECT resource,action,effect FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2',[tenant,s.entry.id]);
+       const protectedGrants=current.rows.filter(row=>row.effect==='allow'&&(row.resource==='*'||row.action==='*'));
+       const submittedWildcards=s.entry.systemPermissions.filter(rule=>rule==='*:*');
+       if(submittedWildcards.length!==(protectedGrants.some(rule=>rule.resource==='*'&&rule.action==='*')?1:0)||
+         protectedGrants.some(rule=>rule.resource!=='*'||rule.action!=='*'))
+         throw Error('Protected wildcard grants cannot be changed in this editor');
+       if(selfSets.has(s.entry.id)&&!submittedWildcards.length&&
+         !s.rules.some(rule=>rule.resource==='Security'&&rule.action==='manage'))
+         throw Error('Cannot revoke your own administration permission');
        // Preserve explicit deny and wildcard rows. Do not let UI replace security policy beyond supported grants.
        const desired=new Set(s.rules.map(rule=>rule.resource+':'+rule.action));
        for(const rule of current.rows){
