@@ -50,3 +50,21 @@ test('existing OneEngine wildcard grant remains configurable by authorised RBAC 
  await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]});
  assert.ok(writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
 });
+
+test('Cashier object, field and Flow grants use executable central RBAC resources',async()=>{
+ const grants:Array<[string,string]>=[];
+ const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('SELECT id,api_name FROM md_permission_sets')||sql.includes('SELECT resource,action,effect')||
+      sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
+   if(sql.includes('INSERT INTO md_permission_rules'))grants.push([String(args[2]),String(args[3])]);
+   return {rows:[]};
+ }})} as unknown as SqlPersistence;
+ const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
+ await new PermissionSetAdministration(db,rbac).save('tenant','admin',{
+   permissionSets:[{...set,systemPermissions:['flows:run']}]
+ });
+ assert.ok(grants.some(([resource,action])=>resource==='Invoice'&&action==='create'));
+ assert.ok(grants.some(([resource,action])=>resource==='Invoice.Total'&&action==='read'));
+ assert.ok(grants.some(([resource,action])=>resource==='Flow'&&action==='execute'));
+ assert.equal(grants.some(([resource])=>resource.startsWith('Object:')||resource.startsWith('Field:')),false);
+});
