@@ -130,6 +130,18 @@ export class FlowRuntime {
       waitUntil:null,retryAt:null,attempts:0
     }))};
   }
+  /** Cancel a durable pending interview without deleting its execution history. */
+  async cancelInterview(tenantId:string,userId:string,interviewId:string){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(interviewId))
+      throw new Error('Invalid interview ID');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    const result=await this.db.query(
+      "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status='pending' RETURNING id",
+      [tenantId,interviewId]);
+    if(!result.rowCount)throw new Error('Pending interview not found');
+    return {cancelled:true};
+  }
   async deactivate(tenantId:string,userId:string,apiName:string) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
