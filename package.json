@@ -11,7 +11,7 @@
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "test": "npm run test:unit",
     "test:unit": "npm run test:system --workspace apps/server && npm run test:metadata && npm run test:components",
-    "check": "node scripts/audit-duplicate-code.mjs && node scripts/audit-sql-api-contract.mjs && node scripts/verify-system-file-boundaries.mjs && node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs && npm run test:unit && npm run test:login && npm run build && node scripts/verify-web-lazy-bundle.mjs apps/web/dist",
+    "check": "node scripts/audit-jsonb-policy.mjs && node scripts/audit-duplicate-code.mjs && node scripts/audit-sql-api-contract.mjs && node scripts/verify-system-file-boundaries.mjs && node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs && npm run test:unit && npm run test:login && npm run build && node scripts/verify-web-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "audit:architecture": "node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs",
@@ -19,7 +19,8 @@
     "test:metadata": "node --import tsx --test apps/web/test/metadataBindings.test.ts apps/web/test/flowEndElement.test.mjs",
     "audit:sql-routes": "node scripts/audit-sql-api-contract.mjs",
     "audit:duplicates": "node scripts/audit-duplicate-code.mjs",
-    "test:components": "tsx --tsconfig apps/web/tsconfig.json --test apps/web/test/componentLibraries.test.ts apps/web/test/oneComponentRendering.test.mjs"
+    "test:components": "tsx --tsconfig apps/web/tsconfig.json --test apps/web/test/componentLibraries.test.ts apps/web/test/oneComponentRendering.test.mjs",
+    "audit:jsonb": "node scripts/audit-jsonb-policy.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
