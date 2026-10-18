@@ -60,11 +60,17 @@ export class RbacEngine {
       this.db.query<{user_id:string;role_id:string}>(
         'SELECT user_id,role_id FROM md_user_roles WHERE tenant_id=$1',[tenantId])
     ]);
-    const bySet=new Map<string,string[]>();
+    const bySet=new Map<string,{systemPermissions:string[];objectPermissions:Record<string,Record<string,boolean>>;fieldPermissions:Record<string,Record<string,boolean>>}>();
     for(const rule of assignments.rows){
       if(rule.effect!=='allow')continue;
-      const entries=bySet.get(rule.permission_set_id)??[];
-      entries.push(rule.resource+':'+rule.action);
+      const entries=bySet.get(rule.permission_set_id)??{systemPermissions:[],objectPermissions:{},fieldPermissions:{}};
+      if(rule.resource.startsWith('Object:')){
+        const key=rule.resource.slice(7);
+        (entries.objectPermissions[key]??={})[rule.action]=true;
+      }else if(rule.resource.startsWith('Field:')){
+        const key=rule.resource.slice(6);
+        (entries.fieldPermissions[key]??={})[rule.action]=true;
+      }else entries.systemPermissions.push(rule.resource+':'+rule.action);
       bySet.set(rule.permission_set_id,entries);
     }
     const emptyRecordAccess={};
@@ -74,9 +80,9 @@ export class RbacEngine {
         systemPermissions:[],objectPermissions:{},recordTypePermissions:{},fieldPermissions:{}})),
       permissionSets:sets.rows.map(p=>({
         id:p.id,apiName:p.api_name,label:p.api_name,license:'',description:'',
-        systemPermissions:bySet.get(p.id)??[],
-        objectPermissions:emptyRecordAccess,recordTypePermissions:{},
-        fieldPermissions:{}
+        systemPermissions:bySet.get(p.id)?.systemPermissions??[],
+        objectPermissions:bySet.get(p.id)?.objectPermissions??emptyRecordAccess,recordTypePermissions:{},
+        fieldPermissions:bySet.get(p.id)?.fieldPermissions??{}
       })),
       permissionSetGroups:[],
       roles:roles.rows.map(p=>({
