@@ -86,8 +86,8 @@ export function createSystemServer(db:SqlPersistence) {
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
-  const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const namedCredentials=new NamedCredentialService(db,rbac);
+  const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
