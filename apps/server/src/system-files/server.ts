@@ -11,7 +11,6 @@ import {registerObjectLifecycleRoutes} from './object-lifecycle-routes.js';
 import {registerRecordOwnershipRoutes} from './record-ownership-routes.js';
 import {registerReportRuntimeRoutes} from './report-runtime-routes.js';
 import {registerDashboardRuntimeRoutes} from './dashboard-runtime-routes.js';
-import {registerDashboardRuntimeRoutes} from './dashboard-runtime-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
 import {registerAuthSecurityRoutes} from './auth-security-routes.js';
