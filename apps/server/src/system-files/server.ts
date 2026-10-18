@@ -305,7 +305,7 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
     if(req.body?.pageSeed)await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','create');
-    await apps.install(actor.tenant_id,req.params.apiName,req.body?.pageSeed);
+    await apps.install(actor.tenant_id,req.params.apiName);
     res.status(204).end();
   }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
