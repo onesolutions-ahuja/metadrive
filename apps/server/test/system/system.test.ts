@@ -532,3 +532,24 @@ test('AppExchange catalog uses SQL tenant installations and entitlements',async(
  assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
    CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
 });
+
+test('Flow deactivation changes SQL state only for caller tenant and requires OneEngine manage',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const calls:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+  calls.push(args);
+  if(sql.includes('UPDATE md_flow_definitions')){
+   assert.match(sql,/tenant_id=\$1/);return {rows:[],rowCount:1};
+  }
+  if(sql.includes('SELECT id,api_name,label,flow_type')){
+   return {rows:[{id:'f1',api_name:'MyFlow',label:'My Flow',flow_type:'Autolaunched Flow',version:2,active:false}]};
+  }
+  throw Error('Unexpected SQL');
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+  assert.deepEqual([tenant,user,resource,action],['tenant','user','FlowDefinition','manage']);
+ }} as unknown as RbacEngine;
+ const result=await new FlowRuntime(db,rbac).deactivate('tenant','user','MyFlow');
+ assert.equal(result.flow.status,'Draft');
+ assert.deepEqual(calls[0],['tenant','MyFlow']);
+});
