@@ -27,7 +27,7 @@ export function useSetupMetadata(ctx: any) {
     const isAdmin = route.kind === 'setup';
     const needsFlowAdministration = isAdmin && workspace === 'flow-builder';
     const needsApprovalAdministration = isAdmin && (workspace === 'approval-processes' || needsFlowAdministration);
-    const needsConnectorAdministration = isAdmin && (workspace === 'connector-settings' || needsFlowAdministration);
+    const needsConnectorAdministration = isAdmin && (needsFlowAdministration);
     const optionalGroups = [
       {
         key: 'flow-definitions', enabled: needsFlowAdministration,

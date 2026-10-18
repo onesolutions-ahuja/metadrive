@@ -250,7 +250,7 @@ const LazySetupWorkspace = React.lazy(async () => {
     ]);
     return { default: createPageBuilder(MetadataComponentProperties, runtime.MetadataBoundPageComponent) };
   });
-  return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
+  return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
 });
 function SetupApp(props: {onLogout: () => void; entryTiming: EntryTiming | null}) {
   return <React.Suspense fallback={<div className="auth-loading">Loading workspace…</div>}><LazySetupWorkspace {...props} /></React.Suspense>;
@@ -270,7 +270,6 @@ function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: strin
 }
 
 // Builders and advanced settings are separate on-demand chunks, not login dependencies.
-const ConnectorSettingsWorkspace = React.lazy(async () => ({ default: (await import('./connectorSettingsView')).ConnectorSettingsWorkspace }));
 const SetupHome = React.lazy(async () => ({ default: (await import('./setupHomeView')).createSetupHome(PageHeading) }));
 const ObjectManager = React.lazy(async () => ({ default: (await loadObjectManagerFactory())(apiRequest) }));
 const ReportBuilder = LazyReportBuilder;
