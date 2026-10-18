@@ -155,6 +155,23 @@ export class NamedCredentialService {
    const config=reencrypt(existing.configuration_ciphertext);
    await client.query('UPDATE md_named_credentials SET secret_ciphertext=$3,configuration_ciphertext=$4,encryption_key_id=$5,updated_at=now() WHERE tenant_id=$1 AND id=$2',
     [tenantId,id,secret,config,targetId]);
+   // Provider grants have independent key identities and must rotate atomically as well.
+   const {rows:oauthRows}=await client.query<{
+    key_id:string;access_ciphertext:Buffer;refresh_ciphertext:Buffer|null
+   }>('SELECT key_id,access_ciphertext,refresh_ciphertext FROM md_credential_oauth_tokens WHERE tenant_id=$1 AND credential_id=$2 FOR UPDATE',
+    [tenantId,id]);
+   if(oauthRows[0]&&oauthRows[0].key_id!==targetId){
+    const token=oauthRows[0];
+    const rotateToken=(value:Buffer|null)=>{
+     if(!value)return null;
+     const plaintext=this.decryptOpaque(value,token.key_id);
+     return this.encryptOpaque(plaintext).ciphertext;
+    };
+    await client.query(`UPDATE md_credential_oauth_tokens
+      SET key_id=$3,access_ciphertext=$4,refresh_ciphertext=$5,updated_at=now()
+      WHERE tenant_id=$1 AND credential_id=$2`,
+      [tenantId,id,targetId,rotateToken(token.access_ciphertext),rotateToken(token.refresh_ciphertext)]);
+   }
    await client.query(
     'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
     [tenantId,userId,'NamedCredentialKeyRotation',JSON.stringify({credentialId:id,previousKeyId:existing.encryption_key_id,newKeyId:targetId})]);
