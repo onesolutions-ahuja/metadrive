@@ -792,7 +792,23 @@ function ObjectManager({
             <div className="metadata-card-header"><PlatformPageSlot slotKey="field-object-07"><label className="form-label">Layout Label<input className="form-control" value={selectedLayout.label} onChange={(event) => updateLayout(selectedLayout.id, { label: event.target.value })} /></label></PlatformPageSlot><button className="btn" onClick={() => removeLayout(selectedLayout.id)}><X size={14} />Delete Layout</button></div>
             {selectedLayout.sections.map((section) => <div className="metadata-card" key={section.id}>
               <div className="metadata-card-header"><input className="form-control" aria-label="Section name" value={section.label} onChange={(event) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, label: event.target.value } : item) })} /><select className="form-control compact-select" aria-label="Section columns" value={section.columns} onChange={(event) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, columns: Number(event.target.value) as 1 | 2 } : item) })}><option value={1}>1 column</option><option value={2}>2 columns</option></select><button className="row-menu" aria-label={`Remove ${section.label} section`} disabled={selectedLayout.sections.length <= 1} onClick={() => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.filter((item) => item.id !== section.id) })}><X size={14} /></button></div>
-              <FieldSelectorList fields={draft.fields} selected={section.fieldApiNames} onToggle={(apiName) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, fieldApiNames: toggleField(item.fieldApiNames, apiName) } : item) })} />
+              <FieldSelectorList fields={draft.fields} selected={section.fieldApiNames}
+                onToggle={(apiName) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => {
+                  const placedHere = item.id === section.id && item.fieldApiNames.includes(apiName);
+                  return { ...item, fieldApiNames: item.id === section.id
+                    ? placedHere ? item.fieldApiNames.filter(name => name !== apiName) : [...item.fieldApiNames, apiName]
+                    : item.fieldApiNames.filter(name => name !== apiName) };
+                }) })}
+                onMove={(apiName, direction) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map(item => {
+                  if (item.id !== section.id) return item;
+                  const names = [...item.fieldApiNames];
+                  const index = names.indexOf(apiName);
+                  const target = index + direction;
+                  if (index >= 0 && target >= 0 && target < names.length) {
+                    [names[index], names[target]] = [names[target], names[index]];
+                  }
+                  return {...item,fieldApiNames:names};
+                }) })} />
             </div>)}
             <button className="text-action" onClick={() => updateLayout(selectedLayout.id, { sections: [...selectedLayout.sections, { id: `${selectedLayout.id}-section-${Date.now()}`, label: 'New Section', columns: 2, fieldApiNames: [] }] })}><Plus size={14} />Add Section</button>
             <div className="metadata-card"><h3>Related Lists</h3>
@@ -1358,8 +1374,26 @@ function ObjectManager({
     </div></PlatformPageSlot>
   );
 }
-function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetadata[]; selected: string[]; onToggle: (apiName: string) => void }) {
-  return <div className="field-selector-list">{fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={selected.includes(field.apiName)} onChange={() => onToggle(field.apiName)} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>;
+function FieldSelectorList({ fields, selected, onToggle, onMove }: {
+  fields: FieldMetadata[]; selected: string[];
+  onToggle: (apiName: string) => void;
+  onMove?: (apiName: string, direction: -1 | 1) => void;
+}) {
+  const ordered = [...selected.flatMap(name => fields.filter(field => field.apiName === name)),
+    ...fields.filter(field => !selected.includes(field.apiName))];
+  return <div className="field-selector-list">{ordered.map(field => {
+    const index = selected.indexOf(field.apiName);
+    return <div className="field-selector-row" key={field.apiName}>
+      <label className="checkbox-row"><input type="checkbox" checked={index >= 0}
+        onChange={() => onToggle(field.apiName)} />{field.label}<small className="api-name">{field.apiName}</small></label>
+      {onMove && index >= 0 && <div className="field-selector-sort">
+        <button type="button" className="icon-button" aria-label={`Move ${field.label} up`} disabled={index === 0}
+          onClick={() => onMove(field.apiName, -1)}>↑</button>
+        <button type="button" className="icon-button" aria-label={`Move ${field.label} down`} disabled={index === selected.length - 1}
+          onClick={() => onMove(field.apiName, 1)}>↓</button>
+      </div>}
+    </div>;
+  })}</div>;
 }
 return ObjectManager;
 }
