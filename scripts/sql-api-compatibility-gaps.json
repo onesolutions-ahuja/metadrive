@@ -2,8 +2,6 @@
   "description": "Known missing frontend SQL endpoint contracts. Do not treat these as implemented. Remove entries only after actual routes and tests exist.",
   "unmatchedPaths": [
     "/apps/",
-    "/auth/password-reset/confirm",
-    "/auth/password-reset/request",
     "/auth/users/",
     "/component-library/${encodeURIComponent(apiName)}",
     "/component-library/${encodeURIComponent(apiName)}/publish",
