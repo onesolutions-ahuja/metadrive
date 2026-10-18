@@ -2,7 +2,7 @@ import type {PoolClient} from 'pg';
 
 type Element={id:number;type:string;label:string;config:Record<string,unknown>};
 type Connector={from:number;to:number;kind:string;label?:string};
-type Published={apiName:string;label:string;flowType:string;status:string;versionNumber:number;elements:Element[];connectors:Connector[]};
+type Published={apiName:string;label:string;flowType:string;status:string;versionNumber:number;activeVersion:number;elements:Element[];connectors:Connector[];[key:string]:unknown};
 
 /** Only compile elements supported by the shared SQL interpreter.
  * Reject unknown nodes rather than publishing a flow that cannot execute.
@@ -78,5 +78,6 @@ export async function publishSimpleFlow(
  await client.query(`INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
   VALUES($1,$2,$3,'execute','allow') ON CONFLICT DO NOTHING`,
   [tenantId,dev.rows[0].id,'Flow:'+apiName]);
- return {apiName,label:flow.label,flowType:String(flow.flowType),status:'Active',versionNumber:version,elements,connectors:edges};
+ return {...flow,apiName,label:flow.label,flowType:String(flow.flowType),
+  status:'Active',versionNumber:version,activeVersion:version,elements,connectors:edges};
 }
