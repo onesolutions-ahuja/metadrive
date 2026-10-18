@@ -15,6 +15,10 @@ export class RbacEngine {
         SELECT rp.permission_set_id FROM md_user_roles ur
           JOIN md_role_permission_sets rp ON rp.tenant_id=ur.tenant_id AND rp.role_id=ur.role_id
           WHERE ur.tenant_id=$1 AND ur.user_id=$2
+        UNION
+        SELECT pp.permission_set_id FROM md_user_profiles up
+          JOIN md_profile_permission_sets pp ON pp.tenant_id=up.tenant_id AND pp.profile_id=up.profile_id
+          WHERE up.tenant_id=$1 AND up.user_id=$2
       ), requested AS (
         SELECT resource,action,ordinal
           FROM unnest($3::text[], $4::text[]) WITH ORDINALITY AS q(resource,action,ordinal)
@@ -40,7 +44,7 @@ export class RbacEngine {
   /** Read actual tenant RBAC definitions; never manufacture profiles or grants. */
   async describe(tenantId:string,userId:string) {
     await this.require(tenantId,userId,'Security','read');
-    const [sets,roles,assignments,users]=await Promise.all([
+    const [sets,roles,assignments,users,profiles,assignedProfiles]=await Promise.all([
       this.db.query<{id:string;api_name:string}>(
         'SELECT id,api_name FROM md_permission_sets WHERE tenant_id=$1 ORDER BY api_name',[tenantId]),
       this.db.query<{id:string;api_name:string;label:string;parent_role_id:string|null}>(
@@ -48,7 +52,11 @@ export class RbacEngine {
       this.db.query<{permission_set_id:string;resource:string;action:string;effect:string}>(
         'SELECT permission_set_id,resource,action,effect FROM md_permission_rules WHERE tenant_id=$1 ORDER BY resource,action',[tenantId]),
       this.db.query<{id:string;email:string}>(
-        'SELECT id,email FROM md_users WHERE tenant_id=$1 ORDER BY email',[tenantId])
+        'SELECT id,email FROM md_users WHERE tenant_id=$1 ORDER BY email',[tenantId]),
+      this.db.query<{id:string;api_name:string;label:string}>(
+        'SELECT id,api_name,label FROM md_profiles WHERE tenant_id=$1 ORDER BY label',[tenantId]),
+      this.db.query<{user_id:string;profile_id:string}>(
+        'SELECT user_id,profile_id FROM md_user_profiles WHERE tenant_id=$1',[tenantId])
     ]);
     const bySet=new Map<string,string[]>();
     for(const rule of assignments.rows){
@@ -60,7 +68,8 @@ export class RbacEngine {
     const emptyRecordAccess={};
     return {
       tenantId,
-      profiles:[],
+      profiles:profiles.rows.map(p=>({id:p.id,apiName:p.api_name,label:p.label,license:'MetaDrive',description:'',isStandard:false,
+        systemPermissions:[],objectPermissions:{},recordTypePermissions:{},fieldPermissions:{}})),
       permissionSets:sets.rows.map(p=>({
         id:p.id,apiName:p.api_name,label:p.api_name,license:'',description:'',
         systemPermissions:bySet.get(p.id)??[],
@@ -74,7 +83,7 @@ export class RbacEngine {
       publicGroups:[],queues:[],sharingRules:[],
       users:users.rows.map(u=>({
         id:u.id,name:u.email,username:u.email,role:'',roleId:'',
-        profileId:'',permissionSetIds:[],permissionSetGroupIds:[],
+        profileId:assignedProfiles.rows.find(p=>p.user_id===u.id)?.profile_id??'',permissionSetIds:[],permissionSetGroupIds:[],
         timeZone:'UTC',locale:'en-GB'
       })),
       sharingSettings:{}
