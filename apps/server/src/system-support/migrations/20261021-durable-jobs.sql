@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS md_durable_jobs (
  actor_user_id uuid,
  status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','leased','completed','failed','cancelled')),
  scheduled_at timestamptz NOT NULL DEFAULT now(),
+ recurrence_seconds integer CHECK(recurrence_seconds BETWEEN 60 AND 31536000),
  attempt integer NOT NULL DEFAULT 0 CHECK(attempt>=0),
  max_attempts integer NOT NULL DEFAULT 5 CHECK(max_attempts BETWEEN 1 AND 100),
  lease_owner text,
