@@ -227,7 +227,7 @@ function ObjectManager({
   onSavePage: (page: LightningPageMetadata) => Promise<void>;
   onOpenPageBuilder: () => void;
   onOpenRecords: () => void;
-  page: LightningPageMetadata;
+  page: LightningPageMetadata | null;
   onNotify: (message: string) => void;
 }) {
   const [viewMode, setViewMode] = useState<'All Objects' | 'Standard Objects' | 'Custom Objects'>('All Objects');
@@ -1008,10 +1008,10 @@ function ObjectManager({
     </section>;
   };
   const renderLightningRecordPages = () => {
-    const pageMatches = page.targetObject === draft.apiName && page.pageType === 'Record Page';
-    const assignments = pageMatches ? page.activationAssignments ?? [] : [];
+    const pageMatches = Boolean(page && page.targetObject === draft.apiName && page.pageType === 'Record Page');
+    const assignments = pageMatches ? page?.activationAssignments ?? [] : [];
     const addActivation = () => {
-      if (!pageMatches) {
+      if (!pageMatches || !page) {
         onNotify('Create and save a record page for this object in Lightning App Builder first');
         return;
       }
@@ -1047,7 +1047,7 @@ function ObjectManager({
     };
     return <section className="surface object-setting-surface">
       <div className="section-toolbar"><div><h2>Lightning Record Pages</h2><p>Page composition is separate from page layouts; activation resolves by app, profile, record type, and form factor.</p></div><button className="btn btn-brand" onClick={onOpenPageBuilder}><ExternalLink size={14} />Open App Builder</button></div>
-      {!pageMatches ? <div className="empty-state">No saved Lightning Record Page is selected for {draft.label}.</div> : <>
+      {!pageMatches || !page ? <div className="empty-state">No saved Lightning Record Page is selected for {draft.label}.</div> : <>
         <div className="metadata-card"><h3>{page.label}</h3><p>{page.status} · {page.components.length} components</p></div>
         <div className="metadata-card">
           <h3>Activation Assignment</h3>
