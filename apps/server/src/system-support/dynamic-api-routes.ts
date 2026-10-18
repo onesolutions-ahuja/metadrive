@@ -16,6 +16,20 @@ function authenticated(req:AuthenticatedRequest):Actor{
 
 /** Only independent SQL metadata and the shared CRUD/permission engines; never app-specific code. */
 export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,records:RecordEngine,flows:FlowRuntime){
+  app.get('/api/records/:objectApi/typed-filter/:fieldApi',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    const op=req.query.op;
+    const value=req.query.value;
+    if(typeof op!=='string'||!['eq','lt','lte','gt','gte'].includes(op)||
+      typeof value!=='string'||value.length>128)
+      throw new Error('Invalid typed filter');
+    const size=req.query.limit===undefined?50:Number(req.query.limit);
+    const ids=await records.filterTyped(actor.tenant_id,actor.user_id,req.params.objectApi,
+      req.params.fieldApi,op as 'eq'|'lt'|'lte'|'gt'|'gte',value,size);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({ids});
+  }));
+
   app.get('/api/metadata/dashboards/:apiName/data/:objectApi',wrap(async(req,res)=>{
     const actor=authenticated(req),dashboard=req.params.apiName,object=req.params.objectApi;
     if(!api.test(dashboard)||!api.test(object))throw new Error('Invalid dashboard or object');
