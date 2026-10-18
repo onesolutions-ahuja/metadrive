@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {ComponentLibraryService} from './component-library-service.js';
+import {DashboardSnapshotService} from './dashboard-snapshot-service.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
@@ -83,6 +84,7 @@ export function createSystemServer(db:SqlPersistence) {
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
+  const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
@@ -717,6 +719,16 @@ export function createSystemServer(db:SqlPersistence) {
   app.delete('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await namedCredentials.remove(actor.tenant_id,actor.user_id,req.params.id);
+    res.status(204).end();
+  }));
+  app.get('/api/metadata/dashboards/:apiName/snapshots',route(async(req,res)=>{
+    res.json({snapshots:await dashboardSnapshots.list(req.actor!,req.params.apiName)});
+  }));
+  app.post('/api/metadata/dashboards/:apiName/snapshots',route(async(req,res)=>{
+    res.status(201).json({snapshot:await dashboardSnapshots.create(req.actor!,req.params.apiName,req.body)});
+  }));
+  app.delete('/api/metadata/dashboards/:apiName/snapshots/:id',route(async(req,res)=>{
+    await dashboardSnapshots.remove(req.actor!,req.params.apiName,req.params.id);
     res.status(204).end();
   }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
