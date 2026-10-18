@@ -137,7 +137,7 @@ try{
  const supportedFlows=new FlowRuntime(db,new RbacEngine(db),records,
   async (_tenant,_user,config,variables)=>{
    calloutCount++;
-   assert.equal(config.namedCredentialId,'mock-ci');
+   assert.equal(config.namedCredentialId,'00000000-0000-4000-8000-000000000001');
    assert.equal(variables.Amount,15);
    return {status:200,body:'approved'};
   });
@@ -153,7 +153,7 @@ try{
    {id:3,type:'Screen',label:'Confirm',config:{
     fields:[{apiName:'Confirmed',type:'Checkbox',label:'Confirm',required:true}]}},
    {id:4,type:'HTTP Callout',label:'Collect payment',config:{
-    namedCredentialId:'mock-ci',method:'POST',path:'pay',statusVariable:'PaymentStatus',
+    namedCredentialId:'00000000-0000-4000-8000-000000000001',method:'POST',path:'pay',statusVariable:'PaymentStatus',
     onError:'FAULT_PATH'}},
    {id:5,type:'Create Records',label:'Create invoice',config:{
     object:'AuditItem__c',fieldValues:[{field:'Name',value:'Screen Sale'}],
