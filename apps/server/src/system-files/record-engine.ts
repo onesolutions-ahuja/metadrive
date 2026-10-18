@@ -21,6 +21,15 @@ export class RecordEngine {
         throw new Error('Required field missing: '+field.api_name);
     const prepared=new Map<string,Storable>();
     for(const [key,value] of Object.entries(values)) {
+      if(key==='RecordTypeId'){
+        if(typeof value!=='string'||value.length>128)throw new Error('Invalid record type');
+        const {rows}=await (client??this.db).query(
+          'SELECT 1 FROM md_object_record_types WHERE tenant_id=$1 AND object_api=$2 AND record_type_id=$3 AND active=true',
+          [tenantId,objectApi,value]);
+        if(!rows.length)throw new Error('Invalid record type');
+        prepared.set('__RecordTypeId__',{value_text:value,reference_record_id:null});
+        continue;
+      }
       const field=fields.get(key);
       if(!field) throw new Error('Unknown field: '+key);
       await this.rbac.require(tenantId,userId,objectApi+'.'+key,creating?'create':'edit');
@@ -71,25 +80,26 @@ export class RecordEngine {
     return this.insertPrepared(client,tenantId,objectApi,prepared);
   }
   private async insertPrepared(client:PoolClient,tenantId:string,objectApi:string,prepared:Map<string,Storable>) {
+    const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const {rows}=await client.query<{id:string}>(
-      'INSERT INTO md_records (tenant_id,object_api) VALUES ($1,$2) RETURNING id',
-      [tenantId,objectApi]);
-    for(const [field,value] of prepared)await client.query(
+      'INSERT INTO md_records (tenant_id,object_api,record_type_id) VALUES ($1,$2,$3) RETURNING id',
+      [tenantId,objectApi,selectedType]);
+    for(const [field,value] of prepared){if(field==='__RecordTypeId__')continue;await client.query(
       'INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id) VALUES ($1,$2,$3,$4,$5,$6)',
-      [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id]);
+      [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id]);}
     return rows[0].id;
   }
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
     }>(`
       WITH selected AS (
-        SELECT id,created_at,updated_at,owner_id FROM md_records WHERE tenant_id=$1 AND object_api=$2
+        SELECT id,created_at,updated_at,owner_id,record_type_id FROM md_records WHERE tenant_id=$1 AND object_api=$2
         ORDER BY created_at,id LIMIT $3 OFFSET $4
       )
-      SELECT r.id,r.created_at,r.updated_at,r.owner_id,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,f.data_type
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -98,7 +108,7 @@ export class RecordEngine {
     const collected=new Map<string,Record<string,unknown>>();
     const allowed=new Map<string,boolean>();
     for(const row of rows) {
-      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,LastModifiedDate:row.updated_at,OwnerId:row.owner_id});
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
       if(!row.field_api)continue;
       if(!allowed.has(row.field_api))allowed.set(row.field_api,
         await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
@@ -127,7 +137,7 @@ export class RecordEngine {
     if(!rows.length)throw new Error('Record not found');
     const record:Record<string,unknown>={
       Id:rows[0].id,CreatedAt:rows[0].created_at,
-      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id
+      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id,RecordTypeId:rows[0].record_type_id
     };
     const visible=rows.filter(row=>row.field_api!==null);
     const fields=visible.map(row=>row.field_api as string);
@@ -153,13 +163,17 @@ export class RecordEngine {
       if(!found.rowCount)throw new Error('Record not found');
       if(checkDate&&new Date(found.rows[0].updated_at).getTime()>checkDate.getTime()+999)
         throw new Error('Record has changed since it was loaded');
-      await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
-      for(const [field,value] of prepared)await client.query(`
+      if(prepared.has('__RecordTypeId__'))await client.query(
+        'UPDATE md_records SET record_type_id=$4,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id,prepared.get('__RecordTypeId__')?.value_text]);
+      else await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id]);
+      for(const [field,value] of prepared){if(field==='__RecordTypeId__')continue;await client.query(`
         INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id)
         VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT (tenant_id,record_id,field_api)
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id
-      `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);
+      `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);}
     });
   }
   /** Transfer record ownership without bypassing Object/Record permissions or tenant boundaries. */
