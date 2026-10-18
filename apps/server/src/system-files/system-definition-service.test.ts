@@ -30,3 +30,14 @@ test('system definitions reject missing manage permission',async()=>{
  const svc=new SystemDefinitionService(db,rbac);
  await assert.rejects(()=>svc.save('t','u','reports',{apiName:'Report',label:'Report'}),/Permission denied/);
 });
+
+test('system definition updates use optimistic revision and cannot silently insert',async()=>{
+ const seen:string[]=[];
+ const db={query:async(sql:string,args:unknown[])=>{seen.push(sql);assert.equal(args[6],2);return {rows:[{revision:3}]};}} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const svc=new SystemDefinitionService(db,rbac);
+ const saved=await svc.save('t','u','reports',{apiName:'Sales',label:'Sales',revision:2});
+ assert.equal(saved.revision,3);
+ assert.match(seen[0],/UPDATE md_system_definitions/);
+ assert.match(seen[0],/revision=\$7/);
+});
