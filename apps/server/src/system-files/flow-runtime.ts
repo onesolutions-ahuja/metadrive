@@ -28,6 +28,61 @@ function scalarFrom(text:string|null,type:string):Scalar {
 /** Atomic, bounded SQL Flow executor. Unsupported or dangerous actions fail closed. */
 export class FlowRuntime {
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,private readonly records?:RecordEngine) {}
+  /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
+  async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    if(!draft||typeof draft!=='object'||Array.isArray(draft))throw new Error('Invalid Flow draft');
+    const data=draft as Record<string,unknown>;
+    const errors:string[]=[],warnings:string[]=[];
+    if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
+    if(data.flowType!=='Autolaunched Flow')errors.push('This SQL runtime can validate execution only for Autolaunched Flow');
+    if(!Array.isArray(data.elements)||!Array.isArray(data.connectors)){
+      return {valid:false,errors:['Flow must contain elements and connectors'],warnings};
+    }
+    const nodes=data.elements as unknown[],links=data.connectors as unknown[];
+    if(nodes.length>250||links.length>500)errors.push('Flow graph exceeds allowed size');
+    const ids=new Set<number>(),types=new Map<number,string>();
+    for(const item of nodes){
+      if(!item||typeof item!=='object'||Array.isArray(item)){errors.push('Invalid Flow element');continue;}
+      const node=item as Record<string,unknown>;
+      if(typeof node.id!=='number'||!Number.isSafeInteger(node.id)||ids.has(node.id)){
+        errors.push('Flow element identifiers must be unique integers');continue;
+      }
+      ids.add(node.id);
+      const type=String(node.type??'');
+      types.set(node.id,type);
+      if(!['Start','Assignment','Decision','CreateRecord','End'].includes(type)){
+        errors.push('Unsupported SQL Flow element: '+type);
+      }
+    }
+    if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
+    if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
+    const outgoing=new Map<number,number[]>();
+    for(const link of links){
+      if(!link||typeof link!=='object'||Array.isArray(link)){errors.push('Invalid Flow connector');continue;}
+      const edge=link as Record<string,unknown>;
+      if(typeof edge.from!=='number'||typeof edge.to!=='number'||!ids.has(edge.from)||!ids.has(edge.to)){
+        errors.push('Flow connector references an unknown element');continue;
+      }
+      if(edge.kind!==undefined&&edge.kind!=='normal')errors.push('Unsupported SQL Flow connector type');
+      outgoing.set(edge.from,[...(outgoing.get(edge.from)??[]),edge.to]);
+    }
+    const start=[...types].find(([,type])=>type==='Start')?.[0];
+    if(start!==undefined){
+      const visited=new Set<number>(),stack=[start];
+      while(stack.length){
+        const id=stack.pop()!;
+        if(visited.has(id))continue;
+        visited.add(id);
+        stack.push(...(outgoing.get(id)??[]));
+      }
+      if(![...visited].some(id=>types.get(id)==='End'))errors.push('No reachable End element');
+      for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
+    }
+    return {valid:errors.length===0,errors,warnings};
+  }
   async list(tenantId:string) {
     const {rows}=await this.db.query<{id:string;api_name:string;label:string|null;flow_type:string;version:number;active:boolean}>(
       'SELECT id,api_name,label,flow_type,version,active FROM md_flow_definitions WHERE tenant_id=$1 ORDER BY api_name,version DESC LIMIT 100',
