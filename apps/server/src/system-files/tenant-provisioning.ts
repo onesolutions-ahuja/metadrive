@@ -1,4 +1,4 @@
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
 import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
@@ -25,7 +25,13 @@ export class TenantProvisioning {
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(developerEmail))throw new Error('Invalid developer email');
     if(developerName!==undefined&&(typeof developerName!=='string'||!developerName.trim()||developerName.length>120))throw new Error('Invalid developer name');
     if(authority&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(authority.idempotencyKey))throw new Error('Invalid idempotency key');
+    const developerIdentityEmail='developer@'+domain;
+    if(developerIdentityEmail.toLowerCase()===developerEmail.toLowerCase())
+      throw new Error('Administrator email must differ from tenant developer identity');
     const passwordHash=await new AuthenticationService(this.db).hashPassword(developerPassword);
+    // Never reuse the administrator password or expose an initial developer password.
+    const developerDisabledHash=await new AuthenticationService(this.db).hashPassword(
+      randomBytes(48).toString('base64url'));
     const digest=createHash('sha256').update(JSON.stringify([slug,name,domain,developerEmail.toLowerCase(),developerPassword,developerName??''])).digest('hex');
     return this.db.transaction(async client=>{
       if(authority){
@@ -69,6 +75,16 @@ export class TenantProvisioning {
       await client.query(
         'INSERT INTO md_role_permission_sets (tenant_id,role_id,permission_set_id) VALUES ($1,$2,$3)',
         [tenantId,role.rows[0].id,permissionSet.rows[0].id]);
+      const disabledDeveloper=await client.query<{id:string}>(`
+        INSERT INTO md_users(tenant_id,email,password_hash,display_name,enabled)
+        VALUES($1,$2,$3,'Tenant Developer',false) RETURNING id`,
+        [tenantId,developerIdentityEmail,developerDisabledHash]);
+      await client.query('INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
+        [tenantId,disabledDeveloper.rows[0].id,profile.rows[0].id]);
+      await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
+        [tenantId,disabledDeveloper.rows[0].id,role.rows[0].id]);
+      await client.query('INSERT INTO md_tenant_developer_accounts(tenant_id,user_id) VALUES($1,$2)',
+        [tenantId,disabledDeveloper.rows[0].id]);
       // Wildcard rights are SQL policy rules, not a hardcoded developer bypass.
       await client.query(
         "INSERT INTO md_permission_rules (tenant_id,permission_set_id,resource,action,effect) VALUES ($1,$2,'*','*','allow')",
