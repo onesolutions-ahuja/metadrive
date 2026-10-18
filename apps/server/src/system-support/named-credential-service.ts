@@ -66,7 +66,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||!['HTTPS','SMTP'].includes(String(x.protocol))
-    ||!['None','Bearer','Basic','API Key'].includes(String(x.authType))
+    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
@@ -159,7 +159,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     !['HTTPS','SMTP'].includes(String(x.protocol))||
-    !['None','Bearer','Basic','API Key'].includes(String(x.authType))||
+    !['None','Bearer','Basic','API Key','OAuth Client Credentials'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
@@ -195,8 +195,8 @@ export class NamedCredentialService {
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
    protocol:string;base_url:string;auth_type:string;header_name:string;
-   secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
-  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+   secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
+  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
     [tenantId,config.namedCredentialId]);
   const item=rows[0];
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
@@ -244,6 +244,7 @@ export class NamedCredentialService {
     header[name]=value;
    }
   }
+  let oauthClientSecret:string|undefined;
   if(item.auth_type!=='None'){
    const encrypted=item.secret_ciphertext;
    const key=this.keyFor(item.encryption_key_id);
@@ -256,7 +257,60 @@ export class NamedCredentialService {
    else if(item.auth_type==='API Key'){
     if(!/^X-[a-z0-9-]+$/i.test(item.header_name))throw new Error('Credential header must be an X- header');
     header[item.header_name]=secret;
-   }else throw new Error('OAuth token exchange is not configured for this credential');
+   }else if(item.auth_type==='OAuth Client Credentials')oauthClientSecret=secret;
+   else throw new Error('OAuth Authorization Code requires an interactive authorization grant');
+  }
+  if(item.auth_type==='OAuth Client Credentials'){
+   const cipher=item.configuration_ciphertext,key=this.keyFor(item.encryption_key_id);
+   if(!cipher||!key||cipher.length<29||!oauthClientSecret)
+    throw new Error('OAuth client configuration is unavailable');
+   const decipher=createDecipheriv('aes-256-gcm',key,cipher.subarray(0,12));
+   decipher.setAuthTag(cipher.subarray(-16));
+   let settings:Record<string,unknown>;
+   try {settings=JSON.parse(Buffer.concat([
+    decipher.update(cipher.subarray(12,-16)),decipher.final()
+   ]).toString('utf8')) as Record<string,unknown>;}
+   catch{throw new Error('Invalid OAuth client configuration');}
+   const clientId=settings.clientId,tokenPath=settings.tokenPath,scope=settings.scope;
+   if(typeof clientId!=='string'||!clientId||clientId.length>512||
+      typeof tokenPath!=='string'||!tokenPath||tokenPath.length>1024||
+      tokenPath.startsWith('/')||tokenPath.includes('\\')||
+      (scope!==undefined&&(typeof scope!=='string'||scope.length>1024)))
+    throw new Error('Invalid OAuth client configuration');
+   const tokenUrl=new URL(tokenPath,base.href.endsWith('/')?base.href:base.href+'/');
+   if(tokenUrl.origin!==base.origin||tokenUrl.username||tokenUrl.password||tokenUrl.hash||
+      tokenUrl.search)throw new Error('Invalid OAuth token endpoint');
+   const form=new URLSearchParams({grant_type:'client_credentials'});
+   if(scope)form.set('scope',scope as string);
+   const payload=form.toString();
+   const authorization='Basic '+Buffer.from(clientId+':'+oauthClientSecret).toString('base64');
+   const tokenResponse=await new Promise<string>((resolve,reject)=>{
+    const request=secureRequest(tokenUrl,{method:'POST',agent:false,
+     lookup:(_host,_options,cb)=>cb(null,resolved[0].address,resolved[0].family),
+     timeout:15000,headers:{Authorization:authorization,'Content-Type':'application/x-www-form-urlencoded',
+       Accept:'application/json','Content-Length':Buffer.byteLength(payload)}},response=>{
+      if((response.statusCode??0)<200||(response.statusCode??0)>=300){
+       response.resume();reject(new Error('OAuth token endpoint rejected credentials'));return;
+      }
+      const chunks:Buffer[]=[];let length=0;
+      response.on('data',(chunk:Buffer)=>{
+       length+=chunk.length;
+       if(length>8192){request.destroy(new Error('OAuth token response too large'));return;}
+       chunks.push(chunk);
+      });
+      response.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));
+    });
+    request.on('timeout',()=>request.destroy(new Error('OAuth token timeout')));
+    request.on('error',reject);
+    request.end(payload);
+   });
+   let token:unknown;
+   try{token=JSON.parse(tokenResponse);}catch{throw new Error('Invalid OAuth token response');}
+   const result=token as {access_token?:unknown;token_type?:unknown};
+   if(typeof result.access_token!=='string'||!result.access_token||
+      result.access_token.length>8192||result.token_type?.toString().toLowerCase()!=='bearer')
+    throw new Error('Invalid OAuth token response');
+   header.Authorization='Bearer '+result.access_token;
   }
   if(method!=='GET')header['Idempotency-Key']=idempotencyKey;
   if(typeof config.queryParameters==='string'&&config.queryParameters.trim())
