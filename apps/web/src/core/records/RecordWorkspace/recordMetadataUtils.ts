@@ -3,16 +3,26 @@ export type RecordData = { Id: string; [fieldApiName: string]: unknown };
 
 export function pageLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string): PageLayoutMetadata | undefined {
   const assignments = object.pageLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === recordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === recordTypeId);
+  const effectiveType = recordTypeId || object.recordTypes?.find(type => type.isDefault)?.id || '';
+  const priority = [
+    [profileId, effectiveType], ['*', effectiveType], [profileId, '*'], ['*', '*']
+  ];
+  const assignment = priority.map(([profile, type]) =>
+    assignments.find(item => item.profileId === profile && item.recordTypeId === type)
+  ).find(Boolean);
   return object.pageLayouts?.find((layout) => layout.id === assignment?.pageLayoutId) ?? object.pageLayouts?.[0];
 }
 
 export function compactLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string) {
   const layouts = object.compactLayouts ?? [];
   const assignments = object.compactLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === recordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === recordTypeId);
+  const effectiveType = recordTypeId || object.recordTypes?.find(type => type.isDefault)?.id || '';
+  const priority = [
+    [profileId, effectiveType], ['*', effectiveType], [profileId, '*'], ['*', '*']
+  ];
+  const assignment = priority.map(([profile, type]) =>
+    assignments.find(item => item.profileId === profile && item.recordTypeId === type)
+  ).find(Boolean);
   return layouts.find((layout) => layout.id === assignment?.compactLayoutId)
     ?? layouts[0]
     ?? (object.compactLayout ? { id: `${object.apiName}-legacy-compact`, ...object.compactLayout } : undefined);
