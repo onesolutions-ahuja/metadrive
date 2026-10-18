@@ -96,6 +96,7 @@ export async function seedIndependentAppMetadata(client:PoolClient,tenantId:stri
    'INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active) VALUES($1,$2,$3,$4,$5,false)',
    [tenantId,f.apiName,f.label,f.flowType??'Autolaunched Flow',f.version]);
   await grant(client,tenantId,setId,'FlowDefinition:'+f.apiName);
+  await client.query("INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,'execute','allow') ON CONFLICT DO NOTHING",[tenantId,setId,'Flow:'+f.apiName]);
  }
  for(const a of actions){valid(a.apiName);await grant(client,tenantId,setId,'Action:'+a.apiName);}
 }
