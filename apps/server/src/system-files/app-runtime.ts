@@ -181,12 +181,11 @@ export class AppRuntime {
     });
   }
   async uninstall(tenantId:string,appApi:string) {
-    const catalog=await this.catalogApi(tenantId,appApi);
     await this.db.transaction(async client=>{
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
-        AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,catalog]);
-      await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)',
-        [tenantId,catalog]);
+        AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))`,[tenantId,appApi]);
+      await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))',
+        [tenantId,appApi]);
     });
   }
   async homePage(tenantId:string,appApi:string,formFactor:string,profileId='') {
