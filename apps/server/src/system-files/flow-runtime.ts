@@ -590,9 +590,30 @@ export class FlowRuntime {
     const {rows}=await this.db.query<MetadataValueRow>(
       'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
       [tenantId,version.id]);
-    const doc=decodeMetadataValues(rows).builder as Record<string,unknown>|undefined;
-    if(!doc||!Array.isArray(doc.elements)||!Array.isArray(doc.connectors))
-      throw new Error('Flow debug graph unavailable');
+    let doc=decodeMetadataValues(rows).builder as Record<string,unknown>|undefined;
+    if(!doc||!Array.isArray(doc.elements)||!Array.isArray(doc.connectors)){
+      // Legacy SQL-only definitions share the same debugger, without a parallel executor.
+      const [oldNodes,oldEdges]=await Promise.all([
+        this.db.query<{api_name:string;node_type:string}>(`
+          SELECT api_name,node_type FROM md_flow_nodes
+          WHERE tenant_id=$1 AND flow_id=$2 ORDER BY sort_order,id`,[tenantId,version.id]),
+        this.db.query<EdgeRow>(`
+          SELECT source_api,target_api,outcome FROM md_flow_edges
+          WHERE tenant_id=$1 AND flow_id=$2`,[tenantId,version.id])
+      ]);
+      const idOf=new Map(oldNodes.rows.map((node,index)=>[node.api_name,index+1]));
+      doc={
+        flowType:'Autolaunched Flow',
+        elements:oldNodes.rows.map((node,index)=>({
+          id:index+1,type:node.node_type,label:node.api_name,config:{}
+        })),
+        connectors:oldEdges.rows.filter(edge=>idOf.has(edge.source_api)&&idOf.has(edge.target_api))
+          .map((edge,index)=>({
+            id:'edge-'+index,from:idOf.get(edge.source_api),to:idOf.get(edge.target_api),
+            label:edge.outcome,kind:'normal'
+          }))
+      };
+    }
     if(recordTriggered && doc.flowType!=='Record-Triggered Flow')
       throw new Error('Record debug requires a Record-Triggered Flow');
     const nodes=doc.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
