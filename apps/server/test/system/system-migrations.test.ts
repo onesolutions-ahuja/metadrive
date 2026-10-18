@@ -23,8 +23,8 @@ test('system migrations are additive, recorded, and idempotent',async()=>{
  await applySystemMigrations(db);
  const numberOfDDL=queries.filter(q=>q.includes('CREATE TABLE IF NOT EXISTS md_named_credentials')).length;
  assert.ok(queries.some(q=>q.includes('CREATE TABLE IF NOT EXISTS md_tenant_settings')));
- assert.equal(versions.size,3);
+ assert.equal(versions.size,4);
  await applySystemMigrations(db);
  assert.equal(queries.filter(q=>q.includes('CREATE TABLE IF NOT EXISTS md_named_credentials')).length,numberOfDDL);
- assert.equal(versions.size,3);
+ assert.equal(versions.size,4);
 });
