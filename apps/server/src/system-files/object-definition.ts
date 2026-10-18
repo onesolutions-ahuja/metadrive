@@ -1,6 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
-type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
+type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
 const sqlFieldTypes:Record<string,string>={
   text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',
   datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference',
@@ -180,16 +180,29 @@ export class ObjectDefinitionService {
     const {rows:objects}=await this.db.query<SqlObject>(
       'SELECT id,api_name,label,is_system FROM md_object_definitions WHERE tenant_id=$1 ORDER BY api_name',[tenantId]);
     const {rows:fields}=await this.db.query<SqlField>(
-      'SELECT id,object_api,api_name,label,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 ORDER BY object_api,api_name',[tenantId]);
+      'SELECT id,object_api,api_name,label,data_type,related_object,required,max_length,picklist_restricted FROM md_field_definitions WHERE tenant_id=$1 ORDER BY object_api,api_name',[tenantId]);
     const byObject=new Map<string,SqlField[]>();
     for(const field of fields) {
       const list=byObject.get(field.object_api)??[];
       list.push(field);byObject.set(field.object_api,list);
     }
     const typeLabel:Record<string,string>={
-      text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup'
+      text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup',email:'Email',phone:'Phone',url:'URL',picklist:'Picklist',textarea:'Text Area',longtext:'Long Text Area',currency:'Currency',percent:'Percent'
     };
     const layouts=await this.loadLayoutMetadata(tenantId);
+    const {rows:picklistOptions}=fields.some(field=>field.data_type==='picklist')
+      ?await this.db.query<{object_api:string;field_api:string;value:string}>(`
+        SELECT object_api,field_api,value FROM md_field_picklist_values
+        WHERE tenant_id=$1 ORDER BY object_api,field_api,sort_order`,[tenantId])
+      :{rows:[]};
+    const picklistKey=(objectApi:string,fieldApi:string)=>JSON.stringify([objectApi,fieldApi]);
+    const optionsByField=new Map<string,string[]>();
+    for(const option of picklistOptions){
+      const key=picklistKey(option.object_api,option.field_api);
+      const values=optionsByField.get(key)??[];
+      values.push(option.value);
+      optionsByField.set(key,values);
+    }
     const [types,values]=await Promise.all([
       this.db.query<{object_api:string;record_type_id:string;label:string;developer_name:string;description:string;active:boolean;is_default:boolean}>(
         'SELECT object_api,record_type_id,label,developer_name,description,active,is_default FROM md_object_record_types WHERE tenant_id=$1 ORDER BY object_api,sort_order',[tenantId]),
@@ -219,6 +232,7 @@ export class ObjectDefinitionService {
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
         dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
+        ...(f.data_type==='picklist'?{picklistValues:optionsByField.get(picklistKey(f.object_api,f.api_name))??[],picklistRestricted:f.picklist_restricted!==false}:{}),
         ...(f.related_object?{relationship:{
           type:'Lookup' as const,targetObject:f.related_object,
           relationshipName:f.api_name,childRelationshipName:f.object_api
