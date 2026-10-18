@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = path => readFileSync(new URL(path, 'file://' + root), 'utf8');
 const moved = {
   'MarketingSite.tsx':'core/public/MarketingSite/MarketingSite.tsx',
+  'design-system.css':'core/workspace/WorkspaceTheme/design-system.css',
   'styles.css':'core/workspace/WorkspaceTheme/styles.css',
   'styles-part2.css':'core/workspace/WorkspaceTheme/styles-part2.css',
   'styles-md227.css':'core/builders/PageBuilder/styles-md227.css',
@@ -43,7 +44,7 @@ for (const token of [
 
 const runtime = web('main.tsx');
 const marketing = web('MarketingSite.tsx');
-assert.match(runtime, /import '\\.\\/design-system\\.css'/,
+assert.ok(runtime.includes("import './core/workspace/WorkspaceTheme/design-system.css'"),
   'The public entry must load shared design tokens once for marketing and the workspace');
 assert.ok(runtime.includes('const Workspace = lazy('),
   'Workspace must remain lazily loaded');
