@@ -69,8 +69,67 @@ try{
 
  await db.query('INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
   [tenantId,set.rows[0].id,'*','*','allow']);
+ // Exercise the actual Builder SQL contracts, not only route existence.
+ const [{AppRuntime},{FlowRuntime}]=await Promise.all([
+  import(new URL('app-runtime.js',built).href),
+  import(new URL('flow-runtime.js',built).href)
+ ]);
+ const apps=new AppRuntime(db);
+ const appDefinition={
+  apiName:'AuditApp',label:'Audit App',description:'SQL builder smoke',brandColor:'#1d4ed8',
+  navigationItems:['AuditItem__c'],navigationPageApiNames:[],
+  navigationOrder:[{type:'Object',apiName:'AuditItem__c'}],utilityItems:[]
+ };
+ const createdApp=await apps.saveMetadata(tenantId,'AuditApp',appDefinition,false);
+ assert.equal(createdApp.apiName,'AuditApp');
+ assert.deepEqual(createdApp.navigationItems,['AuditItem__c']);
+ await assert.rejects(()=>apps.saveMetadata(tenantId,'AuditApp',appDefinition,false),/App already exists/);
+ const updatedApp=await apps.saveMetadata(tenantId,'AuditApp',
+  {...appDefinition,label:'Audit App Updated',revision:createdApp.revision},true);
+ assert.equal(updatedApp.revision,createdApp.revision+1);
+ assert.equal((await apps.listInstalled(tenantId)).find(item=>item.apiName==='AuditApp')?.label,'Audit App Updated');
+
+ const home=await pageService.save(tenantId,'Audit_App_Home',{
+  apiName:'Audit_App_Home',label:'Audit App Home',targetObject:'',pageType:'Home Page',
+  layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:800,status:'Active',devices:['Desktop'],
+  components:[],activationAssignments:[{id:'appDefault',scope:'App Default',appId:'AuditApp',
+   profileId:null,recordTypeId:null,formFactors:['Desktop']}]
+ });
+ assert.equal((await apps.homePage(tenantId,'AuditApp','desktop'))?.apiName,home.apiName);
+ const appPage=await pageService.save(tenantId,'Audit_App_Till',{
+  apiName:'Audit_App_Till',label:'Audit Till',targetObject:'AuditItem__c',pageType:'App Page',
+  layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:800,status:'Active',devices:['Desktop'],
+  components:[],activationAssignments:[{id:'appPage',scope:'App Default',appId:'AuditApp',
+   profileId:null,recordTypeId:null,formFactors:['Desktop']}]
+ });
+ assert.equal((await pageService.resolveAppPage(tenantId,'AuditApp',appPage.apiName,'Desktop'))?.apiName,appPage.apiName);
+
  const {RecordEngine}=await import(new URL('record-engine.js',built).href);
  const records=new RecordEngine(db,new RbacEngine(db));
+ const flows=new FlowRuntime(db,new RbacEngine(db),records);
+ const draft={apiName:'AuditCheckout',label:'Audit Checkout',flowType:'Screen Flow',
+  status:'Draft',versionNumber:1,activeVersion:null,
+  elements:[{id:1,type:'Start',label:'Start',config:{}},
+    {id:2,type:'Screen',label:'Payment',config:{fields:[{name:'Amount',required:true,defaultValue:0}]}}],
+  connectors:[{id:'1',from:1,to:2,kind:'normal',label:'default'}],
+  resources:[],startConfig:{},tests:[],versions:[]};
+ const persisted=await flows.saveEditor(tenantId,userId,'AuditCheckout',draft);
+ assert.deepEqual(persisted.elements[1].config,draft.elements[1].config);
+ assert.equal((await flows.listPage(tenantId,1,'AuditCheckout')).total,1);
+ assert.equal((await flows.loadEditor(tenantId,'AuditCheckout')).status,'Draft');
+ await assert.rejects(()=>flows.saveEditor(tenantId,userId,'AuditCheckout',
+  {...draft,status:'Active'}),/Flow cannot activate/);
+ await flows.deleteEditor(tenantId,userId,'AuditCheckout');
+ assert.ok(!(await flows.list(tenantId)).some(item=>item.apiName==='AuditCheckout'));
+ const simple={apiName:'SimpleAuditFlow',label:'Simple Audit Flow',
+  flowType:'Autolaunched Flow',status:'Active',
+  elements:[{id:1,type:'Start',label:'Start',config:{}},
+    {id:2,type:'End',label:'End',config:{}}],
+  connectors:[{id:'1',from:1,to:2,kind:'normal',label:'default'}],
+  resources:[],startConfig:{},tests:[],versions:[]};
+ assert.equal((await flows.saveEditor(tenantId,userId,'SimpleAuditFlow',simple)).status,'Active');
+ assert.equal((await flows.execute(tenantId,'SimpleAuditFlow',userId)).status,'completed');
+
  const recordId=await records.create(tenantId,userId,'AuditItem__c',{Name:'First',RecordTypeId:'master'});
  const initial=await records.get(tenantId,userId,'AuditItem__c',recordId);
  assert.equal(initial.Name,'First');

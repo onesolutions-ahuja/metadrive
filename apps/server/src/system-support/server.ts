@@ -93,7 +93,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Access-Control-Allow-Credentials','true');
       res.setHeader('Vary','Origin');
       res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-MetaDrive-Request-Source');
-      res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');
     }
     if(req.method==='OPTIONS') {res.status(204).end();return;}
     next();
@@ -441,7 +441,8 @@ export function createSystemServer(db:SqlPersistence) {
     const factor=String(req.query.formFactor??'Desktop');
     if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase());
+    const session=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
     res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
   }));
   app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
@@ -627,7 +628,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows/list',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flows:await flows.list(actor.tenant_id)});
+    res.json(await flows.listPage(actor.tenant_id,req.query.page,req.query.search??''));
   }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -648,7 +649,16 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flow:await flows.loadActive(actor.tenant_id,req.params.apiName)});
+    res.json({flow:await flows.loadEditor(actor.tenant_id,req.params.apiName)});
+  }));
+  app.put('/api/metadata/flows/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({flow:await flows.saveEditor(actor.tenant_id,actor.user_id,req.params.apiName,req.body)});
+  }));
+  app.delete('/api/metadata/flows/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await flows.deleteEditor(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.status(204).end();
   }));
   app.post('/api/apps/:apiName/install',route(async(req,res)=>{
     const actor=req.actor!;
@@ -694,7 +704,20 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
-    res.json({apps:await apps.listInstalled(actor.tenant_id)});
+    res.json({apps:await apps.listMetadata(actor.tenant_id)});
+  }));
+  app.post('/api/metadata/apps',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'Licence','manage');
+    const app=await apps.saveMetadata(actor.tenant_id,req.body?.apiName,req.body,false);
+    res.status(201).json({app});
+  }));
+  app.put('/api/metadata/apps/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.apiName,'manage');
+    res.json({app:await apps.saveMetadata(actor.tenant_id,req.params.apiName,req.body,true)});
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.

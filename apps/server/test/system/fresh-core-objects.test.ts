@@ -69,7 +69,8 @@ test('existing tenants receive Core metadata exactly once via the versioned seed
  assert.equal(statements.filter(sql=>sql.includes('INSERT INTO md_field_definitions')).length,
   FRESH_CORE_OBJECTS.reduce((total,o)=>total+o.fields.length+
    (o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
- assert.equal(await seedCoreObjectsForExistingTenants(db as never),0);
+ // Idempotent reconciliation visits tenants again without overwriting seeded or customised fields.
+ assert.equal(await seedCoreObjectsForExistingTenants(db as never),1);
  assert.equal(statements.filter(sql=>sql.startsWith('INSERT INTO md_system_migrations')).length,1);
 });
 test('existing Core seed versions cannot silently change after deployment',async()=>{

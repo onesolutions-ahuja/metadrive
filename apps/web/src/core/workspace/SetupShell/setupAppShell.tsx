@@ -840,6 +840,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       : [...current, payload.app]);
     if (!updating) setCurrentAppId(payload.app.apiName);
   };
+  const deletePage = async (apiName: string) => {
+    await apiRequest<void>(`/metadata/pages/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
+    setPages(current => current.filter(item => item.apiName !== apiName));
+    notify('Page archived; its SQL metadata and record data are preserved');
+  };
   const deleteApp = async (apiName: string) => {
     await apiRequest<void>(`/metadata/apps/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
     const remaining = apps.filter((app) => app.apiName !== apiName);

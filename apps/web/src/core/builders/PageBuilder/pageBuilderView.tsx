@@ -200,7 +200,7 @@ import {
 } from '../../metadata/Definitions/metadata';
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onDeletePage, onExit, onNotify, onLaunchFlow,
   preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes, editorMode, onBackToPages
 }: {
   page: LightningPageMetadata;
@@ -218,6 +218,7 @@ function PageBuilder({
   onSave: (page: LightningPageMetadata, previousApiName: string, successMessage?: string) => Promise<boolean>;
   onSaveApp: (app: LightningAppMetadata, updating: boolean) => Promise<void>;
   onDeleteApp: (apiName: string) => Promise<void>;
+  onDeletePage: (apiName: string) => Promise<void>;
   onExit: () => void;
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
@@ -934,10 +935,23 @@ function PageBuilder({
       onNotify('Create a Lightning app before activating an App Page');
       return;
     }
-    const nextPage = status ? { ...candidate, status } : page;
+    const nextPage = status ? { ...candidate, status } : candidate;
+    // App Page availability is resolved from SQL activation assignments.
+    const targetAppId = builderAppApiName || preparedAppId;
+    if (nextPage.status === 'Active' && nextPage.pageType === 'App Page'
+      && !(nextPage.activationAssignments ?? []).some(item => item.appId === targetAppId)) {
+      if (!targetAppId || !apps.some(item => item.apiName === targetAppId)) {
+        onNotify('Select an installed application before activating this App Page');
+        return;
+      }
+      nextPage.activationAssignments = [...(nextPage.activationAssignments ?? []), {
+        id: crypto.randomUUID(), scope: 'App Default', appId: targetAppId,
+        profileId: null, recordTypeId: null, formFactors: [...nextPage.devices]
+      }];
+    }
     setSaving(true);
     try {
-      const saved = await onSave(nextPage, candidate.apiName);
+      const saved = await onSave(nextPage, candidate === page ? savedPageApiName.current : candidate.apiName);
       if (saved) {
         if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
           const targetAppId = builderAppApiName || preparedAppId;
@@ -974,8 +988,10 @@ function PageBuilder({
       apiName = `${baseApiName}_${suffix}`;
       suffix += 1;
     }
+    const clonedIds = new Map<string,string>(page.components.map(component => [component.id, `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`] as const));
     const cloned: LightningPageMetadata = {
       ...structuredClone(page),
+      revision: undefined,
       apiName,
       label: `${page.label} Copy`,
       updatedAt: undefined,
@@ -983,7 +999,12 @@ function PageBuilder({
       activationAssignments: [],
       components: page.components.map((component) => ({
         ...component,
-        id: `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`
+        id: clonedIds.get(component.id)!,
+        parentId: component.parentId ? clonedIds.get(component.parentId) ?? component.parentId : component.parentId,
+        properties: { ...component.properties,
+          ...(typeof component.properties?.layoutParentId === 'string'
+            ? { layoutParentId: clonedIds.get(component.properties.layoutParentId) ?? component.properties.layoutParentId }
+            : {}) }
       }))
     };
     setSaving(true);
@@ -1025,13 +1046,13 @@ function PageBuilder({
     }
     const nextPage: LightningPageMetadata = {
       apiName, label, targetObject: newPageTargetObject,
-      pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
+      pageType: newPageType,
       layoutMode: newPageLayoutMode, template: newPageTemplate,
       canvasWidth: newPageCanvasWidth,
       canvasHeight: newPageCanvasHeight,
       status: 'Draft', devices: [...newPageDevices], components: [],
       // App Pages belong to app navigation; only Record/Home pages use activation assignments.
-      activationAssignments: newPageAppId && newPageType !== 'App Page'
+      activationAssignments: newPageAppId
         ? [{
           id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
           profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
@@ -1421,7 +1442,11 @@ function PageBuilder({
           <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</td>
           <td><span className={item.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{item.status}</span></td>
           <td className="page-manager-actions"><button className="btn btn-small" type="button" aria-label={'Edit '+item.label} onClick={()=>selectSavedPage(item.apiName)}><Pencil size={14}/> Edit</button>
-          <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button></td>
+          <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button>
+          <button className="btn btn-small" type="button" disabled={saving} aria-label={'Delete '+item.label}
+            onClick={()=>{ if(window.confirm('Archive page "'+item.label+'"? Its metadata will be retained.')) {
+              void onDeletePage(item.apiName).catch(error=>onNotify(error instanceof Error?error.message:'Unable to archive page'));
+            } }}><Trash2 size={14}/> Delete</button></td>
         </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages match the selected filter. Create a new page to begin.</div>}</div>
       </section>}
       {editorMode && <>
@@ -1888,14 +1913,14 @@ function PageBuilder({
               onChange={event => {
                 const mode = event.target.value as LightningPageMetadata['layoutMode'];
                 setNewPageLayoutMode(mode);
-                if (mode === 'free-canvas') setNewPageType('Home Page');
+                // Page type and canvas layout are independently configurable.
               }}>
               <option value="template">Responsive template</option><option value="free-canvas">Free Canvas</option>
             </select>
           </label>
           <label className="form-label" htmlFor="new-lightning-page-type">Page type
             <select id="new-lightning-page-type" className="form-control" value={newPageType}
-              disabled={newPageLayoutMode === 'free-canvas'}
+              
               onChange={event => {
                 const type = event.target.value as LightningPageMetadata['pageType'];
                 setNewPageType(type);
