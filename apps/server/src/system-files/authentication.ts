@@ -82,9 +82,9 @@ export class AuthenticationService {
         WHERE u.id=$1 AND u.tenant_id=$2 AND u.enabled=true AND (u.locked_until IS NULL OR u.locked_until<=now())
           AND (COALESCE(p.mode,'Off')='Off' OR (p.mode='Optional' AND m.user_id IS NULL) OR $3::boolean=true)`,[user_id,tenant_id,mfa_verified]);
       if(!enabled.rowCount) throw new Error('Invalid session');
-      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenant_id,user_id,fingerprint(nextAccess),ACCESS_SECONDS,mfa_verified]);
-      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenant_id,user_id,fingerprint(nextRefresh),REFRESH_SECONDS,mfa_verified]);
       return {tenant_id,user_id};
     });
