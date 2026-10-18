@@ -2,12 +2,32 @@ import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
 import type {FlowRuntime} from './flow-runtime.js';
+import {publishSimpleFlow} from './flow-publisher.js';
 type Actor={tenant_id:string;user_id:string};
 type Req=Request&{actor?:Actor};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
 const safe=/^[A-Za-z][A-Za-z0-9_]*$/;
 /** Shared runtime versioning, execution diagnostics and activation. Never activate invalid graphs. */
 export function registerFlowManagementRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,flows:FlowRuntime){
+ app.post('/api/metadata/flows/:apiName/publish',wrap(async(req,res)=>{
+  const a=req.actor!,name=req.params.apiName;
+  await rbac.require(a.tenant_id,a.user_id,'FlowDefinition','edit');
+  if(!safe.test(name))throw Error('Invalid Flow API name');
+  const published=await db.transaction(async client=>{
+   const body=req.body?.apiName===name?req.body:(
+    await client.query<{definition:Record<string,unknown>}>(
+     "SELECT definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='flow' AND api_name=$2 FOR UPDATE",
+     [a.tenant_id,name])).rows[0]?.definition;
+   const next=await publishSimpleFlow(client,a.tenant_id,name,body);
+   await client.query(`INSERT INTO md_builder_drafts(tenant_id,kind,api_name,definition,published)
+    VALUES($1,'flow',$2,$3::jsonb,true)
+    ON CONFLICT(tenant_id,kind,api_name) DO UPDATE SET
+    definition=EXCLUDED.definition,published=true,revision=md_builder_drafts.revision+1,updated_at=now()`,
+    [a.tenant_id,name,JSON.stringify(next)]);
+   return next;
+  });
+  res.json({flow:published});
+ }));
  app.get('/api/metadata/flows/:apiName/versions',wrap(async(req,res)=>{
   const a=req.actor!,n=req.params.apiName;await rbac.require(a.tenant_id,a.user_id,'FlowDefinition','read');
   if(!safe.test(n))throw Error('Invalid Flow');
