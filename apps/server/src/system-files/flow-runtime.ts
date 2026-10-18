@@ -1,6 +1,7 @@
 import type { SqlPersistence } from './sql-persistence.js';
 import type { RbacEngine } from './rbac-engine.js';
 import type { RecordEngine } from './record-engine.js';
+import type {PoolClient} from 'pg';
 type NodeRow={id:string;api_name:string;node_type:string};
 type EdgeRow={source_api:string;target_api:string;outcome:string};
 type PropRow={node_id:string;api_name:string;value_text:string|null;data_type:string};
@@ -41,7 +42,7 @@ export class FlowRuntime {
     if(!rows[0])throw new Error('Active flow not found');
     return rows[0];
   }
-  async start(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
+  async start(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={},tx?:PoolClient) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||Object.keys(inputs).length>100)
@@ -53,7 +54,7 @@ export class FlowRuntime {
       normalized.set(name,value);
     }
     const flow=await this.loadActive(tenantId,flowApi);
-    return this.db.transaction(async client=>{
+    const persist=async(client:PoolClient)=>{
       const {rows}=await client.query<{id:string}>(
         "INSERT INTO md_flow_runs (tenant_id,flow_id,started_by,status) VALUES ($1,$2,$3,'pending') RETURNING id",
         [tenantId,flow.id,userId]);
@@ -65,16 +66,17 @@ export class FlowRuntime {
           [tenantId,id,name,encoded.text,encoded.type]);
       }
       return id;
-    });
+    };
+    return tx?persist(tx):this.db.transaction(persist);
   }
   async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
     const id=await this.start(tenantId,flowApi,userId,inputs);
     return this.run(tenantId,id,userId);
   }
-  async run(tenantId:string,runId:string,userId:string) {
+  async run(tenantId:string,runId:string,userId:string,tx?:PoolClient) {
     if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
     try {
-      const outcome=await this.db.transaction(async client=>{
+      const execute=async(client:PoolClient)=>{
         const row=await client.query<{flow_id:string;started_by:string;status:string;api_name:string}>(
           "SELECT r.flow_id,r.started_by,r.status,f.api_name FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r",
           [tenantId,runId]);
@@ -177,15 +179,36 @@ export class FlowRuntime {
           current=next.target_api;
         }
         throw new Error('Flow exceeded maximum element limit');
-      });
-      return outcome;
+      };
+      return tx?execute(tx):this.db.transaction(execute);
     } catch(error) {
       // Mutations within the transaction were rolled back. The run is durable and failed.
       const message=error instanceof Error?error.message:'Unknown Flow failure';
-      await this.db.query(
+      if(!tx)await this.db.query(
         "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
         [tenantId,runId,message.slice(0,200)]);
       throw error;
     }
   }
+  /** Execute in one rollback-only transaction. SQL record mutations never become visible. */
+  async preview(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
+    class RollbackPreview extends Error {
+      constructor(readonly output:Record<string,unknown>){super('Flow debug rolled back');}
+    }
+    try {
+      await this.db.transaction(async client=>{
+        const runId=await this.start(tenantId,flowApi,userId,inputs,client);
+        const outcome=await this.run(tenantId,runId,userId,client);
+        throw new RollbackPreview(outcome as Record<string,unknown>);
+      });
+    } catch(error) {
+      if(error instanceof RollbackPreview){
+        const {id:_temporaryId,...details}=error.output;
+        return {...details,preview:true,rolledBack:true};
+      }
+      throw error;
+    }
+    throw Error('Flow dry run did not roll back');
+  }
+
 }
