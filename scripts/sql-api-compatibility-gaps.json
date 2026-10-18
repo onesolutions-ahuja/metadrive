@@ -23,7 +23,6 @@
     "/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next",
     "/flows/",
     "/integration-connections/${encodeURIComponent(id)}/test",
-    "/metadata/apps/${encodeURIComponent(apiName)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions",
