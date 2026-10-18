@@ -600,3 +600,48 @@ test('Flow draft validator enforces OneEngine permission and fails closed on uns
   ]});
   assert.equal(good.valid,true);
 });
+
+test('Field update preserves type and validates required values transactionally',async()=>{
+ const sql:string[]=[];
+ const db={
+   transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+     run({query:async(q:string,args:unknown[])=>{
+       sql.push(q);
+       if(q.includes('SELECT data_type,related_object,max_length'))return {rows:[
+         {data_type:'text',related_object:null,max_length:80,required:false,label:'Name'}
+       ]};
+       if(q.includes('SELECT EXISTS'))return {rows:[{exists:true}]};
+       return {rows:[],rowCount:1};
+     }}),
+   query:async(q:string)=>q.includes('FROM md_object_definitions')
+     ?{rows:[{id:'object1',api_name:'Sale__c',label:'Sale',is_system:false}]}
+     :{rows:[{id:'field1',object_api:'Sale__c',api_name:'Name',label:'Name',data_type:'text',related_object:null,required:false,max_length:80}]}
+ } as unknown as SqlPersistence;
+ const service=new ObjectDefinitionService(db);
+ await assert.rejects(
+   ()=>service.updateField('tenant','Sale__c','Name',{apiName:'Name',dataType:'Number'}),
+   /explicit migration/);
+ await assert.rejects(
+   ()=>service.updateField('tenant','Sale__c','Name',{apiName:'Name',required:true}),
+   /missing values/);
+ assert.equal(sql.filter(q=>q.includes('UPDATE md_field_definitions')).length,0);
+ const result=await service.updateField('tenant','Sale__c','Name',{apiName:'Name',label:'Sales name'});
+ assert.equal(result.apiName,'Sale__c');
+ assert.equal(sql.filter(q=>q.includes('UPDATE md_field_definitions')).length,1);
+});
+test('Field delete refuses data loss when business values exist',async()=>{
+ const sql:string[]=[];
+ const db={
+   transaction:async(run:(client:{query:(q:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+     run({query:async(q:string,args:unknown[])=>{
+       sql.push(q);assert.equal(args[0],'tenant');
+       if(q.includes('SELECT id FROM md_field_definitions'))return {rows:[{id:'field1'}]};
+       if(q.includes('SELECT EXISTS'))return {rows:[{exists:true}]};
+       return {rows:[],rowCount:1};
+     }})
+ } as unknown as SqlPersistence;
+ await assert.rejects(
+   ()=>new ObjectDefinitionService(db).deleteField('tenant','Sale__c','Name'),
+   /business records/);
+ assert.equal(sql.filter(q=>q.startsWith('DELETE')).length,0);
+});
