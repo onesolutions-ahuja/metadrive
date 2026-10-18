@@ -47,6 +47,8 @@ export function registerProtectedMfaRoutes(app:Express,db:SqlPersistence,rbac:Rb
    }
    await client.query(`INSERT INTO md_tenant_mfa_policy(tenant_id,mode) VALUES($1,$2)
      ON CONFLICT(tenant_id) DO UPDATE SET mode=EXCLUDED.mode`,[a.tenant_id,next]);
+   await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND revoked_at IS NULL',[a.tenant_id]);
+   await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND revoked_at IS NULL',[a.tenant_id]);
   });
   res.json({mode:next});
  }));
@@ -87,6 +89,8 @@ export function registerProtectedMfaRoutes(app:Express,db:SqlPersistence,rbac:Rb
    await client.query(`UPDATE md_user_totp SET pending=false,pending_token_hash=NULL,
      enrollment_expires_at=NULL,last_counter=$3,enrollment_attempts=0 WHERE tenant_id=$1 AND user_id=$2`,
     [a.tenant_id,a.user_id,step]);
+   await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
+   await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
    return true;
   });
   if(!accepted)throw Error('Invalid MFA enrollment code');
@@ -106,6 +110,8 @@ export function registerProtectedMfaRoutes(app:Express,db:SqlPersistence,rbac:Rb
    if(counter===null)return false;
    await client.query('DELETE FROM md_user_totp WHERE tenant_id=$1 AND user_id=$2',[a.tenant_id,a.user_id]);
    await client.query('DELETE FROM md_mfa_login_challenges WHERE tenant_id=$1 AND user_id=$2',[a.tenant_id,a.user_id]);
+   await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
+   await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
    return true;
   });
   if(!removed)throw Error('Invalid MFA code');
