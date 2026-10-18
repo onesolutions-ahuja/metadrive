@@ -31,10 +31,10 @@ export class AuthenticationService {
     return {accessToken:access,refreshToken:refresh,expiresIn:ACCESS_SECONDS};
   }
   async signIn(tenantId:string,email:string,password:string) {
-    const {rows}=await this.db.query<{id:string,password_hash:string,enabled:boolean}>(
-      "SELECT id,password_hash,enabled FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[tenantId,email]);
+    const {rows}=await this.db.query<{id:string,password_hash:string,enabled:boolean;locked_until:Date|null}>(
+      "SELECT id,password_hash,enabled,locked_until FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[tenantId,email]);
     const user=rows[0];
-    if(!user?.enabled || !(await this.verifyPassword(password,user.password_hash))) throw new Error('Invalid credentials');
+    if(!user?.enabled || (user.locked_until&&new Date(user.locked_until).getTime()>Date.now()) || !(await this.verifyPassword(password,user.password_hash))) throw new Error('Invalid credentials');
     return this.issue(tenantId,user.id);
   }
   async refresh(token:string) {
@@ -46,7 +46,7 @@ export class AuthenticationService {
         [fingerprint(token)]);
       if(!old.rows[0]) throw new Error('Invalid session');
       const {tenant_id,user_id}=old.rows[0];
-      const enabled=await client.query("SELECT id FROM md_users WHERE id=$1 AND tenant_id=$2 AND enabled=true AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[user_id,tenant_id]);
+      const enabled=await client.query("SELECT id FROM md_users WHERE id=$1 AND tenant_id=$2 AND enabled=true AND (locked_until IS NULL OR locked_until<=now()) AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[user_id,tenant_id]);
       if(!enabled.rowCount) throw new Error('Invalid session');
       await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
         [tenant_id,user_id,fingerprint(nextAccess),ACCESS_SECONDS]);
@@ -58,7 +58,7 @@ export class AuthenticationService {
   }
   async authenticate(token:string) {
     const {rows}=await this.db.query<{tenant_id:string,user_id:string}>(
-      "SELECT s.tenant_id,s.user_id FROM md_sessions s JOIN md_users u ON u.id=s.user_id AND u.tenant_id=s.tenant_id AND u.enabled=true JOIN md_tenants t ON t.id=s.tenant_id AND t.status='ACTIVE' WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL",
+      "SELECT s.tenant_id,s.user_id FROM md_sessions s JOIN md_users u ON u.id=s.user_id AND u.tenant_id=s.tenant_id AND u.enabled=true AND (u.locked_until IS NULL OR u.locked_until<=now()) JOIN md_tenants t ON t.id=s.tenant_id AND t.status='ACTIVE' WHERE s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL",
       [fingerprint(token)]);
     if(!rows[0]) throw new Error('Invalid session');
     return rows[0];
