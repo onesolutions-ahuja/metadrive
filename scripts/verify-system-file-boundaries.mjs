@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 const root=path.resolve('apps/server/src/system-files');
 const files=fs.readdirSync(root,{withFileTypes:true});
-const expected=['sql-persistence.ts','object-definition.ts','authentication.ts','rbac-engine.ts','permission-resource-map.ts','record-engine.ts','component-runtime.ts','page-runtime.ts','flow-runtime.ts','app-runtime.ts','tenant-provisioning.ts','schema.sql','README.md','session-metadata.ts','platform-tenant-service.ts','system-definition-service.ts'];
+const expected=['sql-persistence.ts','object-definition.ts','authentication.ts','rbac-engine.ts','record-engine.ts','component-runtime.ts','page-runtime.ts','flow-runtime.ts','app-runtime.ts','tenant-provisioning.ts','schema.sql','README.md','session-metadata.ts','platform-tenant-service.ts','system-definition-service.ts'];
 const allowed=new Set(expected);
 const forbidden=files.filter(f=>!f.isFile() || !allowed.has(f.name));
 if(forbidden.length){
