@@ -7,7 +7,7 @@ import {registerProtectedMfaRoutes} from './auth-mfa-routes.js';
 import {registerPasswordResetRoutes} from './password-reset-routes.js';
 import {registerFlowManagementRoutes} from './flow-management-routes.js';
 import {registerPageManagementRoutes} from './page-management-routes.js';
-import {registerScreenInterviewRoutes} from './screen-interview-routes.js';
+import {registerScreenInterviewRoutes,beginScreenInterview} from './screen-interview-routes.js';
 import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
@@ -337,7 +337,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const inputs=req.body?.inputs??req.body??{};
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))throw new Error('Invalid Flow inputs');
-    res.json(await flows.execute(actor.tenant_id,req.params.apiName,actor.user_id,inputs));
+    const active=await db.query<{flow_type:string}>(`
+      SELECT flow_type FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2
+      AND active=true ORDER BY version DESC LIMIT 1`,[actor.tenant_id,req.params.apiName]);
+    if(active.rows[0]?.flow_type==='Screen Flow'){
+      res.json(await beginScreenInterview(db,rbac,actor,req.params.apiName));
+    }else res.json(await flows.execute(actor.tenant_id,req.params.apiName,actor.user_id,inputs));
   }));
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
