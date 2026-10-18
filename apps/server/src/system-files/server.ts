@@ -294,6 +294,11 @@ export function createSystemServer(db:SqlPersistence) {
     const credential=await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
     res.json({credential});
   }));
+  app.post('/api/named-credentials/:id/rotate',route(async(req,res)=>{
+    const a=req.actor!;
+    const credential=await namedCredentials.rotate(a.tenant_id,a.user_id,req.params.id);
+    res.json({credential});
+  }));
   app.delete('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await namedCredentials.remove(actor.tenant_id,actor.user_id,req.params.id);
