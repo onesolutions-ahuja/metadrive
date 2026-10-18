@@ -380,6 +380,12 @@ export function createSystemServer(db:SqlPersistence) {
     await apps.uninstall(actor.tenant_id,req.params.apiName);
     res.status(204).end();
   }));
+  app.delete('/api/metadata/apps/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await apps.uninstall(actor.tenant_id,req.params.apiName);
+    res.status(204).end();
+  }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
