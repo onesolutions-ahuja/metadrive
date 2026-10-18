@@ -8,6 +8,7 @@ import {registerFlowAdministrationRoutes} from './flow-administration-routes.js'
 import {registerObjectDependencyRoutes} from './object-dependency-routes.js';
 import {registerRecordInteractionRoutes} from './record-interaction-routes.js';
 import {registerObjectLifecycleRoutes} from './object-lifecycle-routes.js';
+import {registerRecordOwnershipRoutes} from './record-ownership-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
 import {registerAuthSecurityRoutes} from './auth-security-routes.js';
@@ -445,6 +446,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerObjectDependencyRoutes(app,db,rbac);
   registerRecordInteractionRoutes(app,db,rbac);
   registerObjectLifecycleRoutes(app,db,rbac,definitions);
+  registerRecordOwnershipRoutes(app,db,rbac,records);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerAuthSecurityRoutes(app,db,rbac);
