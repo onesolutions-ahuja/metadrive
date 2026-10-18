@@ -20,7 +20,7 @@ test('fresh permission grants distinguish admin exceptions, developer CRUD and s
   assert.ok(rules.Admin.some(r=>r.resource===resource&&r.action==='*'&&r.effect==='deny'));
  for(const object of FRESH_CORE_OBJECTS){
   assert.deepEqual(rules.OneEngineDeveloper.filter(r=>r.resource===object.apiName).map(r=>r.action),
-   ['read','create','edit','delete']);
+   [...(['AppExchange','NamedCredential','Tenant','PermissionSet','Role'].includes(object.apiName)?['manage']:[]), 'read','create','edit','delete']);
   assert.deepEqual(rules.PermissionSet1.filter(r=>r.resource===object.apiName).map(r=>r.action),['read','create']);
  }
  assert.equal(rules.OneEngineDeveloper.some(r=>r.resource==='*'),false);
