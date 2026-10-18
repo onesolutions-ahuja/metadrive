@@ -47,16 +47,12 @@ function decodePageValues(rows:PropRow[]):Record<string,unknown>{
 export class PageRuntime {
   constructor(private readonly db:SqlPersistence) {}
   async list(tenantId:string) {
-    const {rows}=await this.db.query<{api_name:string;title:string}>(
-      `SELECT api_name,title FROM md_page_definitions WHERE tenant_id=$1 AND enabled=true AND (NOT EXISTS (SELECT 1 FROM md_app_seed_pages s WHERE s.tenant_id=md_page_definitions.tenant_id AND s.page_id=md_page_definitions.id)
-        OR EXISTS (SELECT 1 FROM md_app_seed_pages s JOIN md_apps a ON a.id=s.app_id AND a.enabled=true
-          JOIN md_app_installations i ON i.app_id=s.app_id AND i.tenant_id=s.tenant_id
-          JOIN md_app_entitlements e ON e.app_id=s.app_id AND e.tenant_id=s.tenant_id AND e.active=true
-          AND (e.expires_at IS NULL OR e.expires_at>now()) WHERE s.tenant_id=md_page_definitions.tenant_id AND s.page_id=md_page_definitions.id)) ORDER BY title`,
-      [tenantId]);
-    return rows.map(row=>({apiName:row.api_name,label:row.title}));
+    const {rows}=await this.db.query<{api_name:string}>(`SELECT p.api_name FROM md_page_definitions p
+      JOIN md_lightning_page_details d ON d.tenant_id=p.tenant_id AND d.page_id=p.id
+      WHERE p.tenant_id=$1 AND p.enabled=true ORDER BY p.title,p.api_name`,[tenantId]);
+    return Promise.all(rows.map(row=>this.metadata(tenantId,row.api_name)));
   }
-  async load(tenantId:string,pageApi:string) {
+  private async loadLegacy(tenantId:string,pageApi:string) {
     const page=await this.db.query<{id:string;title:string}>(
       'SELECT id,title FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',[tenantId,pageApi]);
     if(!page.rows[0]) throw new Error('Page not found');
@@ -77,5 +73,46 @@ export class PageRuntime {
       WHERE c.tenant_id=$1 AND c.page_id=$2`,[tenantId,page.rows[0].id]);
     const configured=components.rows.map(c=>({...c,properties:expandAppProperties(properties.rows.filter(p=>p.component_id===c.id))}));
     return {page:{...page.rows[0],components:configured},components:configured};
+  }
+
+  async metadata(tenantId:string,pageApi:string){
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;title:string;page_type:string;target_object:string;layout_mode:string;
+      template:string|null;canvas_width:number;canvas_height:number;status:string;
+      devices:string[];revision:number;updated_at:Date
+    }>(`SELECT p.id,p.api_name,p.title,d.page_type,d.target_object,d.layout_mode,d.template,
+      d.canvas_width,d.canvas_height,d.status,d.devices,d.revision,d.updated_at
+      FROM md_page_definitions p JOIN md_lightning_page_details d
+        ON d.tenant_id=p.tenant_id AND d.page_id=p.id
+      WHERE p.tenant_id=$1 AND p.api_name=$2 AND p.enabled=true`,[tenantId,pageApi]);
+    const page=rows[0];if(!page)throw new Error('Page not found');
+    const [nodes,properties,assignments]=await Promise.all([
+      this.db.query<NodeRow>(
+        'SELECT component_key,component_type,label,region,visible FROM md_lightning_page_nodes WHERE tenant_id=$1 AND page_id=$2 ORDER BY sort_order',[tenantId,page.id]),
+      this.db.query<PropRow>(
+        'SELECT component_key,property_path,value_kind,value_text FROM md_lightning_page_node_properties WHERE tenant_id=$1 AND page_id=$2',[tenantId,page.id]),
+      this.db.query<{assignment_id:string;scope:string;app_api:string|null;profile_id:string|null;record_type_id:string|null;desktop:boolean;phone:boolean}>(
+        'SELECT assignment_id,scope,app_api,profile_id,record_type_id,desktop,phone FROM md_lightning_page_activation WHERE tenant_id=$1 AND page_id=$2 ORDER BY sort_order',[tenantId,page.id])
+    ]);
+    const components=nodes.rows.map(node=>{
+      const data=decodePageValues(properties.rows.filter(row=>row.component_key===node.component_key));
+      return {...(data.extra as Record<string,unknown>??{}),id:node.component_key,type:node.component_type,
+        label:node.label,region:node.region,visible:node.visible,properties:data.props??{}};
+    });
+    return {apiName:page.api_name,label:page.title,targetObject:page.target_object,
+      pageType:page.page_type,layoutMode:page.layout_mode,template:page.template??undefined,
+      canvasWidth:page.canvas_width,canvasHeight:page.canvas_height,status:page.status,
+      devices:page.devices,revision:page.revision,updatedAt:page.updated_at,
+      components,activationAssignments:assignments.rows.map(a=>({
+        id:a.assignment_id,scope:a.scope,appId:a.app_api,profileId:a.profile_id,recordTypeId:a.record_type_id,
+        formFactors:[...(a.desktop?['Desktop']:[]),...(a.phone?['Phone']:[])]
+      }))};
+  }
+  async load(tenantId:string,pageApi:string){
+    const {rows}=await this.db.query<{found:boolean}>(`SELECT EXISTS(
+      SELECT 1 FROM md_page_definitions p JOIN md_lightning_page_details d
+        ON d.tenant_id=p.tenant_id AND d.page_id=p.id
+      WHERE p.tenant_id=$1 AND p.api_name=$2) AS found`,[tenantId,pageApi]);
+    return rows[0]?.found?{page:await this.metadata(tenantId,pageApi)}:this.loadLegacy(tenantId,pageApi);
   }
 }
