@@ -104,7 +104,9 @@ try{
  });
  assert.equal((await pageService.resolveAppPage(tenantId,'AuditApp',appPage.apiName,'Desktop'))?.apiName,appPage.apiName);
 
- const flows=new FlowRuntime(db,new RbacEngine(db));
+ const {RecordEngine}=await import(new URL('record-engine.js',built).href);
+ const records=new RecordEngine(db,new RbacEngine(db));
+ const flows=new FlowRuntime(db,new RbacEngine(db),records);
  const draft={apiName:'AuditCheckout',label:'Audit Checkout',flowType:'Screen Flow',
   status:'Draft',versionNumber:1,activeVersion:null,
   elements:[{id:1,type:'Start',label:'Start',config:{}},
@@ -128,8 +130,6 @@ try{
  assert.equal((await flows.saveEditor(tenantId,userId,'SimpleAuditFlow',simple)).status,'Active');
  assert.equal((await flows.execute(tenantId,'SimpleAuditFlow',userId)).status,'completed');
 
- const {RecordEngine}=await import(new URL('record-engine.js',built).href);
- const records=new RecordEngine(db,new RbacEngine(db));
  const recordId=await records.create(tenantId,userId,'AuditItem__c',{Name:'First',RecordTypeId:'master'});
  const initial=await records.get(tenantId,userId,'AuditItem__c',recordId);
  assert.equal(initial.Name,'First');
