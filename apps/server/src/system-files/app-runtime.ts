@@ -1,6 +1,169 @@
 import type {SqlPersistence} from './sql-persistence.js';
 export class AppRuntime {
   constructor(private readonly db:SqlPersistence) {}
+  /** Metadata for installed and entitled apps only, including tenant-owned apps. */
+  async listMetadata(tenantId:string) {
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string;description:string|null;brand_color:string|null;revision:number|null
+    }>(`
+      SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,
+        COALESCE(m.label,a.label) AS label,m.description,m.brand_color,m.revision
+      FROM md_apps a
+      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
+      JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
+      LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
+      WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+        AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
+      ORDER BY COALESCE(m.label,a.label),COALESCE(m.api_name,a.api_name)
+    `,[tenantId]);
+    if(!rows.length)return [];
+    const [navigation,utilities]=await Promise.all([
+      this.db.query<{app_id:string;entry_type:'Object'|'App Page';api_name:string;sort_order:number}>(`
+        SELECT app_id,entry_type,api_name,sort_order FROM md_tenant_app_navigation
+        WHERE tenant_id=$1 AND app_id=ANY($2::uuid[]) ORDER BY sort_order
+      `,[tenantId,rows.map(row=>row.id)]),
+      this.db.query<{app_id:string;utility_name:'Notes'|'History'}>(`
+        SELECT app_id,utility_name FROM md_tenant_app_utilities
+        WHERE tenant_id=$1 AND app_id=ANY($2::uuid[]) ORDER BY sort_order
+      `,[tenantId,rows.map(row=>row.id)])
+    ]);
+    return rows.map(row=>{
+      const entries=navigation.rows.filter(item=>item.app_id===row.id)
+        .map(item=>({type:item.entry_type,apiName:item.api_name}));
+      return {apiName:row.api_name,label:row.label,description:row.description??'',
+        navigationItems:entries.filter(item=>item.type==='Object').map(item=>item.apiName),
+        navigationPageApiNames:entries.filter(item=>item.type==='App Page').map(item=>item.apiName),
+        navigationOrder:entries,brandColor:row.brand_color??'#1d4ed8',
+        utilityItems:utilities.rows.filter(item=>item.app_id===row.id).map(item=>item.utility_name),
+        ...(row.revision===null?{}:{revision:row.revision})};
+    });
+  }
+  /** Tenant-owned app authoring; catalog identity, licence and installation remain separate. */
+  async saveMetadata(tenantId:string,apiName:string,raw:unknown,updating:boolean) {
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid App metadata');
+    const p=raw as Record<string,unknown>;
+    if(p.apiName!==apiName||!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)
+      ||typeof p.label!=='string'||!p.label.trim()||p.label.length>200
+      ||typeof p.description!=='string'||p.description.length>4000
+      ||typeof p.brandColor!=='string'||!/^#[0-9a-fA-F]{6}$/.test(p.brandColor)
+      ||!Array.isArray(p.navigationItems)||!Array.isArray(p.navigationPageApiNames)
+      ||!Array.isArray(p.navigationOrder)||!Array.isArray(p.utilityItems)
+      ||p.navigationItems.length>100||p.navigationPageApiNames.length>100
+      ||p.navigationOrder.length>200||p.utilityItems.length>2)
+      throw new Error('Invalid App metadata');
+    const objects=p.navigationItems as unknown[],pages=p.navigationPageApiNames as unknown[];
+    if([...objects,...pages].some(name=>typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)))
+      throw new Error('Invalid App navigation');
+    if(new Set(objects).size!==objects.length||new Set(pages).size!==pages.length)
+      throw new Error('Duplicate App navigation');
+    const allowed=new Set<string>([
+      ...objects.map(name=>'Object:'+name),
+      ...pages.map(name=>'App Page:'+name)
+    ]);
+    const order:Array<{type:'Object'|'App Page';apiName:string}>=[];
+    const chosen=new Set<string>();
+    for(const rawEntry of p.navigationOrder as unknown[]){
+      if(!rawEntry||typeof rawEntry!=='object'||Array.isArray(rawEntry))
+        throw new Error('Invalid App navigation');
+      const item=rawEntry as Record<string,unknown>;
+      const key=item.type+':'+item.apiName;
+      if(!allowed.has(key)||chosen.has(key))throw new Error('Invalid App navigation order');
+      chosen.add(key);
+      order.push({type:item.type as 'Object'|'App Page',apiName:item.apiName as string});
+    }
+    for(const key of allowed)if(!chosen.has(key)){
+      const type=key.startsWith('Object:')?'Object':'App Page';
+      order.push({type,apiName:key.slice(type.length+1)});
+    }
+    const utilityItems=p.utilityItems as unknown[];
+    if(utilityItems.some(item=>item!=='Notes'&&item!=='History')||
+      new Set(utilityItems).size!==utilityItems.length)
+      throw new Error('Invalid App utilities');
+    await this.db.transaction(async client=>{
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+        [tenantId+':app:'+apiName]);
+      let appId:string;
+      if(updating){
+        const {rows}=await client.query<{app_id:string;revision:number|null}>(`
+          SELECT a.id AS app_id,m.revision FROM md_apps a
+          JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+          JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+          LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
+          WHERE COALESCE(m.api_name,a.api_name)=$2
+            AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+            AND a.enabled=true AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
+          FOR UPDATE OF a`,[tenantId,apiName]);
+        if(!rows[0])throw new Error('App not installed or licensed');
+        appId=rows[0].app_id;
+        if(p.revision!==undefined&&p.revision!==rows[0].revision)
+          throw new Error('App revision conflict');
+      }else{
+        const collision=await client.query(`
+          SELECT 1 FROM md_apps a
+          LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
+          WHERE (a.tenant_owner_id=$1 OR a.tenant_owner_id IS NULL)
+            AND COALESCE(m.api_name,a.api_name)=$2 AND a.enabled=true
+        `,[tenantId,apiName]);
+        if(collision.rowCount)throw new Error('App already exists');
+        const internalKey='Tenant_'+tenantId.replace(/-/g,'')+'_'+apiName;
+        const {rows}=await client.query<{id:string}>(`
+          INSERT INTO md_apps(api_name,label,enabled,tenant_owner_id)
+          VALUES($1,$2,true,$3) RETURNING id`,[internalKey,p.label,tenantId]);
+        appId=rows[0].id;
+        // A newly authored tenant App receives its own entitlement and installation.
+        await client.query(`
+          INSERT INTO md_app_entitlements(tenant_id,app_id,active)
+          VALUES($1,$2,true)`,[tenantId,appId]);
+        await client.query(`
+          INSERT INTO md_app_installations(tenant_id,app_id) VALUES($1,$2)`,
+          [tenantId,appId]);
+      }
+      for(const objectApi of objects){
+        const found=await client.query(
+          'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
+          [tenantId,objectApi]);
+        if(!found.rowCount)throw new Error('Unknown App Object: '+objectApi);
+      }
+      for(const pageApi of pages){
+        const found=await client.query(
+          'SELECT 1 FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
+          [tenantId,pageApi]);
+        if(!found.rowCount)throw new Error('Unknown App Page: '+pageApi);
+      }
+      await client.query(`
+        INSERT INTO md_tenant_app_metadata(tenant_id,app_id,api_name,label,description,brand_color,revision)
+        VALUES($1,$2,$3,$4,$5,$6,1)
+        ON CONFLICT(tenant_id,app_id) DO UPDATE SET label=EXCLUDED.label,
+          description=EXCLUDED.description,brand_color=EXCLUDED.brand_color,
+          revision=md_tenant_app_metadata.revision+1
+      `,[tenantId,appId,apiName,p.label,p.description,p.brandColor]);
+      await client.query('DELETE FROM md_tenant_app_navigation WHERE tenant_id=$1 AND app_id=$2',[tenantId,appId]);
+      await client.query('DELETE FROM md_tenant_app_utilities WHERE tenant_id=$1 AND app_id=$2',[tenantId,appId]);
+      for(const [position,item] of order.entries())await client.query(`
+        INSERT INTO md_tenant_app_navigation(tenant_id,app_id,entry_type,api_name,sort_order)
+        VALUES($1,$2,$3,$4,$5)`,[tenantId,appId,item.type,item.apiName,position]);
+      for(const [position,item] of utilityItems.entries())await client.query(`
+        INSERT INTO md_tenant_app_utilities(tenant_id,app_id,utility_name,sort_order)
+        VALUES($1,$2,$3,$4)`,[tenantId,appId,item,position]);
+    });
+    const found=(await this.listMetadata(tenantId)).find(item=>item.apiName===apiName);
+    if(!found)throw new Error('Saved App unavailable');
+    return found;
+  }
+  private async catalogApi(tenantId:string,publicName:string) {
+    const {rows}=await this.db.query<{api_name:string}>(`
+      SELECT a.api_name FROM md_apps a
+      JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+      JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+      LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
+      WHERE COALESCE(m.api_name,a.api_name)=$2 AND a.enabled=true
+        AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+        AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
+    `,[tenantId,publicName]);
+    if(!rows[0])throw new Error('App not installed or licensed');
+    return rows[0].api_name;
+  }
+
   async install(tenantId:string,appApi:string,seed?:import('../system-support/app-page-seeder.js').AppPageSeed) {
     await this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(`
@@ -47,7 +210,7 @@ export class AppRuntime {
       FROM md_apps a
       LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
       LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
-      WHERE a.enabled=true
+      WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
       ORDER BY a.label
     `,[tenantId]);
     return {records:rows.map(row=>({
@@ -154,13 +317,6 @@ export class AppRuntime {
     throw new Error('Invalid route alias destination');
   }
   async listInstalled(tenantId:string) {
-    const {rows}=await this.db.query<{api_name:string;label:string}>(`
-      SELECT a.api_name,a.label FROM md_apps a
-      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
-      JOIN md_app_entitlements e ON e.tenant_id=i.tenant_id AND e.app_id=a.id
-      WHERE a.enabled=true AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
-      ORDER BY a.label
-    `,[tenantId]);
-    return rows.map(x=>({apiName:x.api_name,label:x.label}));
+    return this.listMetadata(tenantId);
   }
 }
