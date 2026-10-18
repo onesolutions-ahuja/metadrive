@@ -470,6 +470,13 @@ function ShoppingCartTill({ props }) {
       );
       return;
     }
+    // A missing/incorrectly typed tax flag is not evidence that a product is VAT-exempt.
+    // Do not silently turn unknown tax metadata into false for VAT-enabled tills.
+    const vatValue = product[props.vatApplicableFieldApiName || ""];
+    if (vatRate > 0 && typeof vatValue !== "boolean") {
+      setError("This product has no verified VAT applicability value. Update its Product record before adding it to the sale.");
+      return;
+    }
     const current = cart.find((item) => item.productId === id);
     const next = current
       ? cart.map((item) =>
@@ -484,8 +491,7 @@ function ShoppingCartTill({ props }) {
             name: label,
             quantity: 1,
             unitPriceMinor: unit,
-            vatApplicable:
-              product[props.vatApplicableFieldApiName || ""] === true,
+            vatApplicable: vatValue === true,
             ageRestricted:
               product[props.ageRestrictedFieldApiName || ""] === true,
           },
