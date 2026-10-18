@@ -1,5 +1,5 @@
 import type { SqlPersistence } from './sql-persistence.js';
-import {toDisplayedPermission} from './permission-resource-map.js';
+import {toDisplayedPermission} from '../system-support/permission-resource-map.js';
 
 export type PermissionCheck = {resource:string;action:string};
 
