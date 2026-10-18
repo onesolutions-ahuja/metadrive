@@ -51,5 +51,20 @@ try{
  assert.equal(layout.pageLayouts[0].label,'Custom Layout');
  await assert.rejects(()=>objects.replaceLayouts(tenantId,'AuditItem__c',object,object.revision),
    /revision conflict/);
+
+ const pageService=new PageRuntime(db);
+ const savedPage=await pageService.save(tenantId,'AuditItem_Record_Page',{
+   apiName:'AuditItem_Record_Page',label:'Audit Item Record Page',
+   targetObject:'AuditItem__c',pageType:'Record Page',layoutMode:'template',
+   canvasWidth:1200,canvasHeight:800,template:'main-sidebar',status:'Active',devices:['Desktop'],
+   components:[{id:'details',type:'Field Section',label:'Details',region:'main',visible:true,
+     properties:{fieldApiNames:['Name'],style:{width:'100%'}}}],
+   activationAssignments:[{id:'default',scope:'Org Default',appId:null,
+     profileId:null,recordTypeId:null,formFactors:['Desktop']}]
+ });
+ assert.equal(savedPage.status,'Active');
+ assert.deepEqual(savedPage.components[0].properties.style,{width:'100%'});
+ assert.equal((await pageService.resolveRecordPage(tenantId,'AuditItem__c','Records','','master','Desktop')).apiName,
+   savedPage.apiName);
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
