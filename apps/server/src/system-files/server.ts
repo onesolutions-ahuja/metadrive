@@ -13,6 +13,7 @@ import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
 import { TenantProvisioning } from './tenant-provisioning.js';
+import {PlatformTenantService} from './platform-tenant-service.js';
 import {rotateFirstLoginPassword} from './first-login-rotation.js';
 import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
@@ -66,6 +67,7 @@ export function createSystemServer(db:SqlPersistence) {
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records);
   const apps=new AppRuntime(db);
+  const platformTenants=new PlatformTenantService(db,rbac);
 
   // CORS is granted only to origins registered for a SQL tenant.
   app.use(async (req,res,next)=>{
@@ -138,6 +140,10 @@ export function createSystemServer(db:SqlPersistence) {
     await auth.signOut(req.get('authorization')!.slice(7),getCookie(req));
     res.setHeader('Set-Cookie',`${tokenCookie}=; HttpOnly; Path=/api/auth; Max-Age=0; SameSite=Lax`);
     res.status(204).end();
+  }));
+  app.get('/api/platform/tenants',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
   }));
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
