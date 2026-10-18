@@ -35,6 +35,13 @@ export class AppRuntime {
       await client.query('SELECT app_id FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2 FOR UPDATE',
        [tenantId,rows[0].id]);
       await seedIndependentAppMetadata(client,tenantId,seed,rows[0].id);
+      const dev=await client.query<{id:string}>(
+       "SELECT id FROM md_permission_sets WHERE tenant_id=$1 AND api_name='OneEngineDeveloper'",[tenantId]);
+      if(!dev.rows[0])throw Error('OneEngine Developer permission set is missing');
+      for(const action of ['read','manage'])await client.query(`
+       INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+       VALUES($1,$2,$3,$4,'allow') ON CONFLICT DO NOTHING`,
+       [tenantId,dev.rows[0].id,'App:'+appApi,action]);
       // Re-enable only metadata which this app's own uninstall previously disabled.
       await client.query(`UPDATE md_page_definitions p SET enabled=true
        FROM md_app_owned_definitions o
