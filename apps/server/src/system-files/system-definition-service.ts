@@ -62,7 +62,7 @@ export class SystemDefinitionService {
            WHERE tenant_id=$1 AND kind=$2 AND api_name=$3 AND revision=$7
            RETURNING revision`;
     const params:(string|boolean|number)[]=[tenantId,kind,apiName,label,JSON.stringify(properties),enabled!==false];
-    if(Number(expected)!==0)params.push(expected);
+    if(Number(expected)!==0)params.push(Number(expected));
     const {rows}=await this.db.query<{revision:number}>(sql,params);
     if(!rows.length)throw new Error('Definition revision conflict');
     return {...properties,apiName,id:apiName,name:apiName,label,revision:rows[0].revision,enabled:enabled!==false};
