@@ -86,15 +86,19 @@ export class MfaService {
  async confirmEnrollment(tenantId:string,userId:string,token:unknown,code:unknown){
   if(typeof token!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(token))
    throw new Error('Invalid MFA enrollment');
-  await this.db.transaction(async client=>{
+  const valid=await this.db.transaction(async client=>{
    const {rows}=await client.query<{secret_ciphertext:Buffer;key_id:string}>(
     `SELECT secret_ciphertext,key_id FROM md_mfa_enrollment_tokens
-     WHERE tenant_id=$1 AND user_id=$2 AND token_hash=$3 AND expires_at>now() FOR UPDATE`,
+     WHERE tenant_id=$1 AND user_id=$2 AND token_hash=$3 AND expires_at>now() AND failed_attempts<5 FOR UPDATE`,
     [tenantId,userId,digest(token)]);
    if(!rows[0])throw new Error('Invalid MFA enrollment');
    const secret=this.vault.decryptOpaque(rows[0].secret_ciphertext,rows[0].key_id);
    const counter=acceptableCounter(secret,code);
-   if(counter===null)throw new Error('Invalid authenticator code');
+   if(counter===null){
+    await client.query('UPDATE md_mfa_enrollment_tokens SET failed_attempts=failed_attempts+1 WHERE tenant_id=$1 AND user_id=$2',
+      [tenantId,userId]);
+    return false;
+   }
    await client.query(`INSERT INTO md_user_mfa_secrets(tenant_id,user_id,secret_ciphertext,key_id,last_counter)
     VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,user_id)
     DO UPDATE SET secret_ciphertext=$3,key_id=$4,last_counter=$5,enrolled_at=now()`,
@@ -103,7 +107,9 @@ export class MfaService {
     [tenantId,userId]);
    await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,$3)',
     [tenantId,userId,'MfaEnrolled']);
+   return true;
   });
+  if(!valid)throw new Error('Invalid authenticator code');
   return {enrolled:true};
  }
  async disable(tenantId:string,userId:string,password:unknown,code:unknown){
@@ -159,7 +165,7 @@ export class MfaService {
     enrollment_secret_ciphertext:Buffer|null;key_id:string|null
    }>(`SELECT id,tenant_id,user_id,enrollment_secret_ciphertext,key_id
       FROM md_mfa_login_challenges
-      WHERE challenge_hash=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`,
+      WHERE challenge_hash=$1 AND consumed_at IS NULL AND expires_at>now() AND failed_attempts<5 FOR UPDATE`,
       [digest(token)]);
    const challenge=rows[0];
    if(!challenge)throw new Error('Invalid MFA challenge');
@@ -176,7 +182,11 @@ export class MfaService {
    }
    const secret=this.vault.decryptOpaque(cipher,keyId);
    const counter=acceptableCounter(secret,code,lastCounter);
-   if(counter===null)throw new Error('Invalid authenticator code');
+   if(counter===null){
+    await client.query('UPDATE md_mfa_login_challenges SET failed_attempts=failed_attempts+1 WHERE id=$1',
+      [challenge.id]);
+    return null;
+   }
    if(challenge.enrollment_secret_ciphertext){
     await client.query(`INSERT INTO md_user_mfa_secrets
       (tenant_id,user_id,secret_ciphertext,key_id,last_counter) VALUES($1,$2,$3,$4,$5)
@@ -190,6 +200,7 @@ export class MfaService {
    await client.query('UPDATE md_mfa_login_challenges SET consumed_at=now() WHERE id=$1',[challenge.id]);
    return {tenantId:challenge.tenant_id,userId:challenge.user_id};
   });
+  if(!identity)throw new Error('Invalid authenticator code');
   return this.auth.issueMfaSession(identity.tenantId,identity.userId);
  }
 }
