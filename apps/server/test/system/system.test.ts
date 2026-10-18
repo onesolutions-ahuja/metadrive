@@ -583,3 +583,37 @@ test('Tenant currency validation rejects duplicate ISO codes and invalid rates b
    autoRetryFailedFlows:true,maxRetryAttempts:10000,conversationIdleMinutes:5
  }),/Invalid automation settings/);
 });
+
+test('Notification list enforces OneEngine access and selects only caller-owned tenant SQL rows',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const params:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+  params.push(args);
+  assert.match(sql,/tenant_id=\$1 AND recipient_id=\$2/);
+  if(sql.includes('count(*)'))return {rows:[{total:'1'}]};
+  return {rows:[{id:'n1',recipient_id:'user',title:'Alert',body:'Body',
+    flow_api_name:'GENERIC_FLOW',sent_by:null,created_at:new Date('2026-10-18T09:00:00Z'),read_at:null}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+  assert.deepEqual([tenant,user,resource,action],['tenant','user','Notification','read']);
+ }} as unknown as RbacEngine;
+ const result=await new FlowRuntime(db,rbac).notifications('tenant','user');
+ assert.equal(result.unreadCount,1);
+ assert.equal(result.notifications[0].title,'Alert');
+ assert.deepEqual(params,[['tenant','user'],['tenant','user']]);
+});
+test('Approval decision atomically checks assigned approver and pending state',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const id='123e4567-e89b-42d3-a456-426614174001';
+ const db={query:async(sql:string,args:unknown[])=>{
+  assert.match(sql,/approver_id=\$2 AND id=\$3::uuid AND status='Pending'/);
+  assert.deepEqual(args,['tenant','approver',id,'Approved']);
+  return {rows:[{id,status:'Approved',group_id:'group1'}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
+  assert.deepEqual([tenant,user,resource,action],['tenant','approver','ApprovalRequest','approve']);
+ }} as unknown as RbacEngine;
+ const response=await new FlowRuntime(db,rbac).decideApproval('tenant','approver',id,'Approved');
+ assert.equal(response.request.status,'Approved');
+ await assert.rejects(()=>new FlowRuntime(db,rbac).decideApproval('tenant','approver',id,'Unauthorized'),/Invalid approval/);
+});
