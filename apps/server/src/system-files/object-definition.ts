@@ -1,6 +1,19 @@
 import type {SqlPersistence} from './sql-persistence.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
 type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
+const sqlFieldTypes:Record<string,string>={
+  text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',
+  datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference',
+  email:'email',phone:'phone',url:'url',picklist:'picklist',
+  textarea:'textarea','textarea(long)':'longtext',longtextarea:'longtext',
+  currency:'currency',percent:'percent'
+};
+const parsePicklistValues=(input:unknown):string[]=>{
+  if(!Array.isArray(input)||input.length===0||input.length>200
+    ||input.some(item=>typeof item!=='string'||!item.trim()||item.length>512)
+    ||new Set(input).size!==input.length)throw new Error('Invalid picklist values');
+  return input as string[];
+};
 export class ObjectDefinitionService {
   constructor(private readonly db:SqlPersistence) {}
   async register(tenantId:string,apiName:string,label:string,isSystem=false) {
@@ -14,7 +27,7 @@ export class ObjectDefinitionService {
   async create(tenantId:string,apiName:string,label:string,fields:unknown=[]) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!label.trim())throw new Error('Invalid object definition');
     if(!Array.isArray(fields))throw new Error('Invalid object fields');
-    const types:Record<string,string>={text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference'};
+    const types=sqlFieldTypes;
     const normalized=fields.map((raw:unknown)=>{
       if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid field definition');
       const field=raw as Record<string,unknown>;
@@ -33,7 +46,9 @@ export class ObjectDefinitionService {
         throw new Error('Invalid relationship target');
       if(field.unique===true||field.formula||field.defaultValue!==undefined||field.valueSettings)
         throw new Error('Unsupported field options cannot be saved');
-      return {apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true,maxLength};
+      const picklistValues=type==='picklist'?parsePicklistValues(field.picklistValues):[];
+      const restricted=field.picklistRestricted!==false;
+      return {apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true,maxLength,picklistValues,restricted};
     });
     if(new Set(normalized.map(x=>x.apiName.toLowerCase())).size!==normalized.length)
       throw new Error('Duplicate field API name');
@@ -42,9 +57,14 @@ export class ObjectDefinitionService {
         'INSERT INTO md_object_definitions (tenant_id,api_name,label,is_system) VALUES ($1,$2,$3,false) ON CONFLICT (tenant_id,api_name) DO NOTHING RETURNING id',
         [tenantId,apiName,label]);
       if(!inserted.rowCount)throw new Error('Object already exists');
-      for(const field of normalized)await client.query(
-        'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label]);
+      for(const field of normalized){
+        await client.query(
+          'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label,picklist_restricted) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+          [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label,field.restricted]);
+        for(const [order,value] of field.picklistValues.entries())
+          await client.query('INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
+            [tenantId,apiName,field.apiName,value,order]);
+      }
       // Create the first Page Layout together with its object and fields.
       await client.query('INSERT INTO md_object_page_layouts (tenant_id,object_api,layout_id,label,sort_order) VALUES ($1,$2,$3,$4,0)',
         [tenantId,apiName,'default',label+' Layout']);
@@ -67,7 +87,7 @@ export class ObjectDefinitionService {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     const normalized=dataType.toLowerCase().replace(/\s+/g,'');
     const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
-    const types:Record<string,string>={text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference'};
+    const types=sqlFieldTypes;
     const type=lengthMatch?'text':types[normalized];
     const maxLength=lengthMatch?Number(lengthMatch[1]):null;
     if(!type)throw new Error('Invalid field data type');
