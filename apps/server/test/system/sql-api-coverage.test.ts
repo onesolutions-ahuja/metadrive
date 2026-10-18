@@ -18,6 +18,7 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'PUT /api/metadata/pages/:apiName/components/:componentId/properties',
   'GET /api/auth/users','GET /api/auth/sessions','POST /api/auth/sessions/revoke-all',
   'GET /api/connector-apps/catalog','POST /api/apps/:apiName/install',
-  'POST /api/apps/:apiName/update','POST /api/apps/:apiName/uninstall'
+  'POST /api/apps/:apiName/update','POST /api/apps/:apiName/uninstall',
+  'POST /api/flows/:apiName/screen/start','POST /api/flow-interviews/:id/next'
  ])assert.ok(registered.has(route),'Missing SQL endpoint: '+route);
 });
