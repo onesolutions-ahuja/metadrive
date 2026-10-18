@@ -125,7 +125,7 @@ test('Records HTTP API returns the actual list rather than double-nested records
   const db={
     query:async(sql:string)=>{
       if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
-      if(sql.includes('FROM md_permission_rules'))return {rows:[{allow_granted:true,deny_granted:false}]};
+      if(sql.includes('md_permission_rules'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
       if(sql.includes('WITH selected AS'))return {rows:[]};
       if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
       throw new Error('Unexpected SQL '+sql);
@@ -365,16 +365,18 @@ test('first-login rotation writes a fresh hash only once for matched domain/acco
 });
 
 
-test('Setup session metadata uses SQL grants, and denies override grants',async()=>{
+test('Setup session metadata reuses OneEngine SQL policy, with explicit deny overriding allow',async()=>{
   const {sessionMetadata}=await import('../../src/system-files/session-metadata.js');
   const db={query:async(sql:string,params:unknown[])=>{
     assert.ok(sql.includes('md_role_permission_sets'));
-    assert.deepEqual(params,['tenant','developer']);
+    assert.ok(sql.includes('md_permission_rules'));
+    assert.equal(params[0],'tenant');
+    assert.equal(params[1],'developer');
+    assert.equal((params[2] as string[]).length,8);
     return {rows:[
-      {capability:'metadata:read',allowed:true,denied:false},
-      {capability:'metadata:write',allowed:true,denied:false},
-      {capability:'security:manage',allowed:true,denied:true},
-      {capability:'platform:tenants:manage',allowed:false,denied:false}
+      {ordinal:1,allow_granted:true,deny_granted:false},
+      {ordinal:2,allow_granted:true,deny_granted:false},
+      {ordinal:4,allow_granted:true,deny_granted:true}
     ]};
   }} as unknown as SqlPersistence;
   const result=await sessionMetadata(db,'tenant','developer');
@@ -388,9 +390,9 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
   const db={query:async(sql:string)=>{
     if(sql.includes('FROM md_sessions s JOIN md_users'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
-    if(sql.includes('WITH requested(resource, action, capability)'))
-      return {rows:[{capability:'metadata:read',allowed:true,denied:false},
-        {capability:'metadata:write',allowed:true,denied:false}]};
+    if(sql.includes('md_permission_rules'))
+      return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},
+        {ordinal:2,allow_granted:true,deny_granted:false}]};
     throw new Error('Unexpected query');
   }} as unknown as SqlPersistence;
   const listener=createSystemServer(db).listen(0,'127.0.0.1');
