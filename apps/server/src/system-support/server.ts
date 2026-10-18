@@ -223,6 +223,22 @@ export function createSystemServer(db:SqlPersistence) {
     const payload=await platformTenants.create(actor.tenant_id,actor.user_id,req.body,req.get('idempotency-key'));
     res.status(payload.replayed?200:201).json(payload);
   }));
+  app.get('/api/notifications',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.notifications(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/notifications/:id/read',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.readNotification(actor.tenant_id,actor.user_id,req.params.id));
+  }));
+  app.get('/api/approvals/inbox',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.approvalInbox(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/approvals/:id/decision',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.decideApproval(actor.tenant_id,actor.user_id,req.params.id,req.body?.decision));
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
