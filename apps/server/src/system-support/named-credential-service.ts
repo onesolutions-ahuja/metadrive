@@ -12,10 +12,8 @@ export class NamedCredentialService {
   return process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID || 'legacy';
  }
  private keyFor(id:string):Buffer|null {
-  if(id==='legacy'){
-   const raw=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
-   if(!raw)return null;
-   const decoded=Buffer.from(raw,'base64');
+  if(id==='legacy' && process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY){
+   const decoded=Buffer.from(process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY,'base64');
    return decoded.length===32?decoded:null;
   }
   let parsed:unknown;
