@@ -40,7 +40,7 @@ export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rba
   if(!name.test(o)||!name.test(f))throw Error('Invalid field name');
   const records=await db.query('SELECT 1 FROM md_record_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 LIMIT 1',[a.tenant_id,o,f]);
   if(records.rowCount)throw Error('Cannot remove field containing records');
-  const result=await db.query('DELETE FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND NOT EXISTS (SELECT 1 FROM md_field_definitions WHERE tenant_id=$1 AND related_object=$2 AND api_name=$3) RETURNING id',[a.tenant_id,o,f]);
+  const result=await db.query('DELETE FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id',[a.tenant_id,o,f]);
   if(!result.rowCount)throw Error('Field not found or dependency exists');
   res.status(204).end();
  }));
