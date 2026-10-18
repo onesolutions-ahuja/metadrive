@@ -79,6 +79,9 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     if (token && token !== sentToken) response = await send(token);
   }
   if (response.status === 204) return undefined as T;
+  if (!(response.headers.get('content-type')??'').toLowerCase().includes('application/json'))
+    throw new ApiRequestError(`API ${path} returned non-JSON (HTTP ${response.status}); verify API deployment and routing`,
+      {path},response.status);
   const payload = await response.json() as T & { error?: string; details?: unknown };
   if (!response.ok) {
     const details = Array.isArray(payload.details)
