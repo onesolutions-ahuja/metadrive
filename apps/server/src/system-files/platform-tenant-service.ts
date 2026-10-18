@@ -83,6 +83,11 @@ export class PlatformTenantService {
     ||typeof x.adminName!=='string'||typeof x.email!=='string'
     ||typeof x.password!=='string'||typeof x.developerDomain!=='string'||!x.developerDomain.trim())
     throw new Error('Invalid tenant provisioning request: a developer domain is required');
+  const base=process.env.METADRIVE_TENANT_BASE_DOMAIN?.trim().toLowerCase();
+  const expectedDomain=base?x.tenantId.toLowerCase()+'.'+base:'';
+  if(!base||!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(base)
+     ||x.developerDomain.toLowerCase()!==expectedDomain)
+    throw new Error('Invalid tenant domain: use the configured platform-owned tenant subdomain');
   const result=await new TenantProvisioning(this.db).provision({
     slug:x.tenantId.toLowerCase(),name:x.tenantName,domain:x.developerDomain.toLowerCase(),
     developerEmail:x.email,developerPassword:x.password,developerName:x.adminName
