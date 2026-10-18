@@ -237,6 +237,21 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
   // Metadata lookups use the same tenant-scoped SQL registry as list/create.
+  app.put('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    const proposal=req.body;
+    if(!proposal||typeof proposal!=='object'||Array.isArray(proposal))
+      throw new Error('Invalid field update');
+    res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,proposal)});
+  }));
+  app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
+  }));
   app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');

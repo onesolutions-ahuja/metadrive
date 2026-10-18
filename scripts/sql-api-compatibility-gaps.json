@@ -32,8 +32,6 @@
     "/metadata/dashboards/${encodeURIComponent(dashboardApiName)}/data/${encodeURIComponent(objectApiName)}${runningUserId ",
     "/metadata/flow-interviews/${encodeURIComponent(interview.id)}",
     "/metadata/flows/${encodeURIComponent(nextFlow.apiName)}/validate",
-    "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}",
-    "/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(field.apiName)}",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",

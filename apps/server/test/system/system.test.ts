@@ -583,3 +583,26 @@ test('Tenant currency validation rejects duplicate ISO codes and invalid rates b
    autoRetryFailedFlows:true,maxRetryAttempts:10000,conversationIdleMinutes:5
  }),/Invalid automation settings/);
 });
+
+test('Field deletion refuses removal while tenant records still reference its values',async()=>{
+ let deletions=0;
+ const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
+  query:async(sql:string,args:unknown[])=>{
+   assert.deepEqual(args.slice(0,3),['tenant','Sale__c','CustomerId']);
+   if(sql.includes('FOR UPDATE'))return {rows:[{id:'f'}]};
+   if(sql.includes('FROM md_record_values'))return {rows:[{value_text:'value'}]};
+   if(sql.includes('DELETE'))deletions++;
+   return {rows:[]};
+  }
+ })} as unknown as SqlPersistence;
+ await assert.rejects(()=>new ObjectDefinitionService(db).deleteField('tenant','Sale__c','CustomerId'),/stored records/);
+ assert.equal(deletions,0);
+});
+test('Field update rejects datatype changes instead of silently discarding metadata',async()=>{
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Sale__c',label:'Sale',is_system:false}]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Sale__c',api_name:'Total',label:'Total',data_type:'number',related_object:null,required:false,max_length:null}]};
+  throw new Error('Unexpected SQL write');
+ }} as unknown as SqlPersistence;
+ await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',{label:'Total',dataType:'Text'}),/datatype migration/);
+});
