@@ -63,6 +63,44 @@ export class AuthenticationService {
     if(!rows[0]) throw new Error('Invalid session');
     return rows[0];
   }
+  async activeSessions(tenantId:string,userId:string){
+    const {rows}=await this.db.query<{id:string;expires_at:Date|string}>(
+      'SELECT id,expires_at FROM md_refresh_sessions WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL AND expires_at>now() ORDER BY expires_at DESC LIMIT 100',
+      [tenantId,userId]);
+    return {sessions:rows.map(row=>({
+      familyId:row.id,
+      expiresAt:Math.floor(new Date(row.expires_at).getTime()/1000),
+      mfaVerified:false
+    }))};
+  }
+  async revokeAllSessions(tenantId:string,userId:string,password:string){
+    if(!password)throw new Error('Invalid credentials');
+    await this.db.transaction(async client=>{
+      const result=await client.query<{password_hash:string}>(
+        'SELECT password_hash FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true FOR UPDATE',
+        [tenantId,userId]);
+      if(!result.rows[0]||!(await this.verifyPassword(password,result.rows[0].password_hash)))
+        throw new Error('Invalid credentials');
+      await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
+      await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
+    });
+  }
+  async changePassword(tenantId:string,userId:string,currentPassword:string,newPassword:string){
+    if(!currentPassword||!newPassword||newPassword===currentPassword)
+      throw new Error('Invalid password change');
+    const passwordHash=await this.hashPassword(newPassword);
+    await this.db.transaction(async client=>{
+      const result=await client.query<{password_hash:string}>(
+        'SELECT password_hash FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true FOR UPDATE',
+        [tenantId,userId]);
+      if(!result.rows[0]||!(await this.verifyPassword(currentPassword,result.rows[0].password_hash)))
+        throw new Error('Invalid credentials');
+      await client.query('UPDATE md_users SET password_hash=$3 WHERE tenant_id=$1 AND id=$2',
+        [tenantId,userId,passwordHash]);
+      await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
+      await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,userId]);
+    });
+  }
   async signOut(token:string,refreshToken?:string) {
     await this.db.query('UPDATE md_sessions SET revoked_at=now() WHERE token_hash=$1',[fingerprint(token)]);
     if(refreshToken) await this.db.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE token_hash=$1',[fingerprint(refreshToken)]);
