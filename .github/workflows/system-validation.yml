@@ -1,8 +1,22 @@
 name: SQL System Validation
 on:
+  push:
+    branches:
+      - feature/fresh-core-22-objects-20261018
+    paths:
+      - 'apps/server/src/system-files/**'
+      - 'apps/server/test/system/**'
+      - 'apps/server/package.json'
+      - 'apps/web/src/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/system-validation.yml'
   pull_request:
     paths:
       - 'apps/server/src/system-files/**'
+      - 'apps/server/test/system/**'
+      - 'scripts/**'
       - 'apps/server/package.json'
       - 'apps/web/src/**'
       - 'package.json'
