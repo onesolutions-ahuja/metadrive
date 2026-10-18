@@ -466,6 +466,34 @@ export function createSystemServer(db:SqlPersistence) {
     await apps.uninstall(actor.tenant_id,req.params.apiName);
     res.status(204).end();
   }));
+  app.get('/api/metadata/route-aliases',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
+    res.json(await apps.listAliases(actor.tenant_id));
+  }));
+  app.put('/api/metadata/route-aliases/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'manage');
+    res.json({alias:await apps.saveAlias(actor.tenant_id,req.params.appId,req.params.slug,req.body??{})});
+  }));
+  app.delete('/api/metadata/route-aliases/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'manage');
+    await apps.disableAlias(actor.tenant_id,req.params.appId,req.params.slug,req.body?.expectedVersion);
+    res.status(204).end();
+  }));
+  app.get('/api/routes/resolve/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
+    const resolution=await apps.resolveAlias(actor.tenant_id,req.params.appId,req.params.slug);
+    if(resolution.kind==='Record List')
+      await rbac.require(actor.tenant_id,actor.user_id,resolution.targetApiName,'read');
+    else if(resolution.kind==='App Page')
+      await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
+    res.json({path:resolution.path});
+  }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
