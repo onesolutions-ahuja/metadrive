@@ -343,7 +343,7 @@ export function createSystemServer(db:SqlPersistence) {
       }
     }
     // Draft/publishing and layouts require dedicated versioned SQL metadata support.
-    if(draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length)
+    if(draft.validationRules?.length||draft.formulaFields?.length)
       errors.push('Advanced Object draft features are not supported by the current SQL runtime');
     res.json({valid:errors.length===0,errors});
   }));
@@ -420,7 +420,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(!draft||typeof draft!=='object'||Array.isArray(draft)||draft.apiName!==req.params.apiName)
       throw new Error('Invalid object draft');
     // Unsupported configuration must never appear successfully saved.
-    if(draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length
+    if(draft.validationRules?.length||draft.formulaFields?.length
       ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
       throw new Error('Invalid unsupported object configuration');
     const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
