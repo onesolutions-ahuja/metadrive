@@ -1,4 +1,6 @@
+import {createHash} from 'node:crypto';
 import type {PoolClient} from 'pg';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {FRESH_STANDARD_FIELDS} from './fresh-standard-fields.js';
 
 /** Fresh install Core catalog. Metadata only: no business records or sample data. */
@@ -533,4 +535,30 @@ export async function seedFreshCoreObjects(client:PoolClient,tenantId:string) {
       'INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
       [tenantId,object.apiName,field.apiName,field.label,field.dataType,relatedObject,'maxLength' in field?field.maxLength:null,false]);
   }
+}
+
+/**
+ * One-time, versioned backfill for tenants that predate the fresh Core catalog.
+ * Reuses the fresh tenant metadata source and never overwrites tenant edits.
+ * Future catalog changes must increment the version instead of mutating a deployed seed.
+ */
+export const CORE_OBJECTS_SEED_VERSION='core-objects-v1';
+export async function seedCoreObjectsForExistingTenants(db:SqlPersistence):Promise<number> {
+  const checksum=createHash('sha256').update(JSON.stringify([FRESH_CORE_OBJECTS,FRESH_STANDARD_FIELDS])).digest('hex');
+  return db.transaction(async client=>{
+    // Serialize against system migrations and other instances starting concurrently.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['metadrive:system:migrations']);
+    const applied=await client.query<{checksum:string}>(
+      'SELECT checksum FROM md_system_migrations WHERE version=$1',[CORE_OBJECTS_SEED_VERSION]);
+    if(applied.rows[0]){
+      if(applied.rows[0].checksum!==checksum)
+        throw new Error('Core object seeder changed after application; create a new seed version');
+      return 0;
+    }
+    const {rows:tenants}=await client.query<{id:string}>('SELECT id FROM md_tenants ORDER BY id');
+    for(const tenant of tenants)await seedFreshCoreObjects(client,tenant.id);
+    await client.query('INSERT INTO md_system_migrations(version,checksum) VALUES($1,$2)',
+      [CORE_OBJECTS_SEED_VERSION,checksum]);
+    return tenants.length;
+  });
 }

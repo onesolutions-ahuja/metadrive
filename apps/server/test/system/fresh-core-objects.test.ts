@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {test} from 'node:test';
-import {FRESH_CORE_OBJECTS,seedFreshCoreObjects} from '../../src/app-seeders/fresh-core-objects.js';
+import {FRESH_CORE_OBJECTS,seedFreshCoreObjects,seedCoreObjectsForExistingTenants} from '../../src/app-seeders/fresh-core-objects.js';
 import {FRESH_STANDARD_FIELDS} from '../../src/app-seeders/fresh-standard-fields.js';
 
 test('fresh core contains precisely the approved 12 standard and 10 system objects',()=>{
@@ -41,4 +42,42 @@ test('standard fields are valid, related to the approved objects and unique',()=
    if('maxLength' in field)assert.ok(field.maxLength>0);
   }
  }
+});
+
+test('existing tenants receive Core metadata exactly once via the versioned seeder',async()=>{
+ const statements:string[]=[];
+ const checksum=createHash('sha256').update(JSON.stringify([FRESH_CORE_OBJECTS,FRESH_STANDARD_FIELDS])).digest('hex');
+ let applied=false;
+ const client={query:async(sql:string,args:unknown[]=[])=>{
+  statements.push(sql);
+  if(sql.startsWith('SELECT checksum FROM md_system_migrations'))
+   return {rows:applied?[{checksum}]:[],rowCount:applied?1:0};
+  if(sql.startsWith('SELECT id FROM md_tenants'))
+   return {rows:[{id:'existing-tenant'}],rowCount:1};
+  if(sql.startsWith('INSERT INTO md_system_migrations')){
+   assert.equal(args[1],checksum);applied=true;
+  }
+  if(sql.includes('INSERT INTO md_object_definitions')||sql.includes('INSERT INTO md_field_definitions')){
+   assert.equal(args[0],'existing-tenant');
+   assert.match(sql,/ON CONFLICT.*DO NOTHING/);
+  }
+  return {rows:[],rowCount:1};
+ }};
+ const db={transaction:async(run:(client:typeof client)=>Promise<number>)=>run(client)};
+ assert.equal(await seedCoreObjectsForExistingTenants(db as never),1);
+ assert.equal(statements.filter(sql=>sql.includes('INSERT INTO md_object_definitions')).length,22);
+ assert.equal(statements.filter(sql=>sql.includes('INSERT INTO md_field_definitions')).length,
+  FRESH_CORE_OBJECTS.reduce((total,o)=>total+o.fields.length+
+   (o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
+ assert.equal(await seedCoreObjectsForExistingTenants(db as never),0);
+ assert.equal(statements.filter(sql=>sql.startsWith('INSERT INTO md_system_migrations')).length,1);
+});
+test('existing Core seed versions cannot silently change after deployment',async()=>{
+ const client={query:async(sql:string)=>{
+  if(sql.startsWith('SELECT checksum FROM md_system_migrations'))return {rows:[{checksum:'outdated'}]};
+  return {rows:[]};
+ }};
+ const db={transaction:async(run:(client:typeof client)=>Promise<number>)=>run(client)};
+ await assert.rejects(seedCoreObjectsForExistingTenants(db as never),
+  /Core object seeder changed after application/);
 });

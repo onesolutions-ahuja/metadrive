@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
+import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
@@ -909,7 +910,10 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await applySystemMigrations(db); await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+  try { await applySystemMigrations(db); await db.verifySchema();
+    const seededTenants=await seedCoreObjectsForExistingTenants(db);
+    console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
+    await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
     if(firstLogin==='rotated'){
