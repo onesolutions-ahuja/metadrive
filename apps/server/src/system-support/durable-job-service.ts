@@ -7,20 +7,22 @@ export class DurableJobService {
 
  async enqueue(tenantId:string,kind:string,options:{
   actorUserId?:string;appApiName?:string;resourceId?:string;
-  scheduledAt?:Date;idempotencyKey?:string;maxAttempts?:number;
+  scheduledAt?:Date;idempotencyKey?:string;maxAttempts?:number;recurrenceSeconds?:number;
  }={}) {
   if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(kind))throw new Error('Invalid job type');
   if(options.maxAttempts!==undefined&&(!Number.isInteger(options.maxAttempts)||options.maxAttempts<1||options.maxAttempts>100))
    throw new Error('Invalid retry limit');
+  if(options.recurrenceSeconds!==undefined&&(!Number.isInteger(options.recurrenceSeconds)||options.recurrenceSeconds<60||options.recurrenceSeconds>31536000))
+   throw new Error('Invalid recurring interval');
   const {rows}=await this.db.query<{id:string}>(`
    INSERT INTO md_durable_jobs
-    (tenant_id,job_type,actor_user_id,app_api_name,resource_id,scheduled_at,idempotency_key,max_attempts)
-   VALUES($1,$2,$3,$4,$5,COALESCE($6,now()),$7,COALESCE($8,5))
+    (tenant_id,job_type,actor_user_id,app_api_name,resource_id,scheduled_at,idempotency_key,max_attempts,recurrence_seconds)
+   VALUES($1,$2,$3,$4,$5,COALESCE($6,now()),$7,COALESCE($8,5),$9)
    ON CONFLICT(tenant_id,job_type,idempotency_key) WHERE idempotency_key IS NOT NULL
    DO UPDATE SET updated_at=md_durable_jobs.updated_at
    RETURNING id
   `,[tenantId,kind,options.actorUserId??null,options.appApiName??null,options.resourceId??null,
-    options.scheduledAt??null,options.idempotencyKey??null,options.maxAttempts??null]);
+    options.scheduledAt??null,options.idempotencyKey??null,options.maxAttempts??null,options.recurrenceSeconds??null]);
   return rows[0].id;
  }
 
@@ -52,7 +54,11 @@ export class DurableJobService {
 
  async complete(tenantId:string,id:string,workerId:string) {
   const {rowCount}=await this.db.query(`
-   UPDATE md_durable_jobs SET status='completed',lease_owner=NULL,lease_until=NULL,updated_at=now()
+   UPDATE md_durable_jobs SET
+    status=CASE WHEN recurrence_seconds IS NULL THEN 'completed' ELSE 'queued' END,
+    scheduled_at=CASE WHEN recurrence_seconds IS NULL THEN scheduled_at ELSE GREATEST(scheduled_at + recurrence_seconds * interval '1 second',now() + interval '1 second') END,
+    attempt=CASE WHEN recurrence_seconds IS NULL THEN attempt ELSE 0 END,
+    lease_owner=NULL,lease_until=NULL,updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
   `,[tenantId,id,workerId]);
   if(!rowCount)throw new Error('Job lease missing or expired');
