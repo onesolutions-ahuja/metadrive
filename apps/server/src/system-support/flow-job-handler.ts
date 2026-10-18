@@ -33,6 +33,9 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
    'Flow:'+job.resource_id,'execute');
  };
  worker.register('flow.execute',async job=>{
+  // An expired lease may mean a prior attempt already sent external effects.
+  // Fail closed instead of replaying a potentially non-idempotent Flow.
+  if(job.attempt>1)throw new Error('Flow replay requires explicit reconciliation');
   if(!await authorize(job))throw new Error('Job authorization changed');
   const current=await flows.loadActive(job.tenant_id,job.resource_id!);
   if(current.version!==job.resource_version)throw new Error('Published Flow version changed');
