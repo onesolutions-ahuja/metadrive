@@ -987,7 +987,7 @@ function PageBuilder({
       apiName = `${baseApiName}_${suffix}`;
       suffix += 1;
     }
-    const clonedIds = new Map(page.components.map(component => [component.id, `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`]));
+    const clonedIds = new Map<string,string>(page.components.map(component => [component.id, `${component.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`] as const));
     const cloned: LightningPageMetadata = {
       ...structuredClone(page),
       revision: undefined,
