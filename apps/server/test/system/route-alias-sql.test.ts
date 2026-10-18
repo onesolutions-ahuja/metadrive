@@ -11,7 +11,7 @@ test('SQL aliases are tenant filtered and guarded by OneEngine permissions',asyn
  const app=express();
  app.use((req,_res,next)=>{(req as typeof req&{actor:unknown}).actor={tenant_id:'tenant-a',user_id:'member-a'};next();});
  registerRouteAliasSqlRoutes(app,db,rbac);
- const server=app.listen(0,'127.0.0.1');
+ const server=await new Promise<import('node:http').Server>(resolve=>{const instance=app.listen(0,'127.0.0.1',()=>resolve(instance));});
  try{
   const port=(server.address() as import('node:net').AddressInfo).port;
   const response=await fetch('http://127.0.0.1:'+port+'/api/metadata/route-aliases');
