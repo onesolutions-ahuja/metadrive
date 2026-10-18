@@ -36,8 +36,6 @@
     "/named-credentials/${encodeURIComponent(id)}/test",
     "/platform/recovery/cases/",
     "/platform/tenants/",
-    "/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}/owner",
-    "/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(ownerDialogRecord.Id)}/owner",
     "/records/${encodeURIComponent(route.objectApiName)}/${encodeURIComponent(route.recordId)}/activities",
     "/records/${encodeURIComponent(route.objectApiName)}/${encodeURIComponent(route.recordId)}/activities/${encodeURIComponent(activity.id)}",
     "/records/${encodeURIComponent(route.objectApiName)}/${encodeURIComponent(route.recordId)}/chatter",
