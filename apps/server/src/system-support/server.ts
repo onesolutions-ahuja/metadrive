@@ -13,6 +13,7 @@ import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {PasswordResetService} from './password-reset-service.js';
 import {MfaService} from './mfa-service.js';
+import {TenantDeveloperService} from './tenant-developer-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import {ObjectMetadataHistory} from '../system-files/object-metadata-history.js';
@@ -90,6 +91,7 @@ export function createSystemServer(db:SqlPersistence) {
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
+  const tenantDeveloper=new TenantDeveloperService(db,rbac,auth,mfa);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
   const definitions=new ObjectDefinitionService(db);
@@ -282,6 +284,16 @@ export function createSystemServer(db:SqlPersistence) {
   app.post('/api/auth/mfa/disable',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await mfa.disable(actor.tenant_id,actor.user_id,req.body?.password,req.body?.code));
+  }));
+  app.get('/api/tenant/developer-account',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await tenantDeveloper.status(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/tenant/developer-account/activate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await tenantDeveloper.activate(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/auth/user-locks',route(async(req,res)=>{
     const actor=req.actor!;
