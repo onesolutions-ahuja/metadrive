@@ -1,6 +1,6 @@
 import type { SqlPersistence } from '../system-files/sql-persistence.js';
 import type { RbacEngine } from '../system-files/rbac-engine.js';
-import {toPermissionRule} from '../system-files/permission-resource-map.js';
+import {toPermissionRule} from './permission-resource-map.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const name=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
