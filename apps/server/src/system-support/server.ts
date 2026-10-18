@@ -188,6 +188,18 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
   // Metadata lookups use the same tenant-scoped SQL registry as list/create.
+  app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json(await definitions.dependencies(actor.tenant_id,req.params.apiName));
+  }));
+  app.get('/api/metadata/objects/:apiName/field-dependencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json(await definitions.fieldDependencies(actor.tenant_id,req.params.apiName));
+  }));
   app.get('/api/metadata/objects/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
