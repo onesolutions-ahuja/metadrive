@@ -11,6 +11,8 @@ import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../sy
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
+import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
+import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
@@ -875,6 +877,8 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
+  registerDynamicApiRoutes(app,db,rbac,records);
+  registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});

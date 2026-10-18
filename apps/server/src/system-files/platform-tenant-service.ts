@@ -80,7 +80,7 @@ export class PlatformTenantService {
   `,[tenantId,key,JSON.stringify(data)]);
   return rows[0].properties;
  }
- private async requirePlatform(tenantId:string,userId:string){
+ async requirePlatform(tenantId:string,userId:string){
   if(!(await this.platformScope(tenantId,userId)))throw new Error('Permission denied');
  }
  async create(tenantId:string,userId:string,body:unknown,idempotencyKey:unknown) {
