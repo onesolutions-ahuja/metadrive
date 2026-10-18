@@ -28,7 +28,10 @@ function scalarFrom(text:string|null,type:string):Scalar {
 }
 /** Atomic, bounded SQL Flow executor. Unsupported or dangerous actions fail closed. */
 export class FlowRuntime {
-  constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,private readonly records?:RecordEngine) {}
+  constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,
+    private readonly records?:RecordEngine,
+    private readonly httpCallout?:(tenantId:string,userId:string,config:Record<string,unknown>,
+      variables:Record<string,Scalar>,idempotencyKey:string)=>Promise<{status:number;body:string}>) {}
   /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
   async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
     if(!this.rbac)throw new Error('Flow permissions not configured');
@@ -38,7 +41,7 @@ export class FlowRuntime {
     const data=draft as Record<string,unknown>;
     const errors:string[]=[],warnings:string[]=[];
     if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
-    if(data.flowType!=='Autolaunched Flow')errors.push('This SQL runtime can validate execution only for Autolaunched Flow');
+    if(!['Autolaunched Flow','Screen Flow'].includes(String(data.flowType)))errors.push('This SQL runtime supports Autolaunched Flow and Screen Flow');
     if(!Array.isArray(data.elements)||!Array.isArray(data.connectors)){
       return {valid:false,errors:['Flow must contain elements and connectors'],warnings};
     }
@@ -54,7 +57,7 @@ export class FlowRuntime {
       ids.add(node.id);
       const type=String(node.type??'');
       types.set(node.id,type);
-      if(!['Start','Assignment','Decision','CreateRecord','End'].includes(type)){
+      if(!['Start','Assignment','Decision','CreateRecord','Create Records','HTTP Callout','Screen','End'].includes(type) || (type==='Screen'&&data.flowType!=='Screen Flow')){
         errors.push('Unsupported SQL Flow element: '+type);
       }
     }
@@ -67,7 +70,7 @@ export class FlowRuntime {
       if(typeof edge.from!=='number'||typeof edge.to!=='number'||!ids.has(edge.from)||!ids.has(edge.to)){
         errors.push('Flow connector references an unknown element');continue;
       }
-      if(edge.kind!==undefined&&edge.kind!=='normal')errors.push('Unsupported SQL Flow connector type');
+      if(edge.kind!==undefined&&!['normal','fault'].includes(String(edge.kind)))errors.push('Unsupported SQL Flow connector type');
       outgoing.set(edge.from,[...(outgoing.get(edge.from)??[]),edge.to]);
     }
     const start=[...types].find(([,type])=>type==='Start')?.[0];
@@ -358,9 +361,212 @@ export class FlowRuntime {
     });
   }
   async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
+    const definition=await this.loadActive(tenantId,flowApi);
+    const {rows}=await this.db.query<{flow_type:string}>(
+      'SELECT flow_type FROM md_flow_definitions WHERE tenant_id=$1 AND id=$2',[tenantId,definition.id]);
     const id=await this.start(tenantId,flowApi,userId,inputs);
-    return this.run(tenantId,id,userId);
+    return rows[0]?.flow_type==='Screen Flow'
+      ?this.advanceInterview(tenantId,userId,id,{}) : this.run(tenantId,id,userId);
   }
+
+  /** Resume a Screen Flow from durable SQL state. The caller must own the interview. */
+  async advanceInterview(tenantId:string,userId:string,runId:string,
+    request:{action?:unknown;outcome?:unknown;values?:unknown}) {
+    if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
+    if(!/^[0-9a-f-]{36}$/i.test(runId)||!request||typeof request!=='object')
+      throw new Error('Invalid Flow interview request');
+    return this.db.transaction(async client=>{
+      const {rows}=await client.query<{
+        flow_id:string;api_name:string;flow_type:string;started_by:string;status:string
+      }>(`SELECT r.flow_id,f.api_name,f.flow_type,r.started_by,r.status FROM md_flow_runs r
+        JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+        WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r`,[tenantId,runId]);
+      const active=rows[0];
+      if(!active||active.status!=='pending'||active.started_by!==userId
+        ||active.flow_type!=='Screen Flow')throw new Error('Pending Screen Flow interview not found');
+      await this.rbac!.require(tenantId,userId,'Flow:'+active.api_name,'execute');
+      const doc=await client.query<MetadataValueRow>(
+        'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+        [tenantId,active.flow_id]);
+      const graph=decodeMetadataValues(doc.rows).builder as Record<string,unknown>|undefined;
+      if(!graph||!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))
+        throw new Error('Missing published Screen Flow graph');
+      const elements=graph.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
+      const connectors=graph.connectors as Array<{from:number;to:number;label:string;kind:string}>;
+      const byId=new Map(elements.map(element=>[element.id,element]));
+      const start=elements.filter(element=>element.type==='Start');
+      if(start.length!==1||byId.size!==elements.length)throw new Error('Invalid Screen Flow graph');
+      const persisted=await client.query<{current_element:number;history_elements:number[];step_count:number}>(
+        'SELECT current_element,history_elements,step_count FROM md_flow_interview_state WHERE tenant_id=$1 AND run_id=$2 FOR UPDATE',
+        [tenantId,runId]);
+      if(!persisted.rows[0])await client.query(
+        'INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element) VALUES($1,$2,$3)',
+        [tenantId,runId,start[0].id]);
+      const state=persisted.rows[0]??{current_element:start[0].id,history_elements:[],step_count:0};
+      const prior=await client.query<{api_name:string;value_text:string|null;data_type:string}>(
+        'SELECT api_name,value_text,data_type FROM md_flow_run_inputs WHERE tenant_id=$1 AND run_id=$2',
+        [tenantId,runId]);
+      const stored=await client.query<{api_name:string;value_text:string|null;data_type:string}>(
+        'SELECT api_name,value_text,data_type FROM md_flow_interview_values WHERE tenant_id=$1 AND run_id=$2',
+        [tenantId,runId]);
+      const vars:Record<string,Scalar>=Object.create(null) as Record<string,Scalar>;
+      for(const row of [...prior.rows,...stored.rows])
+        vars[row.api_name]=scalarFrom(row.value_text,row.data_type);
+      const evaluate=(value:unknown):Scalar=>{
+        if(!scalar(value))throw new Error('Unsupported Flow expression value');
+        if(typeof value!=='string')return value;
+        const name=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
+          ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
+        if(!name)return value;
+        if(!Object.hasOwn(vars,name))throw new Error('Unknown Flow resource');
+        return vars[name];
+      };
+      const set=(key:unknown,value:Scalar)=>{
+        if(typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
+          throw new Error('Invalid Flow variable name');
+        vars[key]=value;
+      };
+      let current=state.current_element;
+      let history=[...state.history_elements];
+      let steps=state.step_count;
+      if(request.action==='back'){
+        if(!history.length)throw new Error('No previous Screen');
+        current=history.pop()!;
+        await client.query(`UPDATE md_flow_interview_state SET current_element=$3,history_elements=$4,
+          updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,[tenantId,runId,current,history]);
+        const screen=byId.get(current);
+        if(!screen||screen.type!=='Screen')throw new Error('Invalid Screen history');
+        return {interviewId:runId,screen,outcomes:this.screenOutcomes(screen),
+          canGoBack:history.length>0,values:vars};
+      }
+      const visible=byId.get(current);
+      const values=request.values??{};
+      if(!values||typeof values!=='object'||Array.isArray(values))throw new Error('Invalid Screen values');
+      if(visible?.type==='Screen'&&persisted.rows[0]){
+        const fields=Array.isArray(visible.config.fields)?visible.config.fields as Array<Record<string,unknown>>:[];
+        const allowed=new Set(fields.map(field=>field.apiName).filter((key):key is string=>typeof key==='string'));
+        for(const [key,value] of Object.entries(values)){
+          if(!allowed.has(key)||!scalar(value)||typeof value==='string'&&value.length>4096)
+            throw new Error('Invalid Screen field: '+key);
+          set(key,value);
+        }
+        for(const field of fields){
+          const key=field.apiName;
+          if(typeof key==='string'&&field.required===true
+            &&(vars[key]===undefined||vars[key]===null||vars[key]===''))
+            throw new Error('Required Screen field: '+key);
+        }
+        history.push(current);
+        if(history.length>25)throw new Error('Screen history exceeded limit');
+        const choices=this.screenOutcomes(visible);
+        if(request.outcome!==undefined && !choices.some(choice=>
+          choice.name===request.outcome||choice.label===request.outcome))
+          throw new Error('Invalid Screen outcome');
+        const option=choices.find(choice=>choice.name===request.outcome||choice.label===request.outcome);
+        const next=connectors.find(edge=>edge.from===current&&edge.kind==='normal'
+          &&(edge.label===option?.label||edge.label===option?.name
+          ||(!option&&(!edge.label||edge.label==='Default'||edge.label==='Next'))));
+        if(!next)throw new Error('Screen outcome is not connected');
+        current=next.to;
+      }
+      for(;steps<200;steps++){
+        const node=byId.get(current);
+        if(!node)throw new Error('Invalid Flow graph target');
+        let selected:string|undefined;
+        if(node.type==='Screen'){
+          // A Screen suspends execution without committing a business record.
+          for(const [key,value] of Object.entries(vars)){
+            const encoded=scalarText(value);
+            await client.query(`INSERT INTO md_flow_interview_values(tenant_id,run_id,api_name,value_text,data_type)
+              VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,run_id,api_name)
+              DO UPDATE SET value_text=EXCLUDED.value_text,data_type=EXCLUDED.data_type`,
+              [tenantId,runId,key,encoded.text,encoded.type==='text'?'string':encoded.type]);
+          }
+          await client.query(`UPDATE md_flow_interview_state SET current_element=$3,
+            history_elements=$4,step_count=$5,updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,
+            [tenantId,runId,current,history,steps+1]);
+          return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
+            canGoBack:history.length>1,values:vars};
+        }
+        if(node.type==='End'){
+          await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
+          const resources=Array.isArray(graph.resources)?graph.resources as Array<{name:string;availableForOutput:boolean}>:[];
+          const outputs:Record<string,Scalar>={};
+          for(const resource of resources)
+            if(resource.availableForOutput&&Object.hasOwn(vars,resource.name))outputs[resource.name]=vars[resource.name];
+          return {completed:true,outputs};
+        }
+        if(node.type==='Assignment'){
+          set(node.config.variable,evaluate(node.config.value??null));
+        }else if(node.type==='Decision'){
+          const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
+          const matches=(o:Record<string,unknown>)=>{
+            if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
+            const found=o.conditions.map(row=>{
+              const c=row as Record<string,unknown>,actual=evaluate(c.field),expected=evaluate(c.value??null);
+              if(c.operator==='Equals')return actual===expected;
+              if(c.operator==='Not Equals')return actual!==expected;
+              if(c.operator==='Greater Than')return typeof actual==='number'&&typeof expected==='number'&&actual>expected;
+              if(c.operator==='Less Than')return typeof actual==='number'&&typeof expected==='number'&&actual<expected;
+              throw new Error('Unsupported Decision operator');
+            });
+            if(o.conditionLogic==='Any')return found.some(Boolean);
+            if(o.conditionLogic&&o.conditionLogic!=='All')throw new Error('Unsupported Decision condition logic');
+            return found.every(Boolean);
+          };
+          const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
+          selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
+        }else if(node.type==='Create Records'||node.type==='CreateRecord'){
+          if(!this.records)throw new Error('Flow record engine unavailable');
+          if(node.config.recordSource==='collection')throw new Error('Collection create is not supported');
+          const object=String(node.config.object??node.config.objectApi??'');
+          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(object))throw new Error('Invalid Flow Object');
+          const fields:Record<string,unknown>={};
+          for(const item of (Array.isArray(node.config.fieldValues)?node.config.fieldValues:[]) as Array<Record<string,unknown>>){
+            const field=String(item.field??item.apiName??'');
+            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))throw new Error('Invalid Flow Field');
+            fields[field]=evaluate(item.value??null);
+          }
+          const id=await this.records.createInTransaction(client,tenantId,userId,object,fields);
+          if(typeof node.config.resultVariable==='string'&&node.config.resultVariable)
+            set(node.config.resultVariable,id);
+          history=[]; // Back must not replay side effects.
+        }else if(node.type==='HTTP Callout'){
+          if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
+          const stableKey=runId+'-'+node.id;
+          try {
+            const response=await this.httpCallout(tenantId,userId,node.config,vars,stableKey);
+            if(node.config.statusVariable)set(node.config.statusVariable,response.status);
+            if(node.config.responseVariable)set(node.config.responseVariable,response.body);
+          }catch(error){
+            if(node.config.onError==='FAULT_PATH'){
+              const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+              if(fault){current=fault.to;history=[];continue;}
+            }
+            if(node.config.onError!=='CONTINUE')throw error;
+          }
+          history=[];
+        }else if(node.type!=='Start'){
+          throw new Error('Unsupported Screen Flow action: '+node.type);
+        }
+        const available=connectors.filter(edge=>edge.from===current&&edge.kind==='normal');
+        const next=selected
+          ?available.find(edge=>edge.label===selected||edge.label==='Default')
+          :available.find(edge=>!edge.label||edge.label==='Default'||edge.label==='Next')??(available.length===1?available[0]:undefined);
+        if(!next)throw new Error('Flow element has no supported outgoing connector');
+        current=next.to;
+      }
+      throw new Error('Screen Flow exceeded maximum steps');
+    });
+  }
+  private screenOutcomes(node:{config:Record<string,unknown>}) {
+    const raw=Array.isArray(node.config.outcomes)?node.config.outcomes:[];
+    const result=(raw as Array<Record<string,unknown>>).filter(item=>
+      typeof item.name==='string'&&typeof item.label==='string')
+      .map(item=>({name:item.name as string,label:item.label as string}));
+    return result.length?result:[{name:'Default',label:'Next'}];
+  }
+
   async run(tenantId:string,runId:string,userId:string) {
     if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
     try {
