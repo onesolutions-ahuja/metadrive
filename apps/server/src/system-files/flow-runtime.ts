@@ -75,6 +75,37 @@ export class FlowRuntime {
       waitUntil:null,retryAt:null,attempts:0
     }))};
   }
+  async validateDefinition(tenantId:string,userId:string,apiName:string,draft:unknown) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    const errors:string[]=[];
+    const warnings:string[]=[];
+    if(!draft||typeof draft!=='object'||Array.isArray(draft))
+      errors.push('Flow definition must be an object');
+    else {
+      const def=draft as Record<string,unknown>;
+      if(def.apiName!==apiName)errors.push('Flow API name does not match the requested Flow');
+      const nodes=def.nodes??def.elements;
+      if(!Array.isArray(nodes)||nodes.length===0)errors.push('Flow requires nodes');
+      else {
+        const known=new Set<string>();
+        for(const node of nodes){
+          if(!node||typeof node!=='object'||Array.isArray(node)){
+            errors.push('Invalid Flow node');continue;
+          }
+          const entry=node as Record<string,unknown>;
+          const name=entry.apiName??entry.id;
+          if(typeof name!=='string'||!namePattern.test(name)||known.has(name))
+            errors.push('Flow node names must be unique and valid');
+          else known.add(name);
+          if(typeof entry.type!=='string'&&typeof entry.nodeType!=='string')
+            errors.push('Flow node type is required');
+        }
+      }
+    }
+    return {valid:errors.length===0,errors,warnings};
+  }
   async deactivate(tenantId:string,userId:string,apiName:string) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
