@@ -8,6 +8,24 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
+ private activeKeyId():string {
+  return process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID || 'legacy';
+ }
+ private keyFor(id:string):Buffer|null {
+  if(id==='legacy'){
+   const raw=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
+   if(!raw)return null;
+   const decoded=Buffer.from(raw,'base64');
+   return decoded.length===32?decoded:null;
+  }
+  let parsed:unknown;
+  try {parsed=JSON.parse(process.env.METADRIVE_CREDENTIAL_KEYS??'');}catch{return null;}
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return null;
+  const raw=(parsed as Record<string,unknown>)[id];
+  if(typeof raw!=='string')return null;
+  const decoded=Buffer.from(raw,'base64');
+  return decoded.length===32?decoded:null;
+ }
  private key() {
   // The active key belongs to the application, never to a hosting provider.
   // Keep the legacy single-key setting readable for existing installations.
@@ -36,12 +54,12 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
-   header_name:string;secret_ciphertext:Buffer|null;enabled:boolean;updated_at:Date
-  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
+   header_name:string;secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean;updated_at:Date
+  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
   return rows.map(x=>({id:x.id,name:x.name,label:x.label,protocol:x.protocol,
    baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
    hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration:{},
-   keyId:'server-managed',updatedAt:x.updated_at}));
+   keyId:x.encryption_key_id,updatedAt:x.updated_at}));
  }
  async create(tenantId:string,userId:string,body:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
@@ -71,8 +89,8 @@ export class NamedCredentialService {
    encryptedConfiguration=Buffer.concat([iv,cipher.update(JSON.stringify(config),'utf8'),cipher.final(),cipher.getAuthTag()]);
   }
   const {rows}=await this.db.query<{id:string}>(
-   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
-   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false]);
+   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,enabled,encryption_key_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false,this.activeKeyId()]);
   return (await this.list(tenantId,userId)).find(item=>item.id===rows[0].id);
  }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
@@ -119,8 +137,9 @@ export class NamedCredentialService {
      auth_type=$7,header_name=$8,
      secret_ciphertext=COALESCE($9,secret_ciphertext),
      configuration_ciphertext=COALESCE($10,configuration_ciphertext),
+     encryption_key_id=CASE WHEN $9::bytea IS NOT NULL OR $10::bytea IS NOT NULL THEN $11 ELSE encryption_key_id END,
      updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig]);
+   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig,this.activeKeyId()]);
   if(!result.rowCount)throw new Error('Credential not found');
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
@@ -134,8 +153,8 @@ export class NamedCredentialService {
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
    protocol:string;base_url:string;auth_type:string;header_name:string;
-   secret_ciphertext:Buffer|null;enabled:boolean
-  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+   secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
+  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
     [tenantId,config.namedCredentialId]);
   const item=rows[0];
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
@@ -185,7 +204,7 @@ export class NamedCredentialService {
   }
   if(item.auth_type!=='None'){
    const encrypted=item.secret_ciphertext;
-   const key=this.key();
+   const key=this.keyFor(item.encryption_key_id);
    if(!encrypted||!key||encrypted.length<29)throw new Error('Named Credential cannot be decrypted');
    const decipher=createDecipheriv('aes-256-gcm',key,encrypted.subarray(0,12));
    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
