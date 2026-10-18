@@ -182,6 +182,7 @@ export class AppRuntime {
   }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
+      await client.query(`UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND app_api_name=$2 AND status IN ('queued','leased')`,[tenantId,appApi]);
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
         AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))`,[tenantId,appApi]);
       await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))',
