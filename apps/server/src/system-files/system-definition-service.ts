@@ -60,8 +60,9 @@ export class SystemDefinitionService {
            SET label=$4,properties=$5::jsonb,enabled=$6,revision=revision+1,updated_at=now()
            WHERE tenant_id=$1 AND kind=$2 AND api_name=$3 AND revision=$7
            RETURNING revision`;
-    const {rows}=await this.db.query<{revision:number}>(sql,
-      [tenantId,kind,apiName,label,JSON.stringify(properties),enabled!==false,expected]);
+    const params=[tenantId,kind,apiName,label,JSON.stringify(properties),enabled!==false];
+    if(Number(expected)!==0)params.push(expected);
+    const {rows}=await this.db.query<{revision:number}>(sql,params);
     if(!rows.length)throw new Error('Definition revision conflict');
     return {apiName,label,revision:rows[0].revision};
   }
