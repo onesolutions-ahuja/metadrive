@@ -18,6 +18,21 @@ function authenticated(req:AuthenticatedRequest):Actor{
 /** Only independent SQL metadata and the shared CRUD/permission engines; never app-specific code. */
 export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,records:RecordEngine,flows:FlowRuntime){
   const jobs=new DurableJobService(db);
+  app.get('/api/jobs/:id',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
+    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({job:await jobs.inspect(actor.tenant_id,req.params.id)});
+  }));
+  app.post('/api/jobs/:id/cancel-failed',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
+    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
+    await jobs.cancelFailed(actor.tenant_id,req.params.id);
+    res.json({cancelled:true});
+  }));
+
   app.post('/api/flows/:apiName/schedule',wrap(async(req,res)=>{
     const actor=authenticated(req),flowName=req.params.apiName;
     if(!api.test(flowName))throw new Error('Invalid Flow name');
