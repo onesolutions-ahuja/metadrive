@@ -1,3 +1,4 @@
+import type {PoolClient} from 'pg';
 import {transform} from 'esbuild';
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from './sql-persistence.js';
@@ -56,7 +57,7 @@ export function registerComponentVersionRoutes(app:Express,db:SqlPersistence,rba
   if(req.params.apiName&&!api.test(req.params.apiName))throw Error('Invalid Component name');
   return a;
  };
- async function read(client:{query:(q:string,args?:unknown[])=>Promise<{rows:any[];rowCount?:number}>},
+ async function read(client:PoolClient,
   tenantId:string,name:string,lock=false){
   const r=await client.query('SELECT id,api_name,renderer_key,enabled,published_version FROM md_component_definitions WHERE tenant_id=$1 AND api_name=$2'+(lock?' FOR UPDATE':''),
    [tenantId,name]);
