@@ -1,8 +1,6 @@
 {
   "description": "Known missing frontend SQL endpoint contracts. Do not treat these as implemented. Remove entries only after actual routes and tests exist.",
   "unmatchedPaths": [
-    "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
-    "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
