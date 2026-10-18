@@ -405,6 +405,11 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await flows.failedLogs(actor.tenant_id,actor.user_id));
   }));
+  app.delete('/api/metadata/flow-interviews/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await flows.cancelInterview(actor.tenant_id,actor.user_id,req.params.id);
+    res.status(204).end();
+  }));
   app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await flows.pendingInterviews(actor.tenant_id,actor.user_id));
