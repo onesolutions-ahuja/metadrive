@@ -101,6 +101,34 @@ export class RbacAdministration{
      if(!desired.some(n=>stable(n)===stable(r)))newAllows.push({...r,effect:'allow'});
     }
    }
+   // Changes to existing assignment links can delegate grants without changing any
+   // permission-set rules. Check these as strictly as newly authored grants.
+   const roleLinks=await tx.query<{role_id:string;permission_set_id:string}>(
+    'SELECT role_id,permission_set_id FROM md_role_permission_sets WHERE tenant_id=$1',[tenant]);
+   const effectiveSources=(state:Snapshot,u:Snapshot['users'][number])=>{
+    const sources=new Set<string>(u.permissionSetIds);
+    if(u.profileId){
+     sources.add('profile:'+u.profileId);
+     for(const id of state.profiles.find(p=>p.id===u.profileId)?.inheritedPermissionSetIds??[])sources.add(id);
+    }
+    for(const groupId of u.permissionSetGroupIds)
+     for(const id of state.permissionSetGroups.find(g=>g.id===groupId)?.permissionSetIds??[])sources.add(id);
+    if(u.roleId)for(const link of roleLinks.rows)if(link.role_id===u.roleId)sources.add(link.permission_set_id);
+    return sources;
+   };
+   for(const user of next.users){
+    const oldUser=previous.users.find(u=>u.id===user.id)!;
+    const before=effectiveSources(previous,oldUser);
+    for(const id of effectiveSources(next,user)){
+     if(before.has(id))continue;
+     const p=id.startsWith('profile:')?
+      next.profiles.find(p=>'profile:'+p.id===id):
+      next.permissionSets.find(p=>p.id===id);
+     if(!p)throw Error('Unknown tenant policy reference');
+     for(const rule of grantRules(p).filter(r=>r.effect==='allow'))
+      await currentRbac.require(tenant,actor,rule.resource,rule.action);
+    }
+   }
    for(const r of newAllows)await currentRbac.require(tenant,actor,r.resource,r.action);
    // Capture the actor's complete finite permission boundary, plus changed wildcard probes.
    // This catches indirect escalation through profiles, groups, hierarchy and removal of denies.
