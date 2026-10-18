@@ -7,5 +7,3 @@ CREATE TABLE IF NOT EXISTS md_flow_publications (
  PRIMARY KEY(tenant_id,flow_id),
  FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id)
 );
-ALTER TABLE md_screen_interviews ADD COLUMN IF NOT EXISTS history jsonb NOT NULL DEFAULT '[]'::jsonb
- CHECK(jsonb_typeof(history)='array');
