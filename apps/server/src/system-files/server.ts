@@ -521,7 +521,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerFormulaValidationRoutes(app,db,rbac);
   registerOfflinePublicationRoutes(app,db,rbac,definitions,pages,components,apps);
   registerComponentPublishingRoutes(app,db,rbac);
-  registerFlowDebugRoutes(app,db,rbac);
+  registerFlowDebugRoutes(app,db,rbac,flows);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerAuthSecurityRoutes(app,db,rbac);
