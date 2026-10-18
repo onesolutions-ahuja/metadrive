@@ -1,5 +1,6 @@
 import type {PoolClient} from 'pg';
 import {FRESH_CORE_OBJECTS} from './fresh-core-objects.js';
+import {FRESH_STANDARD_FIELDS} from './fresh-standard-fields.js';
 
 /** Profiles are labels mapped to OneEngine permission sets; roles remain separate. */
 export const FRESH_CORE_PROFILES = [
@@ -27,8 +28,11 @@ export async function seedFreshCoreProfiles(client:PoolClient,tenantId:string) {
    for(const resource of ADMIN_PROTECTED_RESOURCES)rules.push({resource,action:'*',effect:'deny'});
   } else {
    const actions=profile.apiName==='Developer'?crud:['read','create'] as const;
-   for(const object of FRESH_CORE_OBJECTS)for(const action of actions)
-    rules.push({resource:object.apiName,action,effect:'allow'});
+   for(const object of FRESH_CORE_OBJECTS) {
+    for(const action of actions)rules.push({resource:object.apiName,action,effect:'allow'});
+    for(const field of [...object.fields,...(object.category==='standard'?FRESH_STANDARD_FIELDS[object.apiName]:[])])
+     for(const action of actions)rules.push({resource:object.apiName+'.'+field.apiName,action,effect:'allow'});
+   }
   }
   for(const rule of rules)await client.query(
    'INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
