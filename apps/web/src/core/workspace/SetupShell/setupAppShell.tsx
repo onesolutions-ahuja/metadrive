@@ -552,13 +552,28 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     window.setTimeout(() => setToast(''), 2400);
   };
   const saveAccessControl = async (nextAccessControl: AccessControlMetadata) => {
+    // The SQL endpoint currently supports role definitions and assignments only.
+    // Never tell an administrator that other edits were saved when they were not.
+    const {roles: _oldRoles, users: oldUsers, ...oldOther} = accessControl;
+    const {roles: _newRoles, users: newUsers, ...newOther} = nextAccessControl;
+    const withoutRole = (user: AccessControlMetadata['users'][number]) => {
+      const {roleId: _roleId, ...other} = user;
+      return other;
+    };
+    if (JSON.stringify(oldOther) !== JSON.stringify(newOther) ||
+      JSON.stringify(oldUsers.map(withoutRole)) !== JSON.stringify(newUsers.map(withoutRole)))
+      throw new Error('This SQL runtime currently saves roles and role membership only. Save other permission settings separately when supported.');
     const saved = await apiRequest<AccessControlMetadata>('/metadata/permissions', {
       method: 'PUT',
-      body: JSON.stringify(nextAccessControl)
+      body: JSON.stringify({
+        roles: nextAccessControl.roles.map(({id, apiName, name, parentRoleId}) =>
+          ({id, apiName, name, parentRoleId: parentRoleId ?? null})),
+        users: nextAccessControl.users.map(({id, roleId}) => ({id, roleId: roleId ?? ''}))
+      })
     });
     setAccessControl(saved);
     setAccessControlError('');
-    notify('Access-control metadata saved');
+    notify('Roles and user assignments saved');
   };
   const saveConnectorProvider = async (provider: ConnectorProviderMetadata) => {
     const result = await apiRequest<{ provider: ConnectorProviderMetadata }>(
