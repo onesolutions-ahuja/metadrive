@@ -24,13 +24,13 @@ export class AuthenticationService {
     const access=mintToken(),refresh=mintToken();
     await this.db.transaction(async client=>{
       const mfaGate=await client.query<{mode:string}>(
-        'SELECT mode FROM md_tenant_mfa_policies WHERE tenant_id=$1',[tenant_id]);
-      const enrolled=await client.query('SELECT 1 FROM md_user_mfa WHERE tenant_id=$1 AND user_id=$2',[tenant_id,user_id]);
+        'SELECT mode FROM md_tenant_mfa_policies WHERE tenant_id=$1',[tenantId]);
+      const enrolled=await client.query('SELECT 1 FROM md_user_mfa WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
       if((mfaGate.rows[0]?.mode==='Required'||(mfaGate.rows[0]?.mode==='Optional'&&enrolled.rowCount))&&!mfa_verified)
         throw new Error('Invalid session');
-      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenantId,userId,fingerprint(access),ACCESS_SECONDS,mfaVerified]);
-      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenantId,userId,fingerprint(refresh),REFRESH_SECONDS,mfaVerified]);
     });
     return {accessToken:access,refreshToken:refresh,expiresIn:ACCESS_SECONDS};
@@ -69,9 +69,13 @@ export class AuthenticationService {
       const {tenant_id,user_id,mfa_verified}=old.rows[0];
       const enabled=await client.query("SELECT id FROM md_users WHERE id=$1 AND tenant_id=$2 AND enabled=true AND (locked_until IS NULL OR locked_until<=now()) AND EXISTS (SELECT 1 FROM md_tenants t WHERE t.id=md_users.tenant_id AND t.status='ACTIVE')",[user_id,tenant_id]);
       if(!enabled.rowCount) throw new Error('Invalid session');
-      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      const policy=await client.query<{mode:string}>('SELECT mode FROM md_tenant_mfa_policies WHERE tenant_id=$1',[tenant_id]);
+      const enrolled=await client.query('SELECT 1 FROM md_user_mfa WHERE tenant_id=$1 AND user_id=$2',[tenant_id,user_id]);
+      if((policy.rows[0]?.mode==='Required'||(policy.rows[0]?.mode==='Optional'&&enrolled.rowCount))&&!mfa_verified)
+        throw new Error('Invalid session');
+      await client.query('INSERT INTO md_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenant_id,user_id,fingerprint(nextAccess),ACCESS_SECONDS,mfa_verified]);
-      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'))',
+      await client.query('INSERT INTO md_refresh_sessions (tenant_id,user_id,token_hash,expires_at,mfa_verified) VALUES ($1,$2,$3,now()+($4 * interval \'1 second\'),$5)',
         [tenant_id,user_id,fingerprint(nextRefresh),REFRESH_SECONDS,mfa_verified]);
       return {tenant_id,user_id};
     });
