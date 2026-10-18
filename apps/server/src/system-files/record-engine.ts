@@ -138,13 +138,19 @@ export class RecordEngine {
     }
     return record;
   }
-  async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>) {
+  async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
     await this.rbac.require(tenantId,userId,objectApi,'edit');
+    if(!uuid.test(id))throw new Error('Invalid record reference');
+    const revisionDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
+    if(revisionDate&&!Number.isFinite(revisionDate.getTime()))throw new Error('Invalid record modification precondition');
     const prepared=await this.prepare(tenantId,userId,objectApi,values,false);
     await this.db.transaction(async client=>{
-      const found=await client.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
+      const found=await client.query<{updated_at:Date}>(
+        'SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
         [tenantId,objectApi,id]);
-      if(!found.rowCount)throw new Error('Record not found');
+      if(!found.rows[0])throw new Error('Record not found');
+      if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
       await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
       for(const [field,value] of prepared) {
         const previous=await client.query<{value_text:string|null;reference_record_id:string|null}>(
