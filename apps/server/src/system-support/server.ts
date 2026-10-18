@@ -911,7 +911,7 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
-  registerDynamicApiRoutes(app,db,rbac,records);
+  registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
