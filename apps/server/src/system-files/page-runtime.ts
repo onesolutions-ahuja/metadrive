@@ -217,4 +217,41 @@ export class PageRuntime {
     });
     return this.metadata(tenantId,p.apiName);
   }
+
+  /** Specific assignments take precedence over the org default; Draft pages cannot render. */
+  async resolveRecordPage(tenantId:string,objectApi:string,appId:string,profileId:string,recordTypeId:string,device:string){
+    if(device!=='Desktop'&&device!=='Phone')throw new Error('Invalid form factor');
+    const {rows}=await this.db.query<{api_name:string}>(`SELECT p.api_name FROM md_page_definitions p
+      JOIN md_lightning_page_details d ON d.tenant_id=p.tenant_id AND d.page_id=p.id
+      JOIN md_lightning_page_activation a ON a.tenant_id=p.tenant_id AND a.page_id=p.id
+      WHERE p.tenant_id=$1 AND p.enabled=true AND d.status='Active'
+        AND d.page_type='Record Page' AND d.target_object=$2
+        AND (($6='Desktop' AND a.desktop) OR ($6='Phone' AND a.phone))
+        AND (a.scope='Org Default'
+          OR (a.scope='App Default' AND a.app_api=$3)
+          OR (a.scope='App and Profile' AND a.app_api=$3 AND a.profile_id=$4)
+          OR (a.scope='App, Record Type, and Profile' AND a.app_api=$3
+              AND a.profile_id=$4 AND a.record_type_id=$5))
+      ORDER BY CASE a.scope WHEN 'App, Record Type, and Profile' THEN 4
+        WHEN 'App and Profile' THEN 3 WHEN 'App Default' THEN 2 ELSE 1 END DESC,
+        d.updated_at DESC,p.api_name ASC LIMIT 1`,
+      [tenantId,objectApi,appId,profileId,recordTypeId,device]);
+    return rows[0]?this.metadata(tenantId,rows[0].api_name):null;
+  }
+  async resolveAppPage(tenantId:string,appId:string,pageApi:string,device:string){
+    if(device!=='Desktop'&&device!=='Phone')throw new Error('Invalid form factor');
+    const {rows}=await this.db.query<{api_name:string}>(`SELECT p.api_name FROM md_page_definitions p
+      JOIN md_lightning_page_details d ON d.tenant_id=p.tenant_id AND d.page_id=p.id
+      JOIN md_app_installations i ON i.tenant_id=p.tenant_id
+      JOIN md_apps a ON a.id=i.app_id AND a.enabled=true AND a.api_name=$2
+      JOIN md_app_entitlements e ON e.tenant_id=i.tenant_id AND e.app_id=i.app_id AND e.active=true
+      WHERE p.tenant_id=$1 AND p.api_name=$3 AND p.enabled=true
+        AND d.status='Active' AND d.page_type='App Page'
+        AND (e.expires_at IS NULL OR e.expires_at>now())
+        AND EXISTS(SELECT 1 FROM md_lightning_page_activation x
+          WHERE x.tenant_id=p.tenant_id AND x.page_id=p.id
+          AND x.app_api=$2 AND (($4='Desktop' AND x.desktop) OR ($4='Phone' AND x.phone)))`,
+      [tenantId,appId,pageApi,device]);
+    return rows[0]?this.metadata(tenantId,rows[0].api_name):null;
+  }
 }
