@@ -35,7 +35,7 @@ test('permission set write checks OneEngine Security manage first',async()=>{
  await assert.rejects(()=>new PermissionSetAdministration(db,rbac).save('tenant','actor',{permissionSets:[]}),/Permission denied/);
 });
 
-test('existing tenant developer wildcard is preserved, not recreated or revoked',async()=>{
+test('existing OneEngine wildcard grant remains configurable by authorised RBAC administrator',async()=>{
  const writes:string[]=[];
  const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
    writes.push(sql);
@@ -47,5 +47,6 @@ test('existing tenant developer wildcard is preserved, not recreated or revoked'
  const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
  await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[{...set,systemPermissions:['*:*',...set.systemPermissions]}]});
  assert.ok(!writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
- await assert.rejects(()=>new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]}),/Protected wildcard/);
+ await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]});
+ assert.ok(writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
 });
