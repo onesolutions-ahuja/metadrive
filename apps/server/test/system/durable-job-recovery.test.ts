@@ -41,3 +41,14 @@ test('reconciliation is tenant-scoped and requires a failed job plus enabled rev
  assert.deepEqual(params,['tenant','job','reviewer','acknowledge']);
  await assert.rejects(()=>new DurableJobService(db).reconcileFailed('tenant','job','reviewer','unsafe' as 'retry'),/Invalid job reconciliation/);
 });
+
+test('expired Flow leases are quarantined before any re-claim',async()=>{
+ const statements:string[]=[];
+ const db={transaction:async(fn:(c:{query:(q:string)=>Promise<unknown>})=>Promise<unknown>)=>fn({
+  query:async(sql:string)=>{statements.push(sql);return {rows:[]};}
+ })} as unknown as SqlPersistence;
+ await new DurableJobService(db).claim('worker');
+ assert.match(statements[0],/status='queued' AND scheduled_at<=now\(\)/);
+ assert.doesNotMatch(statements[0],/status='leased' AND lease_until<now\(\)/);
+ assert.ok(statements.some(q=>q.includes("job_type='flow.execute'")&&q.includes("FLOW_RECONCILIATION_REQUIRED")));
+});
