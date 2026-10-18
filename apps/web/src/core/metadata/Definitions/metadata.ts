@@ -386,6 +386,7 @@ export type LightningPageTemplate =
   | 'header-main-sidebar';
 
 export type LightningPageMetadata = {
+  revision?: number;
   apiName: string; scope?: 'tenant'|'platform-system'; ownerNamespace?: string; definitionVersion?: number; overridePolicy?: 'presentation-only'|'none'; requiredPermissions?: string[];
   label: string;
   updatedAt?: string;
