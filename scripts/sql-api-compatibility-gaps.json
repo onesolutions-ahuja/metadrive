@@ -14,8 +14,6 @@
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
     "/metadata/dashboards/${encodeURIComponent(dashboardApiName)}/data/${encodeURIComponent(objectApiName)}${runningUserId ",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
-    "/metadata/objects/${encodeURIComponent(object.apiName)}/history",
-    "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
     "/metadata/offline-publication",
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
     "/platform/recovery/cases/",
