@@ -24,10 +24,13 @@ export function registerRouteAliasSqlRoutes(app:Express,db:SqlPersistence,rbac:R
     'SELECT a.id FROM md_apps a JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id WHERE a.api_name=$2 AND a.enabled=true AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())',
     [a.tenant_id,appApi]);
    if(!appResult.rows.length)throw Error('App not installed or licensed');
-   const target=body.kind==='Record List'?
-    await client.query('SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[a.tenant_id,body.targetApiName]):
-    await client.query('SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',[a.tenant_id,body.targetApiName]);
-   if(!target.rowCount)throw Error('Route target not available');
+   if(body.kind==='App Home'&&body.targetApiName!==appApi)throw Error('App Home route target mismatch');
+   if(body.kind!=='App Home'){
+    const target=body.kind==='Record List'?
+     await client.query('SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[a.tenant_id,body.targetApiName]):
+     await client.query('SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',[a.tenant_id,body.targetApiName]);
+    if(!target.rowCount)throw Error('Route target not available');
+   }
    const existing=await client.query<{version:number}>( 'SELECT version FROM md_route_aliases WHERE tenant_id=$1 AND app_api=$2 AND slug=$3 FOR UPDATE',[a.tenant_id,appApi,routeSlug]);
    if((existing.rows[0]?.version??0)!==body.expectedVersion)throw Error('Route alias version conflict');
    if(existing.rowCount)await client.query(
@@ -50,4 +53,37 @@ export function registerRouteAliasSqlRoutes(app:Express,db:SqlPersistence,rbac:R
   if(!result.rowCount)throw Error('Route alias version conflict');
   res.status(204).end();
  }));
+ app.get('/api/routes/resolve/:appId/:slug',wrap(async(req,res)=>{
+  const a=req.actor!,appApi=req.params.appId,routeSlug=req.params.slug;
+  if(!appName.test(appApi)||!slug.test(routeSlug))throw Error('Invalid route alias');
+  await rbac.require(a.tenant_id,a.user_id,'App:'+appApi,'read');
+  const {rows}=await db.query<{kind:string;target_api:string}>(`
+   SELECT r.kind,r.target_api FROM md_route_aliases r
+   JOIN md_apps app ON app.api_name=r.app_api AND app.enabled=true
+   JOIN md_app_installations i ON i.app_id=app.id AND i.tenant_id=r.tenant_id
+   JOIN md_app_entitlements e ON e.app_id=app.id AND e.tenant_id=r.tenant_id
+     AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
+   WHERE r.tenant_id=$1 AND r.app_api=$2 AND r.slug=$3 AND r.status='Active'`,
+   [a.tenant_id,appApi,routeSlug]);
+  const alias=rows[0];if(!alias)throw Error('Route alias not found');
+  const target=alias.target_api;
+  if(!appName.test(target))throw Error('Invalid route target');
+  if(alias.kind==='App Home'){
+   if(target!==appApi)throw Error('Invalid App Home target');
+   res.json({path:'/une/apps/'+encodeURIComponent(appApi)+'/home'});return;
+  }
+  if(alias.kind==='Record List'){
+   await rbac.require(a.tenant_id,a.user_id,target,'read');
+   const found=await db.query('SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[a.tenant_id,target]);
+   if(!found.rowCount)throw Error('Record List target not found');
+   const query=new URLSearchParams({filterName:'All'+target+'s',appId:appApi});
+   res.json({path:'/une/o/'+encodeURIComponent(target)+'/list?'+query.toString()});return;
+  }
+  if(alias.kind!=='App Page')throw Error('Invalid route kind');
+  await rbac.require(a.tenant_id,a.user_id,'PageDefinition:'+target,'read');
+  const found=await db.query('SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',[a.tenant_id,target]);
+  if(!found.rowCount)throw Error('App Page target unavailable');
+  res.json({path:'/une/apps/'+encodeURIComponent(appApi)+'/pages/'+encodeURIComponent(target)});
+ }));
+
 }
