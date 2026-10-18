@@ -1,7 +1,6 @@
 {
   "description": "Known missing frontend SQL endpoint contracts. Do not treat these as implemented. Remove entries only after actual routes and tests exist.",
   "unmatchedPaths": [
-    "/apps/",
     "/auth/mfa/disable",
     "/auth/mfa/enroll",
     "/auth/mfa/enroll/confirm",
@@ -14,7 +13,6 @@
     "/component-library/${encodeURIComponent(apiName)}/publish",
     "/component-library/${encodeURIComponent(apiName)}/rollback",
     "/connector-apps/${encodeURIComponent(appKey)}/licence",
-    "/flows/",
     "/integration-connections/${encodeURIComponent(id)}/test",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
