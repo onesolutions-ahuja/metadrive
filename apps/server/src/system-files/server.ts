@@ -4,6 +4,7 @@ import {registerSqlCompatibilityRoutes} from './sql-compat-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
 import {registerProtectedMfaRoutes} from './auth-mfa-routes.js';
+import {registerTenantSettingsRoutes} from './tenant-settings-routes.js';
 import {registerPasswordResetRoutes} from './password-reset-routes.js';
 import {registerFlowManagementRoutes} from './flow-management-routes.js';
 import {registerPageManagementRoutes} from './page-management-routes.js';
@@ -404,6 +405,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerProtectedMfaRoutes(app,db,rbac);
+  registerTenantSettingsRoutes(app,db,rbac);
   registerFlowManagementRoutes(app,db,rbac,flows);
   registerPageManagementRoutes(app,db,rbac);
   registerScreenInterviewRoutes(app,db,rbac);
