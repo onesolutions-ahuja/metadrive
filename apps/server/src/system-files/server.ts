@@ -6,6 +6,7 @@ import {registerSqlPermissionWrites} from './permission-write-routes.js';
 import {registerDashboardSubscriptions} from './dashboard-subscription-routes.js';
 import {registerComponentVersionRoutes} from './component-version-routes.js';
 import {registerIntegrationTestRoutes} from './integration-test-routes.js';
+import {registerOAuthStart,registerOAuthCallback} from './oauth-credential-routes.js';
 import {registerRouteAliasSqlRoutes} from './route-alias-sql-routes.js';
 import {registerNotificationSqlRoutes} from './notification-sql-routes.js';
 import {registerApprovalSqlRoutes} from './approval-sql-routes.js';
@@ -179,6 +180,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   registerPasswordResetRoutes(app,db,(req,slug)=>resolveTenant(db,req,slug));
   registerOAuthPublicCallback(app,db);
+  registerOAuthCallback(app,db);
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
@@ -505,6 +507,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerDashboardSubscriptions(app,db,rbac);
   registerComponentVersionRoutes(app,db,rbac);
   registerIntegrationTestRoutes(app,db,rbac,namedCredentials);
+  registerOAuthStart(app,db,rbac);
   registerRouteAliasSqlRoutes(app,db,rbac);
   registerNotificationSqlRoutes(app,db);
   registerApprovalSqlRoutes(app,db,rbac);
