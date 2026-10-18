@@ -17,7 +17,7 @@ test('metadata property codec preserves nested Component, Page and Flow graph va
     property_path:row.path,value_kind:row.kind,value_text:row.text
   })));
   assert.deepEqual(loaded.builder,original);
-  assert.throws(()=>encodeMetadataValue({'__proto__':{}} as unknown,'/unsafe',[]),/Invalid|/);
+  assert.throws(()=>encodeMetadataValue(JSON.parse('{"__proto__":{"x":1}}') as unknown,'/unsafe',[]),/Invalid metadata property name/);
 });
 
 test('registered Origin can preflight Page, App and Flow PUT endpoints',async()=>{
