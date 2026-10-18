@@ -125,7 +125,7 @@ test('Records HTTP API returns the actual list rather than double-nested records
   const db={
     query:async(sql:string)=>{
       if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
-      if(sql.includes('FROM md_permission_rules'))return {rows:[{allow_granted:true,deny_granted:false}]};
+      if(sql.includes('md_permission_rules'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
       if(sql.includes('WITH selected AS'))return {rows:[]};
       if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
       throw new Error('Unexpected SQL '+sql);
