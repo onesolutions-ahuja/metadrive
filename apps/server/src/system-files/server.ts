@@ -249,7 +249,18 @@ export function createSystemServer(db:SqlPersistence) {
     app.post('/api'+path,route(async(req,res)=>{
       const actor=req.actor!;
       const definition=await systemDefinitions.save(actor.tenant_id,actor.user_id,kind,req.body);
-      res.status(201).json({definition});
+      res.status(201).json({[kind==='email-alerts'?'emailAlert':kind==='approval-processes'?'approvalProcess':kind==='platform-events'?'platformEvent':'definition']:definition});
+    }));
+    app.put('/api'+path+'/:apiName',route(async(req,res)=>{
+      const actor=req.actor!;
+      if(req.params.apiName!==req.body?.apiName)throw new Error('Invalid definition identity');
+      const definition=await systemDefinitions.save(actor.tenant_id,actor.user_id,kind,req.body);
+      res.json({[kind==='email-alerts'?'emailAlert':kind==='approval-processes'?'approvalProcess':kind==='platform-events'?'platformEvent':'definition']:definition});
+    }));
+    app.delete('/api'+path+'/:apiName',route(async(req,res)=>{
+      const actor=req.actor!;
+      await systemDefinitions.remove(actor.tenant_id,actor.user_id,kind,req.params.apiName);
+      res.status(204).end();
     }));
   }
   app.get('/api/metadata/flows',route(async(req,res)=>{
