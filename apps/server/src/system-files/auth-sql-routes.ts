@@ -1,6 +1,7 @@
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
+import {recoverySettings,recoveryConfigured} from './tenant-recovery-mail.js';
 import type {RbacEngine} from './rbac-engine.js';
 type Req=Request&{actor?:{tenant_id:string;user_id:string}};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
@@ -49,8 +50,39 @@ export function registerAuthSqlRoutes(app:Express,db:SqlPersistence,rbac:RbacEng
   });
   res.json({id:req.params.id,enabled:req.body.enabled});
  }));
- app.get('/api/auth/password-recovery/settings',wrap(async(_req,res)=>{
-  const available=Boolean(process.env.METADRIVE_RESET_SMTP_URL&&process.env.METADRIVE_RESET_FROM_EMAIL&&process.env.METADRIVE_OTP_HMAC_KEY&&Buffer.byteLength(process.env.METADRIVE_OTP_HMAC_KEY)>=32);
-  res.json({smtpCredentialId:'',fromEmail:process.env.METADRIVE_RESET_FROM_EMAIL??'',linkReady:available,policy:{method:'OTP'},available});
+ app.get('/api/auth/password-recovery/settings',wrap(async(req,res)=>{
+  const a=req.actor!;
+  await rbac.require(a.tenant_id,a.user_id,'Tenant','read');
+  const s=await recoverySettings(db,a.tenant_id),ready=await recoveryConfigured(db,a.tenant_id);
+  res.json({smtpCredentialId:s.smtp_credential_id??'',
+   fromEmail:s.smtp_credential_id?s.from_email:(process.env.METADRIVE_RESET_FROM_EMAIL??''),
+   linkReady:ready,policy:s.policy,available:ready});
+ }));
+ app.put('/api/auth/password-recovery/settings',wrap(async(req,res)=>{
+  const a=req.actor!,id=req.body?.smtpCredentialId??'',from=req.body?.fromEmail??'',
+   policy=req.body?.policy??{method:'OTP'};
+  await rbac.require(a.tenant_id,a.user_id,'Tenant','edit');
+  if(typeof id!=='string'||id&& !/^[0-9a-f-]{36}$/i.test(id)
+    ||typeof from!=='string'||from.length>254||(id&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))
+    ||!policy||typeof policy!=='object'||Array.isArray(policy)||policy.method!=='OTP'
+    ||policy.defaultChannel!=='email'||!Array.isArray(policy.allowedChannels)
+    ||policy.allowedChannels.some((x:unknown)=>x!=='email'))
+   throw Error('Invalid OTP recovery settings');
+  const templates=policy.templates?.email;
+  if(templates && (typeof templates.subject!=='string'||templates.subject.length>200
+    ||typeof templates.body!=='string'||templates.body.length>6000))
+   throw Error('Invalid OTP email template');
+  if(id){
+   const {rows}=await db.query<{id:string}>(`SELECT id FROM md_named_credentials
+    WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true`,[a.tenant_id,id]);
+   if(!rows[0])throw Error('Tenant SMTP credential unavailable');
+  }
+  await db.query(`INSERT INTO md_tenant_password_recovery_settings
+    (tenant_id,smtp_credential_id,from_email,policy) VALUES($1,$2,$3,$4::jsonb)
+    ON CONFLICT(tenant_id) DO UPDATE SET smtp_credential_id=EXCLUDED.smtp_credential_id,
+      from_email=EXCLUDED.from_email,policy=EXCLUDED.policy`,
+    [a.tenant_id,id||null,id?from:'',JSON.stringify(policy)]);
+  res.json({smtpCredentialId:id,fromEmail:from,policy,
+   linkReady:await recoveryConfigured(db,a.tenant_id)});
  }));
 }
