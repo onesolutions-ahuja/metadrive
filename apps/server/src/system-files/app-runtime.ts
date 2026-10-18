@@ -14,6 +14,23 @@ export class AppRuntime {
       if(seed){const {seedAppPage}=await import('../system-support/app-page-seeder.js');await seedAppPage(client,tenantId,rows[0].id,seed);}
     });
   }
+  /** Tenant app entitlement is explicit, separate from installation and RBAC. */
+  async grantLicence(tenantId:string,userId:string,appApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(appApi))throw new Error('Invalid app licence');
+    await this.db.transaction(async client=>{
+      const {rows}=await client.query<{id:string}>(
+        'SELECT id FROM md_apps WHERE api_name=$1 AND enabled=true FOR SHARE',[appApi]);
+      if(!rows[0])throw new Error('App not found');
+      await client.query(`
+        INSERT INTO md_app_entitlements(tenant_id,app_id,active,expires_at)
+        VALUES($1,$2,true,NULL)
+        ON CONFLICT(tenant_id,app_id) DO UPDATE
+        SET active=true,expires_at=NULL`,[tenantId,rows[0].id]);
+      await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,'app.licence.grant',jsonb_build_object('appApi',$3::text))",
+        [tenantId,userId,appApi]);
+    });
+    return {appApi,licensed:true};
+  }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
