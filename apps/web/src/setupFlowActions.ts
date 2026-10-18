@@ -8,8 +8,8 @@ export function createSetupFlowActions(ctx: any) {
  const { apiRequest, apps, confirmDiscardFlowChanges, confirmFlowNavigation, flow, flowDebug, flowHistory, flowRun, flowSnapshots, flows, navigateRoute, notify, object, objects, platformEvents, setApprovalProcesses, setEmailAlerts, setFlow, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowRunnerSubmitting, setFlowValidation, setFlows, setNamedCredentials, setPlatformEvents, setSelectedFlowId, workspace } = ctx;
   const saveFlow = async (nextFlow: FlowDefinitionMetadata) => {
     try {
-      const payload = await apiRequest<{ flow: FlowDefinitionMetadata }>(`/metadata/flows/${encodeURIComponent(nextFlow.apiName)}`, {
-        method: 'PUT', body: JSON.stringify(nextFlow)
+      const payload = await apiRequest<{ flow: FlowDefinitionMetadata }>(`/metadata/flows/${encodeURIComponent(nextFlow.apiName)}${nextFlow.status === 'Active' ? '/publish' : ''}`, {
+        method: nextFlow.status === 'Active' ? 'POST' : 'PUT', body: JSON.stringify(nextFlow)
       });
       flowSnapshots.current.set(payload.flow.apiName, JSON.stringify(payload.flow));
       setFlow(payload.flow);
