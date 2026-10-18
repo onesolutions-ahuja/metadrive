@@ -343,7 +343,7 @@ export function createSystemServer(db:SqlPersistence) {
       }
     }
     // Draft/publishing and layouts require dedicated versioned SQL metadata support.
-    if(draft.pageLayouts?.length||draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length)
+    if(draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length)
       errors.push('Advanced Object draft features are not supported by the current SQL runtime');
     res.json({valid:errors.length===0,errors});
   }));
@@ -400,6 +400,22 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
     const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[]);
     res.status(201).json({object});
+  }));
+  app.put('/api/metadata/objects/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    const revisionHeader=req.get('if-match')??'';
+    if(!/^"(0|[1-9][0-9]*)"$/.test(revisionHeader))throw new Error('Invalid page layout revision precondition');
+    const draft=req.body;
+    if(!draft||typeof draft!=='object'||Array.isArray(draft)||draft.apiName!==req.params.apiName)
+      throw new Error('Invalid object draft');
+    // Unsupported configuration must never appear successfully saved.
+    if(draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length
+      ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
+      throw new Error('Invalid unsupported object configuration');
+    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
+    res.json({object});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
@@ -776,7 +792,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
-    else if(err.message==='Field already exists'||err.message==='Object already exists')res.status(409).json({error:err.message});
+    else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
