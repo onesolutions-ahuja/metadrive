@@ -1,11 +1,19 @@
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
+import {publishPageDefinition} from './page-publisher.js';
 type Req=Request&{actor?:{tenant_id:string;user_id:string}};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
 const safe=/^[A-Za-z][A-Za-z0-9_]*$/;
 /** Published pages must reference registered, enabled components. */
 export function registerPageManagementRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
+ app.post('/api/metadata/pages/:apiName/publish',wrap(async(req,res)=>{
+  const a=req.actor!,name=req.params.apiName;
+  await rbac.require(a.tenant_id,a.user_id,'PageDefinition','edit');
+  if(!safe.test(name))throw Error('Invalid Page API name');
+  const page=await db.transaction(async client=>publishPageDefinition(client,a.tenant_id,name,req.body));
+  res.json({page});
+ }));
  app.put('/api/metadata/pages/:apiName/components/:componentId/properties',wrap(async(req,res)=>{
   const a=req.actor!,page=req.params.apiName,id=req.params.componentId;
   await rbac.require(a.tenant_id,a.user_id,'PageDefinition','edit');
