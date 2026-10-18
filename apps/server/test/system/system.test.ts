@@ -438,12 +438,14 @@ test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()
   if(sql.includes('FROM md_user_profiles'))return {rows:[{user_id:'u1',profile_id:'prof1'}]};
   if(sql.includes('FROM md_user_roles'))return {rows:[{user_id:'u1',role_id:'r1'}]};
   if(sql.includes('FROM md_permission_assignments'))return {rows:[{user_id:'u1',permission_set_id:'ps1'}]};
+  if(sql.includes('FROM md_object_definitions'))return {rows:[]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[]};
   throw new Error('Unexpected SQL');
  }} as unknown as SqlPersistence;
  const result=await new RbacEngine(db).describe('tenant','user');
  assert.equal(result.tenantId,'tenant');
  assert.equal(result.permissionSets[0].apiName,'TenantDeveloper');
- assert.deepEqual(result.permissionSets[0].systemPermissions,['ObjectDefinition:read']);
+ assert.deepEqual(result.permissionSets[0].systemPermissions,['metadata:read']);
  assert.equal(result.roles[0].name,'Developer');
  assert.equal(result.users[0].username,'dev@example.invalid');
  assert.equal(result.users[0].profileId,'prof1');
