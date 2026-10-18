@@ -83,7 +83,7 @@ export class ObjectDefinitionService {
     });
     return this.get(tenantId,apiName);
   }
-  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string) {
+  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:{picklistValues?:unknown;picklistRestricted?:unknown}) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     const normalized=dataType.toLowerCase().replace(/\s+/g,'');
     const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
@@ -95,12 +95,20 @@ export class ObjectDefinitionService {
       throw new Error('Invalid text field length');
     if(type==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))
       throw new Error('Invalid relationship target');
-    const result=await this.db.query(`
-      INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label)
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
-      ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
-    `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength,label?.trim()||fieldApi]);
-    if(!result.rowCount)throw new Error('Field already exists');
+    const values=type==='picklist'?parsePicklistValues(settings?.picklistValues):[];
+    const result=await this.db.transaction(async client=>{
+      const inserted=await client.query(`
+        INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label,picklist_restricted)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
+      `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength,
+         label?.trim()||fieldApi,settings?.picklistRestricted!==false]);
+      if(!inserted.rowCount)throw new Error('Field already exists');
+      for(const [order,value] of values.entries())await client.query(
+        'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
+        [tenantId,objectApi,fieldApi,value,order]);
+      return inserted;
+    });
     return result;
   }
   /** Only mutable SQL-backed field properties may be edited; unsupported options fail closed. */
