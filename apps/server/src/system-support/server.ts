@@ -319,6 +319,14 @@ export function createSystemServer(db:SqlPersistence) {
       res.status(204).end();
     }));
   }
+  app.get('/api/metadata/flow-logs',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.failedLogs(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.pendingInterviews(actor.tenant_id,actor.user_id));
+  }));
   app.get('/api/metadata/flows',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
