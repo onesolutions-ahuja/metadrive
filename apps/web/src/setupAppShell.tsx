@@ -794,8 +794,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   const savePage = async (nextPage: LightningPageMetadata) => {
     try {
-      const payload = await apiRequest<{ page: LightningPageMetadata }>(`/metadata/pages/${encodeURIComponent(nextPage.apiName)}`, {
-        method: 'PUT', body: JSON.stringify(nextPage)
+      const payload = await apiRequest<{ page: LightningPageMetadata }>(`/metadata/pages/${encodeURIComponent(nextPage.apiName)}${nextPage.status === 'Active' ? '/publish' : ''}`, {
+        method: nextPage.status === 'Active' ? 'POST' : 'PUT', body: JSON.stringify(nextPage)
       });
       setPage(payload.page);
       setPages((current) => [...current.filter((item) => item.apiName !== payload.page.apiName), payload.page]);
@@ -810,8 +810,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     successMessage?: string
   ): Promise<boolean> => {
     try {
-      const payload = await apiRequest<{ page: LightningPageMetadata }>(`/metadata/pages/${encodeURIComponent(previousApiName)}`, {
-        method: 'PUT', body: JSON.stringify(nextPage)
+      const payload = await apiRequest<{ page: LightningPageMetadata }>(`/metadata/pages/${encodeURIComponent(previousApiName)}${nextPage.status === 'Active' ? '/publish' : ''}`, {
+        method: nextPage.status === 'Active' ? 'POST' : 'PUT', body: JSON.stringify(nextPage)
       });
       setPage(payload.page);
       setPages((current) => [...current.filter((item) => item.apiName !== previousApiName && item.apiName !== payload.page.apiName), payload.page]);
