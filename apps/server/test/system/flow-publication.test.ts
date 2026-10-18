@@ -26,7 +26,7 @@ test('publishes a deterministic Screen Flow into relational nodes and edges',asy
  assert.equal(result.status,'Active');
  assert.equal(queries.filter(q=>q.sql.includes('INSERT INTO md_flow_nodes')).length,3);
  assert.equal(queries.filter(q=>q.sql.includes('INSERT INTO md_flow_edges')).length,2);
- assert.ok(queries.some(q=>q.args.includes('Flow:Checkout')&&q.args.includes('execute')));
+ assert.ok(queries.some(q=>q.args.includes('Flow:Checkout')&&q.sql.includes("'execute','allow'")));
 });
 test('rejects cycles, disconnected, unsupported and branching graphs',async()=>{
  const invalid=[
