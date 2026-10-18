@@ -45,9 +45,13 @@ export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:Rbac
     }
     if(body.idempotencyKey!==undefined&&(typeof body.idempotencyKey!=='string'
       ||body.idempotencyKey.length>128))throw new Error('Invalid idempotency key');
+    if(body.recurrenceSeconds!==undefined&&(!Number.isInteger(body.recurrenceSeconds)||
+      body.recurrenceSeconds<60||body.recurrenceSeconds>31536000))
+      throw new Error('Invalid recurring interval');
     const id=await jobs.enqueue(actor.tenant_id,'flow.execute',{
       actorUserId:actor.user_id,resourceId:flowName,appApiName:app,
-      scheduledAt:date,idempotencyKey:body.idempotencyKey
+      scheduledAt:date,idempotencyKey:body.idempotencyKey,
+      recurrenceSeconds:body.recurrenceSeconds
     });
     res.status(201).json({id,status:'queued'});
   }));
