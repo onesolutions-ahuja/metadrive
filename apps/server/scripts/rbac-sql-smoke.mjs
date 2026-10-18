@@ -147,7 +147,7 @@ try{
  await assert.rejects(()=>admin.save(t,supervisor,{...state,tenantId:other.id}),/Permission denied|revision conflict/);
  const foreignSet=(await db.query("INSERT INTO md_permission_sets(tenant_id,api_name) VALUES($1,'Foreign') RETURNING id",[other.id])).rows[0].id;
  await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===cashier).permissionSetIds=[foreignSet];}),/Unknown tenant/);
- await assert.rejects(()=>save(s=>{s.permissionSets.push(policy(randomUUID(),'PlatformDeveloper'));}),/Permission denied/);
+ await assert.rejects(()=>save(s=>{s.permissionSets.find(p=>p.id===platformId).systemPermissions.push('security:read');}),/Permission denied/);
  const before=await rbac.describe(t,supervisor);
  await assert.rejects(()=>admin.save(t,supervisor,{...before,revision:before.revision-1}),/revision conflict/);
  await assert.rejects(()=>save(s=>{s.users.find(u=>u.id===supervisor).permissionSetIds=[one];}),/own permission assignments/);
