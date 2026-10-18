@@ -14,6 +14,8 @@ import {PasswordRecoverySettingsService} from './password-recovery-settings-serv
 import {PasswordResetService} from './password-reset-service.js';
 import {MfaService} from './mfa-service.js';
 import {TenantDeveloperService} from './tenant-developer-service.js';
+import {TenantRecoveryContacts} from './tenant-recovery-contacts.js';
+import {TenantRecoveryCases} from './tenant-recovery-cases.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import {ObjectMetadataHistory} from '../system-files/object-metadata-history.js';
@@ -103,6 +105,8 @@ export function createSystemServer(db:SqlPersistence) {
     (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
+  const recoveryContacts=new TenantRecoveryContacts(db,rbac,mfa,namedCredentials);
+  const recoveryCases=new TenantRecoveryCases(db,rbac,platformTenants,mfa,recoveryContacts,namedCredentials);
 
   // CORS is granted only to origins registered for a SQL tenant.
   app.use(async (req,res,next)=>{
@@ -190,6 +194,19 @@ export function createSystemServer(db:SqlPersistence) {
     const redirect=await oauth.complete(req.query.state,req.query.code);
     res.setHeader('Cache-Control','no-store');
     res.redirect(303,redirect);
+  }));
+  // Public verification endpoints require high-entropy one-time tokens, not bearer identity.
+  app.post('/api/recovery/contacts/verify',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryContacts.verify(req.body));
+  }));
+  app.post('/api/recovery/cases/:id/confirm',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.proof(req.params.id,req.body,false));
+  }));
+  app.post('/api/recovery/cases/:id/dispute',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.proof(req.params.id,req.body,true));
   }));
   app.use('/api',authorize);
   // Durable notifications: only the addressed user can list or acknowledge them.
@@ -284,6 +301,40 @@ export function createSystemServer(db:SqlPersistence) {
   app.post('/api/auth/mfa/disable',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await mfa.disable(actor.tenant_id,actor.user_id,req.body?.password,req.body?.code));
+  }));
+  app.get('/api/tenant/recovery/contacts',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryContacts.list(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/tenant/recovery/contacts',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.status(201).json(await recoveryContacts.enroll(actor.tenant_id,actor.user_id,req.body));
+  }));
+  app.post('/api/platform/recovery/cases',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.status(201).json(await recoveryCases.open(req.actor!,req.body));
+  }));
+  app.get('/api/platform/recovery/cases/:id',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.read(req.actor!,req.params.id));
+  }));
+  app.post('/api/platform/recovery/cases/:id/approve',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.approve(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/platform/recovery/cases/:id/invite',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.invite(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/tenant/recovery/cases/:id/redeem',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.redeem(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/tenant/recovery/cases/:id/repair',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.repair(req.actor!,req.params.id,req.body));
   }));
   app.get('/api/tenant/developer-account',route(async(req,res)=>{
     const actor=req.actor!;
