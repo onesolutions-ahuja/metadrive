@@ -24,8 +24,6 @@
     "/flows/",
     "/integration-connections/${encodeURIComponent(id)}/test",
     "/metadata/apps/${encodeURIComponent(apiName)}",
-    "/metadata/automation-settings",
-    "/metadata/currencies",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions",
@@ -62,7 +60,6 @@
     "/reports/${encodeURIComponent(report.apiName)}/run",
     "/reports/preview",
     "/routes/resolve/",
-    "/tenant/company-profile",
     "/tenant/developer-account",
     "/tenant/developer-account/activate",
     "/tenant/recovery/contacts"
