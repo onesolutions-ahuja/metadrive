@@ -140,6 +140,38 @@ export function createSystemServer(db:SqlPersistence) {
     createdAt:new Date(row.created_at).toISOString(),
     readAt:row.read_at?new Date(row.read_at).toISOString():null
   });
+  type ApprovalSqlRow={id:string;group_id:string;object_api:string;object_label:string;record_id:string;
+    record_name:string;flow_api_name:string;submitted_by:string;approver_id:string;status:string;
+    comments:string;decision_comments:string;created_at:Date;decided_at:Date|null;decided_by:string|null};
+  const approvalView=(r:ApprovalSqlRow)=>({
+    id:r.id,groupId:r.group_id,objectApiName:r.object_api,objectLabel:r.object_label,
+    recordId:r.record_id,recordName:r.record_name,flowApiName:r.flow_api_name,
+    submittedBy:r.submitted_by,submittedByName:r.submitted_by,
+    approverId:r.approver_id,status:r.status,comments:r.comments,decisionComments:r.decision_comments,
+    createdAt:new Date(r.created_at).toISOString(),
+    decidedAt:r.decided_at?new Date(r.decided_at).toISOString():null,decidedBy:r.decided_by
+  });
+  app.get('/api/approvals/inbox',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ApprovalRequest','read');
+    const {rows}=await db.query<ApprovalSqlRow>(
+      "SELECT * FROM md_approval_requests WHERE tenant_id=$1 AND approver_id=$2 AND status='Pending' ORDER BY created_at DESC,id DESC LIMIT 100",
+      [actor.tenant_id,actor.user_id]);
+    res.json({requests:rows.map(approvalView)});
+  }));
+  app.post('/api/approvals/:id/decision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ApprovalRequest','approve');
+    const decision=req.body?.decision,comments=req.body?.comments??'';
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)||
+       !['Approved','Rejected'].includes(decision)||typeof comments!=='string'||comments.length>4000)
+      throw new Error('Invalid approval decision');
+    const {rows}=await db.query<ApprovalSqlRow>(
+      "UPDATE md_approval_requests SET status=$4,decision_comments=$5,decided_at=now(),decided_by=$2 WHERE tenant_id=$1 AND approver_id=$2 AND id=$3 AND status='Pending' RETURNING *",
+      [actor.tenant_id,actor.user_id,req.params.id,decision,comments]);
+    if(!rows[0]){res.status(404).json({error:'Pending approval not found'});return;}
+    res.json({request:approvalView(rows[0])});
+  }));
   app.get('/api/notifications',route(async(req,res)=>{
     const actor=req.actor!;
     const {rows}=await db.query<{
