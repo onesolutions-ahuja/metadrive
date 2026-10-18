@@ -241,6 +241,9 @@ export class NamedCredentialService {
   * Public DNS and TLS certificate validation protect outbound platform traffic.
   */
  async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
+  return this.sendTenantEmail(tenantId,id,from,to,subject,body);
+ }
+ async sendTenantEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
   if(!/^[0-9a-f-]{36}$/i.test(id)||!from||!to||
     /[\r\n]/.test(from+to+subject)||subject.length>300||body.length>10000)
    throw new Error('Invalid recovery email');
