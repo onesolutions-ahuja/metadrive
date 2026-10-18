@@ -33,3 +33,19 @@ test('worker never executes a Flow when its published version has changed',async
  assert.deepEqual(await worker.runOnce(),{claimed:1,completed:0,failed:1});
  assert.equal(calls,0);
 });
+
+test('worker refuses to replay Flow side effects on recovered lease',async()=>{
+ let executed=0,failed=0;
+ const job={id:'job',tenant_id:'t',job_type:'flow.execute',actor_user_id:'u',
+  app_api_name:null,resource_id:'MyFlow',resource_version:2,attempt:2};
+ const db={query:async(sql:string)=>({rows:sql.includes('md_flow_definitions')?[{id:'flow'}]:[{id:'user'}]})} as unknown as SqlPersistence;
+ const rbac={allowed:async()=>true} as unknown as RbacEngine;
+ const flows={loadActive:async()=>({id:'flow',version:2}),execute:async()=>{executed++;}} as unknown as FlowRuntime;
+ const service={claim:async()=>[job],complete:async()=>{},fail:async()=>{failed++;}} as unknown as DurableJobService;
+ let authorize:((job:ClaimedJob)=>Promise<boolean>)|undefined;
+ const worker=new DurableJobWorker(service,j=>authorize?.(j)??Promise.resolve(false),'worker');
+ authorize=registerFlowJobHandler(worker,db,rbac,flows);
+ assert.deepEqual(await worker.runOnce(),{claimed:1,completed:0,failed:1});
+ assert.equal(executed,0);
+ assert.equal(failed,1);
+});
