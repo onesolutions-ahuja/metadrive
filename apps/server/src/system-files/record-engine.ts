@@ -134,13 +134,13 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null
     }>(`
       WITH selected AS (
         SELECT id,created_at,updated_at,COALESCE(owner_id,owner_queue_id) AS owner_id,record_type_id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$5,id,'read')
         ORDER BY created_at,id LIMIT $3 OFFSET $4
       )
-      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -156,7 +156,10 @@ export class RecordEngine {
       if(!allowed.get(row.field_api))continue;
       const value=row.reference_record_id??row.value_text;
       collected.get(row.id)![row.field_api]=value===null?null:
-        ['number','currency','percent'].includes(String(row.data_type))?Number(value):row.data_type==='boolean'?value==='true':value;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(row.value_number??value):
+        row.data_type==='boolean'?(row.value_boolean??value==='true'):
+        row.data_type==='date'?(row.value_date??value):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
     }
     const total=await this.db.query<{total:string}>(
       "SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$3,id,'read')",[tenantId,objectApi,userId]);
@@ -168,9 +171,9 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const {rows}=await this.db.query<{
       id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
-      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null
     }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,r.record_type_id,
-      v.field_api,v.value_text,v.reference_record_id,f.data_type
+      v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean
       FROM md_records r
       LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
       LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api AND f.api_name=v.field_api
@@ -188,7 +191,10 @@ export class RecordEngine {
       if(!access[index])continue;
       const val=row.reference_record_id??row.value_text;
       record[row.field_api as string]=val===null?null:
-        ['number','currency','percent'].includes(String(row.data_type))?Number(val):row.data_type==='boolean'?val==='true':val;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(row.value_number??val):
+        row.data_type==='boolean'?(row.value_boolean??val==='true'):
+        row.data_type==='date'?(row.value_date??val):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
     }
     return record;
   }
