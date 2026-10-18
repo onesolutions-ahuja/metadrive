@@ -175,6 +175,14 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Set-Cookie',`${tokenCookie}=; HttpOnly; Path=/api/auth; Max-Age=0; SameSite=Lax`);
     res.status(204).end();
   }));
+  app.post('/api/platform/tenants',route(async(req,res)=>{
+    const a=req.actor!,body=req.body??{};
+    const key=req.get('Idempotency-Key');
+    if(!key)throw Error('Idempotency-Key is required for tenant provisioning');
+    const hostname=req.hostname.toLowerCase();
+    const result=await platformTenants.create(a.tenant_id,a.user_id,body,key,hostname);
+    res.status(result.replayed?200:201).json(result);
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
