@@ -24,3 +24,20 @@ test('only terminal failed jobs can be cancelled',async()=>{
  await assert.rejects(()=>new DurableJobService(db).cancelFailed('tenant','job'),/Failed job not found/);
  assert.match(query,/status='failed'/);
 });
+
+test('ambiguous Flow retry is terminal rather than silently rescheduled',async()=>{
+ let sql='';
+ const db={query:async(q:string)=>{sql=q;return {rowCount:1};}} as unknown as SqlPersistence;
+ await new DurableJobService(db).fail('tenant','job','worker','FLOW_RECONCILIATION_REQUIRED');
+ assert.match(sql,/\$4='FLOW_RECONCILIATION_REQUIRED' THEN 'failed'/);
+});
+test('reconciliation is tenant-scoped and requires a failed job plus enabled reviewer',async()=>{
+ let sql='';
+ let params:unknown[]=[];
+ const db={query:async(q:string,p:unknown[])=>{sql=q;params=p;return {rowCount:1};}} as unknown as SqlPersistence;
+ await new DurableJobService(db).reconcileFailed('tenant','job','reviewer','acknowledge');
+ assert.match(sql,/WHERE tenant_id=\$1 AND id=\$2 AND status='failed'/);
+ assert.match(sql,/md_users WHERE tenant_id=\$1 AND id=\$3 AND enabled=true/);
+ assert.deepEqual(params,['tenant','job','reviewer','acknowledge']);
+ await assert.rejects(()=>new DurableJobService(db).reconcileFailed('tenant','job','reviewer','unsafe' as 'retry'),/Invalid job reconciliation/);
+});
