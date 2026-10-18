@@ -16,6 +16,13 @@ function authenticated(req:AuthenticatedRequest):Actor{
 
 /** Only independent SQL metadata and the shared CRUD/permission engines; never app-specific code. */
 export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,records:RecordEngine,flows:FlowRuntime){
+  app.get('/api/records/:objectApi/typed-aggregate/:fieldApi',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    const result=await records.aggregateNumeric(actor.tenant_id,actor.user_id,
+      req.params.objectApi,req.params.fieldApi);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(result);
+  }));
   app.get('/api/records/:objectApi/typed-filter/:fieldApi',wrap(async(req,res)=>{
     const actor=authenticated(req);
     const op=req.query.op;
