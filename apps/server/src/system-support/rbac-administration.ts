@@ -50,12 +50,40 @@ export class RbacAdministration{
    for(const p of next.permissionSets)if(p.navigationDefaultAccess==='Allow'&&previous.permissionSets.find(old=>old.id===p.id)?.navigationDefaultAccess!=='Allow')
     await currentRbac.require(tenant,actor,'*','*');
    const platformChanged=platform&&stable(platform)!==stable(next.permissionSets.find(p=>p.id===platform.id));
+   // Platform policy assignment can also flow through inherited profiles or set groups.
+   // Protect changes to those links even when no user is assigned yet.
+   const platformLinks=(state:Snapshot)=>({
+    profiles:state.profiles.filter(p=>p.inheritedPermissionSetIds.includes(platform!.id)).map(p=>p.id).sort(),
+    groups:state.permissionSetGroups.filter(g=>g.permissionSetIds.includes(platform!.id)).map(g=>g.id).sort()
+   });
+   const platformLinked=platform&&stable(platformLinks(previous))!==stable(platformLinks(next));
+   const holdsPlatform=(state:Snapshot,u:Snapshot['users'][number])=>
+    u.permissionSetIds.includes(platform!.id)||
+    Boolean(state.profiles.find(p=>p.id===u.profileId)?.inheritedPermissionSetIds.includes(platform!.id))||
+    u.permissionSetGroupIds.some(id=>Boolean(state.permissionSetGroups.find(g=>g.id===id)?.permissionSetIds.includes(platform!.id)));
    const platformAssigned=platform&&next.users.some(u=>{
     const old=previous.users.find(p=>p.id===u.id)!;
-    return u.permissionSetIds.includes(platform.id)!==old.permissionSetIds.includes(platform.id);
+    return holdsPlatform(previous,old)!==holdsPlatform(next,u);
    });
-   if(platformChanged||platformAssigned){
-    const has=await tx.query<{authorised:boolean}>("SELECT EXISTS(SELECT 1 FROM md_permission_assignments a JOIN md_permission_sets p ON p.tenant_id=a.tenant_id AND p.id=a.permission_set_id WHERE a.tenant_id=$1 AND a.user_id=$2 AND p.api_name='PlatformDeveloper' UNION ALL SELECT 1 FROM md_user_roles ur JOIN md_role_permission_sets rp ON rp.tenant_id=ur.tenant_id AND rp.role_id=ur.role_id JOIN md_permission_sets p ON p.tenant_id=rp.tenant_id AND p.id=rp.permission_set_id WHERE ur.tenant_id=$1 AND ur.user_id=$2 AND p.api_name='PlatformDeveloper') AS authorised",[tenant,actor]);
+   if(platformChanged||platformLinked||platformAssigned){
+    const has=await tx.query<{authorised:boolean}>(`
+     SELECT EXISTS(
+      SELECT 1 FROM md_permission_assignments a JOIN md_permission_sets p
+       ON p.tenant_id=a.tenant_id AND p.id=a.permission_set_id
+       WHERE a.tenant_id=$1 AND a.user_id=$2 AND p.api_name='PlatformDeveloper'
+      UNION ALL SELECT 1 FROM md_user_roles ur JOIN md_role_permission_sets rp
+       ON rp.tenant_id=ur.tenant_id AND rp.role_id=ur.role_id
+       JOIN md_permission_sets p ON p.tenant_id=rp.tenant_id AND p.id=rp.permission_set_id
+       WHERE ur.tenant_id=$1 AND ur.user_id=$2 AND p.api_name='PlatformDeveloper'
+      UNION ALL SELECT 1 FROM md_user_profiles up JOIN md_profile_permission_sets pp
+       ON pp.tenant_id=up.tenant_id AND pp.profile_id=up.profile_id
+       JOIN md_permission_sets p ON p.tenant_id=pp.tenant_id AND p.id=pp.permission_set_id
+       WHERE up.tenant_id=$1 AND up.user_id=$2 AND p.api_name='PlatformDeveloper'
+      UNION ALL SELECT 1 FROM md_user_permission_groups ug JOIN md_permission_group_sets gs
+       ON gs.tenant_id=ug.tenant_id AND gs.group_id=ug.group_id
+       JOIN md_permission_sets p ON p.tenant_id=gs.tenant_id AND p.id=gs.permission_set_id
+       WHERE ug.tenant_id=$1 AND ug.user_id=$2 AND p.api_name='PlatformDeveloper'
+     ) AS authorised`,[tenant,actor]);
     if(!has.rows[0]?.authorised)throw Error('Permission denied');
    }
    const newAllows:Rule[]=[];
