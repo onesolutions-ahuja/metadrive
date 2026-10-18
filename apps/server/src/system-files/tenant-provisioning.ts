@@ -1,5 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
+import {seedFreshCoreObjects} from './fresh-core-objects.js';
 
 export type TenantRequest={
   slug:string;
@@ -44,6 +45,7 @@ export class TenantProvisioning {
       await client.query(
         "INSERT INTO md_permission_rules (tenant_id,permission_set_id,resource,action,effect) VALUES ($1,$2,'*','*','allow')",
         [tenantId,permissionSet.rows[0].id]);
+      await seedFreshCoreObjects(client,tenantId);
       return {slug,domain};
     });
   }
