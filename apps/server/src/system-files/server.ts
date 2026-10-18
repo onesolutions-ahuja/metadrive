@@ -1,5 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
+import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
@@ -359,7 +360,7 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+  try { await applySystemMigrations(db); await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
     if(firstLogin==='rotated'){
