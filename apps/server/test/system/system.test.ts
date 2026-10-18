@@ -437,6 +437,7 @@ test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()
   if(sql.includes('FROM md_profiles'))return {rows:[{id:'prof1',api_name:'Default',label:'Default Profile'}]};
   if(sql.includes('FROM md_user_profiles'))return {rows:[{user_id:'u1',profile_id:'prof1'}]};
   if(sql.includes('FROM md_user_roles'))return {rows:[{user_id:'u1',role_id:'r1'}]};
+  if(sql.includes('FROM md_permission_assignments'))return {rows:[{user_id:'u1',permission_set_id:'ps1'}]};
   throw new Error('Unexpected SQL');
  }} as unknown as SqlPersistence;
  const result=await new RbacEngine(db).describe('tenant','user');
