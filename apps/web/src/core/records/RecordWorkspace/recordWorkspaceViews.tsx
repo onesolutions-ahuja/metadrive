@@ -1033,13 +1033,13 @@ function RecordWorkspace({
     setImportSaving(true);
     setImportError('');
     try {
-      const result = await apiRequest<{ count: number }>(`/records/${encodeURIComponent(object.apiName)}/import`, {
+      const result = await apiRequest<{ count: number; mode: 'create' | 'update' }>(`/records/${encodeURIComponent(object.apiName)}/import`, {
         method: 'POST',
         body: JSON.stringify({ records: importRows })
       });
       setImportRows([]);
       setImportFileName('');
-      setListNotice(`${result.count} ${object.label.toLocaleLowerCase()} record${result.count === 1 ? '' : 's'} imported.`);
+      setListNotice(`${result.count} ${object.label.toLocaleLowerCase()} record${result.count === 1 ? '' : 's'} ${result.mode === 'update' ? 'updated' : 'created'}.`);
       setRefreshKey((current) => current + 1);
     } catch (failure) {
       setImportError(failure instanceof Error ? failure.message : 'Import failed; no records were saved');
@@ -1623,13 +1623,13 @@ function RecordWorkspace({
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="import-records-title">
         <header><div><div className="eyebrow">{object.label}</div><h2 id="import-records-title">Import Records</h2></div><button className="icon-button" aria-label="Close" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}><X size={16} /></button></header>
         <form onSubmit={(event) => { event.preventDefault(); void runImport(); }}>
-          <p className="modal-copy">{importFileName}: ready to import {importRows.length} record{importRows.length === 1 ? '' : 's'}. CSV headers may use field API names or labels.</p>
+          <p className="modal-copy">{importFileName}: ready to import {importRows.length} record{importRows.length === 1 ? '' : 's'}. CSV headers may use field API names or labels. Include an Id column to update existing records atomically; omit Id to create new records. Review all values before submitting.</p>
           {importRows.length > 0 && <div className="records-table-wrap"><table className="slds-table records-table">
             <thead><tr>{Object.keys(importRows[0]).map((name) => <th key={name}>{object.fields.find((field) => field.apiName === name)?.label ?? name}</th>)}</tr></thead>
             <tbody>{importRows.slice(0, 3).map((row, index) => <tr key={index}>{Object.values(row).map((value, column) => <td key={`${index}-${column}`}>{String(value)}</td>)}</tr>)}</tbody>
           </table></div>}
           {importError && <div className="records-message" role="alert">{importError}</div>}
-          <footer><button type="button" className="btn" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}>Cancel</button><button type="submit" className="btn btn-brand" disabled={importSaving || !importRows.length}>{importSaving ? 'Importing…' : `Import ${importRows.length} Records`}</button></footer>
+          <footer><button type="button" className="btn" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}>Cancel</button><button type="submit" className="btn btn-brand" disabled={importSaving || !importRows.length}>{importSaving ? 'Importing…' : `${Object.hasOwn(importRows[0], 'Id') ? 'Update' : 'Create'} ${importRows.length} Records`}</button></footer>
         </form>
       </section>
     </div>}
