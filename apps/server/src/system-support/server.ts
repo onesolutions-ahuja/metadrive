@@ -12,6 +12,7 @@ import {PasswordResetService} from './password-reset-service.js';
 import {MfaService} from './mfa-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
+import {ObjectMetadataHistory} from '../system-files/object-metadata-history.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
 import {permittedApps} from './rbac-navigation.js';
 import {RbacAdministration} from './rbac-administration.js';
@@ -85,6 +86,7 @@ export function createSystemServer(db:SqlPersistence) {
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
   const definitions=new ObjectDefinitionService(db);
+  const objectHistory=new ObjectMetadataHistory(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records,
@@ -519,6 +521,20 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
     res.json(await definitions.fieldDependencies(actor.tenant_id,req.params.apiName));
   }));
+  app.get('/api/metadata/objects/:apiName/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    const limit=Number(req.query.limit??100);
+    res.json({history:await objectHistory.list(actor.tenant_id,req.params.apiName,limit)});
+  }));
+  app.get('/api/metadata/objects/:apiName/history/:revision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    if(!/^[1-9][0-9]*$/.test(req.params.revision))throw new Error('Invalid metadata revision');
+    res.json({change:await objectHistory.revision(actor.tenant_id,req.params.apiName,Number(req.params.revision))});
+  }));
   app.get('/api/metadata/objects/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
@@ -568,7 +584,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(draft.validationRules?.length||draft.formulaFields?.length
       ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
       throw new Error('Invalid unsupported object configuration');
-    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
+    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)),actor.user_id);
     res.json({object});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
