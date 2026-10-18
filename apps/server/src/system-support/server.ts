@@ -670,6 +670,14 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
+  app.post('/api/integration-connections/:id/test',route(async(req,res)=>{
+    const actor=req.actor!;
+    const connection=await systemDefinitions.testConnection(
+      actor.tenant_id,actor.user_id,req.params.id,
+      (credentialId,path)=>namedCredentials.callout(actor.tenant_id,actor.user_id,
+        {namedCredentialId:credentialId,method:'GET',path},{},'integration-connection-test'));
+    res.json({connection});
+  }));
   const definitionPaths:Record<string,DefinitionKind>={
     '/metadata/platform-events':'platform-events',
     '/metadata/email-alerts':'email-alerts',
