@@ -13,7 +13,7 @@ function parseRules(set:SetRow) {
  const rules:Array<{resource:string;action:string}>=[];
  const append=(resource:string,action:string)=>{if(resource.includes('*')||action.includes('*'))throw Error('Wildcard grants require separate privileged policy workflow');rules.push({resource,action});};
  for(const item of set.systemPermissions){
-   if(item==='*:*')continue; // Existing protected wildcard grants are checked against SQL below.
+   if(item==='*:*'){rules.push({resource:'*',action:'*'});continue;}
    if(typeof item!=='string'||item.length>150||!item.includes(':'))throw Error('Invalid system permission');
    const index=item.lastIndexOf(':'),resource=item.slice(0,index),action=item.slice(index+1);
    if(!/^[A-Za-z][A-Za-z0-9_:.-]*$/.test(resource)||!name.test(action))throw Error('Invalid system permission');
@@ -39,7 +39,7 @@ function parseRules(set:SetRow) {
  return rules;
 }
 
-/** Permission sets use the shared OneEngine evaluator; never issue wildcard grants. */
+/** Tenant permission sets use the central RBAC evaluator, including configurable OneEngine wildcard grants. */
 export class PermissionSetAdministration {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
  async save(tenant:string,actor:string,body:unknown){
@@ -84,17 +84,16 @@ export class PermissionSetAdministration {
        const current=await tx.query<{resource:string;action:string;effect:string}>(
          'SELECT resource,action,effect FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2',[tenant,s.entry.id]);
        const protectedGrants=current.rows.filter(row=>row.effect==='allow'&&(row.resource==='*'||row.action==='*'));
-       const submittedWildcards=s.entry.systemPermissions.filter(rule=>rule==='*:*');
-       if(submittedWildcards.length!==(protectedGrants.some(rule=>rule.resource==='*'&&rule.action==='*')?1:0)||
-         protectedGrants.some(rule=>rule.resource!=='*'||rule.action!=='*'))
-         throw Error('Protected wildcard grants cannot be changed in this editor');
-       if(selfSets.has(s.entry.id)&&!submittedWildcards.length&&
-         !s.rules.some(rule=>rule.resource==='Security'&&rule.action==='manage'))
+       if(protectedGrants.some(rule=>rule.resource!=='*'||rule.action!=='*'))
+         throw Error('Scoped wildcard grants require a dedicated policy editor');
+       const retainsManage=s.rules.some(rule=>(rule.resource==='Security'&&rule.action==='manage')||
+         (rule.resource==='*'&&rule.action==='*'));
+       if(selfSets.has(s.entry.id)&&!retainsManage)
          throw Error('Cannot revoke your own administration permission');
-       // Preserve explicit deny and wildcard rows. Do not let UI replace security policy beyond supported grants.
+       // Explicit deny rows remain preserved; supported allow grants, including full access, are configurable.
        const desired=new Set(s.rules.map(rule=>rule.resource+':'+rule.action));
        for(const rule of current.rows){
-         if(rule.effect!=='allow'||rule.resource==='*'||rule.action==='*')continue;
+         if(rule.effect!=='allow')continue;
          if(!desired.has(rule.resource+':'+rule.action))
            await tx.query("DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action=$4 AND effect='allow'",
              [tenant,s.entry.id,rule.resource,rule.action]);
