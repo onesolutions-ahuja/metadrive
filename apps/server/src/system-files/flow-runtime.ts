@@ -6,6 +6,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
 import {evaluateFlowFormula} from './flow-formula-runtime.js';
+import {applyFlowAssignment} from './flow-assignment-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
@@ -747,9 +748,10 @@ export class FlowRuntime {
           return completion;
         }
         if(node.type==='Assignment'){
-          const value=evaluate(node.config.value??null);
-          if(!scalar(value))throw new Error('Assignment value must be scalar');
-          set(node.config.variable,value);
+          applyFlowAssignment({
+            config:node.config,vars,resources,resolveReference:resolveResource,
+            evaluateScalar:evaluate,setScalar:set
+          });
         }else if(node.type==='Decision'){
           const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
           const matches=(o:Record<string,unknown>)=>{
@@ -983,9 +985,17 @@ export class FlowRuntime {
       let outcome:string|undefined;
       if(node.type==='Assignment'){
         const name=node.config.variable;
-        if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
-          throw new Error('Invalid Assignment resource');
-        vars[name]=resolve(node.config.value??null);
+        applyFlowAssignment({
+          config:node.config,vars,
+          resources:Array.isArray(doc.resources)?doc.resources:[],
+          resolveReference:(reference:string)=>resolve('@'+reference),
+          evaluateScalar:resolve,
+          setScalar:(target:unknown,value:Scalar)=>{
+            if(typeof target!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(target))
+              throw new Error('Invalid Assignment resource');
+            vars[target]=value;
+          }
+        });
       }else if(node.type==='Decision'){
         const conditions=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
         const match=(option:Record<string,unknown>)=>{
