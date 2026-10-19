@@ -10,6 +10,6 @@ export const formulaFunctions = [
   'DATE', 'DATEVALUE', 'DATETIMEVALUE', 'TODAY', 'NOW', 'DAY', 'MONTH', 'YEAR',
   'HOUR', 'MINUTE', 'SECOND', 'WEEKDAY', 'ADDMONTHS', 'TIMEVALUE', 'TIMENOW', 'PI',
   'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'SINH', 'COSH', 'TANH',
-  'DEGREES', 'RADIANS', 'GEOLOCATION', 'DISTANCE'
+  'DEGREES', 'RADIANS', 'GEOLOCATION', 'DISTANCE', 'COLLECTION_COUNT', 'COLLECTION_SUM'
 ];
 export const formulaOperators = ['+', '-', '*', '/', '^', '&', '=', '<>', '!=', '<', '<=', '>', '>=', 'AND', 'OR'];
