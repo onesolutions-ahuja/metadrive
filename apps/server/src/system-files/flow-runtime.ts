@@ -6,6 +6,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
+import {evaluateFlowAssignment} from './flow-assignment-runtime.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
@@ -799,9 +800,22 @@ export class FlowRuntime {
           return completion;
         }
         if(node.type==='Assignment'){
+          const name=String(node.config.variable??'');
           const value=evaluate(node.config.value??null);
-          if(!scalar(value))throw new Error('Assignment value must be scalar');
-          set(node.config.variable,value);
+          const resource=resources.find(item=>item.name===name) as
+            {isCollection?:boolean}|undefined;
+          const isCollection=resource?.isCollection===true
+            ||Array.isArray(vars[name]);
+          const next=evaluateFlowAssignment(vars[name],value,
+            String(node.config.operator??'Assign'),isCollection);
+          if(isCollection){
+            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+              throw new Error('Invalid Flow collection resource');
+            vars[name]=next;
+          }else{
+            if(!scalar(next))throw new Error('Assignment result must be scalar');
+            set(name,next);
+          }
         }else if(node.type==='Decision'){
           const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
           const matches=(o:Record<string,unknown>)=>{
