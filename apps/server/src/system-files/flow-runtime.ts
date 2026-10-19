@@ -4,6 +4,7 @@ import type { RbacEngine } from './rbac-engine.js';
 import type { RecordEngine } from './record-engine.js';
 import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
 import {FlowRecordQuery} from './flow-record-query.js';
+import {simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
@@ -1001,72 +1002,16 @@ export class FlowRuntime {
           }))
       };
     }
-    if(recordTriggered && doc.flowType!=='Record-Triggered Flow')
-      throw new Error('Record debug requires a Record-Triggered Flow');
-    const nodes=doc.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
-    const edges=doc.connectors as Array<{from:number;to:number;label:string;kind:string}>;
-    const start=nodes.filter(n=>n.type==='Start');
-    if(start.length!==1)throw new Error('Invalid Flow Start');
-    const vars:Record<string,Scalar>=Object.create(null) as Record<string,Scalar>;
-    for(const [name,value] of Object.entries(inputs)){
-      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!scalar(value))throw new Error('Invalid debug input');
-      vars[name]=value;
-    }
-    const resolve=(value:unknown):Scalar=>{
-      if(!scalar(value))throw new Error('Unsupported debug expression');
-      if(typeof value!=='string')return value;
-      const reference=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
-        ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
-      if(!reference)return value;
-      if(!Object.hasOwn(vars,reference))throw new Error('Unknown debug resource');
-      return vars[reference];
-    };
-    const trace:Array<{elementApiName:string;type:string;status:string}>=[];
-    let current=start[0].id;
-    for(let step=0;step<200;step++){
-      const node=nodes.find(n=>n.id===current);
-      if(!node)throw new Error('Missing debug Flow element');
-      trace.push({elementApiName:'step_'+node.id,type:node.type,
-        status:['HTTP Callout','Create Records','CreateRecord','Update Records','Delete Records'].includes(node.type)
-          ?'Simulated':'Completed'});
-      if(node.type==='End')return {status:'completed',flowApiName:apiName,
-        flowVersion:version.version,outputs:vars,debugTrace:trace,dryRun:true};
-      if(node.type==='Screen')return {status:'waiting',flowApiName:apiName,
-        flowVersion:version.version,screen:node,outputs:vars,debugTrace:trace,dryRun:true};
-      let outcome:string|undefined;
-      if(node.type==='Assignment'){
-        const name=node.config.variable;
-        if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
-          throw new Error('Invalid Assignment resource');
-        vars[name]=resolve(node.config.value??null);
-      }else if(node.type==='Decision'){
-        const conditions=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
-        const match=(option:Record<string,unknown>)=>{
-          if(!Array.isArray(option.conditions)||!option.conditions.length)return false;
-          return evaluateFlowDecisionOutcome(
-            option.conditions as Array<Record<string,unknown>>,
-            typeof option.conditionLogic==='string'?option.conditionLogic:undefined,
-            resolve,
-            value=>{
-              if(typeof value!=='string')return value!==undefined;
-              const reference=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
-                ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
-              return reference?Object.hasOwn(vars,reference):true;
-            });
-        };
-        const matched=conditions.find(option=>option.name!=='Default'&&match(option));
-        outcome=String(matched?.label??matched?.name??'Default');
-      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord','Update Records'].includes(node.type)){
-        throw new Error('Cannot safely debug unsupported Flow action: '+node.type);
-      }
-      const available=edges.filter(edge=>edge.from===current&&edge.kind==='normal');
-      const next=outcome
-        ?available.find(edge=>edge.label===outcome)??available.find(edge=>edge.label==='Default')
-        :available.find(edge=>!edge.label||edge.label==='Default')??(available.length===1?available[0]:undefined);
-      if(!next)throw new Error('Flow debug requires a connected branch');
-      current=next.to;
-    }
-    throw new Error('Flow debug exceeded maximum steps');
+    return simulateFlowGraph({
+      apiName,version:version.version,flowType:String(doc.flowType??version.flow_type),
+      nodes:doc.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>,
+      edges:doc.connectors as Array<{from:number;to:number;label:string;kind:string}>,
+      inputs,recordTriggered,
+      findRecords:this.recordQuery
+        ?(object,conditions,logic,options)=>
+          this.recordQuery!.find(tenantId,userId,object,conditions,logic,options)
+        :undefined
+    });
   }
 
   private screenOutcomes(node:{config:Record<string,unknown>}) {
