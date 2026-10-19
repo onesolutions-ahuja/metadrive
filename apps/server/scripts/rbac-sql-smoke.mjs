@@ -38,6 +38,24 @@ try{
   brandColor:'#123456',navigationItems:['Invoice'],navigationPageApiNames:[],
   navigationOrder:[{type:'Object',apiName:'Invoice'}],utilityItems:[]},false);
  const owned=await records.create(t,developer,'Invoice',{Name:'Private invoice',Total:10,RecordTypeId:'master'});
+
+ // Real two-tenant isolation, not a synthetic unknown-user check.
+ const {rows:[isolatedTenant]}=await db.query("INSERT INTO md_tenants(slug,name) VALUES('rbac-sql-smoke-isolated','RBAC second tenant') RETURNING id");
+ const t2=isolatedTenant.id;
+ const outsider=(await db.query('INSERT INTO md_users(tenant_id,email,password_hash) VALUES($1,$2,$3) RETURNING id',
+  [t2,'isolated@example.invalid',hash])).rows[0].id;
+ const outsidePermissionSet=(await db.query("INSERT INTO md_permission_sets(tenant_id,api_name) VALUES($1,'TenantIsolationAdmin') RETURNING id",[t2])).rows[0].id;
+ await db.query("INSERT INTO md_permission_rules VALUES($1,$2,'*','*','allow')",[t2,outsidePermissionSet]);
+ await db.query('INSERT INTO md_permission_assignments VALUES($1,$2,$3)',[t2,outsider,outsidePermissionSet]);
+ await objects.create(t2,'Invoice','Invoice',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
+ const foreign=await records.create(t2,outsider,'Invoice',{Name:'Tenant two record',RecordTypeId:'master'});
+ assert.equal((await records.get(t2,outsider,'Invoice',foreign)).Id,foreign);
+ await assert.rejects(()=>records.get(t,developer,'Invoice',foreign),/Record not found/);
+ await assert.rejects(()=>records.get(t2,outsider,'Invoice',owned),/Record not found/);
+ await assert.rejects(()=>records.update(t2,outsider,'Invoice',owned,{Name:'Breach'}),/Record not found/);
+ await assert.rejects(()=>records.remove(t2,outsider,'Invoice',owned),/Record not found/);
+ assert.equal((await records.get(t,developer,'Invoice',owned)).Name,'Private invoice');
+
  const profile=randomUUID(),cashSet=randomUUID(),group=randomUUID(),role=randomUUID(),publicGroup=randomUUID(),queue=randomUUID();
  const policy=(id,apiName)=>({id,apiName,label:apiName,license:'MetaDrive',description:'',
   systemPermissions:[],objectPermissions:{},fieldPermissions:{},recordTypePermissions:{},appPermissions:{},tabPermissions:{}});
