@@ -162,6 +162,9 @@ export async function simulateFlowGraph(options:{
         details='Flow completed (no changes saved)';
       }else if(node.type==='Screen'){
         status='Waiting';halt='waiting';details='Screen display simulated';
+      }else if(node.type==='Orchestration Stage'){
+        status='Waiting';halt='waiting';
+        details='Human approval stage simulated; no approval request created or delivered';
       }else if(node.type==='Assignment'){
         executeFlowAssignment({node,resources,vars,evaluate:resolve,
           set:(key,value)=>{
@@ -231,7 +234,8 @@ export async function simulateFlowGraph(options:{
       durationMs:Math.max(0,Date.now()-start),variables:flowDebugSnapshot(vars),...(details?{details}:{})});
     if(halt)return finish(halt,{reason:details,
       ...(node.type==='Screen'?{screen:node,kind:'screen'}:
-        node.type==='Wait'?{kind:'wait'}:{})});
+        node.type==='Wait'?{kind:'wait'}:
+        node.type==='Orchestration Stage'?{kind:'orchestration'}:{})});
     if(node.type==='End')return finish('completed');
     const available=edges.filter(edge=>edge.from===current&&(edge.kind===undefined||edge.kind==='normal'));
     const next=outcome
