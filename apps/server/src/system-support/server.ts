@@ -35,6 +35,7 @@ import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
+import {TenantMediaService} from '../system-files/tenant-media-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
@@ -111,6 +112,7 @@ export function createSystemServer(db:SqlPersistence) {
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const recordFiles=new RecordFileService(db,rbac);
+  const tenantMedia=new TenantMediaService(db,rbac);
   records.setRichTextFilePruner((client,tenantId,objectApi,recordId,fieldApi,html)=>
     recordFiles.pruneUnreferenced(client,tenantId,objectApi,recordId,fieldApi,html));
   const systemDefinitions=new SystemDefinitionService(db,rbac);
@@ -1491,6 +1493,27 @@ export function createSystemServer(db:SqlPersistence) {
   app.delete('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
+    res.status(204).end();
+  }));
+  // Generic tenant-owned media library, subject to the existing Files permission.
+  app.get('/api/media-assets',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({assets:await tenantMedia.list(actor.tenant_id,actor.user_id)});
+  }));
+  app.post('/api/media-assets',route(async(req,res)=>{
+    const actor=req.actor!;
+    const asset=await tenantMedia.upload(actor.tenant_id,actor.user_id,req.body??{});
+    res.status(201).json(asset);
+  }));
+  app.get('/api/media-assets/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await tenantMedia.read(actor.tenant_id,actor.user_id,req.params.id));
+  }));
+  app.delete('/api/media-assets/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await tenantMedia.remove(actor.tenant_id,actor.user_id,req.params.id);
     res.status(204).end();
   }));
   app.post('/api/files/inline-images',route(async(req,res)=>{

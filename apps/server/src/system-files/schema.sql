@@ -893,7 +893,7 @@ CREATE TABLE IF NOT EXISTS md_flow_interview_records (
  run_id uuid NOT NULL,
  api_name text NOT NULL CHECK(api_name ~ '^(\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*)$'),
  object_api text NOT NULL,
- sort_order integer NOT NULL CHECK(sort_order BETWEEN 0 AND 199),
+ sort_order integer NOT NULL CHECK(sort_order >= 0),
  record_id uuid,
  is_collection boolean NOT NULL,
  PRIMARY KEY(tenant_id,run_id,api_name,sort_order),
@@ -1639,3 +1639,42 @@ CREATE TABLE IF NOT EXISTS md_flow_capability_properties (
  sort_order integer NOT NULL DEFAULT 0,
  PRIMARY KEY(element_type,property_name)
 );
+
+-- Shared tenant-owned media: reusable by any app, without KFC-specific Core records.
+CREATE TABLE IF NOT EXISTS md_tenant_media_assets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  name text NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
+  content_type text NOT NULL CHECK (content_type IN ('image/jpeg','image/png','image/gif','image/webp')),
+  byte_size integer NOT NULL CHECK (byte_size BETWEEN 1 AND 1048576),
+  checksum text NOT NULL CHECK (checksum ~ '^[0-9a-f]{64}$'),
+  content bytea NOT NULL,
+  created_by uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id,id),
+  FOREIGN KEY (tenant_id,created_by) REFERENCES md_users(tenant_id,id),
+  CHECK (octet_length(content)=byte_size)
+);
+CREATE INDEX IF NOT EXISTS md_tenant_media_assets_created
+  ON md_tenant_media_assets(tenant_id,created_at DESC,id);
+
+-- Only executions with a caller-provided, UUID requestId enter this ledger.
+-- Explicit tenant+actor scope and a unique request key reject duplicated order Flows.
+CREATE TABLE IF NOT EXISTS md_flow_execution_requests (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+  actor_id uuid NOT NULL,
+  flow_api text NOT NULL,
+  request_id uuid NOT NULL,
+  input_hash text NOT NULL CHECK (input_hash ~ '^[0-9a-f]{64}$'),
+  run_id uuid,
+  state text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','completed','failed')),
+  result_payload jsonb,
+  error_code text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id,actor_id,flow_api,request_id),
+  FOREIGN KEY (tenant_id,actor_id) REFERENCES md_users(tenant_id,id),
+  FOREIGN KEY (tenant_id,run_id) REFERENCES md_flow_runs(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_flow_execution_requests_run
+  ON md_flow_execution_requests(tenant_id,run_id) WHERE run_id IS NOT NULL;
