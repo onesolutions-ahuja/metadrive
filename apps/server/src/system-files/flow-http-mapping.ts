@@ -66,7 +66,8 @@ export function prepareFlowHttpRequest(config:Record<string,unknown>,vars:FlowHt
   throw new Error('HTTP Callout body too large');
  return {path:url.pathname.slice(1)+url.search,body:mappedBody};
 }
-export function mapFlowHttpResponse(value:unknown,body:string,allowedOutputs:readonly string[]):Record<string,FlowHttpScalar> {
+export function mapFlowHttpResponse(value:unknown,body:string,
+ allowedOutputs:ReadonlyArray<string|{name:string;dataType:string}>):Record<string,FlowHttpScalar> {
  if(typeof value!=='string'||!value.trim())return {};
  if(value.length>8192)throw new Error('HTTP response mapping too large');
  let mapping:unknown,payload:unknown;
@@ -75,8 +76,9 @@ export function mapFlowHttpResponse(value:unknown,body:string,allowedOutputs:rea
   throw new Error('Invalid HTTP response mapping');
  const output:Record<string,FlowHttpScalar>=Object.create(null);
  for(const [name,path] of Object.entries(mapping)){
+  const resource=allowedOutputs.find(item=>typeof item==='string'?item===name:item.name===name);
   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)
-    ||!allowedOutputs.includes(name)||typeof path!=='string'||path.length>256
+    ||!resource||typeof path!=='string'||path.length>256
     ||!/^([A-Za-z][A-Za-z0-9_]*|\[\d+\])(\.[A-Za-z][A-Za-z0-9_]*|\[\d+\])*$/.test(path))
    throw new Error('Invalid HTTP response output resource');
   let current:unknown=payload;
@@ -88,6 +90,14 @@ export function mapFlowHttpResponse(value:unknown,body:string,allowedOutputs:rea
   }
   if(!scalar(current)||typeof current==='string'&&current.length>4096)
    throw new Error('HTTP response resource must be a bounded scalar');
+  if(typeof resource==='object'&&current!==null){
+   const type=resource.dataType;
+   if(['Number','Currency','Percent'].includes(type)&&typeof current!=='number'
+     ||['Boolean','Checkbox'].includes(type)&&typeof current!=='boolean'
+     ||!['Number','Currency','Percent','Boolean','Checkbox'].includes(type)
+       &&typeof current!=='string')
+    throw new Error('HTTP response resource type mismatch: '+name);
+  }
   output[name]=current;
  }
  return output;
