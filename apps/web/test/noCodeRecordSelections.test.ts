@@ -233,6 +233,7 @@ test('generic overlay opens only for matching selected record events on the same
     useState:(initial:any)=>{hook+=1;return [initial,(v:any)=>{
       if(hook>=0)openEvents.push(Boolean(v));
     }];},
+    useRef:(initial:any)=>({current:initial}),
     useEffect:(effect:any)=>{effect();}
   };
   const sandbox={React:ReactFake,module:{exports:{} as any},
