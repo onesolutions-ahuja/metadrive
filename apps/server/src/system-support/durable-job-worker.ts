@@ -31,6 +31,11 @@ export class DurableJobWorker {
   let completed=0,failed=0;
   for(const job of due){
    let replayBlocked=false;
+   // One job is claimed by default. Heartbeats prevent long Flows from expiring
+   // while the worker is still alive; lost leases always fail closed.
+   const heartbeat=setInterval(()=>{
+    void this.jobs.renewLease(job.tenant_id,job.id,this.workerId).catch(()=>{});
+   },20000);
    try {
     if(job.job_type==='flow.execute'&&job.attempt>1)replayBlocked=true;
     const handler=this.handlers.get(job.job_type);
@@ -48,6 +53,8 @@ export class DurableJobWorker {
      // Failed leases are reclaimable by a subsequent worker after expiration.
     }
     failed++;
+   } finally {
+    clearInterval(heartbeat);
    }
   }
   return {claimed:due.length,completed,failed};
