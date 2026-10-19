@@ -19,5 +19,5 @@ test('Flow job eligibility requires an active tenant and enabled user at executi
  });
  assert.equal(allowed,false);
  assert.match(actorQuery,/JOIN md_tenants t ON t.id=u.tenant_id AND t.status='ACTIVE'/);
- assert.match(actorQuery,/u.tenant_id=\\$1 AND u.id=\\$2 AND u.enabled=true/);
+ assert.match(actorQuery,/u.tenant_id=\$1 AND u.id=\$2 AND u.enabled=true/);
 });
