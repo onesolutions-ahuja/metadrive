@@ -11,6 +11,16 @@ const apiName=/^[A-Za-z][A-Za-z0-9_]*$/;
 const scalar=(value:unknown):value is Scalar=>value===null||typeof value==='string'
  ||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value);
 
+export function subflowScalarTypeMatches(resource:Resource,value:unknown):boolean {
+ if(!scalar(value))return false;
+ if(value===null)return true;
+ const type=String(resource.dataType??'Text');
+ if(['Number','Currency','Percent'].includes(type))return typeof value==='number';
+ if(['Boolean','Checkbox'].includes(type))return typeof value==='boolean';
+ return typeof value==='string';
+}
+
+
 function mappings(value:unknown):Array<[string,string]> {
  if(typeof value!=='string'||value.length>8192)throw new Error('Invalid Subflow resource mappings');
  const result:Array<[string,string]>=[];
@@ -27,7 +37,7 @@ function mappings(value:unknown):Array<[string,string]> {
 
 export async function executeFlowSubflow(context:{
  client:PoolClient;tenantId:string;userId:string;initiatingUserId?:string;
- config:Record<string,unknown>;
+ config:Record<string,unknown>;parentResources?:Resource[];
  rbac:RbacEngine;callStack:string[];evaluate:(value:unknown)=>unknown;
  set:(name:unknown,value:Scalar)=>void;
  advance:(runId:string,callStack:string[],actorUserId?:string)=>
@@ -73,15 +83,30 @@ export async function executeFlowSubflow(context:{
   .map(resource=>[resource.name,resource]));
  const inputValues=new Map<string,Scalar>();
  for(const [childName,parentExpression] of mappings(config.inputValues??'')){
-  if(!inputs.has(childName))throw new Error('Subflow input is not enabled: '+childName);
+  const child=inputs.get(childName);
+  if(!child)throw new Error('Subflow input is not enabled: '+childName);
   const value=evaluate(parentExpression);
-  if(!scalar(value))throw new Error('Subflow inputs must be scalar');
+  if(!subflowScalarTypeMatches(child,value))
+   throw new Error('Subflow input type does not match child resource: '+childName);
+  const parentReference=/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/.exec(parentExpression);
+  if(parentReference&&context.parentResources){
+   const parent=context.parentResources.find(resource=>resource.name===parentReference[1]);
+   if(!parent||parent.dataType!==child.dataType||parent.type==='Record'
+     ||parent.type==='Record Collection')
+    throw new Error('Subflow input resource types do not match: '+childName);
+  }
   inputValues.set(childName,value);
  }
  const outputValues=mappings(config.outputValues??'');
  for(const [childName,parentName] of outputValues){
-  if(!outputs.has(childName)||!apiName.test(parentName))
+  const child=outputs.get(childName);
+  if(!child||!apiName.test(parentName))
    throw new Error('Subflow output mapping is invalid: '+childName);
+  if(context.parentResources){
+   const parent=context.parentResources.find(resource=>resource.name===parentName);
+   if(!parent||parent.type!=='Variable'||parent.dataType!==child.dataType)
+    throw new Error('Subflow output resource types do not match: '+childName);
+  }
  }
  const {rows:runs}=await client.query<{id:string}>(`
   INSERT INTO md_flow_runs
@@ -105,8 +130,9 @@ export async function executeFlowSubflow(context:{
  if(result.status!=='completed'||!result.outputs)
   throw new Error('Subflow did not complete synchronously');
  for(const [childName,parentName] of outputValues){
-  if(!Object.hasOwn(result.outputs,childName)||!scalar(result.outputs[childName]))
-   throw new Error('Subflow output is missing or non-scalar: '+childName);
+  if(!Object.hasOwn(result.outputs,childName)
+    ||!subflowScalarTypeMatches(outputs.get(childName)!,result.outputs[childName]))
+   throw new Error('Subflow output is missing or has an incompatible scalar type: '+childName);
   set(parentName,result.outputs[childName]);
  }
 }
