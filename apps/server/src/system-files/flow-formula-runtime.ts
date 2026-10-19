@@ -212,7 +212,7 @@ export function isFormulaImageResult(value:unknown):value is FormulaImageResult 
 }
 const supportedFunctions=new Set(['IF','IFERROR','AND','OR','NOT','XOR','ISBLANK','ISNULL','ISNUMBER',
   'ISCHANGED','ISNEW','ISCLONE','PRIORVALUE',
-  'BLANKVALUE','NULLVALUE','TEXT','VALUE','LEN','ASCII','LOWER','UPPER','PROPER','TRIM',
+  'BLANKVALUE','NULLVALUE','TEXT','VALUE','LEN','COLLECTIONCOUNT','COLLECTIONSUM','ASCII','LOWER','UPPER','PROPER','TRIM',
   'LEFT','RIGHT','MID','FIND','SUBSTITUTE','CONCATENATE','EXACT','CONTAINS','BEGINS',
   'ISPICKVAL','INCLUDES','REPT','REVERSE','ENCODEURL','URLENCODE','URLDECODE',
   'CHAR','INITCAP','LPAD','RPAD','REPLACE','CASESAFEID','T','IMAGE','CURRENCYRATE',
@@ -342,6 +342,26 @@ function evaluate(node:Expression,resolve:FormulaResolver,context:FormulaEvaluat
     case 'TEXT':arity(1);return text(argument(0));
     case 'VALUE':arity(1);return numeric(argument(0));
     case 'LEN':arity(1);return text(argument(0)).length;
+    case 'COLLECTIONCOUNT':case 'COLLECTIONSUM':{
+      arity(node.name==='COLLECTIONCOUNT'?1:2);
+      const source=argument(0);
+      if(!Array.isArray(source)||source.length>200||source.some(row=>
+        !row||typeof row!=='object'||Array.isArray(row)))
+        throw new Error(node.name+' requires a Record Collection (maximum 200 records)');
+      if(node.name==='COLLECTIONCOUNT')return source.length;
+      const field=argument(1);
+      if(typeof field!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
+        throw new Error('COLLECTIONSUM requires a valid numeric field name');
+      const sum=source.reduce((total:number,row:Record<string,unknown>)=>{
+        const value=row[field];
+        if(typeof value!=='number'||!Number.isFinite(value))
+          throw new Error('COLLECTIONSUM requires finite numeric values: '+field);
+        const next=total+value;
+        if(!Number.isFinite(next))throw new Error('COLLECTIONSUM result is not finite');
+        return next;
+      },0);
+      return sum;
+    }
     case 'ASCII':arity(1);return text(argument(0)).codePointAt(0)??0;
     case 'LOWER':arity(1);return text(argument(0)).toLowerCase();
     case 'UPPER':arity(1);return text(argument(0)).toUpperCase();
@@ -711,6 +731,18 @@ export function inferFlowFormulaType(expression:string,resolve:FormulaTypeResolv
       }
       if(!formulaNumeric(left)||!formulaNumeric(right))
         throw new Error('Arithmetic formula operators require numeric values');
+      return 'Number';
+    }
+    // Record Collection is a runtime resource, not a scalar Field formula type.
+    // Allow only a directly referenced collection and a literal field name.
+    if(node.name==='COLLECTIONCOUNT'||node.name==='COLLECTIONSUM'){
+      const expected=node.name==='COLLECTIONCOUNT'?1:2;
+      if(node.args.length!==expected||node.args[0].kind!=='reference'
+        ||(expected===2&&(node.args[1].kind!=='literal'
+          ||typeof node.args[1].value!=='string'
+          ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(node.args[1].value))))
+        throw new Error(node.name+' requires a collection reference'+
+          (expected===2?' and a literal numeric field name':''));
       return 'Number';
     }
     const args=node.args.map(infer),arity=(minimum:number,maximum=minimum)=>{
