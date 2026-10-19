@@ -174,7 +174,7 @@ export function useSetupMetadata(ctx: any) {
           Promise.resolve({ approvalProcesses: [] as ApprovalProcessMetadata[] }),
           Promise.resolve({ providers: [] as ConnectorProviderMetadata[] }),
           Promise.resolve({ connections: [] as IntegrationConnectionMetadata[] }),
-          recover<{ components: LibraryComponentMetadata[]; canManage: boolean }>('/component-library', { components: [], canManage: false }),
+          recover<{ components: LibraryComponentMetadata[]; registered: {apiName:string;rendererKey:string}[]; canManage: boolean }>('/component-library', { components: [], registered: [], canManage: false }),
           Promise.resolve({ dashboards: [], userId: '', runningUserIds: [], canCreate: false, canManageAll: false, canSchedule: false }),
           Promise.resolve({ folders: [] as DashboardFolderMetadata[] }),
           Promise.resolve({ territories: [] as DashboardTerritoryMetadata[], canManage: false }),
@@ -211,7 +211,7 @@ export function useSetupMetadata(ctx: any) {
         setApprovalProcesses(approvalProcessPayload.approvalProcesses);
         setConnectorProviders(providerPayload.providers);
         setIntegrationConnections(integrationPayload.connections);
-        setLibraryComponents(await resolveSqlComponentLibrary(libraryPayload.components));
+        setLibraryComponents([...libraryPayload.components, ...await resolveSqlComponentLibrary(libraryPayload.registered ?? [])]);
         setCanManageLibrary(libraryPayload.canManage);
         setDashboards(dashboardPayload.dashboards);
         setDashboardFolders(folderPayload.folders);
