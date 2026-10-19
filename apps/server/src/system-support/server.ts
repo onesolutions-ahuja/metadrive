@@ -42,6 +42,7 @@ import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
+import {flowRunHistory} from '../system-files/flow-run-history.js';
 import {FlowCustomError} from '../system-files/flow-error-runtime.js';
 import {FlowRecordTriggers} from '../system-files/flow-record-triggers.js';
 import {flowFormulaReferences} from '../system-files/flow-formula-runtime.js';
@@ -1114,6 +1115,13 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
     res.json(await apps.marketplace(actor.tenant_id));
+  }));
+  app.get('/api/metadata/flow-history',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await flowRunHistory(db,rbac,actor.tenant_id,actor.user_id,{
+      status:req.query.status,limit:req.query.limit,cursor:req.query.cursor
+    }));
   }));
   app.get('/api/metadata/flow-logs',route(async(req,res)=>{
     const actor=req.actor!;
