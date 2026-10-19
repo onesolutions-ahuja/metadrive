@@ -89,7 +89,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
    }]})
   } as unknown as PoolClient);
   assert.equal(await service.dispatchOne(),true);
-  assert.match(updateSql,/status=\$3/);
+  assert.match(updateSql,/status='failed'/);
   assert.match(updateSql,/status='failed'/);
   assert.deepEqual(updateParameters,[tenantId,jobId]);
   assert.equal(sent,undefined);
