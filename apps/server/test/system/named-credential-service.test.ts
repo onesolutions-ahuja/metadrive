@@ -36,3 +36,30 @@ test('credential mutations require OneEngine manage and tenant isolation',async(
  assert.deepEqual(calls[1],['tenant-a']);
  assert.deepEqual(calls[2],['tenant-a',id]);
 });
+
+
+test('deferred HTTP delivery quarantines revoked Flow execute permission before sending',async()=>{
+ const queries:string[]=[];
+ const job={id:'job-a',tenant_id:'tenant-a',run_id:'run-a',user_id:'user-a',
+  credential_id:'credential-a',method:'POST',path_ciphertext:Buffer.alloc(0),
+  headers_ciphertext:Buffer.alloc(0),body_ciphertext:null,
+  idempotency_key_ciphertext:null,max_attempts:1,timeout_ms:1000,attempt_count:1};
+ const db={
+  transaction:async(fn:(client:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+   fn({query:async(sql:string)=>{queries.push(sql);
+    return {rows:sql.includes('RETURNING j.id')?[job]:[],rowCount:1};}}),
+  query:async(sql:string,args?:unknown[])=>{queries.push(sql);
+   if(sql.includes('SELECT f.api_name')){assert.deepEqual(args,['tenant-a','run-a','user-a']);
+    return {rows:[{api_name:'Checkout'}]};}
+   return {rowCount:1,rows:[]};}
+ } as unknown as SqlPersistence;
+ const checks:string[]=[];
+ const rbac={allowed:async(t:string,u:string,r:string,a:string)=>{
+  checks.push([t,u,r,a].join(':'));return false;}} as unknown as RbacEngine;
+ const credentials=new NamedCredentialService(db,rbac);
+ assert.equal(await credentials.dispatchOne(),true);
+ assert.deepEqual(checks,['tenant-a:user-a:Flow:Checkout:execute']);
+ assert.ok(queries.some(sql=>sql.includes("last_error='RECONCILIATION_REQUIRED'")));
+ assert.equal(queries.some(sql=>sql.includes('FROM md_http_callout_job_values')),false,
+  'Revoked Flow permissions must be rejected before decryption or remote delivery');
+});
