@@ -937,7 +937,8 @@ export class FlowRuntime {
               if(node.config.responseVariable)set(node.config.responseVariable,response.body);
               if(node.config.responseMapping){
                 const mapped=mapFlowHttpResponse(node.config.responseMapping,response.body,
-                  resources.filter(item=>item.type==='Variable').map(item=>item.name));
+                  resources.filter(item=>item.type==='Variable').map(item=>({
+                    name:item.name,dataType:item.dataType})));
                 for(const [name,value] of Object.entries(mapped))set(name,value);
               }
             }
