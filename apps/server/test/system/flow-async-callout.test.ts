@@ -116,3 +116,28 @@ test('abandoned HTTP callout leases are quarantined and cannot be selected again
  assert.match(statements[1],/WHERE status='queued' AND next_attempt_at<=now\(\)/);
  assert.doesNotMatch(statements[1],/OR \(status='processing'/);
 });
+
+test('revoked Flow eligibility prevents queued HTTP provider delivery',async()=>{
+ let delivered=false,failed=false;
+ const db={
+  transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
+   query:async(sql:string)=>{
+    if(sql.includes('WITH candidate'))return {rows:[{
+     id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,
+     method:'POST',attempt_count:1
+    }]};
+    return {rows:[]};
+   }
+  } as unknown as PoolClient),
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[]};
+   if(sql.includes("SET status='failed'"))failed=true;
+   return {rows:[],rowCount:1};
+  }
+ } as unknown as SqlPersistence;
+ const svc=new NamedCredentialService(db,rbac);
+ svc.callout=async()=>{delivered=true;return {status:200,body:''};};
+ assert.equal(await svc.dispatchOne(),true);
+ assert.equal(delivered,false);
+ assert.equal(failed,true);
+});
