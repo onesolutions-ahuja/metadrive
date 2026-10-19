@@ -3,6 +3,8 @@ import type {SqlExecutor,SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
+import {resolveFlowIntegrationCallout} from './flow-integration-connection.js';
+import {parseFlowHttpMapping} from './flow-http-mapping.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 
 export async function flowAppIsEntitled(db:SqlExecutor,tenantId:string,appApiName:string|null) {
@@ -353,12 +355,15 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    }
   }
   if(type==='HTTP Callout'){
-   if(typeof properties.namedCredentialId!=='string'
+   if(properties.integrationConnectionId){
+    if(!db)errors.push('Integration Flow Callout requires SQL metadata');
+    else try{await resolveFlowIntegrationCallout(db,rbac,tenantId,userId,properties);}
+    catch(error){errors.push(error instanceof Error?error.message:'Invalid provider callout');}
+   }else if(typeof properties.namedCredentialId!=='string'
      ||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(properties.namedCredentialId))
     errors.push('HTTP Callout requires a tenant HTTPS Named Credential');
-   if(properties.integrationConnectionId||properties.integrationConnectionResource
-     ||properties.namedCredentialResource)
-    errors.push('HTTP Callout dynamic provider bindings are not yet supported');
+   if(properties.integrationConnectionResource||properties.namedCredentialResource)
+    errors.push('Runtime credential resource overrides are not permitted');
    if(!['GET','POST','PUT','PATCH','DELETE'].includes(String(properties.method??'GET')))
     errors.push('HTTP Callout method is not supported');
    if(typeof properties.path!=='string'||properties.path.startsWith('/')
@@ -370,7 +375,16 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    if(properties.deliveryMode!==undefined
      &&!['SYNC','DURABLE_ASYNC'].includes(String(properties.deliveryMode)))
     errors.push('HTTP Callout delivery mode is invalid');
-   if(properties.queryParameters)errors.push('HTTP Callout structured query mapping is not supported');
+   for(const property of ['queryParameters','responseMapping']){
+    if(typeof properties[property]==='string'&&properties[property]){
+     try{parseFlowHttpMapping(properties[property],{});}
+     catch(error){
+      // Syntax and field-path shape are validated here; resources bind at execution.
+      if(!String(error).includes('Unknown HTTP Callout resource'))
+       errors.push('Invalid HTTP Callout '+property+' mapping');
+     }
+    }
+   }
    if(!['FAULT_PATH','FAIL','CONTINUE'].includes(String(properties.onError??'FAIL')))
     errors.push('HTTP Callout error policy is invalid');
   }
