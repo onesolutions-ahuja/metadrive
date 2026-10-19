@@ -112,6 +112,9 @@ export class DurableJobService {
       AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
   `,[tenantId,id,actorId,decision]);
   if(!rowCount)throw new Error('Failed job not found');
+  await this.db.query(
+   'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+   [tenantId,actorId,'durable_job.reconcile',JSON.stringify({jobId:id,decision})]);
  }
 
  async cancelApp(tenantId:string,appApiName:string) {
