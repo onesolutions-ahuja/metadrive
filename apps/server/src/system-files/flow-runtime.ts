@@ -43,6 +43,8 @@ export class FlowRuntime {
   }
   /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
   async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
     const capabilities=await loadFlowCapabilityCatalog(this.db,tenantId);
     return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft,this.db,capabilities);
   }
