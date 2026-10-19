@@ -11,12 +11,15 @@ type AutomationSettingsDraft = {
   autoRetryFailedFlows: boolean;
   maxRetryAttempts: number;
   conversationIdleMinutes: number;
+  flowServiceUserId: string | null;
 };
 
 function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<AutomationSettingsDraft>({
-    autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
+    autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15,
+    flowServiceUserId: null
   });
+  const [serviceUsers,setServiceUsers]=useState<Array<{id:string;name:string;email:string;enabled:boolean}>>([]);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -27,12 +30,16 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
 
   useEffect(() => {
     let active = true;
-    void apiRequest<AutomationSettingsDraft>('/metadata/automation-settings')
-      .then((result) => { if (active) { setDraft(result); setLoaded(true); } })
+    const settings=apiRequest<AutomationSettingsDraft>('/metadata/automation-settings');
+    const users=canManage
+      ?apiRequest<{users:Array<{id:string;name:string;email:string;enabled:boolean}>}>('/metadata/automation-service-users')
+      :Promise.resolve({users:[]});
+    void Promise.all([settings,users])
+      .then(([result,userResult]) => { if (active) { setDraft(result); setServiceUsers(userResult.users); setLoaded(true); } })
       .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [canManage]);
 
   const startEdit = (field: string) => {
     if (!canManage || editingRow || loading) return;
@@ -69,13 +76,31 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   };
 
   const editable = (key: string) => canManage && !editingRow && !loading;
+  const serviceUser=serviceUsers.find(user=>user.id===draft.flowServiceUserId);
   return <div className="connector-settings-page settings-read-first-page">
     <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
-      description="Review failed-flow retries and conversational inactivity limits." />
+      description="Review automation execution policies and the explicitly selected identity used for scheduled Flow triggers." />
     <section className="surface permission-section" style={{ maxWidth: 800 }}>
       {loading ? <p>Loading process automation settings…</p> : loaded ? <>
         <h2>Execution safety</h2>
         <div className="settings-read-first-section">
+          {editingRow==='flowServiceUserId'
+            ?<div className="settings-edit-row">
+              <PlatformPageSlot slotKey="field-settings-04"><label className="form-label">Scheduled Flow service user
+                <select className="form-control" value={draft.flowServiceUserId??''} onChange={event=>
+                  setDraft(current=>({...current,flowServiceUserId:event.target.value||null}))}>
+                  <option value="">Not configured (scheduled triggers remain disabled)</option>
+                  {serviceUsers.map(user=><option key={user.id} value={user.id}>
+                    {user.name} ({user.email}){user.enabled?'':' — disabled'}
+                  </option>)}
+                </select>
+              </label></PlatformPageSlot>
+            </div>
+            :<SettingsViewRow label="Scheduled Flow service user"
+              value={serviceUser?`${serviceUser.name} (${serviceUser.email})`
+                :draft.flowServiceUserId??'Not configured'}
+              canEdit={editable('flowServiceUserId')} onEdit={()=>startEdit('flowServiceUserId')} />}
+          <p className="permission-help">No user is implicitly elevated. Tenant, Flow activation, app entitlement, and current OneEngine grants must still pass on every execution.</p>
           {editingRow === 'autoRetryFailedFlows'
             ? <div className="settings-edit-row">
                 <PlatformPageSlot slotKey="field-settings-01"><label className="checkbox-row">

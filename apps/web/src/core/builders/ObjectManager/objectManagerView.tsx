@@ -14,6 +14,8 @@ import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationRespon
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from '../../metadata/Cache/offlineRecordQueue';
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
+import GlobalValueSetManager from './GlobalValueSetManager';
+import CustomMetadataManager from './CustomMetadataManager';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -194,6 +196,55 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from '../../metadata/Definitions/metadata';
+type FieldTypeMigrationMetadata = {
+  id: string;
+  fromDataType: string;
+  toDataType: string;
+  status: 'applied' | 'rolled_back';
+  recordsMigrated: number;
+  createdAt: string;
+  rolledBackAt: string | null;
+};
+const migrationTypeChoices = [
+  'Text(255)', 'Text Area', 'Long Text Area', 'Email', 'Phone', 'URL',
+  'Rich Text Area', 'Text (Encrypted)', 'Picklist', 'Multi-Select Picklist',
+  'Number(18,0)', 'Currency(18,2)', 'Percent(5,2)', 'Checkbox', 'Date', 'Date/Time',
+  'Time', 'Address', 'Geolocation', 'Auto Number', 'Roll-Up Summary',
+  'Formula(Text)', 'Formula(Number)', 'Formula(Currency)', 'Formula(Percent)',
+  'Formula(Date)', 'Formula(DateTime)', 'Formula(Time)', 'Formula(Checkbox)'
+];
+function migrationFieldTypeFamily(dataType: string, relationship?: FieldMetadata['relationship']) {
+  if (relationship) return 'reference';
+  const formula = /^Formula\((Text|Number|Currency|Percent|Date|DateTime|Time|Checkbox)\)$/i.exec(dataType);
+  if (formula) return /^(Number|Currency|Percent)$/i.test(formula[1]) ? 'number'
+    : formula[1].toLowerCase() === 'checkbox' ? 'boolean' : formula[1].toLowerCase();
+  if (/^(Text(?:\(\d+\))?|Text Area|Long Text Area|Rich Text Area|Text \(Encrypted\)|Encrypted Text|Email|Phone|URL|Picklist|Multi-Select Picklist|Auto ?Number)$/i.test(dataType)) return 'text';
+  if (/^(Number|Currency|Percent)\(/i.test(dataType) || dataType === 'Roll-Up Summary') return 'number';
+  if (dataType === 'Checkbox') return 'boolean';
+  if (dataType === 'Date') return 'date';
+  if (dataType === 'Date/Time') return 'datetime';
+  if (dataType === 'Time') return 'time';
+  if (/^(Lookup|Master-Detail|Hierarchical)\([A-Za-z][A-Za-z0-9_]*\)$/i.test(dataType)) return 'reference';
+  if (dataType === 'Address') return 'address';
+  if (dataType === 'Geolocation') return 'geolocation';
+  return null;
+}
+function fieldTypeMigrationChoices(currentType: string, objects: ObjectMetadata[],
+  relationship?: FieldMetadata['relationship']) {
+  const source = migrationFieldTypeFamily(currentType, relationship);
+  if (!source) return [currentType];
+  const relationshipChoices = objects.flatMap((item) => [
+    `Lookup(${item.apiName})`, `Master-Detail(${item.apiName})`
+  ]);
+  const targets = [...migrationTypeChoices, ...relationshipChoices].filter((type) => {
+    const target = migrationFieldTypeFamily(type);
+    return (target === source
+      || (source === 'text' && ['number', 'boolean', 'date', 'datetime', 'time', 'reference', 'address', 'geolocation'].includes(target ?? ''))
+      || (target === 'text' && ['number', 'boolean', 'date', 'datetime', 'time', 'reference', 'address', 'geolocation'].includes(source)));
+  });
+  return [currentType, ...targets.filter((type) => type !== currentType
+    && !(/^Auto ?Number$/i.test(type) && /^Auto ?Number$/i.test(currentType)))];
+}
 export function createObjectManager(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>) {
 function ObjectManager({
   object, objects, flows, pages, reports, dashboards, profiles, activationAppIds, selectedSetting, search, onSearch, onObjectSelect, onSettingSelect, onOpenDependency, onNewField, onCreateObject, onSaveObject, onRefreshObject, onDeleteObject, onSaveField, onDeleteField, onSavePage, onOpenPageBuilder, onOpenRecords, page, onNotify
@@ -261,6 +312,8 @@ function ObjectManager({
   const [filterValueFieldApiName, setFilterValueFieldApiName] = useState('');
   const [filterRelatedObject, setFilterRelatedObject] = useState('');
   const [editingField, setEditingField] = useState<FieldMetadata | null>(null);
+  const [fieldTypeMigrations, setFieldTypeMigrations] = useState<FieldTypeMigrationMetadata[]>([]);
+  const [fieldTypeMigrationsLoading, setFieldTypeMigrationsLoading] = useState(false);
   const [showDependencies, setShowDependencies] = useState(false);
   const [deletedFields, setDeletedFields] = useState<Array<{
     apiName: string; label: string; dataType: string; deletedAt: string; expiresAt: string;
@@ -307,6 +360,44 @@ function ObjectManager({
     setFilterValueMode('Value');
     setFilterValueFieldApiName('');
   }, [object]);
+  useEffect(() => {
+    if (!editingField) {
+      setFieldTypeMigrations([]);
+      return;
+    }
+    let active = true;
+    setFieldTypeMigrationsLoading(true);
+    void apiRequest<{ migrations: FieldTypeMigrationMetadata[] }>(
+      `/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(editingField.apiName)}/migrations`
+    ).then((result) => {
+      if (active) setFieldTypeMigrations(result.migrations);
+    }).catch((error: unknown) => {
+      if (active) onNotify(error instanceof Error ? error.message : 'Field migration history could not be loaded');
+    }).finally(() => {
+      if (active) setFieldTypeMigrationsLoading(false);
+    });
+    return () => { active = false; };
+  }, [editingField?.apiName, object.apiName]);
+  const rollbackFieldMigration = async (migrationId: string) => {
+    if (!editingField) return;
+    try {
+      const result = await apiRequest<{ object: ObjectMetadata }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(editingField.apiName)}/migrations/${encodeURIComponent(migrationId)}/rollback`,
+        { method: 'POST' }
+      );
+      const refreshed = await onRefreshObject(object.apiName);
+      const field = refreshed.fields.find((candidate) => candidate.apiName === editingField.apiName);
+      if (field) setEditingField(field);
+      setDraft(result.object);
+      const history = await apiRequest<{ migrations: FieldTypeMigrationMetadata[] }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(editingField.apiName)}/migrations`
+      );
+      setFieldTypeMigrations(history.migrations);
+      onNotify('Field type migration rolled back');
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Field type migration could not be rolled back');
+    }
+  };
   useEffect(() => {
     if (layoutProfileId !== '*' && !profiles.some((profile) => profile.id === layoutProfileId)) setLayoutProfileId('*');
   }, [layoutProfileId, profiles]);
@@ -757,6 +848,20 @@ function ObjectManager({
           ['allowSearch', 'Allow Search']
         ] as const).map(([key, label]) => <label className="metadata-row" key={key}><span>{label}</span><input type="checkbox" checked={draft.settings?.[key] ?? false} onChange={(event) => updateObjectSettings({ [key]: event.target.checked })} /></label>)}
           <PlatformPageSlot slotKey="field-object-05"><label className="form-label">Deployment Status<select className="form-control" value={draft.settings?.deploymentStatus ?? 'Deployed'} onChange={(event) => updateObjectSettings({ deploymentStatus: event.target.value as ObjectSettingsMetadata['deploymentStatus'] })}><option>In Development</option><option>Deployed</option></select></label></PlatformPageSlot>
+          <label className="form-label">Record Name Type<select className="form-control"
+            value={draft.settings?.recordNameType ?? 'Text'}
+            onChange={(event) => updateObjectSettings({
+              recordNameType: event.target.value as ObjectSettingsMetadata['recordNameType'],
+              recordNameFormat: event.target.value === 'Auto Number' ? draft.settings?.recordNameFormat ?? '{0000}' : ''
+            })}>
+            <option value="Text">Text</option>
+            {['AutoNumber','Auto Number'].includes(draft.fields.find((field) => field.apiName === 'Name')?.dataType ?? '')
+              && <option value="Auto Number">Auto Number</option>}
+          </select></label>
+          {draft.settings?.recordNameType === 'Auto Number' && <label className="form-label">Auto Number Format
+            <input className="form-control" maxLength={80} value={draft.settings.recordNameFormat ?? '{0000}'}
+              onChange={(event) => updateObjectSettings({ recordNameFormat: event.target.value })} />
+          </label>}
           <div className="info-callout">Record name: {draft.fields.find((field) => field.apiName === 'Name')?.label ?? 'Name'} · {draft.settings?.recordNameType ?? 'Text'}{draft.settings?.recordNameFormat ? ` · ${draft.settings.recordNameFormat}` : ''}</div>
         </div>
       </div>
@@ -1040,12 +1145,12 @@ function ObjectManager({
         </div>}
       </div>)}
       <div className="record-type-create">
-        <input className="form-control" aria-label="New custom action" placeholder="Custom action label" value={customActionLabel} onChange={(event) => setCustomActionLabel(event.target.value)} />
+        <input className="form-control" aria-label="New custom action" placeholder="Custom action label" maxLength={80} value={customActionLabel} onChange={(event) => setCustomActionLabel(event.target.value)} />
         <select className="form-control" aria-label="Custom action target field" value={customActionFieldApiName} onChange={(event) => setCustomActionFieldApiName(event.target.value)}>
           <option value="">Choose field</option>{writableFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
         </select>
-        <input className="form-control" aria-label="Custom action field value" placeholder="Value to set" value={customActionValue} onChange={(event) => setCustomActionValue(event.target.value)} />
-        <button className="btn" onClick={addCustomAction} disabled={!customActionLabel.trim() || !customActionFieldApiName}><Plus size={14} />Add Action</button>
+        <input className="form-control" aria-label="Custom action field value" placeholder="Value to set" maxLength={10000} value={customActionValue} onChange={(event) => setCustomActionValue(event.target.value)} />
+        <button className="btn" onClick={addCustomAction} disabled={!customActionLabel.trim() || customActionLabel.length > 80 || !customActionFieldApiName}><Plus size={14} />Add Action</button>
       </div></div>
     </section>;
   };
@@ -1205,6 +1310,9 @@ function ObjectManager({
   };
   const renderSetting = () => {
     if (selectedSetting === 'Schema Builder') return <SchemaBuilder objects={objects} selectedObjectApiName={object.apiName} onOpenObject={onObjectSelect} onCreateObject={onCreateObject} onNewField={onNewField} />;
+    if (selectedSetting === 'Global Value Sets') return <GlobalValueSetManager />;
+    if (['Custom Labels','Custom Metadata Types','Custom Settings'].includes(selectedSetting))
+      return <CustomMetadataManager setting={selectedSetting} />;
     if (selectedSetting === 'Change History') return null;
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
@@ -1262,8 +1370,72 @@ function ObjectManager({
           <p className="modal-copy">Edit the field label and help metadata. The API name remains stable for existing references.</p>
           <PlatformPageSlot slotKey="field-object-29"><label className="form-label">Field Label<input className="form-control" value={editingField.label} onChange={(event) => setEditingField({ ...editingField, label: event.target.value })} /></label></PlatformPageSlot>
           <PlatformPageSlot slotKey="field-object-30"><label className="form-label">Field Name<div className="form-display">{editingField.apiName}</div></label></PlatformPageSlot>
-          <PlatformPageSlot slotKey="field-object-31"><label className="form-label">Data Type<div className="form-display">{editingField.dataType}</div></label></PlatformPageSlot>
-          {editingField.dataType.startsWith('Text(') && <PlatformPageSlot slotKey="field-object-32"><label className="form-label">Length<input className="form-control" type="number" min={1} max={255} step={1} value={editingField.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? ''} onChange={(event) => setEditingField({ ...editingField, dataType: `Text(${event.target.value})` })} /></label></PlatformPageSlot>}
+          <PlatformPageSlot slotKey="field-object-31"><label className="form-label">Data Type<select className="form-control" value={editingField.dataType}
+            disabled={!migrationFieldTypeFamily(editingField.dataType, editingField.relationship)}
+            onChange={(event) => {
+              const dataType = event.target.value;
+              const relationshipType = /^(Lookup|Master-Detail|Hierarchical)\(([^)]+)\)$/i.exec(dataType);
+              const formulaType = /^Formula\(([^)]+)\)$/i.exec(dataType);
+              const isAutoNumber = /^Auto ?Number$/i.test(dataType);
+              const isEncrypted = /^(Text \(Encrypted\)|Encrypted Text)$/i.test(dataType);
+              const isRollup = dataType === 'Roll-Up Summary';
+              const noUniqueConstraint = ['Rich Text Area', 'Multi-Select Picklist', 'Address', 'Geolocation',
+                'Text (Encrypted)', 'Roll-Up Summary']
+                .includes(dataType) || Boolean(relationshipType) || Boolean(formulaType);
+              const next: FieldMetadata = { ...editingField, dataType,
+                required: isAutoNumber ? true : isRollup || isEncrypted || formulaType ? false : editingField.required,
+                unique: isAutoNumber ? true : noUniqueConstraint || isEncrypted || formulaType ? false : editingField.unique,
+                ...(noUniqueConstraint
+                  ? { unique: false, externalId: false } : {}),
+                ...(isAutoNumber ? { externalId: false } : {}),
+                ...(relationshipType ? {
+                  required: relationshipType[1].toLowerCase() === 'master-detail' ? true : editingField.required,
+                  relationship: {
+                    type: relationshipType[1] === 'Hierarchical' ? 'Hierarchical'
+                      : relationshipType[1] === 'Master-Detail' ? 'Master-Detail' : 'Lookup',
+                    targetObject: relationshipType[2],
+                    relationshipName: editingField.relationship?.relationshipName ?? editingField.apiName.replace(/Id$/, ''),
+                    childRelationshipName: editingField.relationship?.childRelationshipName
+                      ?? `${draft.apiName.replace(/__c$/, '')}Records`,
+                    ...(relationshipType[1] === 'Lookup' ? {
+                      deleteBehavior: editingField.relationship?.deleteBehavior ?? 'Clear' as const
+                    } : {}),
+                    ...(relationshipType[1] === 'Master-Detail' ? {
+                      allowReparenting: editingField.relationship?.allowReparenting ?? false
+                    } : {})
+                  }
+                } : {})
+              };
+              if (formulaType) {
+                const returnType = formulaType[1].toLowerCase() === 'datetime'
+                  ? 'DateTime' : formulaType[1][0].toUpperCase() + formulaType[1].slice(1);
+                next.formula = { expression: editingField.formula?.expression ?? '', returnType };
+                delete next.defaultValue;
+              } else {
+                delete next.formula;
+              }
+              if (isRollup) {
+                next.rollup = editingField.rollup ?? {
+                  childObject: '', relationshipField: '', operation: 'COUNT', filterLogic: 'All', filters: []
+                };
+                delete next.defaultValue;
+              } else {
+                delete next.rollup;
+              }
+              if (isAutoNumber) {
+                next.autoNumberFormat = editingField.autoNumberFormat ?? '{0000}';
+                delete next.defaultValue;
+              } else {
+                delete next.autoNumberFormat;
+              }
+              if (isEncrypted) delete next.defaultValue;
+              if (!relationshipType) delete next.relationship;
+              setEditingField(next);
+            }}>
+            {fieldTypeMigrationChoices(editingField.dataType, objects, editingField.relationship)
+              .map((type) => <option value={type} key={type}>{type}</option>)}
+          </select></label></PlatformPageSlot>
+          {editingField.dataType.startsWith('Text(') && <PlatformPageSlot slotKey="field-object-32"><label className="form-label">Length<input className="form-control" type="number" min={1} max={1000000} step={1} value={editingField.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? ''} onChange={(event) => setEditingField({ ...editingField, dataType: `Text(${event.target.value})` })} /></label></PlatformPageSlot>}
           {/^(Number|Currency|Percent)\(/.test(editingField.dataType) && (() => {
             const [, type = 'Number', precisionText = '18', scaleText = '0'] = editingField.dataType.match(/^(Number|Currency|Percent)\((\d+),\s*(\d+)\)$/) ?? [];
             const precision = Number(precisionText);
@@ -1276,11 +1448,129 @@ function ObjectManager({
               <PlatformPageSlot slotKey="field-object-34"><label className="form-label">Decimal Places (Scale)<input className="form-control" type="number" min={0} max={precision} step={1} value={scale} onChange={(event) => setEditingField({ ...editingField, dataType: `${type}(${precision}, ${event.target.value})` })} /></label></PlatformPageSlot>
             </div>;
           })()}
+          {/^Auto ?Number$/i.test(editingField.dataType) && <label className="form-label">Auto Number Format
+            <input className="form-control" maxLength={80} value={editingField.autoNumberFormat ?? '{0000}'}
+              onChange={(event) => setEditingField({ ...editingField, autoNumberFormat: event.target.value })} />
+          </label>}
+          {editingField.dataType === 'Roll-Up Summary' && (() => {
+            const rollup = editingField.rollup ?? {
+              childObject: '', relationshipField: '', operation: 'COUNT' as const,
+              filterLogic: 'All' as const, filters: []
+            };
+            const children = objects.filter((candidate) => candidate.fields.some((field) =>
+              field.relationship?.type === 'Master-Detail' && field.relationship.targetObject === draft.apiName));
+            const child = children.find((candidate) => candidate.apiName === rollup.childObject);
+            const relationFields = child?.fields.filter((field) =>
+              field.relationship?.type === 'Master-Detail' && field.relationship.targetObject === draft.apiName) ?? [];
+            const sourceFields = child?.fields.filter((field) => {
+              const numeric = /^(Number|Currency|Percent)(?:\(|$)/i.test(field.dataType);
+              const temporal = /^(Date|Date\/Time|DateTime)$/i.test(field.dataType);
+              return numeric || (rollup.operation !== 'SUM' && temporal);
+            }) ?? [];
+            const filterFields = child?.fields.filter((field) =>
+              !/^Formula(?:\(|$)/i.test(field.dataType)
+                && !['Roll-Up Summary', 'Geolocation', 'Address', 'Text (Encrypted)'].includes(field.dataType)) ?? [];
+            const updateRollup = (next: NonNullable<FieldMetadata['rollup']>) =>
+              setEditingField({ ...editingField, rollup: next });
+            return <div className="metadata-card">
+              <h3>Roll-Up Summary</h3>
+              <label className="form-label">Child Object<select className="form-control" value={rollup.childObject}
+                onChange={(event) => {
+                  const nextChild = children.find((candidate) => candidate.apiName === event.target.value);
+                  const relation = nextChild?.fields.find((field) =>
+                    field.relationship?.type === 'Master-Detail' && field.relationship.targetObject === draft.apiName);
+                  updateRollup({ ...rollup, childObject: nextChild?.apiName ?? '',
+                    relationshipField: relation?.apiName ?? '', sourceField: undefined, filters: [] });
+                }}>
+                <option value="">Select child object</option>{children.map((candidate) =>
+                  <option key={candidate.apiName} value={candidate.apiName}>{candidate.label}</option>)}
+              </select></label>
+              <label className="form-label">Master-Detail Field<select className="form-control"
+                value={rollup.relationshipField} onChange={(event) =>
+                  updateRollup({ ...rollup, relationshipField: event.target.value })}>
+                <option value="">Select relationship</option>{relationFields.map((field) =>
+                  <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+              </select></label>
+              <label className="form-label">Operation<select className="form-control" value={rollup.operation}
+                onChange={(event) => {
+                  const operation = event.target.value as NonNullable<FieldMetadata['rollup']>['operation'];
+                  updateRollup({ ...rollup, operation,
+                    sourceField: operation === 'COUNT' ? undefined
+                      : sourceFields.some((field) => field.apiName === rollup.sourceField
+                        && (operation !== 'SUM' || /^(Number|Currency|Percent)(?:\(|$)/i.test(field.dataType)))
+                        ? rollup.sourceField : undefined });
+                }}>
+                {(['COUNT', 'SUM', 'MIN', 'MAX'] as const).map((operation) =>
+                  <option key={operation} value={operation}>{operation}</option>)}
+              </select></label>
+              {rollup.operation !== 'COUNT' && <label className="form-label">Summary Field<select className="form-control"
+                value={rollup.sourceField ?? ''} onChange={(event) =>
+                  updateRollup({ ...rollup, sourceField: event.target.value })}>
+                <option value="">Select compatible field</option>{sourceFields.map((field) =>
+                  <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+              </select></label>}
+              <label className="form-label">Filter Logic<select className="form-control"
+                value={rollup.filterLogic ?? 'All'} onChange={(event) =>
+                  updateRollup({ ...rollup, filterLogic: event.target.value as 'All' | 'Any' })}>
+                <option value="All">All filters</option><option value="Any">Any filter</option>
+              </select></label>
+              {(rollup.filters ?? []).map((filter, index) => <div className="metadata-card" key={`${filter.fieldApiName}-${index}`}>
+                <label className="form-label">Filter Field<select className="form-control"
+                  value={filter.fieldApiName} onChange={(event) => updateRollup({ ...rollup,
+                    filters: rollup.filters?.map((item, itemIndex) => itemIndex === index
+                      ? { ...item, fieldApiName: event.target.value } : item) })}>
+                  {filterFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+                </select></label>
+                <label className="form-label">Operator<select className="form-control" value={filter.operator}
+                  onChange={(event) => updateRollup({ ...rollup, filters: rollup.filters?.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, operator: event.target.value,
+                      value: ['Is Null', 'Is Not Null'].includes(event.target.value) ? '' : item.value } : item) })}>
+                  {['Equals', 'Not Equal To', 'Greater Than', 'Less Than', 'Contains', 'Is Null', 'Is Not Null']
+                    .map((operator) => <option key={operator} value={operator}>{operator}</option>)}
+                </select></label>
+                {!['Is Null', 'Is Not Null'].includes(filter.operator) && <label className="form-label">Value
+                  <input className="form-control" value={filter.value} onChange={(event) =>
+                    updateRollup({ ...rollup, filters: rollup.filters?.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, value: event.target.value } : item) })} />
+                </label>}
+                <button type="button" className="btn" onClick={() => updateRollup({ ...rollup,
+                  filters: rollup.filters?.filter((_, itemIndex) => itemIndex !== index) })}>Remove Filter</button>
+              </div>)}
+              <button type="button" className="btn" disabled={!filterFields.length}
+                onClick={() => {
+                  const first = filterFields[0];
+                  if (first) updateRollup({ ...rollup, filters: [...(rollup.filters ?? []), {
+                    fieldApiName: first.apiName, operator: 'Equals', value: ''
+                  }] });
+                }}>Add Filter</button>
+            </div>;
+          })()}
           <PlatformPageSlot slotKey="field-object-35"><label className="form-label">Description<input className="form-control" value={editingField.description ?? ''} onChange={(event) => setEditingField({ ...editingField, description: event.target.value })} /></label></PlatformPageSlot>
           <PlatformPageSlot slotKey="field-object-36"><label className="form-label">Help Text<textarea className="form-control" value={editingField.helpText ?? ''} onChange={(event) => setEditingField({ ...editingField, helpText: event.target.value })} maxLength={255} rows={2} /></label></PlatformPageSlot>
+          {editingField.dataType !== draft.fields.find((field) => field.apiName === editingField.apiName)?.dataType
+            && <div className="info-callout">Saving this change validates and converts every existing value transactionally; invalid values, target picklist mismatches, relationship IDs outside the selected target, and uniqueness conflicts are rejected without partial changes. Text-to-Address requires a JSON component object, and text-to-Geolocation requires latitude,longitude. A before-value snapshot is retained for rollback.</div>}
+          <div className="metadata-card">
+            <h3>Field Type Migration History</h3>
+            {fieldTypeMigrationsLoading && <p className="permission-help">Loading migration history…</p>}
+            {!fieldTypeMigrationsLoading && fieldTypeMigrations.length === 0 && <p className="permission-help">No type migrations have been recorded.</p>}
+            {fieldTypeMigrations.map((migration) => {
+              const latestApplied = migration.status === 'applied'
+                && fieldTypeMigrations.find((item) => item.status === 'applied')?.id === migration.id;
+              return <div className="metadata-row" key={migration.id}>
+                <span><strong>{migration.fromDataType} → {migration.toDataType}</strong>
+                  <small>{migration.recordsMigrated} record values · {new Date(migration.createdAt).toLocaleString()} · {migration.status}</small>
+                </span>
+                {latestApplied && <button type="button" className="btn" onClick={() => void rollbackFieldMigration(migration.id)}>Rollback</button>}
+              </div>;
+            })}
+            {fieldTypeMigrations.length > 0 && <p className="permission-help">Rollback is allowed only in reverse migration order and only when migrated values have not changed or been added since the migration.</p>}
+          </div>
           <div className="form-options">
-            <label className="checkbox-row"><input type="checkbox" checked={editingField.required} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label>
-            <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Rich Text Area', 'Multi-Select Picklist'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
+            <label className="checkbox-row"><input type="checkbox" checked={editingField.required}
+              disabled={/^Master-Detail\(/i.test(editingField.dataType) || Boolean(editingField.formula)
+                || ['Roll-Up Summary', 'Auto Number', 'AutoNumber'].includes(editingField.dataType)}
+              onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label>
+            <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Rich Text Area', 'Multi-Select Picklist', 'Text (Encrypted)', 'Roll-Up Summary', 'Auto Number', 'AutoNumber'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
               onChange={(event) => {
                 const next = { ...editingField, unique: event.target.checked };
                 if (!event.target.checked) delete next.caseSensitive;
@@ -1291,7 +1581,9 @@ function ObjectManager({
             {editingField.unique && /^(Text(?:\(\d+\))?|Email|Phone)$/.test(editingField.dataType)
               && <label className="checkbox-row"><input type="checkbox" checked={editingField.caseSensitive ?? false} onChange={(event) => setEditingField({ ...editingField, caseSensitive: event.target.checked })} />Treat uppercase and lowercase values as different</label>}
           </div>
-          {!editingField.formula && !editingField.relationship && !['AutoNumber', 'Auto Number'].includes(editingField.dataType) && (editingField.dataType === 'Checkbox'
+          {!editingField.formula && !editingField.relationship
+            && !['AutoNumber', 'Auto Number', 'Roll-Up Summary', 'Text (Encrypted)'].includes(editingField.dataType)
+            && (editingField.dataType === 'Checkbox'
             ? <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.defaultValue !== undefined} onChange={(event) => { if (event.target.checked) setEditingField({ ...editingField, defaultValue: false }); else { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } }} />Set a default value</label><label className="checkbox-row"><input type="checkbox" disabled={editingField.defaultValue === undefined} checked={editingField.defaultValue === true} onChange={(event) => setEditingField({ ...editingField, defaultValue: event.target.checked })} />Default to checked</label></div>
             : (editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist')
               ? <PlatformPageSlot slotKey="field-object-37"><label className="form-label">Default Value<select className="form-control" multiple={editingField.dataType === 'Multi-Select Picklist'} value={editingField.dataType === 'Multi-Select Picklist' ? String(editingField.defaultValue ?? '').split(';').filter(Boolean) : String(editingField.defaultValue ?? '')} onChange={(event) => {
@@ -1310,7 +1602,7 @@ function ObjectManager({
                 maxLength={editingTextMaximum ? Number(editingTextMaximum) : editingField.dataType === 'Text' ? 255 : undefined}
                 value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label></PlatformPageSlot>)}
           {(editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist') && <>
-            <PlatformPageSlot slotKey="field-object-39"><label className="form-label">Picklist Values<textarea className="form-control" rows={4} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
+            <PlatformPageSlot slotKey="field-object-39"><label className="form-label">Picklist Values<textarea className="form-control" rows={4} readOnly={Boolean(editingField.globalValueSetApiName)} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
               const picklistValues = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
               const valueSettings = editingField.valueSettings
                 ? Object.fromEntries(Object.entries(editingField.valueSettings).map(([key, values]) => [key, values.filter((value) => picklistValues.includes(value))]))
@@ -1322,6 +1614,7 @@ function ObjectManager({
               }
               setEditingField(nextField);
             }} placeholder={'New\nIn Progress\nCompleted'} /></label></PlatformPageSlot>
+            {editingField.globalValueSetApiName&&<p className="permission-help">Values are managed by Global Value Set {editingField.globalValueSetApiName}.</p>}
             <label className="checkbox-row"><input type="checkbox" checked={editingField.picklistRestricted ?? false} onChange={(event) => setEditingField({ ...editingField, picklistRestricted: event.target.checked })} />Restrict to the values defined in the value set</label>
             <><PlatformPageSlot slotKey="field-object-40"><label className="form-label">Controlling Field<select className="form-control" value={editingField.controllerFieldApiName ?? ''} onChange={(event) => {
               const controllerField = draft.fields.find((field) => field.apiName === event.target.value);
@@ -1353,11 +1646,19 @@ function ObjectManager({
           {editingField.formula && <>
             <PlatformPageSlot slotKey="field-object-41"><label className="form-label">Formula Return Type<div className="form-display">{editingField.formula.returnType}</div></label></PlatformPageSlot>             <PlatformPageSlot slotKey="field-object-42"><div className="form-label">Formula<SmartFieldInput multiline rows={4} kind="formula" objects={objects} primaryObjectApiName={draft.apiName} value={editingField.formula.expression} onChange={next => setEditingField({ ...editingField, formula: { ...editingField.formula!, expression: next } })} /></div></PlatformPageSlot>
           </>}
-          {editingField.relationship && <div className="info-callout">{editingField.relationship.type} relationship to {editingField.relationship.targetObject}; relationship target and API name are immutable here.</div>}
-          {!editingField.formula && <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.required} disabled={editingField.relationship?.type === 'Master-Detail'} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label><label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={Boolean(editingField.relationship) || editingField.dataType === 'Long Text Area' || editingField.dataType === 'Multi-Select Picklist'} onChange={(event) => setEditingField({ ...editingField, unique: event.target.checked })} />Unique</label></div>}
+          {editingField.dataType === 'Text (Encrypted)' && <div className="info-callout">Values are encrypted at rest and masked in record views. Existing values are re-encrypted during this migration.</div>}
+          {editingField.relationship && <div className="info-callout">{editingField.relationship.type} relationship to {editingField.relationship.targetObject}. Changing its type or target validates and migrates every existing record link transactionally.</div>}
+          {!editingField.formula && editingField.dataType !== 'Roll-Up Summary' && <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.required} disabled={editingField.relationship?.type === 'Master-Detail' || ['Auto Number', 'AutoNumber'].includes(editingField.dataType)} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label><label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={Boolean(editingField.relationship) || ['Long Text Area', 'Multi-Select Picklist', 'Text (Encrypted)', 'Auto Number', 'AutoNumber'].includes(editingField.dataType)} onChange={(event) => setEditingField({ ...editingField, unique: event.target.checked })} />Unique</label></div>}
           <div className="modal-actions">{editingField.apiName.endsWith('__c') && <button className="btn" onClick={() => setShowDeleteFieldConfirmation(true)}><Trash2 size={14} />Delete</button>}<button className="btn" onClick={() => setEditingField(null)}>Cancel</button><button className="btn btn-brand" onClick={() => {
             void onSaveField(editingField).then((updatedObject) => { setDraft(updatedObject); setEditingField(null); }).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to save field'));
-          }} disabled={!editingField.label.trim() || (editingField.formula !== undefined && !editingField.formula.expression.trim())}>Save</button></div>
+          }} disabled={!editingField.label.trim()
+            || (editingField.formula !== undefined && !editingField.formula.expression.trim())
+            || (/^Auto ?Number$/i.test(editingField.dataType)
+              && !(/\{0+\}/.test(editingField.autoNumberFormat ?? '')
+                || /\{YYYY\}/.test(editingField.autoNumberFormat ?? '')))
+            || (editingField.dataType === 'Roll-Up Summary' && (!editingField.rollup?.childObject
+              || !editingField.rollup.relationshipField
+              || (editingField.rollup.operation !== 'COUNT' && !editingField.rollup.sourceField)))} >Save</button></div>
         </section>
       </div>}
       {showDeleteFieldConfirmation && editingField && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowDeleteFieldConfirmation(false); }}>

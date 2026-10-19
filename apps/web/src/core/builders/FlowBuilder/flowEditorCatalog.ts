@@ -4,15 +4,17 @@ export const flowTypeOptions: Array<{ type: FlowDefinitionMetadata['flowType']; 
     { type: 'Autolaunched Flow', description: 'Run in the background or from another flow.' }
   ];
 export const formulaFunctions = [
-    'TRUE', 'FALSE', 'IF', 'CASE', 'AND', 'OR', 'NOT', 'XOR', 'ISNEW', 'ISCLONE', 'ISCHANGED', 'PRIORVALUE', 'ISBLANK', 'ISNULL', 'BLANKVALUE', 'NULLVALUE', 'EXACT',
-    'ISNUMBER', 'LEN', 'ASCII', 'LOWER', 'UPPER', 'TRIM', 'PROPER', 'LEFT', 'RIGHT', 'MID', 'FIND',
-    'SUBSTITUTE', 'CONCATENATE', 'CONTAINS', 'BEGINS', 'ISPICKVAL', 'INCLUDES', 'VALUE', 'TEXT', 'DATE',
-    'DATEVALUE', 'DATETIMEVALUE', 'TIME', 'TIMEVALUE', 'TODAY', 'NOW', 'TIMENOW', 'YEAR', 'MONTH', 'DAY',
-    'WEEKDAY', 'WEEKNUM', 'HOUR', 'MINUTE', 'SECOND', 'MILLISECOND', 'ADDDAYS', 'DAYS', 'ADDMONTHS',
-    'TZOFFSET', 'ABS', 'SQRT', 'POWER', 'EXP', 'LN', 'LOG', 'PI', 'DEGREES', 'RADIANS', 'SIN', 'COS',
-    'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'SINH', 'COSH', 'TANH', 'COT', 'SIGN', 'CEILING', 'MCEILING',
-    'FLOOR', 'MFLOOR', 'MIN', 'MAX', 'MOD', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'TRUNC', 'REGEX', 'GEOLOCATION',
-    'DISTANCE', 'CURRENCYRATE', 'CONVERTCURRENCY', 'CASESAFEID', 'HYPERLINK', 'IMAGE', 'URLENCODE',
-    'ENCODEURL', 'URLDECODE', 'HTMLENCODE', 'JSENCODE', 'REPT', 'REVERSE', 'LPAD', 'RPAD', 'BR'
-  ];
+  'IF', 'AND', 'OR', 'NOT', 'XOR', 'ISBLANK', 'ISNULL', 'ISNUMBER', 'ISCHANGED',
+  'ISNEW', 'PRIORVALUE', 'BLANKVALUE',
+  'NULLVALUE', 'TEXT', 'VALUE', 'LEN', 'ASCII', 'LOWER', 'UPPER', 'PROPER', 'TRIM',
+  'LEFT', 'RIGHT', 'MID', 'FIND', 'SUBSTITUTE', 'CONCATENATE', 'EXACT', 'CONTAINS',
+  'BEGINS', 'ISPICKVAL', 'INCLUDES', 'REPT', 'REVERSE', 'ENCODEURL', 'URLENCODE',
+  'URLDECODE', 'CHAR', 'INITCAP', 'LPAD', 'RPAD', 'REPLACE', 'CASESAFEID', 'ABS',
+  'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'TRUNC', 'SIGN', 'MIN', 'MAX', 'MOD', 'SQRT',
+  'POWER', 'CEILING', 'FLOOR', 'MCEILING', 'MFLOOR', 'EXP', 'LN', 'LOG', 'CASE',
+  'DATE', 'DATEVALUE', 'DATETIMEVALUE', 'TODAY', 'NOW', 'DAY', 'MONTH', 'YEAR',
+  'HOUR', 'MINUTE', 'SECOND', 'WEEKDAY', 'ADDMONTHS', 'TIMEVALUE', 'TIMENOW', 'PI',
+  'SIN', 'COS', 'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'SINH', 'COSH', 'TANH',
+  'DEGREES', 'RADIANS', 'GEOLOCATION', 'DISTANCE'
+];
 export const formulaOperators = ['+', '-', '*', '/', '^', '&', '=', '<>', '!=', '<', '<=', '>', '>=', 'AND', 'OR'];

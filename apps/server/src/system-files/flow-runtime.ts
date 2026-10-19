@@ -6,45 +6,43 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
 import {evaluateFlowFormula} from './flow-formula-runtime.js';
-import {validateFlowDraft} from './flow-validation.js';
+import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
+import {persistFlowInterviewPause} from './flow-interview-persistence.js';
+import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
+import {executeFlowAction,loadFlowUserResource} from './flow-action-runtime.js';
+import {createFlowCustomError} from './flow-error-runtime.js';
+import {cancelScheduledPathInterviews,deactivateFlowDefinition,
+  syncFlowTriggerSubscription} from './flow-subscription-runtime.js';
+import {flowScalarText,isFlowScalar,parseFlowScalar,type FlowScalar} from './flow-scalar-runtime.js';
 import type {PoolClient} from 'pg';
 type NodeRow={id:string;api_name:string;node_type:string};
 type EdgeRow={source_api:string;target_api:string;outcome:string};
 type PropRow={node_id:string;api_name:string;value_text:string|null;data_type:string};
-type Scalar=string|number|boolean|null;
+type Scalar=FlowScalar;
 type NodeProperty={value_text:string|null;data_type:string};
 const namePattern=/^[A-Za-z][A-Za-z0-9_.]*$/;
-function scalar(value:unknown):value is Scalar {
-  return value===null||typeof value==='string'||
-    typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value));
-}
-function scalarText(value:Scalar):{text:string|null;type:string}{
-  if(value===null)return{text:null,type:'null'};
-  return{text:String(value),type:typeof value};
-}
-function scalarFrom(text:string|null,type:string):Scalar {
-  if(type==='null')return null;
-  if(type==='boolean')return text==='true';
-  if(type==='number') {
-    const parsed=Number(text);if(!Number.isFinite(parsed))throw new Error('Invalid Flow number');
-    return parsed;
-  }
-  if(type==='text'||type==='string')return text??'';
-  throw new Error('Unsupported Flow property type');
-}
+const scalar=isFlowScalar;
+const scalarText=flowScalarText;
+const scalarFrom=parseFlowScalar;
 export class FlowRuntime {
   private readonly recordQuery?:FlowRecordQuery;
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,
     private readonly records?:RecordEngine,
     private readonly httpCallout?:(tenantId:string,userId:string,config:Record<string,unknown>,
       variables:Record<string,Scalar>,idempotencyKey:string,
-      execution?:{client:PoolClient;runId:string;nodeId:number})=>Promise<{status:number;body:string}>) {
+      execution?:{client:PoolClient;runId:string;nodeId:number})=>Promise<{status:number;body:string}>,
+    private readonly scheduleResume?:(client:PoolClient,tenantId:string,userId:string,
+      flowApi:string,version:number,runId:string,scheduledAt:Date,step:number,
+      appApiName?:string)=>Promise<void>,
+    private readonly queueFlowEmail?:(client:PoolClient,tenantId:string,userId:string,
+      flowId:string,version:number,runId:string,nodeId:number,step:number,
+      message:{credentialId:string;from:string;recipients:string[];subject:string;body:string})=>Promise<void>) {
     if(rbac)this.recordQuery=new FlowRecordQuery(db,rbac);
   }
   /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
   async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
-    return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft);
+    return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft,this.db);
   }
   /** Complete metadata Editor contract: one latest definition per API name. */
   async loadEditor(tenantId:string,apiName:string) {
@@ -90,6 +88,45 @@ export class FlowRuntime {
       resources:Array.isArray(document.resources)?document.resources:[],
       versions:history.rows.map(item=>({versionNumber:item.version,status:item.active?'Active':'Obsolete',
         savedAt:''}))};
+  }
+  async loadEditorVersion(tenantId:string,apiName:string,version:unknown) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!Number.isSafeInteger(Number(version))
+      ||Number(version)<1)throw new Error('Invalid Flow version');
+    const {rows}=await this.db.query<{
+      id:string;api_name:string;label:string|null;flow_type:string;version:number;active:boolean
+    }>(`SELECT id,api_name,label,flow_type,version,active FROM md_flow_definitions
+      WHERE tenant_id=$1 AND api_name=$2 AND version=$3 AND archived=false`,
+    [tenantId,apiName,Number(version)]);
+    const record=rows[0];
+    if(!record)throw new Error('Flow version not found');
+    const values=await this.db.query<MetadataValueRow>(
+      'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+      [tenantId,record.id]);
+    let document=decodeMetadataValues(values.rows).builder as Record<string,unknown>|undefined;
+    if(!document){
+      const [nodes,edges]=await Promise.all([
+        this.db.query<{api_name:string;node_type:string}>(
+          'SELECT api_name,node_type FROM md_flow_nodes WHERE tenant_id=$1 AND flow_id=$2 ORDER BY sort_order',
+          [tenantId,record.id]),
+        this.db.query<{source_api:string;target_api:string;outcome:string}>(
+          'SELECT source_api,target_api,outcome FROM md_flow_edges WHERE tenant_id=$1 AND flow_id=$2',
+          [tenantId,record.id])
+      ]);
+      const ids=new Map(nodes.rows.map((node,index)=>[node.api_name,index+1]));
+      document={
+        elements:nodes.rows.map((node,index)=>({id:index+1,type:node.node_type,label:node.node_type,config:{}})),
+        connectors:edges.rows.filter(edge=>ids.has(edge.source_api)&&ids.has(edge.target_api))
+          .map((edge,index)=>({id:'edge-'+index,from:ids.get(edge.source_api),to:ids.get(edge.target_api),
+            kind:'normal',label:edge.outcome})),
+        resources:[],startConfig:{},tests:[]
+      };
+    }
+    return {...document,versionNumber:record.version,status:record.active?'Active':'Obsolete',
+      savedAt:'',label:record.label??apiName,flowType:record.flow_type,
+      elements:Array.isArray(document.elements)?document.elements:[],
+      connectors:Array.isArray(document.connectors)?document.connectors:[],
+      resources:Array.isArray(document.resources)?document.resources:[],
+      tests:Array.isArray(document.tests)?document.tests:[]};
   }
   async list(tenantId:string) {
     const {rows}=await this.db.query<{api_name:string}>(`
@@ -151,6 +188,9 @@ export class FlowRuntime {
     if(input.status==='Active'){
       const validation=await this.validateDraft(tenantId,userId,apiName,input);
       if(!validation.valid)throw new Error('Flow cannot activate: '+validation.errors.join('; '));
+      if(!await flowAppIsEntitled(this.db,tenantId,
+        typeof input.appApiName==='string'?input.appApiName:null))
+        throw new Error('Flow app is not installed or entitled for this tenant');
     }
     const scalarRows:Array<{path:string;kind:string;text:string|null}>=[];
     // Preserve the entire editable graph as relational path/value rows; never JSONB.
@@ -176,13 +216,20 @@ export class FlowRuntime {
         `,[tenantId,apiName,input.label,input.flowType,(last?.version??0)+1,input.status==='Active']);
         id=inserted.rows[0].id;
       }
-      if(input.status==='Active')await client.query(`
-        UPDATE md_flow_definitions SET active=false
-        WHERE tenant_id=$1 AND api_name=$2 AND id<>$3 AND active=true`,[tenantId,apiName,id]);
+      if(input.status==='Active'){
+        await client.query(`
+          UPDATE md_flow_definitions SET active=false
+          WHERE tenant_id=$1 AND api_name=$2 AND id<>$3 AND active=true`,[tenantId,apiName,id]);
+        await cancelScheduledPathInterviews(client,tenantId,apiName,id);
+      }
       await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
       for(const row of scalarRows)await client.query(`
         INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
         VALUES($1,$2,$3,$4,$5)`,[tenantId,id,row.path,row.kind,row.text]);
+      await syncFlowTriggerSubscription(client,tenantId,apiName,id,{
+        active:input.status==='Active',flowType:String(input.flowType),
+        elements:input.elements as unknown[],appApiName:input.appApiName
+      });
       await client.query('DELETE FROM md_flow_edges WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
       await client.query('DELETE FROM md_flow_nodes WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
       // Published definitions execute directly from md_flow_editor_values.
@@ -193,9 +240,7 @@ export class FlowRuntime {
   async deleteEditor(tenantId:string,userId:string,apiName:string) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
-    const {rowCount}=await this.db.query(`
-      UPDATE md_flow_definitions SET archived=true,active=false
-      WHERE tenant_id=$1 AND api_name=$2 AND archived=false`,[tenantId,apiName]);
+    const rowCount=await deactivateFlowDefinition(this.db,tenantId,apiName,true);
     if(!rowCount)throw new Error('Flow not found');
   }
   /** Durable run telemetry from shared SQL Flow run records, tenant scoped. */
@@ -222,21 +267,24 @@ export class FlowRuntime {
     await this.rbac.require(tenantId,userId,'FlowDefinition','read');
     const {rows}=await this.db.query<{
       id:string;api_name:string;label:string|null;version:number;flow_type:string;
-      started_by:string;email:string;started_at:Date
+      wait_kind:string;
+      started_by:string;email:string;started_at:Date;wait_until:Date|null
     }>(`
-      SELECT r.id,f.api_name,f.label,f.version,f.flow_type,r.started_by,u.email,r.started_at
+      SELECT r.id,f.api_name,f.label,f.version,f.flow_type,r.wait_kind,
+        r.started_by,u.email,r.started_at,r.wait_until
       FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
       JOIN md_users u ON u.id=r.started_by AND u.tenant_id=r.tenant_id
-      WHERE r.tenant_id=$1 AND r.status='pending'
+      WHERE r.tenant_id=$1 AND r.status IN ('pending','waiting')
       ORDER BY r.started_at DESC LIMIT 100
     `,[tenantId]);
     return {interviews:rows.map(r=>({
       id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
-      versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const:'wait' as const,
+      versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const
+        :r.wait_kind==='scheduled-path'?'scheduled' as const:'wait' as const,
       userId:r.started_by,userName:r.email,screenLabel:null,recordId:null,
       createdAt:new Date(r.started_at).toISOString(),
       expiresAt:new Date(new Date(r.started_at).getTime()+86400000).toISOString(),
-      waitUntil:null,retryAt:null,attempts:0
+      waitUntil:r.wait_until?new Date(r.wait_until).toISOString():null,retryAt:null,attempts:0
     }))};
   }
   /** Cancel a durable pending interview without deleting its execution history. */
@@ -245,9 +293,17 @@ export class FlowRuntime {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(interviewId))
       throw new Error('Invalid interview ID');
     await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
-    const result=await this.db.query(
-      "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status='pending' RETURNING id",
+    const result=await this.db.transaction(async client=>{
+      const cancelled=await client.query(
+        "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),wait_until=NULL,error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status IN ('pending','waiting') RETURNING id",
+        [tenantId,interviewId]);
+      if(!cancelled.rowCount)throw new Error('Pending interview not found');
+      await client.query(`UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,
+        lease_until=NULL,updated_at=now()
+        WHERE tenant_id=$1 AND job_type='flow.resume' AND resource_id=$2 AND status IN ('queued','leased')`,
       [tenantId,interviewId]);
+      return cancelled;
+    });
     if(!result.rowCount)throw new Error('Pending interview not found');
     return {cancelled:true};
   }
@@ -255,9 +311,7 @@ export class FlowRuntime {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
     await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
-    const {rowCount}=await this.db.query(
-      'UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND active=true',
-      [tenantId,apiName]);
+    const rowCount=await deactivateFlowDefinition(this.db,tenantId,apiName);
     if(!rowCount)throw new Error('Active flow not found');
     return {flow:await this.loadEditor(tenantId,apiName)};
   }
@@ -299,14 +353,46 @@ export class FlowRuntime {
     await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     const definition=await this.loadActive(tenantId,flowApi);
     const {rows}=await this.db.query<{flow_type:string;has_editor:boolean}>(`
-      SELECT flow_type,EXISTS(SELECT 1 FROM md_flow_editor_values x
+      SELECT f.flow_type,EXISTS(SELECT 1 FROM md_flow_editor_values x
         WHERE x.tenant_id=f.tenant_id AND x.flow_id=f.id) AS has_editor
       FROM md_flow_definitions f WHERE f.tenant_id=$1 AND f.id=$2`,[tenantId,definition.id]);
+    if(rows[0]?.flow_type==='Record-Triggered Flow'||rows[0]?.flow_type==='Schedule-Triggered Flow'
+      ||rows[0]?.flow_type==='Platform Event-Triggered Flow')
+      throw new Error('Triggered Flows cannot be manually executed');
     const id=await this.start(tenantId,flowApi,userId,inputs);
     // Authored Screen/Autolaunched Flows both use the one normalized action engine.
     // SQL-only definitions from before the Builder migration retain their legacy adapter.
     return rows[0]?.has_editor?this.advanceInterview(tenantId,userId,id,{})
       :this.run(tenantId,id,userId);
+  }
+
+  async resumeWaitingInterview(tenantId:string,userId:string,runId:string,version:number){
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[0-9a-f-]{36}$/i.test(runId)||!Number.isSafeInteger(version)||version<1)
+      throw new Error('Invalid waiting Flow interview');
+    let eligible=false;
+    try{return await this.db.transaction(async client=>{
+       const {rows}=await client.query<{api_name:string;started_by:string;version:number}>(`
+         SELECT f.api_name,r.started_by,f.version FROM md_flow_runs r
+         JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+         WHERE r.tenant_id=$1 AND r.id=$2 AND r.status='waiting' AND r.wait_until<=now()
+           AND f.active=true AND f.archived=false FOR UPDATE OF r
+       `,[tenantId,runId]);
+       const interview=rows[0];
+       if(!interview||interview.started_by!==userId||interview.version!==version)
+         throw new Error('Waiting Flow interview is no longer eligible');
+       eligible=true;
+       await client.query(`UPDATE md_flow_runs SET status='pending',wait_until=NULL
+         WHERE tenant_id=$1 AND id=$2 AND status='waiting'`,[tenantId,runId]);
+       return this.advanceInterview(tenantId,userId,runId,{},client);
+     });
+    }catch(error){
+     if(eligible)await this.db.query(`UPDATE md_flow_runs SET status='failed',finished_at=now(),
+       wait_until=NULL,error_code='FLOW_RESUME_FAILED'
+       WHERE tenant_id=$1 AND id=$2 AND started_by=$3 AND status IN ('pending','waiting')`,
+     [tenantId,runId,userId]);
+     throw error;
+    }
   }
 
   /** Resume a Screen Flow from durable SQL state. The caller must own the interview. */
@@ -318,13 +404,14 @@ export class FlowRuntime {
       throw new Error('Invalid Flow interview request');
     const advance=async(client:PoolClient)=>{
       const {rows}=await client.query<{
-        flow_id:string;api_name:string;flow_type:string;started_by:string;status:string
-      }>(`SELECT r.flow_id,f.api_name,f.flow_type,r.started_by,r.status FROM md_flow_runs r
+        flow_id:string;api_name:string;flow_type:string;version:number;started_by:string;status:string
+      }>(`SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.status FROM md_flow_runs r
         JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
         WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r`,[tenantId,runId]);
       const active=rows[0];
       if(!active||active.status!=='pending'||active.started_by!==userId
-        ||!['Screen Flow','Autolaunched Flow','Record-Triggered Flow'].includes(active.flow_type))
+        ||!['Screen Flow','Autolaunched Flow','Record-Triggered Flow','Schedule-Triggered Flow',
+          'Platform Event-Triggered Flow'].includes(active.flow_type))
         throw new Error('Pending Flow interview not found');
       const nested=callStack.at(-1)===active.api_name;
       if(callStack.length>16||!nested&&callStack.includes(active.api_name))
@@ -362,6 +449,7 @@ export class FlowRuntime {
       const vars:Record<string,unknown>=Object.create(null) as Record<string,unknown>;
       for(const row of [...prior.rows,...stored.rows])
         vars[row.api_name]=scalarFrom(row.value_text,row.data_type);
+      await loadFlowUserResource(client,tenantId,userId,JSON.stringify([graph.resources,graph.elements]),vars);
       const persistedRecords=await client.query<{
         api_name:string;object_api:string;record_id:string|null;is_collection:boolean;sort_order:number
       }>(`SELECT api_name,object_api,record_id,is_collection,sort_order
@@ -404,7 +492,13 @@ export class FlowRuntime {
         const separator=reference.indexOf('.');
         const name=separator<0?reference:reference.slice(0,separator);
         const field=separator<0?undefined:reference.slice(separator+1);
+        if(reference==='$User.Id')return userId;
         if(!Object.hasOwn(vars,name)){
+          if(name==='$Record__Prior'){
+            if(active.flow_type!=='Record-Triggered Flow')
+              throw new Error('$Record__Prior is only available in Record-Triggered Flows');
+            return null;
+          }
           const resource=resources.find(item=>item.name===name);
           if(!resource)throw new Error('Unknown Flow resource: '+name);
           if(resource.type==='Formula'){
@@ -532,6 +626,8 @@ export class FlowRuntime {
         if(!next)throw new Error('Screen outcome is not connected');
         current=next.to;
       }
+      const rollbackSavepoint='flow_start_'+runId.replace(/-/g,'');
+      await client.query('SAVEPOINT '+rollbackSavepoint);
       for(;steps<200;steps++){
         const node=byId.get(current);
         if(!node)throw new Error('Invalid Flow graph target');
@@ -539,58 +635,8 @@ export class FlowRuntime {
         if(node.type==='Screen'){
           if(active.flow_type==='Record-Triggered Flow')
             throw new Error('Record-Triggered Flows cannot pause at a Screen');
-          // A Screen suspends execution without committing a business record.
-          for(const [key,value] of Object.entries(vars)){
-            if(key.startsWith('$Flow.')||resources.some(resource=>resource.name===key
-              &&['Formula','Constant','Choice','Text Template'].includes(resource.type))
-              ||!scalar(value))continue;
-            const encoded=scalarText(value);
-            await client.query(`INSERT INTO md_flow_interview_values(tenant_id,run_id,api_name,value_text,data_type)
-              VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,run_id,api_name)
-              DO UPDATE SET value_text=EXCLUDED.value_text,data_type=EXCLUDED.data_type`,
-              [tenantId,runId,key,encoded.text,encoded.type==='text'?'string':encoded.type]);
-          }
-          await client.query('DELETE FROM md_flow_interview_loop_state WHERE tenant_id=$1 AND run_id=$2',
-            [tenantId,runId]);
-          for(const [elementId,nextIndex] of loopIndexes)
-            await client.query(`INSERT INTO md_flow_interview_loop_state
-              (tenant_id,run_id,element_id,next_index) VALUES($1,$2,$3,$4)`,
-            [tenantId,runId,elementId,nextIndex]);
-          await client.query('DELETE FROM md_flow_interview_records WHERE tenant_id=$1 AND run_id=$2',
-            [tenantId,runId]);
-          for(const [name,value] of Object.entries(vars)){
-            const collection=Array.isArray(value);
-            if(!collection&&(!value||typeof value!=='object'||!Object.hasOwn(value,'Id')))continue;
-            const resource=resources.find(item=>item.name===name);
-            const objectApi=resource?.dataType;
-            if(!objectApi||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
-              throw new Error('Flow record resource has no Object type: '+name);
-            const recordsToPersist=collection?value as Array<Record<string,unknown>>:[value as Record<string,unknown>];
-            const items=collection&&!recordsToPersist.length?[{}]:recordsToPersist;
-            for(const [sortOrder,item] of items.entries()){
-              const recordId=item.Id;
-              if(recordId!==null&&recordId!==undefined
-                &&(typeof recordId!=='string'||!/^[0-9a-f-]{36}$/i.test(recordId)))
-                throw new Error('Invalid Flow record resource');
-              await client.query(`INSERT INTO md_flow_interview_records
-                (tenant_id,run_id,api_name,object_api,sort_order,record_id,is_collection)
-                VALUES($1,$2,$3,$4,$5,$6,$7)`,
-              [tenantId,runId,name,objectApi,sortOrder,recordId??null,collection]);
-              for(const [field,value] of Object.entries(item)){
-                if(field==='Id')continue;
-                if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||!scalar(value))
-                  throw new Error('Invalid Flow record field value');
-                const encoded=scalarText(value);
-                await client.query(`INSERT INTO md_flow_interview_record_fields
-                  (tenant_id,run_id,api_name,sort_order,field_api,value_text,data_type)
-                  VALUES($1,$2,$3,$4,$5,$6,$7)`,
-                [tenantId,runId,name,sortOrder,field,encoded.text,encoded.type==='text'?'string':encoded.type]);
-              }
-            }
-          }
-          await client.query(`UPDATE md_flow_interview_state SET current_element=$3,
-            history_elements=$4,step_count=$5,updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,
-            [tenantId,runId,current,history,steps+1]);
+          await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
+            loopIndexes,vars,resources);
           const fields=Array.isArray(node.config.fields)?node.config.fields as Array<Record<string,unknown>>:[];
           return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
             canGoBack:history.length>0,
@@ -598,7 +644,7 @@ export class FlowRuntime {
               .map(f=>[f.apiName,vars[String(f.apiName)]]))};
         }
         if(node.type==='End'){
-          await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
+          await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now(),wait_until=NULL WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
           const resources=Array.isArray(graph.resources)
             ?graph.resources as Array<{name:string;availableForOutput:boolean;type?:string}>:[];
           const outputs:Record<string,unknown>={};
@@ -620,15 +666,29 @@ export class FlowRuntime {
           const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
           const matches=(o:Record<string,unknown>)=>{
             if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
+            const conditions=(o.conditions as Array<Record<string,unknown>>).map(condition=>{
+              const currentField=typeof condition.field==='string'
+                ?/^\{!\$Record\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(condition.field)?.[1]:undefined;
+              const triggerOperator=['ischanged','wasset'].includes(
+                String(condition.operator??'').trim().toLowerCase().replace(/[\s_-]+/g,''));
+              return active.flow_type==='Record-Triggered Flow'&&triggerOperator&&currentField
+                &&!Object.hasOwn(condition,'priorValue')
+                ?{...condition,priorValue:`{!$Record__Prior.${currentField}}`}:condition;
+            });
             return evaluateFlowDecisionOutcome(
-              o.conditions as Array<Record<string,unknown>>,
+              conditions,
               typeof o.conditionLogic==='string'?o.conditionLogic:undefined,
               evaluate,
               value=>{
                 if(typeof value!=='string')return value!==undefined;
-                const reference=value.match(/^\{!((?:\$Flow\.)?[A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
-                  ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
-                return reference?Object.hasOwn(vars,reference[1]):true;
+                const reference=value.match(/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
+                  ??value.match(/^@([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
+                if(!reference)return true;
+                if(!Object.hasOwn(vars,reference[1]))return false;
+                if(!reference[2])return true;
+                const base=vars[reference[1]];
+                return Boolean(base&&typeof base==='object'&&!Array.isArray(base)
+                  &&Object.hasOwn(base,reference[2]));
               });
           };
           const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
@@ -707,7 +767,23 @@ export class FlowRuntime {
             if(node.config.onError!=='CONTINUE')throw error;
           }
           history=[];
-        }else if(node.type!=='Start'){
+        }else if(node.type==='Action'||node.type==='Publish Platform Event'){
+          const fault=await executeFlowAction({client,rbac:this.rbac!,tenantId,userId,
+            flowApi:active.api_name,config:node.type==='Publish Platform Event'?{...node.config,actionType:'Publish Platform Event'}:node.config,
+            resolve:evaluate,variables:vars,records:this.records!,
+            connectors:connectors.filter(edge=>edge.from===current),elementId:current,
+            enqueueEmail:this.queueFlowEmail?message=>this.queueFlowEmail!(
+              client,tenantId,userId,active.flow_id,active.version,runId,current,steps,message):undefined,
+            runId});
+          if(fault!==undefined){current=fault;history=[];continue;}
+          history=[];
+        }else if(node.type==='Custom Error'){
+          throw createFlowCustomError(node.config,reference=>resolveResource(reference));
+        }else if(node.type==='Roll Back Records'){
+          await client.query('ROLLBACK TO SAVEPOINT '+rollbackSavepoint);
+          await client.query('RELEASE SAVEPOINT '+rollbackSavepoint);
+          await client.query('SAVEPOINT '+rollbackSavepoint);
+        }else if(node.type!=='Start'&&node.type!=='Wait'){
           throw new Error('Unsupported Screen Flow action: '+node.type);
         }
         const available=connectors.filter(edge=>edge.from===current&&edge.kind==='normal');
@@ -715,6 +791,19 @@ export class FlowRuntime {
           ?available.find(edge=>edge.label===selected||edge.label==='Default')
           :available.find(edge=>!edge.label||edge.label==='Default'||edge.label==='Next')??(available.length===1?available[0]:undefined);
         if(!next)throw new Error('Flow element has no supported outgoing connector');
+        if(node.type==='Wait'){
+          if((active.flow_type==='Record-Triggered Flow'
+            &&start[0].config.runWhen==='before-save')||!this.scheduleResume)
+            throw new Error('Wait requires a durable scheduler and is not supported in before-save Flows');
+          const waitUntil=resolveFlowWaitUntil(node.config);
+          await persistFlowInterviewPause(client,tenantId,runId,next.to,history,steps+1,
+            loopIndexes,vars,resources);
+          await client.query(`UPDATE md_flow_runs SET status='waiting',wait_until=$3,wait_kind='wait'
+            WHERE tenant_id=$1 AND id=$2 AND status='pending'`,[tenantId,runId,waitUntil]);
+          await this.scheduleResume(client,tenantId,userId,active.api_name,active.version,
+            runId,waitUntil,steps+1,typeof graph.appApiName==='string'?graph.appApiName:undefined);
+          return {interviewId:runId,status:'waiting',waitUntil:waitUntil.toISOString()};
+        }
         current=next.to;
       }
       throw new Error('Screen Flow exceeded maximum steps');

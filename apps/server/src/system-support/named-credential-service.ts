@@ -7,6 +7,8 @@ import {request as secureRequest} from 'node:https';
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
+import {flowAppIsEntitled} from '../system-files/flow-validation.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -14,6 +16,8 @@ type CalloutJob={
  idempotency_key_ciphertext:Buffer|null;max_attempts:number;timeout_ms:number;attempt_count:number
 };
 type CalloutValue={api_name:string;value_ciphertext:Buffer;data_type:string};
+type FlowEmailJob={id:string;tenant_id:string;user_id:string;credential_id:string;
+ flow_id:string;flow_version:number;flow_api:string;payload_ciphertext:Buffer;encryption_key_id:string};
 type CalloutScalar=string|number|boolean|null;
 const isCalloutScalar=(value:unknown):value is CalloutScalar=>
  value===null||typeof value==='string'||typeof value==='boolean'
@@ -70,6 +74,14 @@ export class NamedCredentialService {
  private decryptValue(value:Buffer) {
   const key=this.key();
   if(!key||value.length<29)throw new Error('Queued HTTP Callout cannot be decrypted');
+  const decipher=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));
+  decipher.setAuthTag(value.subarray(value.length-16));
+  return Buffer.concat([decipher.update(value.subarray(12,value.length-16)),
+   decipher.final()]).toString('utf8');
+ }
+ private decryptValueWithKey(value:Buffer,keyId:string) {
+  const key=this.keyFor(keyId);
+  if(!key||value.length<29)throw new Error('Queued Flow email cannot be decrypted');
   const decipher=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));
   decipher.setAuthTag(value.subarray(value.length-16));
   return Buffer.concat([decipher.update(value.subarray(12,value.length-16)),
@@ -405,6 +417,145 @@ export class NamedCredentialService {
  async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
   return this.sendTenantEmail(tenantId,id,from,to,subject,body);
  }
+ async enqueueFlowEmail(client:PoolClient,tenantId:string,userId:string,flowId:string,flowVersion:number,
+  runId:string,nodeId:number,step:number,credentialId:string,from:string,recipients:string[],
+  subject:string,body:string) {
+  await this.rbac.require(tenantId,userId,'Email','send');
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+  if(!/^[0-9a-f-]{36}$/i.test(flowId)||!Number.isSafeInteger(flowVersion)||flowVersion<1
+    ||!/^[0-9a-f-]{36}$/i.test(runId)||!Number.isSafeInteger(nodeId)||nodeId<1||nodeId>250
+    ||!Number.isSafeInteger(step)||step<0||step>=200
+    ||!/^[0-9a-f-]{36}$/i.test(credentialId)||!email.test(from)||from.length>254
+    ||!Array.isArray(recipients)||recipients.length<1||recipients.length>100
+    ||recipients.some(value=>typeof value!=='string'||value.length>254||!email.test(value))
+    ||new Set(recipients).size!==recipients.length||subject.length>300||/[\r\n]/.test(subject)
+    ||body.length>10000)
+   throw new Error('Invalid Flow email configuration');
+  const credential=await client.query<{id:string}>(`
+   SELECT id FROM md_named_credentials
+   WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true FOR SHARE`,
+   [tenantId,credentialId]);
+  if(!credential.rows[0])throw new Error('SMTP credential unavailable');
+  const payload=JSON.stringify({from,recipients,subject,body});
+  const {rows}=await client.query<{id:string}>(`
+   INSERT INTO md_flow_email_jobs
+    (tenant_id,run_id,flow_id,flow_version,node_id,step,user_id,credential_id,
+     payload_ciphertext,encryption_key_id)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+   [tenantId,runId,flowId,flowVersion,nodeId,step,userId,credentialId,
+    this.encryptValue(payload),this.activeKeyId()]);
+  if(!rows[0])throw new Error('Unable to queue Flow email');
+  await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+   VALUES($1,$2,'flow.email.queued',jsonb_build_object('flowId',$3,'runId',$4,'step',$5))`,
+   [tenantId,userId,flowId,runId,step]);
+  return rows[0].id;
+ }
+
+ private emailDispatching=false;
+ async dispatchOneFlowEmail() {
+  if(this.emailDispatching)return false;
+  this.emailDispatching=true;
+  try{
+   const job=await this.db.transaction(async client=>{
+    await client.query(`UPDATE md_flow_email_jobs SET status='failed',
+     error_code='DELIVERY_OUTCOME_UNKNOWN',completed_at=now()
+     WHERE status='sending' AND claimed_at<now()-interval '5 minutes'`);
+    await client.query(`UPDATE md_flow_email_jobs j SET status='failed',
+     error_code='AUTHORIZATION_CHANGED',completed_at=now()
+     WHERE j.status='queued' AND NOT EXISTS(
+      SELECT 1 FROM md_flow_runs r JOIN md_flow_definitions f
+       ON f.tenant_id=r.tenant_id AND f.id=j.flow_id
+      WHERE r.tenant_id=j.tenant_id AND r.id=j.run_id
+       AND r.flow_id=j.flow_id
+       AND r.status IN ('completed','waiting') AND f.version=j.flow_version
+       AND f.active=true AND f.archived=false)
+      OR j.status='queued' AND NOT EXISTS(
+       SELECT 1 FROM md_users u WHERE u.tenant_id=j.tenant_id
+        AND u.id=j.user_id AND u.enabled=true)
+      OR j.status='queued' AND NOT EXISTS(
+       SELECT 1 FROM md_named_credentials c WHERE c.tenant_id=j.tenant_id
+        AND c.id=j.credential_id AND c.protocol='SMTP' AND c.enabled=true)`);
+    const {rows}=await client.query<FlowEmailJob>(`
+     WITH candidate AS(
+      SELECT j.id FROM md_flow_email_jobs j
+      JOIN md_flow_runs r ON r.tenant_id=j.tenant_id AND r.id=j.run_id
+      JOIN md_flow_definitions f ON f.tenant_id=j.tenant_id AND f.id=j.flow_id
+      JOIN md_users u ON u.tenant_id=j.tenant_id AND u.id=j.user_id AND u.enabled=true
+      JOIN md_named_credentials c ON c.tenant_id=j.tenant_id AND c.id=j.credential_id
+       AND c.protocol='SMTP' AND c.enabled=true
+      WHERE j.status='queued' AND r.flow_id=j.flow_id AND r.status IN ('completed','waiting')
+       AND f.version=j.flow_version AND f.active=true AND f.archived=false
+      ORDER BY j.created_at,j.id FOR UPDATE OF j SKIP LOCKED LIMIT 1
+     )
+     UPDATE md_flow_email_jobs j SET status='sending',claimed_at=now()
+     FROM candidate c WHERE j.id=c.id
+     RETURNING j.id,j.tenant_id,j.user_id,j.credential_id,j.flow_id,j.flow_version,
+      j.payload_ciphertext,j.encryption_key_id,
+      (SELECT api_name FROM md_flow_definitions WHERE tenant_id=j.tenant_id AND id=j.flow_id) AS flow_api
+    `);
+    return rows[0];
+   });
+   if(!job)return false;
+   let errorCode='DELIVERY_FAILED';
+   const markFailed=async(code:string)=>{
+    await this.db.query(`UPDATE md_flow_email_jobs SET status='failed',
+     error_code=$3,completed_at=now(),claimed_at=NULL
+     WHERE tenant_id=$1 AND id=$2 AND status='sending'`,
+     [job.tenant_id,job.id,code]);
+    await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+     VALUES($1,$2,'flow.email.failed',jsonb_build_object('flowId',$3,'jobId',$4,'errorCode',$5))`,
+     [job.tenant_id,job.user_id,job.flow_id,job.id,code]);
+   };
+   let message:{from:string;recipients:string[];subject:string;body:string};
+   try{
+    const {rows:metadata}=await this.db.query<MetadataValueRow>(`
+     SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+     WHERE tenant_id=$1 AND flow_id=$2`,[job.tenant_id,job.flow_id]);
+    const graph=decodeMetadataValues(metadata).builder as Record<string,unknown>|undefined;
+    const appApiName=typeof graph?.appApiName==='string'&&graph.appApiName
+     ?graph.appApiName:null;
+    const authorized=await flowAppIsEntitled(this.db,job.tenant_id,appApiName)
+     &&await this.rbac.allowed(job.tenant_id,job.user_id,'Flow:'+job.flow_api,'execute')
+     &&await this.rbac.allowed(job.tenant_id,job.user_id,'Email','send')
+     &&await this.rbac.allowed(job.tenant_id,job.user_id,'NamedCredential','read');
+    if(!authorized){
+     errorCode='AUTHORIZATION_CHANGED';
+     throw new Error('Flow email authorization changed');
+    }
+    let payload:unknown;
+    try{payload=JSON.parse(this.decryptValueWithKey(job.payload_ciphertext,job.encryption_key_id));}
+    catch{throw new Error('Queued Flow email payload is invalid');}
+    if(!payload||typeof payload!=='object'||Array.isArray(payload))
+     throw new Error('Queued Flow email payload is invalid');
+    const data=payload as Record<string,unknown>;
+    if(typeof data.from!=='string'||!Array.isArray(data.recipients)
+      ||!data.recipients.every((value):value is string=>typeof value==='string')
+      ||typeof data.subject!=='string'||typeof data.body!=='string')
+     throw new Error('Queued Flow email payload is invalid');
+    message={from:data.from,recipients:data.recipients,subject:data.subject,body:data.body};
+   }catch{
+    await markFailed(errorCode);
+    return true;
+   }
+   try{
+    await this.sendTenantEmail(job.tenant_id,job.credential_id,message.from,
+     message.recipients.join(','),message.subject,message.body);
+   }catch{
+    await markFailed('DELIVERY_OUTCOME_UNKNOWN');
+    return true;
+   }
+   const {rowCount}=await this.db.query(`UPDATE md_flow_email_jobs SET status='completed',
+    completed_at=now(),claimed_at=NULL WHERE tenant_id=$1 AND id=$2 AND status='sending'`,
+    [job.tenant_id,job.id]);
+   if(!rowCount)throw new Error('Flow email job state changed before completion');
+   await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+    VALUES($1,$2,'flow.email.delivered',jsonb_build_object('flowId',$3,'jobId',$4))`,
+    [job.tenant_id,job.user_id,job.flow_id,job.id]);
+   return true;
+  }finally{this.emailDispatching=false;}
+ }
+
  async sendTenantEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
   if(!/^[0-9a-f-]{36}$/i.test(id)||!from||!to||
     /[\r\n]/.test(from+to+subject)||subject.length>300||body.length>10000)

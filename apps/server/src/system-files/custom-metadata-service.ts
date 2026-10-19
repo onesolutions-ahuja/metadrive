@@ -296,6 +296,14 @@ export class CustomMetadataService {
     if(!rowCount)throw new Error('Custom Metadata record not found');
   }
 
+  async listCustomSettings(tenantId:string,userId:string) {
+    await this.rbac.require(tenantId,userId,'CustomSettingType','read');
+    const {rows}=await this.db.query<{api_name:string;label:string;description:string}>(
+      'SELECT api_name,label,description FROM md_custom_settings WHERE tenant_id=$1 ORDER BY api_name',[tenantId]);
+    return Promise.all(rows.map(async row=>definitionView(row,
+      await loadFields(this.db,'md_custom_setting_fields','setting_api',tenantId,row.api_name))));
+  }
+
   async createCustomSetting(tenantId:string,userId:string,input:CustomSettingInput) {
     await this.rbac.require(tenantId,userId,'CustomSettingType','manage');
     if(!input||typeof input!=='object')throw new Error('Invalid Custom Setting');
@@ -312,9 +320,10 @@ export class CustomMetadataService {
       for(let index=0;index<fields.length;index++){
         const field=fields[index] as CustomFieldDefinition;
         await client.query(`INSERT INTO md_custom_setting_fields
-          (tenant_id,setting_api,api_name,label,data_type,max_length,sort_order)
-          VALUES($1,$2,$3,$4,$5,$6,$7)`,
-        [tenantId,input.apiName,field.apiName,field.label.trim(),field.dataType,field.maxLength??null,index]);
+          (tenant_id,setting_api,api_name,label,data_type,required,max_length,sort_order)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [tenantId,input.apiName,field.apiName,field.label.trim(),field.dataType,
+          field.required===true,field.maxLength??null,index]);
       }
       return definitionView(rows[0],await loadFields(client,'md_custom_setting_fields','setting_api',tenantId,input.apiName));
     });
@@ -380,14 +389,41 @@ export class CustomMetadataService {
     });
   }
 
-  async getCustomSettingValues(tenantId:string,actorUserId:string,settingApi:string,targetUserId=actorUserId) {
+  async getCustomSettingValues(tenantId:string,actorUserId:string,settingApi:string,targetUserId=actorUserId,
+    scope?:SettingScope,ownerId?:string) {
     validateName(settingApi);
     await this.rbac.require(tenantId,actorUserId,`CustomSetting:${settingApi}`,'read');
-    if(targetUserId!==actorUserId)
-      await this.rbac.require(tenantId,actorUserId,`CustomSetting:${settingApi}`,'manage');
     const setting=await this.db.query(
       'SELECT 1 FROM md_custom_settings WHERE tenant_id=$1 AND api_name=$2',[tenantId,settingApi]);
     if(!setting.rowCount)throw new Error('Custom Setting not found');
+    if(scope!==undefined){
+      await this.rbac.require(tenantId,actorUserId,`CustomSetting:${settingApi}`,'manage');
+      if(!['organization','profile','user'].includes(scope))throw new Error('Invalid Custom Setting scope');
+      if(scope==='organization'&&ownerId!==undefined)throw new Error('Organization settings have no owner');
+      if(scope!=='organization'&&(typeof ownerId!=='string'||!ownerId))throw new Error('Setting owner is required');
+      if(scope==='profile'){
+        const profile=await this.db.query('SELECT 1 FROM md_profiles WHERE tenant_id=$1 AND id=$2',[tenantId,ownerId]);
+        if(!profile.rowCount)throw new Error('Custom Setting profile not found');
+      }else if(scope==='user'){
+        const user=await this.db.query('SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,ownerId]);
+        if(!user.rowCount)throw new Error('Custom Setting user not found');
+      }
+      const {rows:scopedRows}=await this.db.query<SqlValue>(`
+        SELECT v.field_api,v.data_type,v.value_text,v.value_number::text,v.value_boolean,
+          v.value_date::text,v.value_datetime
+        FROM md_custom_setting_entries e JOIN md_custom_setting_values v
+          ON v.tenant_id=e.tenant_id AND v.setting_api=e.setting_api AND v.entry_id=e.id
+        WHERE e.tenant_id=$1 AND e.setting_api=$2 AND e.scope=$3
+          AND (($3='organization' AND e.profile_id IS NULL AND e.user_id IS NULL)
+            OR ($3='profile' AND e.profile_id=$4)
+            OR ($3='user' AND e.user_id=$5))
+        ORDER BY v.field_api`,[tenantId,settingApi,scope,scope==='profile'?ownerId:null,scope==='user'?ownerId:null]);
+      const scopedValues:Record<string,CustomScalar>={};
+      for(const row of scopedRows)scopedValues[row.field_api]=readValue(row);
+      return {settingApi,scope,ownerId:ownerId??null,values:scopedValues};
+    }
+    if(targetUserId!==actorUserId)
+      await this.rbac.require(tenantId,actorUserId,`CustomSetting:${settingApi}`,'manage');
     const user=await this.db.query(
       'SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,targetUserId]);
     if(!user.rowCount)throw new Error('Custom Setting user not found');

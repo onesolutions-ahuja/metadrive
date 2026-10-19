@@ -24,6 +24,13 @@ export class PlatformTenantService {
   await this.rbac.require(tenantId,userId,'TenantSettings','read');
   const {rows}=await this.db.query<{properties:unknown}>(
     'SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key=$2',[tenantId,key]);
+  if(key==='automation-settings'){
+   const {rows:automation}=await this.db.query<{flow_service_user_id:string|null}>(
+    'SELECT flow_service_user_id FROM md_tenant_automation_settings WHERE tenant_id=$1',[tenantId]);
+   return rows[0]?.properties&&typeof rows[0].properties==='object'
+    ?{...(rows[0].properties as Record<string,unknown>),flowServiceUserId:automation[0]?.flow_service_user_id??null}
+    :null;
+  }
   return rows[0]?.properties??null;
  }
  async saveSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings',payload:unknown) {
@@ -69,8 +76,43 @@ export class PlatformTenantService {
     if(typeof data.autoRetryFailedFlows!=='boolean'
        ||!Number.isInteger(data.maxRetryAttempts)||Number(data.maxRetryAttempts)<0||Number(data.maxRetryAttempts)>100
        ||!Number.isInteger(data.conversationIdleMinutes)||Number(data.conversationIdleMinutes)<1||Number(data.conversationIdleMinutes)>1440
-       ||Object.keys(data).some(k=>!['autoRetryFailedFlows','maxRetryAttempts','conversationIdleMinutes'].includes(k)))
+       ||data.flowServiceUserId!==undefined&&data.flowServiceUserId!==null&&typeof data.flowServiceUserId!=='string'
+       ||typeof data.flowServiceUserId==='string'&&!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(data.flowServiceUserId)
+       ||Object.keys(data).some(k=>!['autoRetryFailedFlows','maxRetryAttempts','conversationIdleMinutes','flowServiceUserId'].includes(k)))
       throw new Error('Invalid automation settings');
+    const serviceUserId=typeof data.flowServiceUserId==='string'?data.flowServiceUserId:null;
+    if(serviceUserId){
+     const {rows:users}=await this.db.query<{id:string}>(
+      'SELECT id FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',[tenantId,serviceUserId]);
+     if(!users.length)throw new Error('Flow service user must be an enabled user in this tenant');
+    }
+    const properties={
+     autoRetryFailedFlows:data.autoRetryFailedFlows,
+     maxRetryAttempts:data.maxRetryAttempts,
+     conversationIdleMinutes:data.conversationIdleMinutes
+    };
+    return this.db.transaction(async client=>{
+     await client.query(`
+      INSERT INTO md_tenant_settings(tenant_id,setting_key,properties)
+      VALUES($1,'automation-settings',$2::jsonb)
+      ON CONFLICT(tenant_id,setting_key) DO UPDATE
+       SET properties=EXCLUDED.properties,revision=md_tenant_settings.revision+1,updated_at=now()
+     `,[tenantId,JSON.stringify(properties)]);
+     const previous=await client.query<{flow_service_user_id:string|null}>(
+      'SELECT flow_service_user_id FROM md_tenant_automation_settings WHERE tenant_id=$1 FOR UPDATE',[tenantId]);
+     await client.query(`
+      INSERT INTO md_tenant_automation_settings(tenant_id,flow_service_user_id,updated_by)
+      VALUES($1,$2,$3)
+      ON CONFLICT(tenant_id) DO UPDATE SET flow_service_user_id=EXCLUDED.flow_service_user_id,
+       updated_by=EXCLUDED.updated_by,updated_at=now()
+     `,[tenantId,serviceUserId,userId]);
+     if((previous.rows[0]?.flow_service_user_id??null)!==serviceUserId)
+      await client.query(`
+       INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action,details)
+       VALUES($1,$2,$3,'automation.flow-service-user.change',$4::jsonb)
+      `,[tenantId,userId,serviceUserId,JSON.stringify({previousUserId:previous.rows[0]?.flow_service_user_id??null})]);
+     return {...properties,flowServiceUserId:serviceUserId};
+    });
   }
   const {rows}=await this.db.query<{properties:Record<string,unknown>}>(`
     INSERT INTO md_tenant_settings(tenant_id,setting_key,properties) VALUES ($1,$2,$3::jsonb)

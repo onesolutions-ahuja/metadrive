@@ -6,6 +6,7 @@ import type {RecordEngine} from '../../src/system-files/record-engine.js';
 import {FlowRuntime} from '../../src/system-files/flow-runtime.js';
 import {encodeMetadataValue} from '../../src/system-files/component-runtime.js';
 import {evaluateFlowDecisionComparison, evaluateFlowDecisionOutcome} from '../../src/system-files/flow-decision-runtime.js';
+import {validateFlowDraft} from '../../src/system-files/flow-validation.js';
 
 test('Flow Decision supports Salesforce scalar comparison operators', () => {
   assert.equal(evaluateFlowDecisionComparison('alpha-beta', 'beta', 'Contains'), true);
@@ -40,6 +41,12 @@ test('Flow Decision handles Was Set and Is Changed using explicit resource state
   assert.equal(evaluateFlowDecisionOutcome([
     {field: '@present', operator: 'Is Changed', value: 'before'}
   ], 'All', resolve, wasSet), true);
+  assert.equal(evaluateFlowDecisionOutcome([
+    {field: 'new value', priorValue: null, operator: 'Was Set'}
+  ], 'All', resolve), true);
+  assert.equal(evaluateFlowDecisionOutcome([
+    {field: null, priorValue: 'old value', operator: 'Was Set'}
+  ], 'All', resolve), false);
 });
 
 test('Flow Decision rejects malformed custom logic and missing prior values', () => {
@@ -55,7 +62,53 @@ test('Flow Decision rejects malformed custom logic and missing prior values', ()
   ], '', resolve), /custom Decision logic/);
 });
 
-test('authored Flow execution routes through the expanded Decision evaluator', async () => {
+test('Flow validation gates Is Changed and Was Set to valid record-trigger fields', async()=>{
+  const rbac={require:async()=>undefined} as unknown as RbacEngine;
+  const graph={
+    apiName:'TriggerDecision',
+    flowType:'Record-Triggered Flow',
+    resources:[],
+    elements:[
+      {id:1,type:'Start',config:{object:'Account',trigger:'updated',runWhen:'after-save'}},
+      {id:2,type:'Decision',config:{outcomes:[
+        {name:'WasSet',label:'Was Set',conditionLogic:'All',conditions:[
+          {field:'{!$Record.Name}',operator:'Was Set'}
+        ]},
+        {name:'Default',label:'Default',conditionLogic:'All',conditions:[]}
+      ]}},
+      {id:3,type:'End',config:{}}
+    ],
+    connectors:[
+      {from:1,to:2,label:'Default',kind:'normal'},
+      {from:2,to:3,label:'Was Set',kind:'normal'},
+      {from:2,to:3,label:'Default',kind:'normal'}
+    ]
+  };
+  const valid=await validateFlowDraft(rbac,'tenant-id','user-id','TriggerDecision',graph);
+  assert.equal(valid.valid,true,valid.errors.join('; '));
+  const formulaGraph={...graph,resources:[{
+    name:'changed',type:'Formula',dataType:'Boolean',value:'ISCHANGED({!$Record.Name})'
+  }]};
+  const formulaValid=await validateFlowDraft(
+    rbac,'tenant-id','user-id','TriggerDecision',formulaGraph);
+  assert.equal(formulaValid.valid,true,formulaValid.errors.join('; '));
+  const formulaInvalid=await validateFlowDraft(rbac,'tenant-id','user-id','TriggerDecision',{
+    ...formulaGraph,flowType:'Autolaunched Flow'
+  });
+  assert.equal(formulaInvalid.valid,false);
+  assert.ok(formulaInvalid.errors.some(error=>error.includes('only supported in Record-Triggered Flows')));
+  const invalid=await validateFlowDraft(rbac,'tenant-id','user-id','TriggerDecision',{
+    ...graph,elements:graph.elements.map(element=>element.id===2
+      ?{...element,config:{outcomes:[{name:'Changed',label:'Changed',conditions:[
+        {field:'Name',operator:'Is Changed'}
+      ]},{name:'Default',label:'Default',conditions:[]}]}}
+      :element)
+  });
+  assert.equal(invalid.valid,false);
+  assert.ok(invalid.errors.some(error=>error.includes('valid record field')));
+});
+
+test('authored Flow routes Decision outcomes and executes Custom Notification actions', async () => {
   const graph = {
     flowType: 'Autolaunched Flow',
     resources: [{name: 'route', availableForOutput: true}],
@@ -71,22 +124,41 @@ test('authored Flow execution routes through the expanded Decision evaluator', a
       ]}},
       {id: 3, type: 'Assignment', label: 'Matched', config: {variable: 'route', value: 'matched'}},
       {id: 4, type: 'End', label: 'Matched End', config: {}},
-      {id: 5, type: 'End', label: 'Fallback', config: {}}
+      {id: 5, type: 'End', label: 'Fallback', config: {}},
+      {id: 6, type: 'Action', label: 'Notify', config: {
+        actionType: 'Custom Notification', recipientIds: '{!$User.Id}',
+        title: 'Matched {!$User.Name}', messageBody: 'Decision branch matched for {!$User.Email}'
+      }},
+      {id: 7, type: 'Action', label: 'Create Task', config: {
+        actionType: 'Create Task', objectApiName: 'Account',
+        recordId: '00000000-0000-4000-8000-000000000003', subject: 'Follow up'
+      }},
+      {id: 8, type: 'Action', label: 'Post to Chatter', config: {
+        actionType: 'Post to Chatter', objectApiName: 'Account',
+        recordId: '00000000-0000-4000-8000-000000000003', message: 'Flow matched'
+      }}
     ],
     connectors: [
       {from: 1, to: 2, label: 'Default', kind: 'normal'},
-      {from: 2, to: 3, label: 'Matching', kind: 'normal'},
+      {from: 2, to: 6, label: 'Matching', kind: 'normal'},
       {from: 2, to: 5, label: 'Default', kind: 'normal'},
+      {from: 6, to: 7, label: 'Default', kind: 'normal'},
+      {from: 7, to: 8, label: 'Default', kind: 'normal'},
+      {from: 8, to: 3, label: 'Default', kind: 'normal'},
       {from: 3, to: 4, label: 'Default', kind: 'normal'}
     ]
   };
   const metadata: Array<{path: string; kind: string; text: string | null}> = [];
   encodeMetadataValue(graph, '/builder', metadata);
   const runId = '00000000-0000-4000-8000-000000000001';
-  const client = {query: async (sql: string) => {
+  let notifications=0;
+  let notificationValues:unknown[]|undefined;
+  let tasks=0;
+  let posts=0;
+  const client = {query: async (sql: string, values?: unknown[]) => {
     if (sql.includes('SELECT r.flow_id,f.api_name')) return {rows: [{
       flow_id: 'flow-id', api_name: 'DecisionFlow', flow_type: 'Autolaunched Flow',
-      started_by: 'user-id', status: 'pending'
+      started_by: '00000000-0000-4000-8000-000000000001', status: 'pending'
     }]};
     if (sql.includes('FROM md_flow_editor_values')) return {rows: metadata.map(row => ({
       property_path: row.path, value_kind: row.kind, value_text: row.text
@@ -99,18 +171,38 @@ test('authored Flow execution routes through the expanded Decision evaluator', a
     if (sql.includes('FROM md_flow_interview_values')) return {rows: []};
     if (sql.includes('FROM md_flow_interview_records')) return {rows: []};
     if (sql.includes('FROM md_flow_interview_record_fields')) return {rows: []};
+    if (sql.includes('SELECT id,email,display_name FROM md_users')) return {rows:[{
+      id:'00000000-0000-4000-8000-000000000001',email:'flow@example.invalid',display_name:'Flow User'
+    }]};
+    if (sql.startsWith('SAVEPOINT ')) return {rows: []};
+    if (sql.startsWith('RELEASE SAVEPOINT ')||sql.startsWith('ROLLBACK TO SAVEPOINT ')) return {rows: []};
+    if (sql.includes('INSERT INTO md_notifications')) {
+      notifications++;notificationValues=values;
+      return {rows: [],rowCount:1};
+    }
+    if (sql.includes('INSERT INTO md_record_activities')) { tasks++; return {rows: [],rowCount:1}; }
+    if (sql.includes('INSERT INTO md_record_chatter_posts')) { posts++; return {rows: [],rowCount:1}; }
     if (sql.includes('FROM md_flow_interview_loop_state')) return {rows: []};
     if (sql.includes("UPDATE md_flow_runs SET status='completed'")) return {rows: [], rowCount: 1};
+    if (sql.includes("UPDATE md_flow_runs SET status='failed'")) return {rows: [], rowCount: 1};
     throw new Error('Unexpected Flow query: ' + sql);
   }};
   const db = {
     query: client.query,
     transaction: async <T>(operation: (transaction: typeof client) => Promise<T>) => operation(client)
   } as unknown as SqlPersistence;
-  const rbac = {require: async () => undefined} as unknown as RbacEngine;
+  const rbac = {require: async () => undefined,requireRecord:async()=>undefined} as unknown as RbacEngine;
   const records = {} as RecordEngine;
   const runtime = new FlowRuntime(db, rbac, records);
-  const result = await runtime.advanceInterview('tenant-id', 'user-id', runId, {});
+  const result = await runtime.advanceInterview('tenant-id', '00000000-0000-4000-8000-000000000001', runId, {});
   assert.equal(result.status, 'completed');
   assert.equal((result as {outputs: Record<string, unknown>}).outputs.route, 'matched');
+  assert.equal(notifications,1);
+  assert.deepEqual(notificationValues,[
+    'tenant-id',['00000000-0000-4000-8000-000000000001'],
+    'Matched Flow User','Decision branch matched for flow@example.invalid','DecisionFlow',
+    '00000000-0000-4000-8000-000000000001'
+  ]);
+  assert.equal(tasks,1);
+  assert.equal(posts,1);
 });

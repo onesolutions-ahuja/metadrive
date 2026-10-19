@@ -68,3 +68,30 @@ test('Flow drafts are checked before writes and supported Screen graph validatio
   assert.equal(validation.valid,true);
   assert.deepEqual(validation.errors,[]);
 });
+
+test('Flow version restore source is loaded by tenant, API name, and published version',async()=>{
+  const graph={label:'Order Flow',flowType:'Screen Flow',triggerObject:null,startConfig:{},
+    elements:[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'End',label:'End',config:{}}],
+    connectors:[{id:'start-end',from:1,to:2,label:'',kind:'normal'}],resources:[],tests:[]};
+  const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+  encodeMetadataValue(graph,'/builder',encoded);
+  const calls:Array<{sql:string;values:unknown[]}>= [];
+  const db={query:async(sql:string,values:unknown[]=[])=>{
+    calls.push({sql,values});
+    if(sql.includes('FROM md_flow_definitions'))return {rows:[{
+      id:'flow-v1',api_name:'OrderFlow',label:'Order Flow',flow_type:'Screen Flow',
+      version:1,active:false
+    }]};
+    if(sql.includes('FROM md_flow_editor_values'))return {rows:encoded.map(row=>({
+      property_path:row.path,value_kind:row.kind,value_text:row.text
+    }))};
+    throw new Error('Unexpected Flow version query: '+sql);
+  }} as unknown as SqlPersistence;
+  const version=await new FlowRuntime(db).loadEditorVersion('tenant','OrderFlow',1);
+  assert.equal(version.versionNumber,1);
+  assert.equal(version.status,'Obsolete');
+  assert.deepEqual(version.elements,graph.elements);
+  assert.deepEqual(version.connectors,graph.connectors);
+  assert.deepEqual(calls[0].values,['tenant','OrderFlow',1]);
+  assert.ok(calls.every(call=>call.values.includes('tenant')));
+});

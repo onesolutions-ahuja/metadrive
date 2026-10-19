@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS md_component_definitions (id uuid PRIMARY KEY DEFAULT
 CREATE TABLE IF NOT EXISTS md_page_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, title text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,api_name), UNIQUE(tenant_id,id));
 CREATE TABLE IF NOT EXISTS md_page_components (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), page_id uuid NOT NULL, component_api text NOT NULL, FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id), FOREIGN KEY(tenant_id,component_api) REFERENCES md_component_definitions(tenant_id,api_name), slot text NOT NULL, sort_order integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS md_flow_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, label text, flow_type text NOT NULL DEFAULT 'Autolaunched Flow', version integer NOT NULL, active boolean NOT NULL DEFAULT false, UNIQUE(tenant_id,api_name,version), UNIQUE(tenant_id,id));
-CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL CHECK(status IN ('pending','completed','failed','cancelled')), UNIQUE(tenant_id,id), started_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,error_code text);
+CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL CHECK(status IN ('pending','waiting','completed','failed','cancelled')), wait_kind text NOT NULL DEFAULT 'wait' CHECK(wait_kind IN ('wait','scheduled-path')), UNIQUE(tenant_id,id), started_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,error_code text,wait_until timestamptz);
 CREATE TABLE IF NOT EXISTS md_apps (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), api_name text NOT NULL UNIQUE, label text NOT NULL, enabled boolean NOT NULL DEFAULT true);
 CREATE TABLE IF NOT EXISTS md_app_installations (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_id uuid NOT NULL REFERENCES md_apps(id), PRIMARY KEY(tenant_id,app_id));
 
@@ -121,6 +121,40 @@ CREATE TABLE IF NOT EXISTS md_system_definitions (
  PRIMARY KEY (tenant_id,kind,api_name)
 );
 CREATE INDEX IF NOT EXISTS md_system_definitions_lookup ON md_system_definitions(tenant_id,kind,enabled);
+CREATE TABLE IF NOT EXISTS md_platform_event_details (
+ tenant_id uuid NOT NULL,
+ kind text NOT NULL DEFAULT 'platform-events' CHECK(kind='platform-events'),
+ event_api_name text NOT NULL,
+ description text NOT NULL DEFAULT '',
+ PRIMARY KEY(tenant_id,event_api_name),
+ FOREIGN KEY(tenant_id,kind,event_api_name)
+  REFERENCES md_system_definitions(tenant_id,kind,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_platform_event_fields (
+ tenant_id uuid NOT NULL,
+ kind text NOT NULL DEFAULT 'platform-events' CHECK(kind='platform-events'),
+ event_api_name text NOT NULL,
+ field_api text NOT NULL,
+ label text NOT NULL,
+ data_type text NOT NULL CHECK(data_type IN (
+  'Text(255)','Long Text Area','Number','Currency','Percent','Checkbox','Date','DateTime','Picklist')),
+ required boolean NOT NULL DEFAULT false,
+ picklist_restricted boolean NOT NULL DEFAULT false,
+ sort_order integer NOT NULL DEFAULT 0 CHECK(sort_order>=0),
+ PRIMARY KEY(tenant_id,event_api_name,field_api),
+ FOREIGN KEY(tenant_id,kind,event_api_name)
+  REFERENCES md_system_definitions(tenant_id,kind,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_platform_event_picklist_values (
+ tenant_id uuid NOT NULL,
+ event_api_name text NOT NULL,
+ field_api text NOT NULL,
+ value_text text NOT NULL,
+ sort_order integer NOT NULL CHECK(sort_order>=0),
+ PRIMARY KEY(tenant_id,event_api_name,field_api,value_text),
+ FOREIGN KEY(tenant_id,event_api_name,field_api)
+  REFERENCES md_platform_event_fields(tenant_id,event_api_name,field_api) ON DELETE CASCADE
+);
 
 -- Isolated encrypted credential storage. The SQL record never contains plaintext secrets.
 CREATE TABLE IF NOT EXISTS md_named_credentials (
@@ -138,9 +172,59 @@ CREATE TABLE IF NOT EXISTS md_named_credentials (
  updated_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(tenant_id,name),UNIQUE(tenant_id,id)
 );
+CREATE TABLE IF NOT EXISTS md_flow_email_jobs (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ run_id uuid NOT NULL,
+ flow_id uuid NOT NULL,
+ flow_version integer NOT NULL CHECK(flow_version>0),
+ node_id integer NOT NULL,
+ step integer NOT NULL CHECK(step BETWEEN 0 AND 199),
+ user_id uuid NOT NULL,
+ credential_id uuid NOT NULL,
+ payload_ciphertext bytea NOT NULL,
+ encryption_key_id text NOT NULL,
+ status text NOT NULL DEFAULT 'queued'
+  CHECK(status IN ('queued','sending','completed','failed')),
+ error_code text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ claimed_at timestamptz,
+ completed_at timestamptz,
+ UNIQUE(tenant_id,id),
+ UNIQUE(tenant_id,run_id,node_id,step),
+ FOREIGN KEY(tenant_id,run_id) REFERENCES md_flow_runs(tenant_id,id) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,credential_id) REFERENCES md_named_credentials(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_flow_email_jobs_queue
+ ON md_flow_email_jobs(status,created_at,id) WHERE status='queued';
+CREATE TABLE IF NOT EXISTS md_email_alert_details (
+ tenant_id uuid NOT NULL,
+ kind text NOT NULL DEFAULT 'email-alerts' CHECK(kind='email-alerts'),
+ alert_api_name text NOT NULL,
+ object_api text NOT NULL,
+ credential_id uuid NOT NULL,
+ from_email text NOT NULL,
+ recipients text NOT NULL,
+ subject text NOT NULL,
+ body text NOT NULL,
+ PRIMARY KEY(tenant_id,alert_api_name),
+ FOREIGN KEY(tenant_id,kind,alert_api_name)
+  REFERENCES md_system_definitions(tenant_id,kind,api_name) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,credential_id) REFERENCES md_named_credentials(tenant_id,id)
+);
 
 -- Tenant-level settings persisted independently from Core metadata.
 CREATE TABLE IF NOT EXISTS md_tenant_settings (tenant_id uuid NOT NULL REFERENCES md_tenants(id), setting_key text NOT NULL CHECK (setting_key IN ('company-profile','currencies','automation-settings')), properties jsonb NOT NULL CHECK (jsonb_typeof(properties)='object'),revision integer NOT NULL DEFAULT 1 CHECK (revision>0),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,setting_key));
+CREATE TABLE IF NOT EXISTS md_tenant_automation_settings (
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id) ON DELETE CASCADE,
+ flow_service_user_id uuid,
+ updated_by uuid NOT NULL,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,flow_service_user_id) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,updated_by) REFERENCES md_users(tenant_id,id)
+);
 
 -- Fresh-install tenant lifecycle fields mirror the additive migration.
 ALTER TABLE md_tenants ADD COLUMN IF NOT EXISTS description text NOT NULL DEFAULT '';
@@ -523,6 +607,26 @@ ALTER TABLE md_field_definitions ADD COLUMN IF NOT EXISTS rollup_child_object te
 ALTER TABLE md_field_definitions ADD COLUMN IF NOT EXISTS rollup_relationship_field text;
 ALTER TABLE md_field_definitions ADD COLUMN IF NOT EXISTS rollup_operation text;
 ALTER TABLE md_field_definitions ADD COLUMN IF NOT EXISTS rollup_source_field text;
+ALTER TABLE md_field_definitions ADD COLUMN IF NOT EXISTS rollup_filter_logic text NOT NULL DEFAULT 'All'
+  CHECK(rollup_filter_logic IN ('All','Any'));
+CREATE TABLE IF NOT EXISTS md_field_rollup_filters (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  child_object text NOT NULL,
+  rollup_field_api text NOT NULL,
+  filter_field_api text NOT NULL,
+  operator text NOT NULL CHECK(operator IN
+    ('Equals','Not Equal To','Greater Than','Less Than','Contains','Is Null','Is Not Null')),
+  value_text text NOT NULL DEFAULT '',
+  sort_order integer NOT NULL CHECK(sort_order>=0),
+  PRIMARY KEY(tenant_id,object_api,rollup_field_api,sort_order),
+  FOREIGN KEY(tenant_id,object_api,rollup_field_api)
+    REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,child_object,filter_field_api)
+    REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_field_rollup_filters_lookup
+  ON md_field_rollup_filters(tenant_id,object_api,rollup_field_api,sort_order);
 CREATE INDEX IF NOT EXISTS md_field_definitions_recycle_bin
   ON md_field_definitions(tenant_id,deleted_at) WHERE deleted_at IS NOT NULL;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS is_unique boolean NOT NULL DEFAULT false;
@@ -601,6 +705,29 @@ CREATE TABLE IF NOT EXISTS md_field_dependency_values (
 CREATE INDEX IF NOT EXISTS md_field_dependency_values_lookup
   ON md_field_dependency_values(tenant_id,object_api,field_api,controller_value);
 
+CREATE TABLE IF NOT EXISTS md_record_files (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  object_api text NOT NULL,
+  record_id uuid NOT NULL,
+  field_api text NOT NULL,
+  name text NOT NULL CHECK(length(name) BETWEEN 1 AND 255),
+  content_type text NOT NULL CHECK(content_type IN ('image/jpeg','image/png','image/gif','image/webp')),
+  byte_size integer NOT NULL CHECK(byte_size BETWEEN 1 AND 1048576),
+  checksum text NOT NULL CHECK(checksum ~ '^[0-9a-f]{64}$'),
+  content bytea NOT NULL,
+  created_by uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK(octet_length(content)=byte_size),
+  FOREIGN KEY(tenant_id,record_id,object_api)
+    REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,object_api,field_api)
+    REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,created_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_record_files_record_field
+  ON md_record_files(tenant_id,object_api,record_id,field_api,created_at);
+
 -- Additive, tenant-scoped Builder metadata. No business records or existing app installations are removed.
 -- General metadata values use relational path/value rows shared with the Component and Page engines.
 CREATE TABLE IF NOT EXISTS md_flow_editor_values (
@@ -612,6 +739,66 @@ CREATE TABLE IF NOT EXISTS md_flow_editor_values (
  PRIMARY KEY(tenant_id,flow_id,property_path),
  FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS md_flow_trigger_subscriptions (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ flow_id uuid NOT NULL,
+ flow_type text NOT NULL CHECK(flow_type IN (
+  'Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow')),
+ trigger_key text NOT NULL CHECK(length(trigger_key) BETWEEN 1 AND 255),
+ app_api_name text,
+ active boolean NOT NULL DEFAULT true,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,flow_id),
+ FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_flow_trigger_subscriptions_dispatch
+ ON md_flow_trigger_subscriptions(tenant_id,flow_type,trigger_key,flow_id) WHERE active=true;
+CREATE TABLE IF NOT EXISTS md_platform_event_messages (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ event_api_name text NOT NULL,
+ published_by uuid NOT NULL,
+ published_at timestamptz NOT NULL DEFAULT now(),
+ status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','queued','completed','failed')),
+ idempotency_key text,
+ error_code text,
+ PRIMARY KEY(tenant_id,id),
+ FOREIGN KEY(tenant_id,published_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS md_platform_event_messages_idempotency
+ ON md_platform_event_messages(tenant_id,event_api_name,idempotency_key)
+ WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS md_platform_event_messages_pending
+ ON md_platform_event_messages(tenant_id,published_at,id) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS md_platform_event_values (
+ tenant_id uuid NOT NULL,
+ event_id uuid NOT NULL,
+ field_api text NOT NULL,
+ value_kind text NOT NULL CHECK(value_kind IN ('string','number','boolean','null')),
+ value_text text,
+ PRIMARY KEY(tenant_id,event_id,field_api),
+ FOREIGN KEY(tenant_id,event_id) REFERENCES md_platform_event_messages(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_platform_event_deliveries (
+ tenant_id uuid NOT NULL,
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ event_id uuid NOT NULL,
+ flow_id uuid NOT NULL,
+ flow_version integer NOT NULL CHECK(flow_version>0),
+ actor_user_id uuid NOT NULL,
+ status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','completed','failed')),
+ error_code text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ completed_at timestamptz,
+ PRIMARY KEY(tenant_id,id),
+ UNIQUE(tenant_id,event_id,flow_id),
+ FOREIGN KEY(tenant_id,event_id) REFERENCES md_platform_event_messages(tenant_id,id) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id),
+ FOREIGN KEY(tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_platform_event_deliveries_queue
+ ON md_platform_event_deliveries(tenant_id,status,created_at,id) WHERE status='queued';
 ALTER TABLE md_flow_definitions ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS md_flow_definitions_latest
  ON md_flow_definitions(tenant_id,api_name,version DESC) WHERE archived=false;
@@ -1032,3 +1219,349 @@ $$;
    FOREIGN KEY(tenant_id,object_api,field_api)
      REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE
  );
+ CREATE TABLE IF NOT EXISTS md_object_actions (
+   tenant_id uuid NOT NULL,
+   object_api text NOT NULL,
+   action_id text NOT NULL,
+   label text NOT NULL,
+   action_type text NOT NULL CHECK(action_type IN ('Standard','Custom')),
+   enabled boolean NOT NULL DEFAULT true,
+   behavior text,
+   field_api text,
+   value_text text,
+   sort_order integer NOT NULL DEFAULT 0,
+   PRIMARY KEY(tenant_id,object_api,action_id),
+   FOREIGN KEY(tenant_id,object_api)
+     REFERENCES md_object_definitions(tenant_id,api_name) ON DELETE CASCADE,
+   FOREIGN KEY(tenant_id,object_api,field_api)
+     REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE,
+   CHECK(action_id ~ '^[A-Za-z][A-Za-z0-9_-]*$'),
+   CHECK(length(label) BETWEEN 1 AND 80),
+   CHECK(value_text IS NULL OR length(value_text)<=10000),
+   CHECK((action_type='Custom' AND behavior='Set Field Value' AND field_api IS NOT NULL
+       AND value_text IS NOT NULL) OR (action_type='Standard' AND behavior IS NULL
+       AND field_api IS NULL AND value_text IS NULL))
+ );
+ CREATE TABLE IF NOT EXISTS md_encrypted_field_access_audit (
+   tenant_id uuid NOT NULL,
+   id uuid NOT NULL DEFAULT gen_random_uuid(),
+   record_id uuid NOT NULL,
+   object_api text NOT NULL,
+   field_api text NOT NULL,
+   accessed_by uuid NOT NULL,
+   occurred_at timestamptz NOT NULL DEFAULT now(),
+   PRIMARY KEY(tenant_id,id),
+   FOREIGN KEY(tenant_id,record_id,object_api)
+     REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE,
+   FOREIGN KEY(tenant_id,object_api,field_api)
+     REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE,
+   FOREIGN KEY(tenant_id,accessed_by) REFERENCES md_users(tenant_id,id)
+ );
+ CREATE INDEX IF NOT EXISTS md_encrypted_field_access_audit_lookup
+   ON md_encrypted_field_access_audit(tenant_id,object_api,field_api,occurred_at DESC);
+ CREATE TABLE IF NOT EXISTS md_field_type_migrations (
+   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+   object_api text NOT NULL,
+   field_api text NOT NULL,
+   actor_user_id uuid,
+   from_data_type text NOT NULL,
+   to_data_type text NOT NULL,
+   from_max_length integer,
+   from_precision integer,
+   from_scale integer,
+   from_required boolean NOT NULL,
+   from_unique boolean NOT NULL,
+   from_external_id boolean NOT NULL,
+   from_case_sensitive boolean NOT NULL,
+   from_default_value text,
+   to_max_length integer,
+   to_precision integer,
+   to_scale integer,
+   to_required boolean NOT NULL,
+   to_unique boolean NOT NULL,
+   to_external_id boolean NOT NULL,
+   to_case_sensitive boolean NOT NULL,
+   to_default_value text,
+   status text NOT NULL DEFAULT 'applied' CHECK(status IN ('applied','rolled_back')),
+   records_migrated integer NOT NULL DEFAULT 0 CHECK(records_migrated>=0),
+   created_at timestamptz NOT NULL DEFAULT now(),
+   rolled_back_at timestamptz,
+   UNIQUE(tenant_id,id),
+   FOREIGN KEY(tenant_id,actor_user_id) REFERENCES md_users(tenant_id,id),
+   FOREIGN KEY(tenant_id,object_api,field_api)
+     REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE
+ );
+ CREATE INDEX IF NOT EXISTS md_field_type_migrations_history
+   ON md_field_type_migrations(tenant_id,object_api,field_api,created_at DESC);
+ CREATE TABLE IF NOT EXISTS md_field_type_migration_values (
+   tenant_id uuid NOT NULL,
+   migration_id uuid NOT NULL,
+   record_id uuid NOT NULL,
+   object_api text NOT NULL,
+   before_value_text text,
+   before_value_number numeric,
+   before_value_boolean boolean,
+   before_value_date date,
+   before_value_datetime timestamptz,
+   before_value_exists boolean NOT NULL DEFAULT true,
+   before_snapshot_encrypted boolean NOT NULL DEFAULT false,
+   before_is_unique boolean NOT NULL,
+   before_case_sensitive boolean NOT NULL,
+   after_value_text text,
+   after_value_number numeric,
+   after_value_boolean boolean,
+   after_value_date date,
+   after_value_datetime timestamptz,
+   after_value_exists boolean NOT NULL DEFAULT true,
+   before_reference_record_id uuid,
+   before_geo_latitude double precision,
+   before_geo_longitude double precision,
+   before_address_street text,
+   before_address_city text,
+   before_address_state text,
+   before_address_postal_code text,
+   before_address_country text,
+   after_reference_record_id uuid,
+   after_geo_latitude double precision,
+   after_geo_longitude double precision,
+   after_address_street text,
+   after_address_city text,
+   after_address_state text,
+   after_address_postal_code text,
+   after_address_country text,
+   PRIMARY KEY(tenant_id,migration_id,record_id),
+   FOREIGN KEY(tenant_id,migration_id)
+     REFERENCES md_field_type_migrations(tenant_id,id) ON DELETE CASCADE,
+   FOREIGN KEY(tenant_id,record_id,object_api)
+     REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE
+ );
+ CREATE TABLE IF NOT EXISTS md_field_type_migration_config (
+  tenant_id uuid NOT NULL,
+  migration_id uuid NOT NULL,
+  side text NOT NULL CHECK(side IN ('from','to')),
+  related_object text,
+  global_value_set_api text,
+  controller_field_api text,
+  relationship_type text,
+  relationship_name text,
+  child_relationship_name text,
+  delete_behavior text,
+  allow_reparenting boolean NOT NULL DEFAULT false,
+  picklist_restricted boolean NOT NULL DEFAULT true,
+  auto_number_format text,
+  formula_expression text,
+  formula_return_type text,
+  rollup_child_object text,
+  rollup_relationship_field text,
+  rollup_operation text,
+  rollup_source_field text,
+  rollup_filter_logic text,
+  auto_number_counter_exists boolean NOT NULL DEFAULT false,
+  auto_number_next_value bigint,
+  PRIMARY KEY(tenant_id,migration_id,side),
+  FOREIGN KEY(tenant_id,migration_id)
+    REFERENCES md_field_type_migrations(tenant_id,id) ON DELETE CASCADE
+ );
+ CREATE TABLE IF NOT EXISTS md_field_type_migration_picklist_values (
+  tenant_id uuid NOT NULL,
+  migration_id uuid NOT NULL,
+  side text NOT NULL CHECK(side IN ('from','to')),
+  value text NOT NULL,
+  sort_order integer NOT NULL,
+  PRIMARY KEY(tenant_id,migration_id,side,value),
+  FOREIGN KEY(tenant_id,migration_id,side)
+    REFERENCES md_field_type_migration_config(tenant_id,migration_id,side) ON DELETE CASCADE
+ );
+ CREATE TABLE IF NOT EXISTS md_field_type_migration_rollup_filters (
+  tenant_id uuid NOT NULL,
+  migration_id uuid NOT NULL,
+  side text NOT NULL CHECK(side IN ('from','to')),
+  filter_field_api text NOT NULL,
+  operator text NOT NULL,
+  value_text text NOT NULL,
+  sort_order integer NOT NULL,
+  PRIMARY KEY(tenant_id,migration_id,side,sort_order),
+  FOREIGN KEY(tenant_id,migration_id,side)
+    REFERENCES md_field_type_migration_config(tenant_id,migration_id,side) ON DELETE CASCADE
+ );
+CREATE TABLE IF NOT EXISTS md_global_value_sets (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]{0,79}$'),
+  label text NOT NULL CHECK(length(btrim(label)) BETWEEN 1 AND 120),
+  description text NOT NULL DEFAULT '' CHECK(length(description)<=4000),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,id),
+  UNIQUE(tenant_id,api_name)
+);
+CREATE TABLE IF NOT EXISTS md_global_value_set_values (
+  tenant_id uuid NOT NULL,
+  value_set_id uuid NOT NULL,
+  value text NOT NULL CHECK(length(btrim(value)) BETWEEN 1 AND 512),
+  label text NOT NULL CHECK(length(btrim(label)) BETWEEN 1 AND 120),
+  sort_order integer NOT NULL CHECK(sort_order>=0),
+  active boolean NOT NULL DEFAULT true,
+  PRIMARY KEY(tenant_id,value_set_id,value),
+  FOREIGN KEY(tenant_id,value_set_id) REFERENCES md_global_value_sets(tenant_id,id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS md_global_value_set_values_unique_ci
+  ON md_global_value_set_values(tenant_id,value_set_id,lower(value));
+CREATE INDEX IF NOT EXISTS md_global_value_set_values_order
+  ON md_global_value_set_values(tenant_id,value_set_id,sort_order,value);
+CREATE TABLE IF NOT EXISTS md_global_value_set_audit (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  value_set_id uuid NOT NULL,
+  actor_id uuid NOT NULL,
+  action text NOT NULL CHECK(action IN ('create','update','delete')),
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]{0,79}$'),
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,id),
+  FOREIGN KEY(tenant_id,actor_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_global_value_set_audit_lookup
+  ON md_global_value_set_audit(tenant_id,value_set_id,occurred_at DESC);
+CREATE TABLE IF NOT EXISTS md_field_global_value_sets (
+  tenant_id uuid NOT NULL,
+  object_api text NOT NULL,
+  field_api text NOT NULL,
+  value_set_api text NOT NULL,
+  PRIMARY KEY(tenant_id,object_api,field_api),
+  FOREIGN KEY(tenant_id,object_api,field_api)
+    REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,value_set_api)
+    REFERENCES md_global_value_sets(tenant_id,api_name) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS md_field_global_value_sets_lookup
+  ON md_field_global_value_sets(tenant_id,value_set_api);
+CREATE TABLE IF NOT EXISTS md_custom_labels (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+  language text NOT NULL DEFAULT 'en' CHECK(length(language) BETWEEN 2 AND 35),
+  label text NOT NULL CHECK(length(label) BETWEEN 1 AND 255),
+  value text NOT NULL CHECK(length(value)<=4000),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,api_name,language)
+);
+CREATE INDEX IF NOT EXISTS md_custom_labels_lookup ON md_custom_labels(tenant_id,language,api_name);
+CREATE TABLE IF NOT EXISTS md_custom_metadata_types (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+  label text NOT NULL CHECK(length(label) BETWEEN 1 AND 255),
+  description text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,api_name)
+);
+CREATE TABLE IF NOT EXISTS md_custom_metadata_fields (
+  tenant_id uuid NOT NULL,
+  type_api text NOT NULL,
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+  label text NOT NULL CHECK(length(label) BETWEEN 1 AND 255),
+  data_type text NOT NULL CHECK(data_type IN ('text','number','boolean','date','datetime')),
+  required boolean NOT NULL DEFAULT false,
+  max_length integer CHECK(max_length BETWEEN 1 AND 10000),
+  sort_order integer NOT NULL DEFAULT 0 CHECK(sort_order>=0),
+  PRIMARY KEY(tenant_id,type_api,api_name),
+  FOREIGN KEY(tenant_id,type_api) REFERENCES md_custom_metadata_types(tenant_id,api_name) ON DELETE CASCADE,
+  CHECK(data_type='text' OR max_length IS NULL)
+);
+CREATE TABLE IF NOT EXISTS md_custom_metadata_records (
+  tenant_id uuid NOT NULL,
+  type_api text NOT NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  record_key text NOT NULL CHECK(length(record_key) BETWEEN 1 AND 255),
+  master_label text NOT NULL CHECK(length(master_label) BETWEEN 1 AND 255),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,type_api,id),
+  UNIQUE(tenant_id,type_api,record_key),
+  FOREIGN KEY(tenant_id,type_api) REFERENCES md_custom_metadata_types(tenant_id,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_custom_metadata_values (
+  tenant_id uuid NOT NULL,
+  type_api text NOT NULL,
+  record_id uuid NOT NULL,
+  field_api text NOT NULL,
+  data_type text NOT NULL CHECK(data_type IN ('text','number','boolean','date','datetime')),
+  value_text text,value_number numeric,value_boolean boolean,value_date date,value_datetime timestamptz,
+  PRIMARY KEY(tenant_id,type_api,record_id,field_api),
+  FOREIGN KEY(tenant_id,type_api,record_id)
+    REFERENCES md_custom_metadata_records(tenant_id,type_api,id) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,type_api,field_api)
+    REFERENCES md_custom_metadata_fields(tenant_id,type_api,api_name) ON DELETE CASCADE,
+  CHECK(
+    (data_type='text' AND value_text IS NOT NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='number' AND value_text IS NULL AND value_number IS NOT NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='boolean' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NOT NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='date' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NOT NULL AND value_datetime IS NULL) OR
+    (data_type='datetime' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NOT NULL)
+  )
+);
+CREATE INDEX IF NOT EXISTS md_custom_metadata_records_lookup
+  ON md_custom_metadata_records(tenant_id,type_api,master_label,record_key);
+CREATE TABLE IF NOT EXISTS md_custom_settings (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+  label text NOT NULL CHECK(length(label) BETWEEN 1 AND 255),
+  description text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,api_name)
+);
+CREATE TABLE IF NOT EXISTS md_custom_setting_fields (
+  tenant_id uuid NOT NULL,
+  setting_api text NOT NULL,
+  api_name text NOT NULL CHECK(api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
+  label text NOT NULL CHECK(length(label) BETWEEN 1 AND 255),
+  data_type text NOT NULL CHECK(data_type IN ('text','number','boolean','date','datetime')),
+  required boolean NOT NULL DEFAULT false,
+  max_length integer CHECK(max_length BETWEEN 1 AND 10000),
+  sort_order integer NOT NULL DEFAULT 0 CHECK(sort_order>=0),
+  PRIMARY KEY(tenant_id,setting_api,api_name),
+  FOREIGN KEY(tenant_id,setting_api) REFERENCES md_custom_settings(tenant_id,api_name) ON DELETE CASCADE,
+  CHECK(data_type='text' OR max_length IS NULL)
+);
+CREATE TABLE IF NOT EXISTS md_custom_setting_entries (
+  tenant_id uuid NOT NULL,
+  setting_api text NOT NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  scope text NOT NULL CHECK(scope IN ('organization','profile','user')),
+  profile_id uuid,user_id uuid,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(tenant_id,setting_api,id),
+  FOREIGN KEY(tenant_id,setting_api) REFERENCES md_custom_settings(tenant_id,api_name) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,profile_id) REFERENCES md_profiles(tenant_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE,
+  CHECK(
+    (scope='organization' AND profile_id IS NULL AND user_id IS NULL) OR
+    (scope='profile' AND profile_id IS NOT NULL AND user_id IS NULL) OR
+    (scope='user' AND profile_id IS NULL AND user_id IS NOT NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS md_custom_setting_org_entry
+  ON md_custom_setting_entries(tenant_id,setting_api) WHERE scope='organization';
+CREATE UNIQUE INDEX IF NOT EXISTS md_custom_setting_profile_entry
+  ON md_custom_setting_entries(tenant_id,setting_api,profile_id) WHERE scope='profile';
+CREATE UNIQUE INDEX IF NOT EXISTS md_custom_setting_user_entry
+  ON md_custom_setting_entries(tenant_id,setting_api,user_id) WHERE scope='user';
+CREATE TABLE IF NOT EXISTS md_custom_setting_values (
+  tenant_id uuid NOT NULL,
+  setting_api text NOT NULL,
+  entry_id uuid NOT NULL,
+  field_api text NOT NULL,
+  data_type text NOT NULL CHECK(data_type IN ('text','number','boolean','date','datetime')),
+  value_text text,value_number numeric,value_boolean boolean,value_date date,value_datetime timestamptz,
+  PRIMARY KEY(tenant_id,setting_api,entry_id,field_api),
+  FOREIGN KEY(tenant_id,setting_api,entry_id)
+    REFERENCES md_custom_setting_entries(tenant_id,setting_api,id) ON DELETE CASCADE,
+  FOREIGN KEY(tenant_id,setting_api,field_api)
+    REFERENCES md_custom_setting_fields(tenant_id,setting_api,api_name) ON DELETE CASCADE,
+  CHECK(
+    (data_type='text' AND value_text IS NOT NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='number' AND value_text IS NULL AND value_number IS NOT NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='boolean' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NOT NULL AND value_date IS NULL AND value_datetime IS NULL) OR
+    (data_type='date' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NOT NULL AND value_datetime IS NULL) OR
+    (data_type='datetime' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NOT NULL)
+  )
+);

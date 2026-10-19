@@ -32,7 +32,7 @@ export class DurableJobWorker {
   for(const job of due){
    let replayBlocked=false;
    try {
-    if(job.job_type==='flow.execute'&&job.attempt>1)replayBlocked=true;
+    if(['flow.execute','flow.resume','flow.scheduled','flow.platform-event'].includes(job.job_type)&&job.attempt>1)replayBlocked=true;
     const handler=this.handlers.get(job.job_type);
     if(!handler)throw new Error('Unregistered job type');
     if(!await this.authorize(job))throw new Error('Job no longer authorised');

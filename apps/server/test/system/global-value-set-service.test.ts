@@ -20,6 +20,7 @@ function serviceFixture(){
   const statements:{sql:string;args:readonly unknown[]}[]=[];
   const decisions:{tenantId:string;userId:string;resource:string;action:string}[]=[];
   let deny=false;
+  let fieldReferenced=false;
   const query=async(sql:string,args:readonly unknown[]=[]):Promise<{rows:any[];rowCount:number}>=>{
     statements.push({sql,args});
     if(sql.includes('INSERT INTO md_global_value_sets')){
@@ -31,6 +32,8 @@ function serviceFixture(){
         label:String(args[3]),sort_order:Number(args[4]),active:Boolean(args[5])});
       return {rows:[],rowCount:1};
     }
+    if(sql.includes('FROM md_field_global_value_sets')&&sql.includes('value_set_api=$2'))
+      return {rows:fieldReferenced?[{exists:true}]:[],rowCount:fieldReferenced?1:0};
     if(sql.includes('SELECT value_set_id,value,label,active,sort_order')){
       const ids=args[1] as string[];
       return {rows:values.filter(value=>value.tenant_id===args[0]&&ids.includes(value.value_set_id)),rowCount:values.length};
@@ -76,7 +79,8 @@ function serviceFixture(){
   }} as unknown as RbacEngine;
   return {
     service:new GlobalValueSetService(db,rbac),statements,values,decisions,
-    setDenied(value:boolean){deny=value;}
+    setDenied(value:boolean){deny=value;},
+    setFieldReferenced(value:boolean){fieldReferenced=value;}
   };
 }
 
@@ -136,6 +140,13 @@ test('delete is tenant scoped and does not disclose missing sets',async()=>{
     .map(statement=>statement.args[0]),[tenantId,otherTenantId]);
   assert.ok(fixture.statements.some(statement=>statement.sql.includes('md_global_value_set_audit')&&
     statement.sql.includes("'delete'")&&statement.args[0]===tenantId));
+});
+
+test('delete rejects a value set that is linked to fields',async()=>{
+  const fixture=serviceFixture();
+  fixture.setFieldReferenced(true);
+  await assert.rejects(fixture.service.delete(actor,setId),/referenced by fields/);
+  assert.equal(fixture.statements.some(statement=>statement.sql.includes('DELETE FROM md_global_value_sets')),false);
 });
 
 test('denied RBAC prevents data access',async()=>{

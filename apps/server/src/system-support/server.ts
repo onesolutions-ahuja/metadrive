@@ -18,6 +18,7 @@ import {TenantRecoveryContacts} from './tenant-recovery-contacts.js';
 import {TenantRecoveryCases} from './tenant-recovery-cases.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
+import {fieldTypeConversionSupported} from '../system-files/field-type-migration.js';
 import {ObjectManagerMetadataService} from '../system-files/object-manager-metadata.js';
 import {ObjectMetadataHistory} from '../system-files/object-metadata-history.js';
 import {CustomMetadataService} from '../system-files/custom-metadata-service.js';
@@ -25,13 +26,14 @@ import { RbacEngine } from '../system-files/rbac-engine.js';
 import {permittedApps} from './rbac-navigation.js';
 import {RbacAdministration} from './rbac-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
+import {DurableJobService} from './durable-job-service.js';
 import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {GlobalValueSetService} from './global-value-set-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
-import {FormulaEngine} from '../system-files/formula-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
+import {RecordFileService} from '../system-files/record-file-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
@@ -39,8 +41,9 @@ import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
+import {FlowCustomError} from '../system-files/flow-error-runtime.js';
 import {FlowRecordTriggers} from '../system-files/flow-record-triggers.js';
-import {validateFlowFormula} from '../system-files/flow-formula-runtime.js';
+import {flowFormulaReferences} from '../system-files/flow-formula-runtime.js';
 import { AppRuntime } from '../system-files/app-runtime.js';
 import { TenantProvisioning } from '../system-files/tenant-provisioning.js';
 import {PlatformTenantService} from '../system-files/platform-tenant-service.js';
@@ -49,6 +52,14 @@ import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
 type Actor={tenant_id:string;user_id:string};
 type AuthenticatedRequest=Request<Record<string,string>> & {actor?:Actor};
+const authorizeFormulaReferences=async(rbac:RbacEngine,actor:Actor,expression:string)=>{
+  for(const reference of flowFormulaReferences(expression)){
+    const match=/^([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/.exec(reference);
+    if(!match)throw new Error('Formula references must use Object.Field names');
+    await rbac.require(actor.tenant_id,actor.user_id,match[1],'read');
+    await rbac.require(actor.tenant_id,actor.user_id,match[1]+'.'+match[2],'read');
+  }
+};
 type Handler=(req:AuthenticatedRequest,res:Response)=>Promise<unknown>;
 const route=(handler:Handler)=>(req:Request,res:Response,next:NextFunction)=>{
   // These routes use named parameters only; Express wildcard parameters are not registered here.
@@ -91,20 +102,28 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const rbacAdministration=new RbacAdministration(db,rbac);
+  const namedCredentials=new NamedCredentialService(db,rbac);
+  const flowJobs=new DurableJobService(db);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
-  const records=new RecordEngine(db,rbac);
+  const records=new RecordEngine(db,rbac,namedCredentials);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
+  const recordFiles=new RecordFileService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
-  const namedCredentials=new NamedCredentialService(db,rbac);
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
   const tenantDeveloper=new TenantDeveloperService(db,rbac,auth,mfa);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
-  const definitions=new ObjectDefinitionService(db);
+  const definitions=new ObjectDefinitionService(db,{
+    encryptedValueVault:namedCredentials,
+    evaluateFormula:(client,tenantId,userId,objectApi,fieldApi,recordId)=>
+      records.evaluateFormulaForMigration(client,tenantId,userId,objectApi,fieldApi,recordId),
+    recalculateRollup:(client,tenantId,objectApi,fieldApi)=>
+      records.recalculateRollupForMigration(client,tenantId,objectApi,fieldApi)
+  });
   const objectManagerMetadata=new ObjectManagerMetadataService(db,rbac);
   const objectHistory=new ObjectMetadataHistory(db);
   const customMetadata=new CustomMetadataService(db,rbac);
@@ -116,8 +135,23 @@ export function createSystemServer(db:SqlPersistence) {
     (tenantId,userId,config,variables,key,execution)=>execution
       ?namedCredentials.enqueueCallout(execution.client,tenantId,userId,execution.runId,
         execution.nodeId,config,variables).then(()=>({status:202,body:''}))
-      :namedCredentials.callout(tenantId,userId,config,variables,key));
-  const flowRecordTriggers=new FlowRecordTriggers(rbac,flows);
+      :namedCredentials.callout(tenantId,userId,config,variables,key),
+    (client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>
+      flowJobs.enqueue(tenantId,'flow.resume',{
+        actorUserId:userId,resourceId:runId,resourceVersion:version,
+        ...(appApiName?{appApiName}:{}),scheduledAt,idempotencyKey:runId+':'+step
+      },client).then(()=>undefined),
+    async(client,tenantId,userId,flowId,version,runId,nodeId,step,message)=>{
+      await namedCredentials.enqueueFlowEmail(client,tenantId,userId,flowId,version,runId,nodeId,step,
+        message.credentialId,message.from,message.recipients,message.subject,message.body);
+    });
+  const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
+    async(client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>{
+      await flowJobs.enqueue(tenantId,'flow.resume',{
+        actorUserId:userId,resourceId:runId,resourceVersion:version,
+        ...(appApiName?{appApiName}:{}),scheduledAt,idempotencyKey:runId+':'+step
+      },client);
+    });
   records.setRecordTriggerHandler((client,tenantId,userId,objectApi,operation,record,prior)=>
     flowRecordTriggers.execute(client,tenantId,userId,objectApi,operation,record,prior));
   const apps=new AppRuntime(db);
@@ -499,11 +533,21 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/automation-settings',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.getSetting(actor.tenant_id,actor.user_id,'automation-settings')??
-      {autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15});
+      {autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15,flowServiceUserId:null});
   }));
   app.put('/api/metadata/automation-settings',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'automation-settings',req.body));
+  }));
+  app.get('/api/metadata/automation-service-users',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'TenantSettings','manage');
+    const {rows}=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
+      'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT 500',
+      [actor.tenant_id]);
+    res.json({users:rows.map(user=>({
+      id:user.id,name:user.display_name||user.email,email:user.email,enabled:user.enabled
+    }))});
   }));
   app.get('/api/platform/tenants/:slug',route(async(req,res)=>{
     const actor=req.actor!;
@@ -579,7 +623,9 @@ export function createSystemServer(db:SqlPersistence) {
         names.add(key);
         const canonical=saved.fields.find(f=>f.apiName===field.apiName);
         if(!canonical)errors.push('Field is not stored in SQL: '+field.apiName);
-        else if(field.dataType!==canonical.dataType)errors.push('Unsupported field datatype change: '+field.apiName);
+        else if(field.dataType!==canonical.dataType
+          &&!fieldTypeConversionSupported(canonical.dataType,field.dataType))
+          errors.push('Unsupported field datatype change: '+field.apiName);
       }
     }
     // Draft/publishing and layouts require dedicated versioned SQL metadata support.
@@ -595,7 +641,22 @@ export function createSystemServer(db:SqlPersistence) {
     const proposal=req.body;
     if(!proposal||typeof proposal!=='object'||Array.isArray(proposal))
       throw new Error('Invalid field update');
-    res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,proposal)});
+    res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,
+      req.params.fieldApi,proposal,actor.user_id)});
+  }));
+  app.get('/api/metadata/objects/:apiName/fields/:fieldApi/migrations',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json({migrations:await definitions.listFieldTypeMigrations(
+      actor.tenant_id,req.params.apiName,req.params.fieldApi)});
+  }));
+  app.post('/api/metadata/objects/:apiName/fields/:fieldApi/migrations/:migrationId/rollback',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    res.json({object:await definitions.rollbackFieldTypeMigration(
+      actor.tenant_id,req.params.apiName,req.params.fieldApi,req.params.migrationId)});
   }));
   app.post('/api/metadata/objects/:apiName/formulas/validate',route(async(req,res)=>{
     const actor=req.actor!;
@@ -605,38 +666,12 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,objectApi,'read');
     const {expression,returnType}=req.body??{};
     if(typeof expression!=='string'||!expression.trim()||expression.length>4000
-      ||!['Number','Currency','Percent','Text','Date','Checkbox'].includes(returnType))
+      ||!['Number','Currency','Percent','Text','Date','DateTime','Time','Checkbox'].includes(returnType))
       throw new Error('Invalid formula definition');
-    validateFlowFormula(expression);
-    let depth=0;
-    const references:Array<{objectApi:string;fieldApi:string}>=[];
-    const withoutStrings=expression.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g,'');
-    const withoutReferences=withoutStrings.replace(/@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)/g,
-      (_match,objectName:string,fieldName:string)=>{
-        references.push({objectApi:objectName,fieldApi:fieldName});
-        return '0';
-      });
-    if(/[^A-Za-z0-9_\s().,+*/%&=<>!:.\\-]/.test(withoutReferences))
-      throw new Error('Formula contains unsupported syntax');
-    for(const token of withoutReferences.match(/[A-Za-z_][A-Za-z0-9_]*/g)??[])
-      if(!['IF','AND','OR','NOT','ISBLANK','ISNULL','BLANKVALUE','NULLVALUE','TEXT','VALUE',
-        'LEN','LOWER','UPPER','TRIM','LEFT','RIGHT','MID','FIND','CONTAINS','BEGINS',
-        'ABS','ROUND','MIN','MAX','GEOLOCATION','DISTANCE','TRUE','FALSE','NULL','PI'].includes(token.toUpperCase()))
-        throw new Error('Unsupported formula function or reference: '+token);
-    for(const char of withoutReferences){
-      if(char==='(')depth++;
-      if(char===')'&&--depth<0)throw new Error('Unbalanced formula parentheses');
-    }
-    if(depth!==0||withoutStrings.includes('@')&&references.length===0)
-      throw new Error('Invalid formula syntax');
-    for(const reference of references){
-      await rbac.require(actor.tenant_id,actor.user_id,reference.objectApi,'read');
-      await rbac.require(actor.tenant_id,actor.user_id,reference.objectApi+'.'+reference.fieldApi,'read');
-      const referencedObject=await definitions.get(actor.tenant_id,reference.objectApi);
-      if(!referencedObject.fields.some(field=>field.apiName===reference.fieldApi))
-        throw new Error('Formula references an unknown field: '+reference.fieldApi);
-    }
-    res.json({valid:true});
+    await authorizeFormulaReferences(rbac,actor,expression);
+    const validatedReferences=await definitions.validateFormula(
+      actor.tenant_id,objectApi,expression,returnType);
+    res.json({valid:true,references:validatedReferences});
   }));
   app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
@@ -725,6 +760,10 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.status(201).json({setting:await customMetadata.createCustomSetting(actor.tenant_id,actor.user_id,req.body)});
   }));
+  app.get('/api/metadata/custom-settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({settings:await customMetadata.listCustomSettings(actor.tenant_id,actor.user_id)});
+  }));
   app.put('/api/metadata/custom-settings/:settingApi/values',route(async(req,res)=>{
     const actor=req.actor!;
     const {scope,ownerId,values}=req.body??{};
@@ -735,7 +774,9 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const targetUserId=typeof req.query.userId==='string'?req.query.userId:actor.user_id;
     res.json(await customMetadata.getCustomSettingValues(
-      actor.tenant_id,actor.user_id,req.params.settingApi,targetUserId));
+      actor.tenant_id,actor.user_id,req.params.settingApi,targetUserId,
+      typeof req.query.scope==='string'?req.query.scope as 'organization'|'profile'|'user':undefined,
+      typeof req.query.ownerId==='string'?req.query.ownerId:undefined));
   }));
   app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
     const actor=req.actor!;
@@ -802,10 +843,17 @@ export function createSystemServer(db:SqlPersistence) {
     const {apiName,label}=req.body??{};
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
     const payload=req.body??{};
+    if(Array.isArray(payload.fields))for(const rawField of payload.fields){
+      if(!rawField||typeof rawField!=='object'||Array.isArray(rawField))continue;
+      const formula=(rawField as Record<string,unknown>).formula;
+      if(!formula||typeof formula!=='object'||Array.isArray(formula))continue;
+      const expression=(formula as Record<string,unknown>).expression;
+      if(typeof expression==='string')await authorizeFormulaReferences(rbac,actor,expression);
+    }
     const object=await definitions.create(actor.tenant_id,apiName,label,payload.fields??[],async client=>{
       await objectManagerMetadata.persistWithin(client,actor.tenant_id,apiName,{
-        description:payload.description??'',helpText:payload.helpText??'',
-        settings:payload.settings??{},fieldSets:payload.fieldSets??[]
+        pluralLabel:payload.pluralLabel,description:payload.description??'',helpText:payload.helpText??'',
+        settings:payload.settings??{},fieldSets:payload.fieldSets??[],actions:payload.actions??[]
       });
     });
     const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,apiName);
@@ -828,22 +876,11 @@ export function createSystemServer(db:SqlPersistence) {
         await objectManagerMetadata.persistWithin(client,
           actor.tenant_id,req.params.apiName,{
           description:draft.description,helpText:draft.helpText,settings:draft.settings,
-          fieldSets:draft.fieldSets
+          fieldSets:draft.fieldSets,actions:draft.actions
           });
       });
     const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,req.params.apiName);
     res.json({object:{...object,...configuration}});
-  }));
-  app.post('/api/metadata/objects/:apiName/formulas/validate',route(async(req,res)=>{
-    const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
-    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
-    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
-    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||
-      typeof req.body.expression!=='string'||typeof req.body.returnType!=='string')
-      throw Error('Invalid formula validation request');
-    res.json(await new FormulaEngine(db).validate(actor.tenant_id,req.params.apiName,
-      req.body.expression,req.body.returnType));
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
@@ -854,6 +891,10 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
+    const formula=field.formula;
+    if(formula&&typeof formula==='object'&&!Array.isArray(formula)
+      &&typeof formula.expression==='string')
+      await authorizeFormulaReferences(rbac,actor,formula.expression);
     await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined,field);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
@@ -1100,6 +1141,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
     res.json(await flows.listPage(actor.tenant_id,req.query.page,req.query.search??''));
+  }));
+  app.get('/api/metadata/flows/:apiName/versions/:version',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
+    res.json({version:await flows.loadEditorVersion(actor.tenant_id,
+      req.params.apiName,req.params.version)});
   }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1420,14 +1467,47 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
+  app.post('/api/files/inline-images',route(async(req,res)=>{
+    const actor=req.actor!;
+    const file=await recordFiles.upload(actor.tenant_id,actor.user_id,req.body??{});
+    res.status(201).json(file);
+  }));
+  app.get('/api/files/:id/content',route(async(req,res)=>{
+    const actor=req.actor!;
+    const file=await recordFiles.read(actor.tenant_id,actor.user_id,req.params.id);
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('X-Content-Type-Options','nosniff');
+    res.setHeader('Content-Security-Policy',"default-src 'none'; sandbox");
+    res.setHeader('Content-Disposition','inline; filename="inline-image"');
+    res.type(file.content_type).send(file.content);
+  }));
+  app.delete('/api/files/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await recordFiles.remove(actor.tenant_id,actor.user_id,req.params.id);
+    res.status(204).end();
+  }));
   registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   registerDurableJobAdminRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
-    if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
+    if(err instanceof FlowCustomError)res.status(400).json({
+      error:err.message,errors:[{message:err.message,...(err.fieldName?{fields:[err.fieldName]}:{})}]
+    });
+    else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
     else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
+    else if(err.message==='File storage quota exceeded')res.status(413).json({error:err.message});
+    else if(err.message==='Too many inline images for this field')res.status(409).json({error:err.message});
+    else if(err.message.startsWith('Converted values conflict')||err.message.startsWith('Field type migrations must')
+      ||err.message.startsWith('Field values were added')||err.message.startsWith('Field values changed')
+      ||err.message==='Field type migration is not active'
+      ||err.message.startsWith('Field definition changed concurrently')
+      ||err.message.startsWith('Field definition changed after migration')
+      ||err.message.startsWith('Field type is used by'))
+      res.status(409).json({error:err.message});
+    else if(/^(Field datatype|Field datatype conversion|Existing value|Numeric value|Only ISO|Migration to Rich Text|Required field migration)/.test(err.message))
+      res.status(400).json({error:err.message});
     else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(['23503','23505'].includes((err as Error&{code?:string}).code??''))res.status(409).json({error:'Policy dependency or duplicate identity conflict'});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
@@ -1489,9 +1569,8 @@ export async function startSystemServer() {
   purgeTimer.unref();
   const calloutDispatcher=new NamedCredentialService(db,new RbacEngine(db));
   const calloutTimer=setInterval(()=>{
-    void calloutDispatcher.dispatchOne().catch(error=>{
-      console.error('Durable HTTP Callout dispatch failed:',error);
-    });
+    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail()])
+      .catch(error=>console.error('Durable outbound dispatch failed:',error));
   },1000);
   calloutTimer.unref();
   const server=createSystemServer(db).listen(port,'0.0.0.0');

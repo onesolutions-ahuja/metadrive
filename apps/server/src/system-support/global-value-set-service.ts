@@ -181,6 +181,31 @@ export class GlobalValueSetService {
         FROM md_global_value_sets WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,[actor.tenant_id,id]);
       if(!current.rows[0])throw new Error('Global value set not found');
       const row=current.rows[0];
+      if(data.apiName&&data.apiName!==row.api_name){
+        const references=await tx.query(`SELECT 1 FROM md_field_global_value_sets
+          WHERE tenant_id=$1 AND value_set_api=$2 LIMIT 1`,[actor.tenant_id,row.api_name]);
+        if(references.rowCount)throw new Error('Cannot rename a Global Value Set referenced by fields');
+      }
+      if(data.values){
+        const currentValues=await tx.query<{value:string}>(
+          `SELECT v.value FROM md_global_value_set_values v
+           JOIN md_global_value_sets s ON s.tenant_id=v.tenant_id AND s.id=v.value_set_id
+           WHERE s.tenant_id=$1 AND s.id=$2`,[actor.tenant_id,id]);
+        const nextValues=new Set(data.values.map(value=>value.value));
+        const removed=currentValues.rows.map(value=>value.value).filter(value=>!nextValues.has(value));
+        if(removed.length){
+          const inUse=await tx.query(`SELECT 1 FROM md_field_global_value_sets g
+            JOIN md_field_definitions f ON f.tenant_id=g.tenant_id AND f.object_api=g.object_api
+              AND f.api_name=g.field_api
+            JOIN md_record_values r ON r.tenant_id=f.tenant_id AND r.object_api=f.object_api
+              AND r.field_api=f.api_name
+            WHERE g.tenant_id=$1 AND g.value_set_api=$2 AND (
+              (f.data_type='multipicklist' AND string_to_array(r.value_text,';') && $3::text[])
+              OR (f.data_type<>'multipicklist' AND r.value_text=ANY($3::text[]))
+            ) LIMIT 1`,[actor.tenant_id,row.api_name,removed]);
+          if(inUse.rowCount)throw new Error('Cannot remove global values used by records');
+        }
+      }
       const updated=await tx.query<SetRow>(`UPDATE md_global_value_sets SET
         api_name=$3,label=$4,description=$5,updated_at=now()
         WHERE tenant_id=$1 AND id=$2
@@ -204,6 +229,9 @@ export class GlobalValueSetService {
       const found=await tx.query<{api_name:string}>(
         'SELECT api_name FROM md_global_value_sets WHERE tenant_id=$1 AND id=$2 FOR UPDATE',[actor.tenant_id,id]);
       if(!found.rows[0])throw new Error('Global value set not found');
+      const references=await tx.query(`SELECT 1 FROM md_field_global_value_sets
+        WHERE tenant_id=$1 AND value_set_api=$2 LIMIT 1`,[actor.tenant_id,found.rows[0].api_name]);
+      if(references.rowCount)throw new Error('Global Value Set is referenced by fields');
       const deleted=await tx.query(
         'DELETE FROM md_global_value_sets WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,id]);
       if(!deleted.rowCount)throw new Error('Global value set not found');

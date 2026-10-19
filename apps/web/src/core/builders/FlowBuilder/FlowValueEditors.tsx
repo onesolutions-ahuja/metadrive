@@ -23,11 +23,13 @@ export function FlowConditionRows({flow,elementId,objects,rows,fields,onChange}:
     </select>
     <select className="form-control" aria-label="Condition operator"
       value={displayValue(condition.operator)||'Equals'}
-      onChange={event=>change(index,{operator:event.target.value})}>
-      {['Equals','Not Equals','Is Null','Is Not Null','Greater Than','Less Than','Contains','Starts With']
+      onChange={event=>change(index,{operator:event.target.value,
+        ...(['Is Changed','Was Set'].includes(event.target.value)?{value:''}:{})})}>
+      {['Equals','Not Equals','Is Null','Is Not Null','Greater Than','Less Than','Contains','Starts With',
+        ...(flow.flowType==='Record-Triggered Flow'?['Is Changed','Was Set']:[])]
         .map(operator=><option key={operator}>{operator}</option>)}
     </select>
-    {!['Is Null','Is Not Null'].includes(String(condition.operator)) &&
+    {!['Is Null','Is Not Null','Is Changed','Was Set'].includes(String(condition.operator)) &&
       <FlowReferenceInput ariaLabel="Condition value" value={displayValue(condition.value)}
         flow={flow} elementId={elementId} objects={objects}
         field={fields.find(field=>field.apiName===condition.field)??(condition.field==='Id'?idField:undefined)}

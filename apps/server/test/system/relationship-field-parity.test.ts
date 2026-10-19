@@ -24,7 +24,7 @@ test('relationship names, deletion behavior and reparenting settings persist',as
 
   const insert=writes.find(call=>call.sql.includes('INSERT INTO md_field_definitions'));
   assert.ok(insert);
-  assert.deepEqual(insert.args.slice(25),['Account','Invoices','Cascade',true]);
+  assert.deepEqual(insert.args.slice(26),['Account','Invoices','Cascade',true]);
 });
 
 test('Master-Detail definitions reject cycles and a third master relationship',async()=>{
@@ -145,6 +145,27 @@ test('roll-up summaries require a Master-Detail child field and persist configur
     }),/requires an active Master-Detail field/);
 });
 
+test('roll-up MIN/MAX accept temporal source fields while SUM rejects them',async()=>{
+  for(const sourceType of ['date','datetime'] as const){
+    const client={query:async(sql:string)=>{
+      if(sql.includes('SELECT data_type,related_object,relationship_type'))
+        return {rows:[{data_type:'reference',related_object:'Account__c',relationship_type:'Master-Detail'}],rowCount:1};
+      if(sql.includes('SELECT data_type FROM md_field_definitions'))
+        return {rows:[{data_type:sourceType}],rowCount:1};
+      return {rows:[{id:'field'}],rowCount:1};
+    }};
+    const db={transaction:async(run:(value:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
+    for(const operation of ['MIN','MAX'] as const)
+      await new ObjectDefinitionService(db).addField('tenant','Account__c','Earliest__c','Roll-Up Summary',
+        undefined,'Earliest', {rollup:{childObject:'Event__c',relationshipField:'AccountId',
+          operation,sourceField:'OccurredAt'}});
+    await assert.rejects(()=>new ObjectDefinitionService(db).addField(
+      'tenant','Account__c','Total__c','Roll-Up Summary',undefined,'Total',
+      {rollup:{childObject:'Event__c',relationshipField:'AccountId',
+        operation:'SUM',sourceField:'OccurredAt'}}),/SUM roll-ups require a numeric source field/);
+  }
+});
+
 test('roll-up recalculation uses aligned SQL parameters for COUNT and numeric aggregates',async()=>{
   for(const operation of ['COUNT','SUM'] as const){
     const aggregateCalls:Array<{sql:string;args:unknown[]}>=[];
@@ -155,7 +176,7 @@ test('roll-up recalculation uses aligned SQL parameters for COUNT and numeric ag
           operation,source_field:operation==='COUNT'?null:'Amount'
         }]:[],rowCount:args[1]==='Invoice__c'?1:0
       };
-      if(sql.includes('SELECT COALESCE(')){
+      if(sql.includes('FROM md_records c')){
         aggregateCalls.push({sql,args});
         return {rows:[{value:'2'}],rowCount:1};
       }
@@ -169,10 +190,121 @@ test('roll-up recalculation uses aligned SQL parameters for COUNT and numeric ag
     await engine.refreshRollups(client,'tenant','Invoice__c',new Map([['Account__c',new Set(['parent-id'])]]));
     assert.equal(aggregateCalls.length,1);
     assert.equal(aggregateCalls[0].args.at(-1),'parent-id');
-    assert.equal(aggregateCalls[0].args.length,operation==='COUNT'?4:5);
-    assert.match(aggregateCalls[0].sql,operation==='COUNT'?/reference_record_id=\$4/:/reference_record_id=\$5/);
+    assert.equal(aggregateCalls[0].args.length,5);
+    assert.match(aggregateCalls[0].sql,/reference_record_id=\$5/);
     if(operation==='SUM')assert.match(aggregateCalls[0].sql,/\\\./);
   }
+});
+
+test('date and date-time MIN/MAX roll-ups aggregate and persist typed projections',async()=>{
+  for(const sourceType of ['date','datetime'] as const){
+    for(const operation of ['MIN','MAX'] as const){
+      const aggregateCalls:Array<{sql:string;args:unknown[]}>= [];
+      const value=sourceType==='date'?'2026-05-03':'2026-05-03T10:15:00.000Z';
+      const client={query:async(sql:string,args:unknown[]=[])=>{
+        if(sql.includes('SELECT object_api AS parent_object,api_name AS field_api'))return {
+          rows:[{parent_object:'Account__c',field_api:'Earliest__c',relationship_field:'AccountId',
+            operation,source_field:'OccurredAt',source_data_type:sourceType,filter_logic:'All'}],rowCount:1
+        };
+        if(sql.includes('FROM md_records c')){
+          aggregateCalls.push({sql,args});
+          return {rows:[{value}],rowCount:1};
+        }
+        if(sql.includes('INSERT INTO md_record_values')){
+          aggregateCalls.push({sql,args});
+          return {rows:[],rowCount:1};
+        }
+        return {rows:[],rowCount:1};
+      }};
+      const db={query:client.query} as unknown as SqlPersistence;
+      const engine=new RecordEngine(db,{} as RbacEngine) as unknown as {
+        refreshRollups:(client:typeof client,tenantId:string,childObject:string,
+          parentIds:Map<string,Set<string>>)=>Promise<void>
+      };
+      await engine.refreshRollups(client,'tenant','Event__c',
+        new Map([['Account__c',new Set(['parent-id'])]]));
+      const aggregate=aggregateCalls.find(call=>call.sql.includes('FROM md_records c'));
+      const write=aggregateCalls.find(call=>call.sql.includes('INSERT INTO md_record_values'));
+      assert.ok(aggregate);
+      assert.ok(write);
+      const operationPattern=operation==='MIN'?/min\(/i:/max\(/i;
+      const sourcePattern=sourceType==='date'?/sv\.value_date\)/:/sv\.value_datetime\)/;
+      assert.match(aggregate.sql,operationPattern);
+      assert.match(aggregate.sql,sourcePattern);
+      assert.equal(write.args[4],value);
+      assert.equal(write.args[5],null);
+      assert.equal(write.args[sourceType==='date'?6:7],value);
+      assert.equal(write.args[sourceType==='date'?7:6],null);
+    }
+  }
+});
+
+test('roll-up filter metadata is validated, persisted and applied with parameterized criteria',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const metadataClient={query:async(sql:string,args:unknown[]=[])=>{
+    if(sql.includes('SELECT data_type,related_object,relationship_type'))
+      return {rows:[{data_type:'reference',related_object:'Account__c',relationship_type:'Master-Detail'}],rowCount:1};
+    if(sql.includes('SELECT api_name,data_type FROM md_field_definitions'))
+      return {rows:[{api_name:'Status',data_type:'picklist'}],rowCount:1};
+    writes.push({sql,args});
+    return {rows:[{id:'field'}],rowCount:1};
+  }};
+  const metadataDb={transaction:async(run:(client:typeof metadataClient)=>Promise<unknown>)=>run(metadataClient)} as unknown as SqlPersistence;
+  await new ObjectDefinitionService(metadataDb).addField('tenant','Account__c','OpenCount__c','Roll-Up Summary',
+    undefined,'Open Count',{
+      rollup:{childObject:'Invoice__c',relationshipField:'AccountId',operation:'COUNT',
+        filterLogic:'Any',filters:[
+          {fieldApiName:'Status',operator:'Equals',value:'Open'},
+          {fieldApiName:'Status',operator:'Is Null'}
+        ]}
+    });
+  const definition=writes.find(item=>item.sql.includes('INSERT INTO md_field_definitions'));
+  assert.equal(definition?.args[25],'Any');
+  const storedFilters=writes.filter(item=>item.sql.includes('INSERT INTO md_field_rollup_filters'));
+  assert.equal(storedFilters.length,2);
+  assert.deepEqual(storedFilters[0].args,
+    ['tenant','Account__c','Invoice__c','OpenCount__c','Status','Equals','Open',0]);
+
+  let aggregateSql='';
+  let aggregateArgs:unknown[]=[];
+  const client={query:async(sql:string,args:unknown[]=[])=>{
+    if(sql.includes('SELECT object_api AS parent_object,api_name AS field_api'))return {
+      rows:[{parent_object:'Account__c',field_api:'OpenCount__c',relationship_field:'AccountId',
+        operation:'COUNT',source_field:null,filter_logic:'Any'}],rowCount:1
+    };
+    if(sql.includes('FROM md_field_rollup_filters'))return {
+      rows:[
+        {field_api:'Status',operator:'Equals',value_text:'Open',data_type:'picklist'},
+        {field_api:'Status',operator:'Is Null',value_text:'',data_type:'picklist'}
+      ],rowCount:2
+    };
+    if(sql.includes('FROM md_records c')){aggregateSql=sql;aggregateArgs=args;return {rows:[{value:'3'}],rowCount:1};}
+    return {rows:[],rowCount:1};
+  }};
+  const engine=new RecordEngine({query:client.query} as unknown as SqlPersistence,{} as RbacEngine) as unknown as {
+    refreshRollups:(client:typeof client,tenantId:string,childObject:string,parentIds:Map<string,Set<string>>)=>Promise<void>
+  };
+  await engine.refreshRollups(client,'tenant','Invoice__c',new Map([['Account__c',new Set(['parent-id'])]]));
+  assert.match(aggregateSql,/OR/);
+  assert.deepEqual(aggregateArgs.slice(5),['Status','Open','Status']);
+});
+
+test('Auto Number fields accept year tokens and are required and unique',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[]=[])=>{
+    writes.push({sql,args});
+    return {rows:[{id:'field'}],rowCount:1};
+  }};
+  const db={transaction:async(run:(client:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
+  await new ObjectDefinitionService(db).addField('tenant','Invoice__c','InvoiceNumber','Auto Number',
+    undefined,'Invoice Number',{autoNumberFormat:'INV-{YYYY}'});
+  const insert=writes.find(item=>item.sql.includes('INSERT INTO md_field_definitions'));
+  assert.equal(insert?.args[8],true);
+  assert.equal(insert?.args[10],true);
+  assert.equal(insert?.args[20],'INV-{YYYY}');
+  await assert.rejects(()=>new ObjectDefinitionService(db).addField(
+    'tenant','Invoice__c','InvalidNumber','Auto Number',undefined,'Invalid Number',
+    {autoNumberFormat:'INV-'}),/Invalid auto-number format/);
 });
 
 test('Time fields normalize values and Rich Text fields sanitize stored HTML',async()=>{
@@ -201,6 +333,9 @@ test('Time fields normalize values and Rich Text fields sanitize stored HTML',as
       default_value:null,auto_number_format:null}
   ];
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:definitions.length};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
     if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
@@ -271,6 +406,10 @@ test('multi-select picklist record writes maintain normalized child values',asyn
     allow_reparenting:false,required:false,max_length:null,precision:null,scale:null,is_unique:false,
     external_id:false,case_sensitive:false,default_value:null,auto_number_format:null,picklist_restricted:false};
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:[definition],rowCount:1};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
+    if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'Urgent'},{value:'Review'}],rowCount:2};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
     values.push({sql,args});return {rows:[],rowCount:1};
@@ -295,6 +434,9 @@ test('Address fields validate and persist components as SQL columns',async()=>{
     allow_reparenting:false,required:false,max_length:null,precision:null,scale:null,is_unique:false,
     external_id:false,case_sensitive:false,default_value:null,auto_number_format:null};
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:[definition],rowCount:1};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
     writes.push({sql,args});return {rows:[],rowCount:1};
@@ -331,7 +473,13 @@ test('formula fields calculate on read and honor field-level access',async()=>{
       default_value:null,auto_number_format:null,formula_expression:null,formula_return_type:null},
     {api_name:'DoubleAmount',data_type:'formula',related_object:null,relationship_type:null,allow_reparenting:false,
       required:false,max_length:null,precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
-      default_value:null,auto_number_format:null,formula_expression:'@Invoice__c.Amount * 2',formula_return_type:'Number'}
+      default_value:null,auto_number_format:null,formula_expression:'@Invoice__c.Amount * 2',formula_return_type:'Number'},
+    {api_name:'LoggedAt',data_type:'formula',related_object:null,relationship_type:null,allow_reparenting:false,
+      required:false,max_length:null,precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
+      default_value:null,auto_number_format:null,formula_expression:'DATETIMEVALUE("2026-01-02T03:04:05Z")',formula_return_type:'DateTime'},
+    {api_name:'Clock',data_type:'formula',related_object:null,relationship_type:null,allow_reparenting:false,
+      required:false,max_length:null,precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
+      default_value:null,auto_number_format:null,formula_expression:'TIMEVALUE("12:34:56")',formula_return_type:'Time'}
   ];
   const db={query:async(sql:string)=>{
     if(sql.startsWith('SELECT api_name,data_type'))return {rows:definitions,rowCount:definitions.length};
@@ -346,4 +494,6 @@ test('formula fields calculate on read and honor field-level access',async()=>{
   const rbac={require:async()=>{},allowed:async()=>true,allowedMany:async()=>[true]} as unknown as RbacEngine;
   const record=await new RecordEngine(db,rbac).get('tenant','user','Invoice__c','00000000-0000-4000-8000-000000000001');
   assert.equal(record.DoubleAmount,25);
+  assert.equal(record.LoggedAt,'2026-01-02T03:04:05.000Z');
+  assert.equal(record.Clock,'12:34:56.000');
 });

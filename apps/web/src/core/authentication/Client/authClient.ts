@@ -99,6 +99,35 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return payload;
 }
 
+export async function apiDownload(path: string, init?: RequestInit): Promise<Blob> {
+  const send = (token: string | undefined) => fetch(`${apiBase}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+      'X-MetaDrive-Request-Source': 'web-app'
+    }
+  });
+  const sentToken = accessToken;
+  let response = await send(sentToken);
+  if (response.status === 401 && !path.startsWith('/auth/')) {
+    const token = accessToken !== undefined && accessToken !== sentToken
+      ? accessToken
+      : await refreshAccessToken();
+    if (token && token !== sentToken) response = await send(token);
+  }
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    if ((response.headers.get('content-type') ?? '').toLowerCase().includes('application/json')) {
+      const payload = await response.json() as { error?: string };
+      if (payload.error) message = payload.error;
+    }
+    throw new ApiRequestError(message, { path }, response.status);
+  }
+  return response.blob();
+}
+
 export class ApiRequestError extends Error {
   constructor(message: string, readonly responseBody: unknown, readonly status: number) {
     super(message);

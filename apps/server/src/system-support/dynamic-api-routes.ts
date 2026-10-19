@@ -4,6 +4,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import {DurableJobService} from './durable-job-service.js';
+import {PlatformEventService} from './platform-event-service.js';
 
 type Actor={tenant_id:string;user_id:string};
 type AuthenticatedRequest=Request<Record<string,string>>&{actor?:Actor};
@@ -21,6 +22,12 @@ function authenticated(req:AuthenticatedRequest):Actor{
 /** Only independent SQL metadata and the shared CRUD/permission engines; never app-specific code. */
 export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine,records:RecordEngine,flows:FlowRuntime){
   const jobs=new DurableJobService(db);
+  const platformEvents=new PlatformEventService(db,rbac);
+  app.post('/api/platform-events/:apiName/publish',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    const result=await platformEvents.publish(actor.tenant_id,actor.user_id,req.params.apiName,req.body);
+    res.status(202).json(result);
+  }));
   app.get('/api/jobs/:id',wrap(async(req,res)=>{
     const actor=authenticated(req);
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');

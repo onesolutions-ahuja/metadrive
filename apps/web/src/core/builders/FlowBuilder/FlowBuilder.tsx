@@ -139,8 +139,13 @@ export default function FlowBuilder({
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
-    ['End', 'Screen', 'Decision', 'Assignment', 'Create Records', 'HTTP Callout'].includes(type)
-    && (type !== 'Screen' || flow.flowType === 'Screen Flow');
+    ['End', 'Screen', 'Wait', 'Action', 'Roll Back Records', 'Custom Error', 'Decision', 'Assignment', 'Create Records', 'HTTP Callout', 'Publish Platform Event'].includes(type)
+    && (type !== 'Screen' || flow.flowType === 'Screen Flow')
+    && (type !== 'Wait' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType)
+      || flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen !== 'before-save')
+    && (type !== 'Custom Error' || flow.flowType === 'Record-Triggered Flow')
+    && (type !== 'Publish Platform Event' || !(flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') && flow.flowType !== 'Platform Event-Triggered Flow')
+    && (type !== 'Action' || !(flow.flowType==='Record-Triggered Flow'&&flow.startConfig.runWhen==='before-save'));
   const [resourceLabel, setResourceLabel] = useState('');
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
@@ -469,7 +474,7 @@ export default function FlowBuilder({
         {flow.flowType === 'Record-Triggered Flow' && <>
           <label className="form-label">Trigger<select className="form-control" value={displayValue(flow.startConfig.trigger) || 'created-or-updated'} onChange={(event) => setStartConfig('trigger', event.target.value)}><option value="created">A record is created</option><option value="updated">A record is updated</option><option value="created-or-updated">A record is created or updated</option><option value="deleted">A record is deleted</option></select></label>
           <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig.runWhen) || 'after-save'} onChange={(event) => setStartConfig('runWhen', event.target.value)}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
-          <div className="info-callout">{flow.startConfig.runWhen === 'before-save' ? 'Before-save flows run assignments and decisions before the record is written. Use Assignment elements to set $Record fields; other action types are not supported in this phase.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. Record-trigger recursion from CRUD performed inside another Flow is not supported yet.'}</div>
+          <div className="info-callout">{flow.startConfig.runWhen === 'before-save' ? 'Before-save flows run assignments and decisions before the record is written. Use Assignment elements to set $Record fields; other action types are not supported in this phase.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. CRUD performed inside a Flow does not recursively dispatch record triggers; up to 50 matching Flows run for one record operation.'}</div>
           <label className="form-label">Trigger Order<input className="form-control" type="number" min={1} max={2000} step={1} value={displayValue(flow.startConfig.triggerOrder)} onChange={(event) => setStartConfig('triggerOrder', event.target.value === '' ? undefined : Number(event.target.value))} /></label>
           <p className="settings-panel-copy">Optional order from 1 to 2000. Lower numbers run first among active flows on the same object and save phase.</p>
           <label className="form-label">Entry Conditions</label>
@@ -505,6 +510,24 @@ export default function FlowBuilder({
         Restores record changes made earlier in this Flow transaction. Execution continues, so later record changes can still be saved.
       </div>;
     }
+    if (selected.type === 'Custom Error') return <>
+      <label className="form-label">Error Message<textarea className="form-control" maxLength={1000}
+        value={displayValue(selected.config.errorMessage)}
+        onChange={(event) => setConfig('errorMessage', event.target.value)}
+        placeholder="Explain why this record cannot be saved" /></label>
+      <label className="form-label">Display Location<select className="form-control"
+        value={displayValue(selected.config.errorLocation) || 'Page'}
+        onChange={(event) => setConfig('errorLocation', event.target.value)}>
+        <option value="Page">Page</option><option value="Field">Field</option>
+      </select></label>
+      {displayValue(selected.config.errorLocation) === 'Field' && <label className="form-label">
+        Error Field<select className="form-control" value={displayValue(selected.config.fieldName)}
+          onChange={(event) => setConfig('fieldName', event.target.value)}>
+          <option value="">Select field</option>{selectedObject?.fields.map((field) =>
+            <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+        </select></label>}
+      <p className="settings-panel-copy">This element stops the Flow and rolls back the record save. Field-level errors are available for create and update triggers.</p>
+    </>;
     if (selected.type === 'Publish Platform Event') {
       const platformEvent = platformEvents.find((event) => event.apiName === displayValue(selected.config.eventApiName));
       const fieldValues = rowsFrom(selected.config.fieldValues);
@@ -544,9 +567,9 @@ export default function FlowBuilder({
           {outcome.name !== 'Default' && <>
             {renderConditionLogic('Condition Requirements', outcome.conditionLogic ?? 'All', outcome.conditions.length, (logic) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditionLogic: logic } : item)))}
             {outcome.conditions.map((condition, conditionIndex) => <div className="flow-config-row" key={`outcome-${index}-condition-${conditionIndex}`}>
-              <select className="form-control" aria-label="Outcome condition field" value={displayValue(condition.field)} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, field: event.target.value } : entry) } : item))}><option value="">Select field or resource</option>{decisionObject && <optgroup label="Record Fields">{!decisionObject.fields.some(field=>field.apiName==='Id')&&<option value="Id">Record ID</option>}{decisionObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}<optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup></select>
-              <select className="form-control" aria-label="Outcome condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, operator: event.target.value } : entry) } : item))}>{['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Greater Than or Equal To', 'Less Than', 'Less Than or Equal To', 'Contains', 'Starts With', 'Is Changed', 'Was Set'].map((operator) => <option key={operator}>{operator}</option>)}</select>
-              {!['Is Null', 'Is Not Null', 'Was Set'].includes(String(condition.operator)) && <FlowReferenceInput
+              <select className="form-control" aria-label="Outcome condition field" value={displayValue(condition.field)} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, field: event.target.value } : entry) } : item))}><option value="">Select field or resource</option>{decisionObject && <optgroup label="Record Fields">{flow.flowType === 'Record-Triggered Flow' && decisionObject.fields.map((field) => <Fragment key={field.apiName}><option value={`{!$Record.${field.apiName}}`}>Current · {field.label}</option><option value={`{!$Record__Prior.${field.apiName}}`}>Prior · {field.label}</option></Fragment>)}{flow.flowType !== 'Record-Triggered Flow' && decisionObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}<optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup></select>
+              <select className="form-control" aria-label="Outcome condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, operator: event.target.value, ...(['Is Changed', 'Was Set'].includes(event.target.value) ? { value: '' } : {}) } : entry) } : item))}>{['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Greater Than or Equal To', 'Less Than', 'Less Than or Equal To', 'Contains', 'Starts With', ...(flow.flowType === 'Record-Triggered Flow' ? ['Is Changed', 'Was Set'] : [])].map((operator) => <option key={operator}>{operator}</option>)}</select>
+              {!['Is Null', 'Is Not Null', 'Was Set', 'Is Changed'].includes(String(condition.operator)) && <FlowReferenceInput
                 ariaLabel="Outcome condition value" value={displayValue(condition.value)}
                 flow={flow} elementId={selected.id} objects={objects}
                 field={decisionObject?.fields.find(field=>field.apiName===condition.field)??(condition.field==='Id'?{apiName:'Id',label:'Record ID',dataType:'Id',required:true,unique:true}:undefined)} targetObjectApiName={decisionObject?.apiName}
@@ -636,12 +659,14 @@ export default function FlowBuilder({
       {displayValue(selected.config.waitType) === 'Specific Time'
         ? <><label className="form-label">Resume At<input className="form-control" type="datetime-local" value={displayValue(selected.config.dateTime)} onChange={(event) => setConfig('dateTime', event.target.value)} /></label>
           <label className="form-label">Time Zone<input className="form-control" value={displayValue(selected.config.timeZone) || 'UTC'} placeholder="America/Los_Angeles" onChange={(event) => setConfig('timeZone', event.target.value)} /></label>
-          <p className="settings-panel-copy">Enter an IANA time zone. The Wait resumes at this local time; nonexistent daylight-saving times are rejected.</p></>
+          <p className="settings-panel-copy">This Wait uses the durable SQL worker, not a browser timer. Enter an IANA time zone; nonexistent daylight-saving times are rejected.</p></>
         : <><label className="form-label">Wait Amount<input className="form-control" type="number" min="1" value={displayValue(selected.config.amount) || '1'} onChange={(event) => setConfig('amount', Number(event.target.value))} /></label>
           <label className="form-label">Unit<select className="form-control" value={displayValue(selected.config.unit) || 'Hours'} onChange={(event) => setConfig('unit', event.target.value)}>{['Minutes', 'Hours', 'Days'].map((unit) => <option key={unit}>{unit}</option>)}</select></label></>}
     </>;
     if (['Get Records', 'Create Records', 'Update Records', 'Delete Records'].includes(selected.type)) {
       const object = objects.find((item) => item.apiName === displayValue(selected.config.object));
+      const mutationSource = displayValue(selected.config.recordSource)
+        || (selected.type === 'Delete Records' ? 'filter' : 'id');
       const fieldsToStore = Array.isArray(selected.config.fields)
         ? selected.config.fields.filter((item): item is string => typeof item === 'string')
         : null;
@@ -652,18 +677,37 @@ export default function FlowBuilder({
         {selected.type === 'Create Records' && <>
           <label className="form-label">How to Set Record Values
             <select className="form-control" value={displayValue(selected.config.recordSource) || 'fields'}
-              onChange={() => onFlowChange({
+              onChange={(event) => onFlowChange({
                 ...flow, elements: flow.elements.map((element) => element.id === selected.id
                   ? { ...element, config: {
-                    ...element.config, recordSource: 'fields',
-                    fieldValues: [], field: '', value: ''
+                    ...element.config, recordSource: event.target.value,
+                    ...(event.target.value === 'fields' ? { fieldValues: [], field: '', value: '' } : {})
                   } } : element)
               })}>
               <option value="fields">Use separate field values (one record)</option>
+              <option value="collection">Use a record collection</option>
             </select>
           </label>
+          {selected.config.recordSource === 'collection' && <>
+            <label className="form-label">Record Collection<select className="form-control"
+              value={displayValue(selected.config.collection)}
+              onChange={(event) => setConfig('collection', event.target.value)}>
+              <option value="">Select a record collection</option>
+              {flow.resources.filter((resource) => resource.type === 'Record Collection'
+                && resource.dataType === object?.apiName).map((resource) =>
+                <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+            </select></label>
+            <label className="form-label">Created Records Output<select className="form-control"
+              value={displayValue(selected.config.resultVariable)}
+              onChange={(event) => setConfig('resultVariable', event.target.value)}>
+              <option value="">Do not store created records</option>
+              {flow.resources.filter((resource) => resource.type === 'Record Collection'
+                && resource.dataType === object?.apiName).map((resource) =>
+                <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+            </select></label>
+          </>}
           {displayValue(selected.config.recordSource) === 'collection' && <p className="info-callout" role="status">
-            Creating records from a collection is not supported by the current runtime. Select the single-record option to replace this configuration.
+            Each collection record is created through shared CRUD in the current Flow transaction. The operation is limited to 200 records.
           </p>}
         </>}
         {selected.type === 'Get Records' && <>
@@ -681,8 +725,37 @@ export default function FlowBuilder({
           <label className="form-label">Fields to Store<select className="form-control" value={fieldsToStore ? 'selected' : 'all'} onChange={(event) => setConfig('fields', event.target.value === 'all' ? 'all' : [])}><option value="all">Automatically store all fields</option><option value="selected">Choose fields</option></select></label>
           {fieldsToStore && <div className="field-selector-list">{object?.fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={fieldsToStore.includes(field.apiName)} onChange={() => setConfig('fields', fieldsToStore.includes(field.apiName) ? fieldsToStore.filter((name) => name !== field.apiName) : [...fieldsToStore, field.apiName])} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>}
         </>}
-        {selected.type === 'Update Records' && <label className="form-label">Record ID / Flow Resource<input className="form-control" value={displayValue(selected.config.recordId)} placeholder="{!recordId}" onChange={(event) => setConfig('recordId', event.target.value)} /><small>Update one record by ID. Filter-based bulk updates are not supported by the SQL runtime.</small></label>}
-        {selected.type !== 'Create Records' && selected.type !== 'Update Records' && <>{renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All', rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}<label className="form-label">Filter Conditions</label>{renderConditions('conditions', object?.fields ?? [])}</>}
+        {['Update Records', 'Delete Records'].includes(selected.type) && <>
+          <label className="form-label">Records to {selected.type === 'Update Records' ? 'Update' : 'Delete'}<select
+            className="form-control" value={displayValue(selected.config.recordSource)
+              || (selected.type === 'Delete Records' ? 'filter' : 'id')}
+            onChange={(event) => setConfig('recordSource', event.target.value)}>
+            <option value="id">One record by ID</option>
+            <option value="record">A record variable</option>
+            <option value="collection">A record collection</option>
+            <option value="filter">Records matching conditions</option>
+          </select></label>
+          {mutationSource === 'id'
+            && <label className="form-label">Record ID / Flow Resource<input className="form-control"
+              value={displayValue(selected.config.recordId)} placeholder="{!recordId}"
+              onChange={(event) => setConfig('recordId', event.target.value)} /></label>}
+          {(displayValue(selected.config.recordSource) === 'record') && <label className="form-label">Record Variable<select
+            className="form-control" value={displayValue(selected.config.recordVariable)}
+            onChange={(event) => setConfig('recordVariable', event.target.value)}>
+            <option value="">Select a record variable</option>{flow.resources.filter((resource) =>
+              resource.type === 'Record' && resource.dataType === object?.apiName).map((resource) =>
+              <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+          </select></label>}
+          {(displayValue(selected.config.recordSource) === 'collection') && <label className="form-label">Record Collection<select
+            className="form-control" value={displayValue(selected.config.collection)}
+            onChange={(event) => setConfig('collection', event.target.value)}>
+            <option value="">Select a record collection</option>{flow.resources.filter((resource) =>
+              resource.type === 'Record Collection' && resource.dataType === object?.apiName).map((resource) =>
+              <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+          </select></label>}
+        </>}
+        {['Update Records', 'Delete Records'].includes(selected.type) && mutationSource === 'filter'
+          && <>{renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All', rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}<label className="form-label">Filter Conditions</label>{renderConditions('conditions', object?.fields ?? [])}</>}
         {selected.type !== 'Delete Records' && selected.type !== 'Get Records' && !(selected.type === 'Create Records' && selected.config.recordSource === 'collection') && <><label className="form-label">Set Field Values</label>{renderFieldValues()}</>}
       </>;
     }
@@ -903,7 +976,7 @@ export default function FlowBuilder({
       <div className="settings-panel-copy">Create exactly two normal connectors labeled Approved and Rejected. Work items appear in the approvers' existing inbox, and Pending Work shows paused stages. Canceling the interview also cancels unfinished approval requests.</div>
     </>;
     if (selected.type === 'Action') return <>
-      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>Custom Notification</option><option>Outbound Message</option><option>Submit for Approval</option>{flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && <><option>Generate Verification</option><option>Send Recovery Communication</option><option>Verify Verification</option><option>Reset Password</option></>}</select></label>
+      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option disabled>Outbound Message (not yet available)</option><option>Submit for Approval</option></select></label>
       {flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && displayValue(selected.config.actionType) === 'Generate Verification' ? <>
         <label className="form-label">Verification Method<select className="form-control" value={displayValue(selected.config.method) || 'TENANT_POLICY'} onChange={(event)=>setConfig('method',event.target.value)}>
           <option value="TENANT_POLICY">Tenant policy</option><option value="OTP">Email OTP</option><option value="LINK">Reset link</option></select></label>
@@ -918,6 +991,18 @@ export default function FlowBuilder({
         <div className="info-callout">Protected verification variables: {'{!Tenant.Id}'}, {'{!Tenant.Name}'}, {'{!Verification.Value}'}, {'{!Verification.ExpiryMinutes}'}. Password verification and session revocation cannot be disabled.</div>
       </> : flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && ['Verify Verification','Reset Password'].includes(displayValue(selected.config.actionType)) ? <>
         <div className="info-callout">This protected platform action validates and updates only the account associated with the issued single-use recovery challenge. It cannot be bypassed or configured to change another user's password.</div>
+      </> : displayValue(selected.config.actionType) === 'Create Task' ? <>
+        <label className="form-label">Target Object<select className="form-control" value={displayValue(selected.config.objectApiName)} onChange={(event) => setConfig('objectApiName', event.target.value)}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
+        <label className="form-label">Target Record ID<input className="form-control" maxLength={512} value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
+        <label className="form-label">Subject<input className="form-control" maxLength={200} value={displayValue(selected.config.subject)} onChange={(event) => setConfig('subject', event.target.value)} /></label>
+        <label className="form-label">Description<textarea className="form-control" rows={4} maxLength={10000} value={displayValue(selected.config.description)} onChange={(event) => setConfig('description', event.target.value)} /></label>
+        <label className="form-label">Due Date (ISO 8601)<input className="form-control" maxLength={128} value={displayValue(selected.config.dueAt)} onChange={(event) => setConfig('dueAt', event.target.value)} placeholder="2026-05-01T09:00:00Z or {!DueDate}" /></label>
+        <div className="info-callout">Creates a Task activity on the target record in the Flow transaction. The running user needs edit access to the target record.</div>
+      </> : displayValue(selected.config.actionType) === 'Quick Actions' ? <>
+        <label className="form-label">Target Object<select className="form-control" value={displayValue(selected.config.objectApiName)} onChange={(event) => { setConfig('objectApiName', event.target.value); setConfig('quickActionId', ''); }}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
+        <label className="form-label">Quick Action<select className="form-control" value={displayValue(selected.config.quickActionId)} onChange={(event) => setConfig('quickActionId', event.target.value)}><option value="">Select an enabled action</option>{objects.find((object) => object.apiName === displayValue(selected.config.objectApiName))?.actions?.filter((action) => action.type === 'Custom' && action.enabled && action.behavior === 'Set Field Value').map((action) => <option key={action.id} value={action.id}>{action.label}</option>)}</select></label>
+        <label className="form-label">Target Record ID<input className="form-control" maxLength={512} value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
+        <div className="info-callout">Runs the enabled metadata-defined Set Field Value action against the selected record in the Flow transaction. The running user needs object, record, and target-field edit access.</div>
       </> : displayValue(selected.config.actionType) === 'Post to Chatter' ? <>
         <label className="form-label">Target Object<select className="form-control" value={displayValue(selected.config.objectApiName)} onChange={(event) => setConfig('objectApiName', event.target.value)}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         <label className="form-label">Target Record ID<input className="form-control" value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
@@ -943,7 +1028,7 @@ export default function FlowBuilder({
         <label className="form-label">Target Record ID<input className="form-control" value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
         {!displayValue(selected.config.approvalProcessApiName) && <label className="form-label">Approvers<select className="form-control" multiple size={Math.min(6, Math.max(3, users.length))} value={displayValue(selected.config.approverIds).split(/[;,\r\n]+/).map((id) => id.trim()).filter(Boolean)} onChange={(event) => setConfig('approverIds', Array.from(event.currentTarget.selectedOptions, (option) => option.value).join(', '))}>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.username}</option>)}</select></label>}
         <label className="form-label">Submission Comments<textarea className="form-control" rows={3} maxLength={2000} value={displayValue(selected.config.comments)} onChange={(event) => setConfig('comments', event.target.value)} /></label>
-        <div className="info-callout">{displayValue(selected.config.approvalProcessApiName) ? 'Submits through the selected reusable approval process.' : 'Select an approval process or use the direct approver list.'} The running user needs edit access to the record; each approver must be able to read it. Approvers act from the notification center.</div>
+        <div className="info-callout">{displayValue(selected.config.approvalProcessApiName) ? 'Submits through the selected reusable approval process.' : 'Select an approval process or use the direct approver list.'} The submitter needs record edit access. Each approver must be enabled, have approval rights and be able to read the record. Approvers decide from the notification center.</div>
       </> : displayValue(selected.config.actionType) === 'Email Alert' ? <>
         <label className="form-label">Email Alert<select className="form-control" value={displayValue(selected.config.emailAlertId)} onChange={(event) => setConfig('emailAlertId', event.target.value)}><option value="">Select a saved Email Alert</option>{emailAlerts.filter((alert) => flow.flowType === 'Record-Triggered Flow' && alert.objectApiName === flow.triggerObject).map((alert) => <option key={alert.id} value={alert.id}>{alert.label} · {alert.objectApiName}</option>)}</select></label>
         {emailAlerts.find((alert) => alert.id === displayValue(selected.config.emailAlertId)) && <p className="settings-panel-copy">The selected Email Alert sends its configured recipients and template for the triggering record.</p>}
@@ -1268,7 +1353,7 @@ export default function FlowBuilder({
               <div className="flow-config-row">
                 <select className="form-control" aria-label="Formula field or resource" value={formulaInsertField} onChange={(event) => setFormulaInsertField(event.target.value)}>
                   <option value="">Select field or resource</option>
-                  {selectedObject && <optgroup label="Trigger Fields">{selectedObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}
+                  {selectedObject && <optgroup label="Trigger Fields">{selectedObject.fields.map((field) => <option key={field.apiName} value={flow.flowType === 'Record-Triggered Flow' ? `{!$Record.${field.apiName}}` : field.apiName}>{field.label}</option>)}</optgroup>}
                   {selectedPlatformEvent && <optgroup label="Event Fields">{selectedPlatformEvent.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}
                   <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>
                 </select>
@@ -1460,10 +1545,11 @@ export default function FlowBuilder({
               <option value="">Select Date/DateTime field</option>
               {objects.find((object) => object.apiName === flow.triggerObject)?.fields.filter((field) => ['Date', 'DateTime'].includes(field.dataType)).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
             </select>
-            <input className="form-control" type="number" aria-label="Scheduled path offset" value={connector.scheduledPath?.offsetAmount ?? 0} onChange={(event) => updateConnector(connector.id, { scheduledPath: { ...connector.scheduledPath!, offsetAmount: Number(event.target.value) } })} />
+            <input className="form-control" type="number" min={-3650} max={3650} step={1} aria-label="Scheduled path offset" value={connector.scheduledPath?.offsetAmount ?? 0} onChange={(event) => updateConnector(connector.id, { scheduledPath: { ...connector.scheduledPath!, offsetAmount: Number(event.target.value) } })} />
             <select className="form-control" aria-label="Scheduled path offset unit" value={connector.scheduledPath?.offsetUnit ?? 'Hours'} onChange={(event) => updateConnector(connector.id, { scheduledPath: { ...connector.scheduledPath!, offsetUnit: event.target.value as 'Minutes' | 'Hours' | 'Days' } })}>
               <option>Minutes</option><option>Hours</option><option>Days</option>
             </select>
+            <p className="settings-panel-copy">The path is durably queued with the record save and replaced on later matching record-trigger events. Negative offsets run before the source value; Date values use midnight UTC. Due paths run under the initiating user and recheck Flow, app entitlement and permissions.</p>
           </div>}
         </div>)}<button className="text-action" onClick={addConnector}><Plus size={13} />Add Connector</button></div>}
         <button className="btn btn-brand btn-full" onClick={onSave}>Save Flow</button>

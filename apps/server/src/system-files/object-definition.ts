@@ -1,9 +1,16 @@
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from './sql-persistence.js';
-import {validateFlowFormula} from './flow-formula-runtime.js';
+import {
+  flowFormulaReferences,inferFlowFormulaType,validateFlowFormula,
+  type FormulaValueType
+} from './flow-formula-runtime.js';
 import {ObjectMetadataHistory} from './object-metadata-history.js';
+import {
+  applyFieldTypeMigration,fieldTypeSignature,rollbackFieldTypeMigration,
+  type FieldTypeMigrationRuntime,type FieldTypeTarget
+} from './field-type-migration.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
-type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;help_text:string|null;description:string|null;formula_expression:string|null;formula_return_type:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;relationship_name?:string|null;child_relationship_name?:string|null;delete_behavior?:string|null;allow_reparenting?:boolean;deleted_at?:Date|null};
+type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;help_text:string|null;description:string|null;formula_expression:string|null;formula_return_type:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;rollup_filter_logic?:string;picklist_restricted?:boolean;controller_field_api_name?:string|null;global_value_set_api?:string|null;relationship_name?:string|null;child_relationship_name?:string|null;delete_behavior?:string|null;allow_reparenting?:boolean;deleted_at?:Date|null};
 const sqlFieldTypes:Record<string,string>={
   text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',
   datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference',
@@ -11,7 +18,8 @@ const sqlFieldTypes:Record<string,string>={
   textarea:'textarea','textarea(long)':'longtext',longtextarea:'longtext',
   currency:'currency',percent:'percent',  'multi-selectpicklist':'multipicklist','roll-upsummary':'rollup',
   geolocation:'geolocation',address:'address','richtextarea':'richtext',time:'time',
-  'auto number':'autonumber',autonumber:'autonumber'
+  'auto number':'autonumber',autonumber:'autonumber','text(encrypted)':'encryptedtext',
+  encryptedtext:'encryptedtext'
 };
 type ParsedField={
   apiName:string;label:string;dataType:string;relatedObject:string|null;relationshipType:string|null;
@@ -20,8 +28,10 @@ type ParsedField={
   unique:boolean;externalId:boolean;caseSensitive:boolean;defaultValue:string|null;
   helpText:string|null;description:string|null;formulaExpression:string|null;
   formulaReturnType:string|null;autoNumberFormat:string|null;
-  rollup:{childObject:string;relationshipField:string;operation:'COUNT'|'SUM'|'MIN'|'MAX';sourceField:string|null}|null;
+  rollup:{childObject:string;relationshipField:string;operation:'COUNT'|'SUM'|'MIN'|'MAX';
+    sourceField:string|null;filterLogic:'All'|'Any';filters:Array<{fieldApiName:string;operator:string;value:string}>}|null;
   picklistValues:string[];restricted:boolean;controllerFieldApiName:string|null;
+  globalValueSetApiName:string|null;
   valueSettings:Record<string,string[]>;
 };
 const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):ParsedField=>{
@@ -32,10 +42,10 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
   const numeric=/^(number|currency|percent)\(([0-9]+),([0-9]+)\)$/.exec(compact);
   const text=/^text\(([0-9]+)\)$/.exec(compact);
   const relationship=/^(lookup|master-detail)\(([A-Za-z][A-Za-z0-9_]*)\)$/i.exec(compactPreservingCase);
-  const formula=/^formula\((text|number|currency|percent|date|datetime|checkbox)\)$/.exec(compact);
+  const formula=/^formula\((text|number|currency|percent|date|datetime|time|checkbox)\)$/.exec(compact);
   const type=numeric?numeric[1]:text?'text':relationship?'reference':formula?'formula':sqlFieldTypes[compact];
   const maxLength=text?Number(text[1]):type==='textarea'?255:
-    ['longtext','richtext'].includes(type)?131072:type==='phone'?40:null;
+    ['longtext','richtext'].includes(type)?131072:type==='encryptedtext'?175:type==='phone'?40:null;
   const precision=numeric?Number(numeric[2]):null;
   const scale=numeric?Number(numeric[3]):null;
   if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!type)
@@ -47,6 +57,12 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
     throw new Error('Invalid numeric precision or scale');
   if(type==='richtext'&&(field.unique===true||field.externalId===true))
     throw new Error('Rich Text Area fields cannot be unique or external IDs');
+  if(type==='formula'&&(field.unique===true||field.externalId===true||field.required===true
+  ||(field.defaultValue!==undefined&&field.defaultValue!==null)))
+  throw new Error('Formula fields cannot be required, unique, external IDs or have defaults');
+  if(type==='encryptedtext'&&(field.unique===true||field.externalId===true
+    ||(field.defaultValue!==undefined&&field.defaultValue!==null)))
+    throw new Error('Encrypted Text fields cannot be unique, external IDs or have defaults');
   if(type==='rollup'&&(field.unique===true||field.externalId===true||field.required===true
     ||(field.defaultValue!==undefined&&field.defaultValue!==null)))
     throw new Error('Roll-Up Summary fields cannot be required, unique, external IDs or have defaults');
@@ -61,6 +77,9 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
       :type==='reference'?'Lookup':null;
   if(relationshipType!==null&&!['Lookup','Master-Detail','Hierarchical'].includes(relationshipType))
     throw new Error('Invalid relationship type');
+  if((relationshipType!==null||['address','geolocation','multipicklist'].includes(type))
+    &&(field.unique===true||field.externalId===true))
+    throw new Error('Relationship, compound and multi-select fields cannot be unique or external IDs');
   const relationshipName: string|null=relationshipType===null?null:
     typeof relation?.relationshipName==='string'?relation.relationshipName:
       relation?.relationshipName===undefined?name.replace(/Id$/,''):null;
@@ -98,14 +117,39 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
       ||(config.operation==='COUNT'?config.sourceField!==undefined&&config.sourceField!==null
         :typeof config.sourceField!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(config.sourceField)))
       throw new Error('Invalid roll-up summary definition');
+    const filterLogic=config.filterLogic??'All';
+    const rawFilters=config.filters===undefined?[]:config.filters;
+    if(!['All','Any'].includes(String(filterLogic))
+      ||!Array.isArray(rawFilters)||rawFilters.length>20)
+      throw new Error('Invalid roll-up filter criteria');
+    const filters=rawFilters.map(item=>{
+      if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid roll-up filter');
+      const filter=item as Record<string,unknown>;
+      if(typeof filter.fieldApiName!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(filter.fieldApiName)
+        ||!['Equals','Not Equal To','Greater Than','Less Than','Contains','Is Null','Is Not Null'].includes(String(filter.operator))
+        ||(filter.operator==='Is Null'||filter.operator==='Is Not Null'
+          ?filter.value!==undefined&&filter.value!==null&&filter.value!==''
+          :typeof filter.value!=='string'&&typeof filter.value!=='number'&&typeof filter.value!=='boolean'))
+        throw new Error('Invalid roll-up filter');
+      return {fieldApiName:filter.fieldApiName,operator:String(filter.operator),
+        value:filter.value===undefined||filter.value===null?'':String(filter.value)};
+    });
     rollup={childObject:config.childObject,relationshipField:config.relationshipField,
       operation:config.operation as 'COUNT'|'SUM'|'MIN'|'MAX',
-      sourceField:typeof config.sourceField==='string'?config.sourceField:null};
+      sourceField:typeof config.sourceField==='string'?config.sourceField:null,
+      filterLogic:filterLogic as 'All'|'Any',filters};
   }
   const formulaReturnType=formula?.[1]
-    ?formula[1][0].toUpperCase()+formula[1].slice(1)
+    ?formula[1]==='datetime'?'DateTime':formula[1][0].toUpperCase()+formula[1].slice(1)
     :type==='formula'&&typeof formulaMetadata?.returnType==='string'?formulaMetadata.returnType:null;
-  const picklistValues=['picklist','multipicklist'].includes(type)?parsePicklistValues(field.picklistValues):[];
+  const rawGlobalValueSet=field.globalValueSetApiName;
+  if(rawGlobalValueSet!==undefined&&rawGlobalValueSet!==null
+    &&(typeof rawGlobalValueSet!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(rawGlobalValueSet)
+      ||!['picklist','multipicklist'].includes(type)))
+    throw new Error('Invalid global value set reference');
+  const globalValueSetApiName=typeof rawGlobalValueSet==='string'?rawGlobalValueSet:null;
+  const picklistValues=['picklist','multipicklist'].includes(type)
+    ?globalValueSetApiName?[]:parsePicklistValues(field.picklistValues):[];
   const controllerFieldApiName=field.controllerFieldApiName;
   const valueSettings=field.valueSettings;
   if(controllerFieldApiName!==undefined&&controllerFieldApiName!==null&&
@@ -120,12 +164,15 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
   const rawDefault=field.defaultValue;
   if(rawDefault!==undefined&&rawDefault!==null&&!['string','number','boolean'].includes(typeof rawDefault))
     throw new Error('Invalid field default value');
+  if(type==='encryptedtext'&&rawDefault!==undefined&&rawDefault!==null)
+    throw new Error('Encrypted Text fields cannot have defaults');
   if(type==='time'&&rawDefault!==undefined&&rawDefault!==null
     &&(typeof rawDefault!=='string'||!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?$/.test(rawDefault)))
     throw new Error('Invalid time field default');
   const autoNumberFormat=field.autoNumberFormat;
   if(type==='autonumber'&&autoNumberFormat!==undefined&&
-    (typeof autoNumberFormat!=='string'||autoNumberFormat.length>80||!/\{0+\}/.test(autoNumberFormat)))
+    (typeof autoNumberFormat!=='string'||autoNumberFormat.length>80
+      ||(!/\{0+\}/.test(autoNumberFormat)&&!/\{YYYY\}/.test(autoNumberFormat))))
     throw new Error('Invalid auto-number format');
   if(typeof field.helpText==='string'&&field.helpText.length>255)
     throw new Error('Invalid field help text');
@@ -135,8 +182,8 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
     apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,
     dataType:type,relatedObject:type==='reference'?relatedObject:null,relationshipType,
     relationshipName,childRelationshipName,deleteBehavior,allowReparenting,
-    required:relationshipType==='Master-Detail'||field.required===true,maxLength,precision,scale,
-    unique:field.unique===true,externalId:field.externalId===true,
+    required:relationshipType==='Master-Detail'||type==='autonumber'||field.required===true,maxLength,precision,scale,
+    unique:type==='autonumber'||field.unique===true,externalId:field.externalId===true,
     caseSensitive:field.caseSensitive===true,defaultValue:rawDefault===undefined||rawDefault===null?null:String(rawDefault),
     helpText:typeof field.helpText==='string'&&field.helpText.trim()?field.helpText.trim():null,
     description:typeof field.description==='string'&&field.description.trim()?field.description.trim():null,
@@ -144,6 +191,7 @@ const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):Pars
     formulaReturnType,autoNumberFormat:typeof autoNumberFormat==='string'?autoNumberFormat:null,rollup,
     picklistValues,restricted:field.picklistRestricted!==false,
     controllerFieldApiName:typeof controllerFieldApiName==='string'?controllerFieldApiName:null,
+    globalValueSetApiName,
     valueSettings:parsedValueSettings??{}
   };
 };
@@ -153,6 +201,78 @@ const parsePicklistValues=(input:unknown):string[]=>{
     ||new Set(input).size!==input.length)throw new Error('Invalid picklist values');
   return input as string[];
 };
+async function validateRollupWithin(client:Pick<PoolClient,'query'>,tenantId:string,objectApi:string,
+  rollup:NonNullable<ParsedField['rollup']>) {
+  const relationship=await client.query<{data_type:string;related_object:string;relationship_type:string}>(
+    `SELECT data_type,related_object,relationship_type FROM md_field_definitions
+     WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+    [tenantId,rollup.childObject,rollup.relationshipField]);
+  const relation=relationship.rows[0];
+  if(!relation||relation.data_type!=='reference'||relation.relationship_type!=='Master-Detail'
+    ||relation.related_object!==objectApi)
+    throw new Error('Roll-Up Summary requires an active Master-Detail field to this object');
+  if(rollup.operation==='SUM'){
+    const source=await client.query<{data_type:string}>(`SELECT data_type FROM md_field_definitions
+      WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+    [tenantId,rollup.childObject,rollup.sourceField]);
+    if(!source.rows[0]||!['number','currency','percent'].includes(source.rows[0].data_type))
+      throw new Error('SUM roll-ups require a numeric source field');
+  }else if(rollup.operation==='MIN'||rollup.operation==='MAX'){
+    const source=await client.query<{data_type:string}>(`SELECT data_type FROM md_field_definitions
+      WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+    [tenantId,rollup.childObject,rollup.sourceField]);
+    if(!source.rows[0]||!['number','currency','percent','date','datetime'].includes(source.rows[0].data_type))
+      throw new Error('MIN/MAX roll-ups require a numeric, Date or Date/Time source field');
+  }
+  if(!rollup.filters.length)return;
+  const filterFields=await client.query<{api_name:string;data_type:string}>(`
+    SELECT api_name,data_type FROM md_field_definitions
+    WHERE tenant_id=$1 AND object_api=$2 AND api_name=ANY($3::text[]) AND deleted_at IS NULL`,
+  [tenantId,rollup.childObject,rollup.filters.map(filter=>filter.fieldApiName)]);
+  const byApi=new Map(filterFields.rows.map(item=>[item.api_name,item.data_type]));
+  for(const filter of rollup.filters){
+    const dataType=byApi.get(filter.fieldApiName);
+    if(!dataType||['formula','rollup','geolocation','address','encryptedtext'].includes(dataType))
+      throw new Error('Roll-Up filter field is invalid');
+    const numericTypes=['number','currency','percent'];
+    const dateTypes=['date','datetime','time'];
+    const textTypes=['text','email','phone','url','textarea','longtext','richtext','picklist'];
+    if(filter.operator==='Contains'&&!textTypes.includes(dataType))
+      throw new Error('Contains requires a text roll-up filter field');
+    if(['Greater Than','Less Than'].includes(filter.operator)
+      &&!numericTypes.includes(dataType)&&!dateTypes.includes(dataType))
+      throw new Error('Comparison operator is invalid for roll-up filter field');
+    if(filter.operator==='Is Null'||filter.operator==='Is Not Null')continue;
+    if(numericTypes.includes(dataType)&&! /^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(filter.value))
+      throw new Error('Invalid numeric roll-up filter value');
+    if(dataType==='boolean'&&!['true','false'].includes(filter.value))
+      throw new Error('Invalid checkbox roll-up filter value');
+    if(dataType==='reference'&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(filter.value))
+      throw new Error('Invalid relationship roll-up filter value');
+    if(dataType==='date'&&(!/^\d{4}-\d{2}-\d{2}$/.test(filter.value)
+      ||Number.isNaN(Date.parse(filter.value+'T00:00:00Z'))))
+      throw new Error('Invalid date roll-up filter value');
+    if(dataType==='datetime'&&Number.isNaN(Date.parse(filter.value)))
+      throw new Error('Invalid date/time roll-up filter value');
+    if(dataType==='time'&&!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?$/.test(filter.value))
+      throw new Error('Invalid time roll-up filter value');
+  }
+}
+async function loadPicklistValues(client:Pick<PoolClient,'query'>,tenantId:string,objectApi:string,fieldApi:string) {
+  const {rows}=await client.query<{value:string}>(`
+    SELECT value FROM md_field_picklist_values p
+    WHERE p.tenant_id=$1 AND p.object_api=$2 AND p.field_api=$3
+      AND NOT EXISTS(SELECT 1 FROM md_field_global_value_sets g
+        WHERE g.tenant_id=p.tenant_id AND g.object_api=p.object_api AND g.field_api=p.field_api)
+    UNION
+    SELECT v.value FROM md_field_global_value_sets g
+    JOIN md_global_value_set_values v ON v.tenant_id=g.tenant_id
+      AND v.value_set_id=(SELECT s.id FROM md_global_value_sets s
+        WHERE s.tenant_id=g.tenant_id AND s.api_name=g.value_set_api)
+    WHERE g.tenant_id=$1 AND g.object_api=$2 AND g.field_api=$3 AND v.active
+    ORDER BY value`,[tenantId,objectApi,fieldApi]);
+  return rows.map(row=>row.value);
+}
 const parsePicklistValueSettings=(input:unknown):Record<string,string[]>|null=>{
   if(input===undefined||input===null)return null;
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.getPrototypeOf(input)!==Object.prototype)
@@ -179,8 +299,85 @@ const decodeFieldDefault=(type:string,value:string):string|number|boolean=>{
   if(type==='boolean')return value==='true';
   return value;
 };
+const formulaTypeForField=(dataType:string,returnType:string|null,rollupSourceType:string|null=null):FormulaValueType|null=>{
+  if(dataType==='formula'){
+    const normalized=returnType?.toLowerCase();
+    if(['number','currency','percent'].includes(normalized??''))return 'Number';
+    if(normalized==='text')return 'Text';
+    if(normalized==='checkbox')return 'Checkbox';
+    if(normalized==='date')return 'Date';
+    if(normalized==='datetime')return 'DateTime';
+    if(normalized==='time')return 'Time';
+    return null;
+  }
+  if(dataType==='rollup')return formulaTypeForField(rollupSourceType??'number',null);
+  if(['number','currency','percent'].includes(dataType))return 'Number';
+  if(dataType==='boolean')return 'Checkbox';
+  if(dataType==='date')return 'Date';
+  if(dataType==='datetime')return 'DateTime';
+  if(dataType==='time')return 'Time';
+  if(dataType==='geolocation')return 'Geolocation';
+  if(dataType==='picklist')return 'Picklist';
+  if(dataType==='multipicklist')return 'MultiPicklist';
+  if(['text','email','phone','url','textarea','longtext','richtext','autonumber','reference','address'].includes(dataType))
+    return 'Text';
+  return null;
+};
 export class ObjectDefinitionService {
-  constructor(private readonly db:SqlPersistence) {}
+  constructor(private readonly db:SqlPersistence,
+    private readonly migrationRuntime:FieldTypeMigrationRuntime={}) {}
+  async validateFormula(tenantId:string,objectApi:string,expression:string,returnType:string,
+    formulaFieldApi?:string) {
+    return this.db.transaction(client=>
+      this.validateFormulaWithin(client,tenantId,objectApi,expression,returnType,formulaFieldApi));
+  }
+  private async validateFormulaWithin(client:Pick<PoolClient,'query'>,tenantId:string,objectApi:string,
+    expression:string,returnType:string,formulaFieldApi?:string) {
+    const normalizedReturnType=returnType.toLowerCase();
+    if(!['number','currency','percent','text','date','datetime','time','checkbox'].includes(normalizedReturnType))
+      throw new Error('Unsupported formula return type');
+    validateFlowFormula(expression);
+    const references=flowFormulaReferences(expression);
+    const referenceTypes=new Map<string,FormulaValueType>();
+    const publicReferences:Array<{objectApi:string;fieldApi:string}>=[];
+    for(const reference of references){
+      const match=/^([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/.exec(reference);
+      if(!match)throw new Error('Formula references must use Object.Field names');
+      const [,targetObject,targetField]=match;
+      if(targetObject===objectApi&&targetField===formulaFieldApi)
+        throw new Error('Formula fields cannot reference themselves');
+      if(targetObject!==objectApi){
+        const relationship=await client.query(`SELECT 1 FROM md_field_definitions
+          WHERE tenant_id=$1 AND object_api=$2 AND related_object=$3 AND data_type='reference'
+            AND deleted_at IS NULL LIMIT 1`,[tenantId,objectApi,targetObject]);
+        if(!relationship.rowCount)throw new Error('Formula cross-object reference requires a lookup relationship');
+      }
+      const field=await client.query<{data_type:string;formula_return_type:string|null;rollup_source_type:string|null}>(`
+        SELECT f.data_type,f.formula_return_type,
+          (SELECT s.data_type FROM md_field_definitions s
+           WHERE s.tenant_id=f.tenant_id AND s.object_api=f.rollup_child_object
+             AND s.api_name=f.rollup_source_field AND s.deleted_at IS NULL) AS rollup_source_type
+        FROM md_field_definitions f
+        WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=$3 AND f.deleted_at IS NULL`,
+      [tenantId,targetObject,targetField]);
+      const definition=field.rows[0];
+      if(!definition)throw new Error('Formula references an unknown field: '+reference);
+      if(definition.data_type==='encryptedtext')
+        throw new Error('Formula fields cannot reference encrypted fields');
+      const type=formulaTypeForField(definition.data_type,definition.formula_return_type,
+        definition.rollup_source_type);
+      if(!type)throw new Error('Formula references an unsupported field type: '+reference);
+      referenceTypes.set(reference,type);
+      publicReferences.push({objectApi:targetObject,fieldApi:targetField});
+    }
+    const inferred=inferFlowFormulaType(expression,reference=>referenceTypes.get(reference)??null);
+    const expected=['currency','percent'].includes(normalizedReturnType)?'Number':
+      normalizedReturnType==='datetime'?'DateTime':
+        normalizedReturnType[0].toUpperCase()+normalizedReturnType.slice(1);
+    if(inferred!=='Null'&&inferred!==expected&&!(expected==='Text'&&inferred==='Picklist'))
+      throw new Error('Formula result does not match return type');
+    return publicReferences;
+  }
   async register(tenantId:string,apiName:string,label:string,isSystem=false) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!label.trim())throw new Error('Invalid object definition');
     const {rows}=await this.db.query<{id:string}>(
@@ -209,12 +406,27 @@ export class ObjectDefinitionService {
       if(!inserted.rowCount)throw new Error('Object already exists');
       for(const field of normalized){
         if(field.rollup)throw new Error('Roll-Up Summary fields must be added after both related objects exist');
+        if(field.globalValueSetApiName){
+          const values=await client.query<{value:string}>(`
+            SELECT v.value FROM md_global_value_sets s
+            JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+            WHERE s.tenant_id=$1 AND s.api_name=$2 AND v.active ORDER BY v.sort_order,v.value`,
+          [tenantId,field.globalValueSetApiName]);
+          if(!values.rowCount)throw new Error('Global Value Set not found or has no active values');
+          field.picklistValues=values.rows.map(row=>row.value);
+        }
         if(field.controllerFieldApiName){
           const controller=normalized.find(item=>item.apiName===field.controllerFieldApiName);
           if(field.controllerFieldApiName===field.apiName||!controller||!['picklist','boolean'].includes(controller.dataType))
             throw new Error('Invalid dependent picklist controller');
-          if(Object.keys(field.valueSettings).some(value=>controller.dataType==='boolean'
-            ?!['true','false'].includes(value):!controller.picklistValues.includes(value)))
+          const controllerValues=controller.dataType==='boolean'?['true','false']:
+            controller.globalValueSetApiName
+              ?(await client.query<{value:string}>(`SELECT v.value FROM md_global_value_sets s
+                JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+                WHERE s.tenant_id=$1 AND s.api_name=$2 AND v.active`,
+              [tenantId,controller.globalValueSetApiName])).rows.map(row=>row.value)
+              :controller.picklistValues;
+          if(Object.keys(field.valueSettings).some(value=>!controllerValues.includes(value)))
             throw new Error('Invalid dependent picklist controller value');
           if(Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
             throw new Error('Invalid dependent picklist value');
@@ -236,10 +448,16 @@ export class ObjectDefinitionService {
           INSERT INTO md_field_formulas(tenant_id,object_api,field_api,expression,return_type)
           VALUES($1,$2,$3,$4,$5)`,
         [tenantId,apiName,field.apiName,field.formulaExpression,field.formulaReturnType]);
-        for(const [order,value] of field.picklistValues.entries())
+        if(field.globalValueSetApiName)await client.query(`INSERT INTO md_field_global_value_sets
+          (tenant_id,object_api,field_api,value_set_api) VALUES($1,$2,$3,$4)`,
+        [tenantId,apiName,field.apiName,field.globalValueSetApiName]);
+        else for(const [order,value] of field.picklistValues.entries())
           await client.query('INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
             [tenantId,apiName,field.apiName,value,order]);
       }
+      for(const field of normalized)if(field.formulaExpression&&field.formulaReturnType)
+        await this.validateFormulaWithin(client,tenantId,apiName,field.formulaExpression,
+          field.formulaReturnType,field.apiName);
       for(const field of normalized)if(field.controllerFieldApiName){
         await client.query(`INSERT INTO md_field_dependencies
           (tenant_id,object_api,field_api,controller_field_api)
@@ -275,24 +493,29 @@ export class ObjectDefinitionService {
     const formula=field.dataType==='formula'&&field.formulaExpression
       ?{expression:field.formulaExpression,returnType:field.formulaReturnType??'Text'}:null;
     const result=await this.db.transaction(async client=>{
-      if(field.rollup){
-        const relationship=await client.query<{data_type:string;related_object:string;relationship_type:string}>(
-          `SELECT data_type,related_object,relationship_type FROM md_field_definitions
-           WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
-          [tenantId,field.rollup.childObject,field.rollup.relationshipField]);
-        const relation=relationship.rows[0];
-        if(!relation||relation.data_type!=='reference'||relation.relationship_type!=='Master-Detail'
-          ||relation.related_object!==objectApi)
-          throw new Error('Roll-Up Summary requires an active Master-Detail field to this object');
-        if(field.rollup.operation!=='COUNT'){
-          const source=await client.query<{data_type:string}>(
+      if(formula){
+        await this.validateFormulaWithin(client,tenantId,objectApi,formula.expression,
+          formula.returnType,fieldApi);
+        const refs=[...formula.expression.matchAll(/@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)/g)];
+        for(const [,targetObject,targetField] of refs){
+          const target=await client.query<{data_type:string}>(
             `SELECT data_type FROM md_field_definitions
              WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
-            [tenantId,field.rollup.childObject,field.rollup.sourceField]);
-          if(!source.rows[0]||!['number','currency','percent'].includes(source.rows[0].data_type))
-            throw new Error('Roll-Up Summary source field must be numeric');
+            [tenantId,targetObject,targetField]);
+          if(target.rows[0]?.data_type==='encryptedtext')
+            throw new Error('Formula fields cannot reference encrypted fields');
         }
       }
+      if(field.globalValueSetApiName){
+        const values=await client.query<{value:string}>(`
+          SELECT v.value FROM md_global_value_sets s
+          JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+          WHERE s.tenant_id=$1 AND s.api_name=$2 AND v.active ORDER BY v.sort_order,v.value`,
+        [tenantId,field.globalValueSetApiName]);
+        if(!values.rowCount)throw new Error('Global Value Set not found or has no active values');
+        field.picklistValues=values.rows.map(row=>row.value);
+      }
+      if(field.rollup)await validateRollupWithin(client,tenantId,objectApi,field.rollup);
       if(field.relationshipType==='Master-Detail'){
         const cycle=await client.query(`WITH RECURSIVE parent_chain(object_api,path) AS (
           SELECT $3::text,ARRAY[$3::text]
@@ -318,9 +541,7 @@ export class ObjectDefinitionService {
         if(!controller.rows[0]||!['picklist','boolean'].includes(controller.rows[0].data_type))
           throw new Error('Invalid dependent picklist controller');
         const options=controller.rows[0].data_type==='boolean'
-          ?['true','false']:(await client.query<{value:string}>(`SELECT value FROM md_field_picklist_values
-            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
-          [tenantId,objectApi,field.controllerFieldApiName])).rows.map(row=>row.value);
+          ?['true','false']:await loadPicklistValues(client,tenantId,objectApi,field.controllerFieldApiName);
         if(Object.keys(field.valueSettings).some(value=>!options.includes(value))||
           Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
           throw new Error('Invalid dependent picklist values');
@@ -330,21 +551,30 @@ export class ObjectDefinitionService {
           (tenant_id,object_api,api_name,data_type,related_object,max_length,label,picklist_restricted,
            required,relationship_type,is_unique,external_id,case_sensitive,default_value,help_text,description,
            precision,scale,formula_expression,formula_return_type,auto_number_format,
-           rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,
+           rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,rollup_filter_logic,
            relationship_name,child_relationship_name,delete_behavior,allow_reparenting)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
         ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
       `,[tenantId,objectApi,field.apiName,field.dataType,field.relatedObject,field.maxLength,field.label,
          field.restricted,field.required,field.relationshipType,field.unique||field.externalId,field.externalId,
          field.caseSensitive,field.defaultValue,field.helpText,field.description,field.precision,field.scale,
          field.formulaExpression,field.formulaReturnType,field.autoNumberFormat,
          field.rollup?.childObject??null,field.rollup?.relationshipField??null,field.rollup?.operation??null,
-         field.rollup?.sourceField??null,
+         field.rollup?.sourceField??null,field.rollup?.filterLogic??'All',
          field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
       if(!inserted.rowCount)throw new Error('Field already exists');
-      for(const [order,value] of field.picklistValues.entries())await client.query(
-        'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
-        [tenantId,objectApi,fieldApi,value,order]);
+      if(field.globalValueSetApiName)await client.query(`INSERT INTO md_field_global_value_sets
+        (tenant_id,object_api,field_api,value_set_api) VALUES($1,$2,$3,$4)`,
+      [tenantId,objectApi,fieldApi,field.globalValueSetApiName]);
+      else for(const [order,value] of field.picklistValues.entries())await client.query(
+          'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
+          [tenantId,objectApi,fieldApi,value,order]);
+      if(field.rollup)for(const [sortOrder,filter] of field.rollup.filters.entries())
+        await client.query(`INSERT INTO md_field_rollup_filters
+          (tenant_id,object_api,child_object,rollup_field_api,filter_field_api,operator,value_text,sort_order)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [tenantId,objectApi,field.rollup.childObject,field.apiName,filter.fieldApiName,
+          filter.operator,filter.value,sortOrder]);
       if(field.controllerFieldApiName){
         await client.query(`INSERT INTO md_field_dependencies
           (tenant_id,object_api,field_api,controller_field_api)
@@ -363,7 +593,7 @@ export class ObjectDefinitionService {
     return result;
   }
   /** Only mutable SQL-backed field properties may be edited; unsupported options fail closed. */
-  async updateField(tenantId:string,objectApi:string,fieldApi:string,proposal:Record<string,unknown>){
+  async updateField(tenantId:string,objectApi:string,fieldApi:string,proposal:Record<string,unknown>,actorUserId:string|null=null){
     if(typeof proposal.label!=='string'||!proposal.label.trim()||proposal.label.length>160
       || (proposal.apiName!==undefined&&proposal.apiName!==fieldApi))
       throw new Error('Invalid field update');
@@ -371,11 +601,11 @@ export class ObjectDefinitionService {
     const original=await this.get(tenantId,objectApi);
     const current=original.fields.find(x=>x.apiName===fieldApi);
     if(!current)throw new Error('Field not found');
-    if(proposal.dataType!==undefined&&proposal.dataType!==current.dataType)
-      throw new Error('Field datatype migration requires a versioned migration');
+    const changesDataType=proposal.dataType!==undefined
+      &&fieldTypeSignature(String(proposal.dataType)).dataType!==fieldTypeSignature(current.dataType).dataType;
     const mutable=new Set(['id','apiName','label','dataType','required','unique','externalId','caseSensitive',
       'defaultValue','helpText','description','relationship','formula','picklistValues','picklistRestricted',
-      'controllerFieldApiName','valueSettings']);
+      'controllerFieldApiName','valueSettings','globalValueSetApiName','rollup','autoNumberFormat']);
     const completeField=proposal.dataType!==undefined;
     const proposedController=Object.hasOwn(proposal,'controllerFieldApiName')
       ?proposal.controllerFieldApiName:completeField?null:current.controllerFieldApiName??null;
@@ -383,13 +613,9 @@ export class ObjectDefinitionService {
       throw new Error('Invalid dependent picklist controller');
     const proposedSettings=Object.hasOwn(proposal,'valueSettings')
       ?proposal.valueSettings:proposedController?current.valueSettings??{}:undefined;
-    const requestedRelationship=proposal.relationship&&typeof proposal.relationship==='object'
-      ?proposal.relationship as Record<string,unknown>:undefined;
     if(Object.keys(proposal).some(key=>!mutable.has(key))||
-      (proposal.relationship!==undefined&&(
-        requestedRelationship?.targetObject!==current.relationship?.targetObject||
-        requestedRelationship?.type!==current.relationship?.type))||
-      (proposal.formula!==undefined&&JSON.stringify(proposal.formula)!==JSON.stringify(current.formula)))
+      (!changesDataType&&proposal.formula!==undefined&&JSON.stringify(proposal.formula)!==JSON.stringify(current.formula))||
+      (!changesDataType&&proposal.rollup!==undefined&&JSON.stringify(proposal.rollup)!==JSON.stringify(current.rollup)))
       throw new Error('Unsupported field update requires a metadata migration');
     for(const key of ['required','unique','externalId','caseSensitive'])
       if(proposal[key]!==undefined&&typeof proposal[key]!=='boolean')
@@ -404,27 +630,147 @@ export class ObjectDefinitionService {
     if(proposal.picklistRestricted!==undefined&&typeof proposal.picklistRestricted!=='boolean')
       throw new Error('Invalid picklist restriction');
     const field=parseFieldDefinition({
-      ...proposal,apiName:fieldApi,dataType:current.dataType,label,
+      ...proposal,apiName:fieldApi,dataType:proposal.dataType??current.dataType,label,
       picklistValues:proposal.picklistValues??current.picklistValues,
       picklistRestricted:proposal.picklistRestricted??current.picklistRestricted,
-      controllerFieldApiName:proposedController??undefined,
       valueSettings:proposedController?proposedSettings:undefined,
-      relationship:proposal.relationship??current.relationship,
-      formula:proposal.formula??current.formula,
+      globalValueSetApiName:changesDataType&&!['picklist','multipicklist'].includes(
+        fieldTypeSignature(String(proposal.dataType)).dataType)?null:
+          Object.hasOwn(proposal,'globalValueSetApiName')
+            ?proposal.globalValueSetApiName:current.globalValueSetApiName??null,
+      controllerFieldApiName:changesDataType&&!['picklist'].includes(
+        fieldTypeSignature(String(proposal.dataType)).dataType)?undefined:proposedController??undefined,
+      relationship:changesDataType?proposal.relationship:proposal.relationship??current.relationship,
+      formula:changesDataType?proposal.formula:proposal.formula??current.formula,
       defaultValue:proposal.defaultValue===undefined?current.defaultValue:proposal.defaultValue
     },objectApi);
     if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
       throw new Error('Hierarchical relationships are supported only as User self-lookups');
-    const picklistValuesChanged=['picklist','multipicklist'].includes(current.dataType.toLowerCase().replace(/[\s-]/g,''))
-      &&JSON.stringify(field.picklistValues)!==JSON.stringify(current.picklistValues??[]);
+    const globalValueSetChanged=field.globalValueSetApiName!==(current.globalValueSetApiName??null);
+    if(changesDataType&&field.globalValueSetApiName)
+      throw new Error('Type migrations to a Global Value Set require local picklist values first');
+    const targetUsesPicklist=['picklist','multipicklist'].includes(field.dataType);
+    const currentUsesPicklist=['picklist','multipicklist'].includes(
+      fieldTypeSignature(current.dataType).dataType);
+    const picklistValuesChanged=targetUsesPicklist&&!field.globalValueSetApiName
+      &&(!currentUsesPicklist||globalValueSetChanged
+        ||JSON.stringify(field.picklistValues)!==JSON.stringify(current.picklistValues??[]));
     const dependencyChanged=field.controllerFieldApiName!== (current.controllerFieldApiName??null)
       ||Boolean(field.controllerFieldApiName&&JSON.stringify(normalizeValueSettings(field.valueSettings))!==
         JSON.stringify(normalizeValueSettings(current.valueSettings)));
     const required=proposal.required===undefined?current.required:proposal.required===true;
+    if(field.relationshipType==='Master-Detail'&&proposal.required===false)
+      throw new Error('Master-Detail relationship fields must be required');
+    const effectiveRequired=field.relationshipType==='Master-Detail'||required;
     const unique=proposal.unique===undefined?current.unique:proposal.unique===true;
     const externalId=proposal.externalId===undefined?current.externalId:proposal.externalId===true;
     const caseSensitive=proposal.caseSensitive===undefined?current.caseSensitive:proposal.caseSensitive===true;
+    const oldType=fieldTypeSignature(current.dataType);
+    const relationshipDefinitionChanged=field.dataType==='reference'&&(
+      field.relatedObject!==(current.relationship?.targetObject??null)
+      ||field.relationshipType!==(current.relationship?.type??null)
+      ||field.relationshipName!==(current.relationship?.relationshipName??null)
+      ||field.childRelationshipName!==(current.relationship?.childRelationshipName??null)
+      ||field.deleteBehavior!==(current.relationship?.deleteBehavior??null)
+      ||field.allowReparenting!==(current.relationship?.allowReparenting??false));
+    const formulaReturnTypeChanged=field.dataType==='formula'
+      &&field.formulaReturnType!== (current.formula?.returnType??null);
+    const rollupDefinitionChanged=field.dataType==='rollup'
+      &&JSON.stringify(field.rollup)!==JSON.stringify(current.rollup??null);
+    const typeDefinitionChanged=field.dataType!==oldType.dataType||field.maxLength!==oldType.maxLength
+      ||field.precision!==oldType.precision||field.scale!==oldType.scale
+      ||relationshipDefinitionChanged||formulaReturnTypeChanged||rollupDefinitionChanged;
+    const defaultValue=proposal.defaultValue===undefined
+      ?current.defaultValue==null?null:String(current.defaultValue)
+      :proposal.defaultValue===null?null:String(proposal.defaultValue);
+    const migrationTarget:FieldTypeTarget={
+      dataType:field.dataType,maxLength:field.maxLength,precision:field.precision,scale:field.scale,
+      required:effectiveRequired,unique,externalId,caseSensitive,defaultValue,
+      relatedObject:field.relatedObject,relationshipType:field.relationshipType,
+      globalValueSetApiName:field.globalValueSetApiName,
+      controllerFieldApiName:field.controllerFieldApiName,
+      relationshipName:field.relationshipName,childRelationshipName:field.childRelationshipName,
+      deleteBehavior:field.deleteBehavior,allowReparenting:field.allowReparenting,
+      picklistValues:field.picklistValues,picklistRestricted:field.restricted,
+      formulaExpression:field.formulaExpression,formulaReturnType:field.formulaReturnType,
+      autoNumberFormat:field.autoNumberFormat,rollup:field.rollup
+    };
+    const migrationSource:FieldTypeTarget={
+      dataType:oldType.dataType,maxLength:oldType.maxLength,precision:oldType.precision,scale:oldType.scale,
+      required:current.required,unique:current.unique,externalId:current.externalId,
+      caseSensitive:current.caseSensitive,defaultValue:current.defaultValue==null?null:String(current.defaultValue),
+      relatedObject:current.relationship?.targetObject??null,
+      globalValueSetApiName:current.globalValueSetApiName??null,
+      controllerFieldApiName:current.controllerFieldApiName??null,
+      relationshipType:current.relationship?.type??null,
+      relationshipName:current.relationship?.relationshipName??null,
+      childRelationshipName:current.relationship?.childRelationshipName??null,
+      deleteBehavior:current.relationship?.deleteBehavior??null,
+      allowReparenting:current.relationship?.allowReparenting??false,
+      picklistValues:current.picklistValues??[],picklistRestricted:current.picklistRestricted!==false,
+      formulaExpression:current.formula?.expression??null,formulaReturnType:current.formula?.returnType??null,
+      autoNumberFormat:current.autoNumberFormat??null,
+      rollup:current.rollup?.childObject&&current.rollup.relationshipField
+        &&['COUNT','SUM','MIN','MAX'].includes(current.rollup.operation??'')
+        ?{childObject:current.rollup.childObject,relationshipField:current.rollup.relationshipField,
+          operation:current.rollup.operation as 'COUNT'|'SUM'|'MIN'|'MAX',
+          sourceField:current.rollup.sourceField??null,
+          filterLogic:current.rollup.filterLogic==='Any'?'Any':'All',filters:current.rollup.filters??[]}
+        :null
+    };
+    let fieldTypeMigrationId:string|null=null;
     await this.db.transaction(async client=>{
+      if(typeDefinitionChanged){
+        if(field.rollup)await validateRollupWithin(client,tenantId,objectApi,field.rollup);
+        if(field.globalValueSetApiName)
+          throw new Error('Type migrations to a Global Value Set require local picklist values first');
+        if(field.controllerFieldApiName||current.controllerFieldApiName)
+          throw new Error('Dependent picklist fields must be unlinked before changing their type');
+        if(field.relationshipType==='Master-Detail'){
+          const cycle=await client.query(`WITH RECURSIVE parent_chain(object_api,path) AS (
+            SELECT $3::text,ARRAY[$3::text]
+            UNION ALL
+            SELECT f.related_object,parent_chain.path||f.related_object
+            FROM parent_chain JOIN md_field_definitions f
+              ON f.tenant_id=$1 AND f.object_api=parent_chain.object_api
+              AND f.relationship_type='Master-Detail' AND f.deleted_at IS NULL
+            WHERE f.related_object IS NOT NULL AND NOT f.related_object=ANY(parent_chain.path)
+          ) SELECT 1 FROM parent_chain WHERE object_api=$2 LIMIT 1`,
+          [tenantId,objectApi,field.relatedObject]);
+          if(cycle.rowCount)throw new Error('Master-Detail relationships cannot create a cycle');
+          const parentCount=await client.query<{total:number}>(`SELECT count(*)::integer AS total
+            FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2
+              AND relationship_type='Master-Detail' AND deleted_at IS NULL AND api_name<>$3`,
+          [tenantId,objectApi,fieldApi]);
+          if(Number(parentCount.rows[0]?.total??0)>=2)
+            throw new Error('An object cannot have more than two Master-Detail relationships');
+        }
+        fieldTypeMigrationId=await applyFieldTypeMigration(client,tenantId,objectApi,fieldApi,
+          actorUserId,migrationSource,migrationTarget,this.migrationRuntime);
+      }
+      if(field.dataType==='formula')
+        await this.validateFormulaWithin(client,tenantId,objectApi,field.formulaExpression!,
+          field.formulaReturnType??'Text',fieldApi);
+      if(field.globalValueSetApiName){
+        const values=await client.query<{value:string}>(`
+          SELECT v.value FROM md_global_value_sets s
+          JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+          WHERE s.tenant_id=$1 AND s.api_name=$2 AND v.active ORDER BY v.sort_order,v.value`,
+        [tenantId,field.globalValueSetApiName]);
+        if(!values.rowCount)throw new Error('Global Value Set not found or has no active values');
+        field.picklistValues=values.rows.map(row=>row.value);
+      }
+      if(globalValueSetChanged&&field.globalValueSetApiName){
+        const existing=await client.query<{value_text:string|null}>(`
+          SELECT value_text FROM md_record_values WHERE tenant_id=$1 AND object_api=$2
+            AND field_api=$3 AND value_text IS NOT NULL`,
+        [tenantId,objectApi,fieldApi]);
+        const allowed=new Set(field.picklistValues);
+        if(existing.rows.some(row=>{
+          const values=current.dataType==='multipicklist'?(row.value_text??'').split(';'):[row.value_text??''];
+          return values.some(value=>value&&!allowed.has(value));
+        }))throw new Error('Global Value Set does not contain existing record values');
+      }
       if(required&&!current.required){
         const missing=await client.query(`SELECT 1 FROM md_records r
           WHERE r.tenant_id=$1 AND r.object_api=$2 AND NOT EXISTS(
@@ -440,9 +786,7 @@ export class ObjectDefinitionService {
           ||!['picklist','boolean'].includes(controller.rows[0].data_type))
           throw new Error('Invalid dependent picklist controller');
         const controllerValues=controller.rows[0].data_type==='boolean'
-          ?['true','false']:(await client.query<{value:string}>(`SELECT value FROM md_field_picklist_values
-            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
-          [tenantId,objectApi,field.controllerFieldApiName])).rows.map(row=>row.value);
+          ?['true','false']:await loadPicklistValues(client,tenantId,objectApi,field.controllerFieldApiName);
         if(Object.keys(field.valueSettings).some(value=>!controllerValues.includes(value))
           ||Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
           throw new Error('Invalid dependent picklist values');
@@ -461,32 +805,78 @@ export class ObjectDefinitionService {
             throw new Error('Dependent picklist update conflicts with existing record values');
         }
       }
+      if(globalValueSetChanged){
+        await client.query(`DELETE FROM md_field_global_value_sets
+          WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,[tenantId,objectApi,fieldApi]);
+        if(field.globalValueSetApiName){
+          await client.query(`DELETE FROM md_field_picklist_values
+            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,[tenantId,objectApi,fieldApi]);
+          await client.query(`INSERT INTO md_field_global_value_sets
+            (tenant_id,object_api,field_api,value_set_api) VALUES($1,$2,$3,$4)`,
+          [tenantId,objectApi,fieldApi,field.globalValueSetApiName]);
+        }
+      }
       if(picklistValuesChanged){
         const removed=(current.picklistValues??[]).filter(value=>!field.picklistValues.includes(value));
         if(removed.length){
-          const inUse=await client.query(`SELECT 1 FROM md_record_values
-            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 AND value_text=ANY($4::text[]) LIMIT 1`,
-          [tenantId,objectApi,fieldApi,removed]);
+          const inUse=currentUsesPicklist&&current.dataType.toLowerCase().replace(/[\s-]/g,'')==='multipicklist'
+            ?await client.query(`SELECT 1 FROM md_record_values
+              WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 AND EXISTS(
+                SELECT 1 FROM unnest(string_to_array(value_text,';')) selected(value)
+                WHERE selected.value=ANY($4::text[])) LIMIT 1`,
+            [tenantId,objectApi,fieldApi,removed])
+            :await client.query(`SELECT 1 FROM md_record_values
+              WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3
+                AND value_text=ANY($4::text[]) LIMIT 1`,[tenantId,objectApi,fieldApi,removed]);
           if(inUse.rowCount)throw new Error('Picklist values cannot be removed while records use them');
         }
       }
       const changed=await client.query(`UPDATE md_field_definitions SET
-        label=$4,required=$5,is_unique=$6 OR $7,external_id=$7,case_sensitive=$8,
-        default_value=$9,help_text=$10,description=$11,picklist_restricted=$12,
-        relationship_name=$13,child_relationship_name=$14,delete_behavior=$15,allow_reparenting=$16
+        label=$4,data_type=$5,max_length=$6,precision=$7,scale=$8,required=$9,
+        is_unique=$10 OR $11,external_id=$11,case_sensitive=$12,
+        default_value=$13,help_text=$14,description=$15,picklist_restricted=$16,
+        relationship_name=$17,child_relationship_name=$18,delete_behavior=$19,allow_reparenting=$20,
+        related_object=$21,relationship_type=$22,rollup_child_object=$23,
+        rollup_relationship_field=$24,rollup_operation=$25,rollup_source_field=$26,
+        auto_number_format=$27,formula_expression=$28,formula_return_type=$29,rollup_filter_logic=$30,
+        controller_field_api=$31
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id`,
-      [tenantId,objectApi,fieldApi,label,required,unique,externalId,caseSensitive,
-        proposal.defaultValue===undefined?current.defaultValue:proposal.defaultValue===null?null:String(proposal.defaultValue),
+      [tenantId,objectApi,fieldApi,label,field.dataType,field.maxLength,field.precision,field.scale,
+        effectiveRequired,unique,externalId,caseSensitive,defaultValue,
         proposal.helpText===undefined?current.helpText:proposal.helpText||null,
         proposal.description===undefined?current.description:proposal.description||null,field.restricted,
-        field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
+        field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting,
+        field.relatedObject,field.relationshipType,field.rollup?.childObject??null,
+        field.rollup?.relationshipField??null,field.rollup?.operation??null,field.rollup?.sourceField??null,
+        field.autoNumberFormat,field.formulaExpression,field.formulaReturnType,
+        field.rollup?.filterLogic??'All',field.controllerFieldApiName]);
       if(!changed.rowCount)throw new Error('Field not found');
+      if(typeDefinitionChanged){
+        await client.query(`DELETE FROM md_field_rollup_filters
+          WHERE tenant_id=$1 AND object_api=$2 AND rollup_field_api=$3`,[tenantId,objectApi,fieldApi]);
+        if(field.rollup)for(const [sortOrder,filter] of field.rollup.filters.entries())
+          await client.query(`INSERT INTO md_field_rollup_filters
+            (tenant_id,object_api,child_object,rollup_field_api,filter_field_api,operator,value_text,sort_order)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [tenantId,objectApi,field.rollup.childObject,fieldApi,filter.fieldApiName,
+            filter.operator,filter.value,sortOrder]);
+      }
+      await client.query(`DELETE FROM md_field_formulas
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,[tenantId,objectApi,fieldApi]);
+      if(field.dataType==='formula')await client.query(`INSERT INTO md_field_formulas
+        (tenant_id,object_api,field_api,expression,return_type)
+        VALUES($1,$2,$3,$4,$5)`,
+      [tenantId,objectApi,fieldApi,field.formulaExpression,field.formulaReturnType??'Text']);
       if(picklistValuesChanged){
         await client.query('DELETE FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
           [tenantId,objectApi,fieldApi]);
-        for(const [order,value] of field.picklistValues.entries())await client.query(
+        if(!globalValueSetChanged)for(const [order,value] of field.picklistValues.entries())await client.query(
           'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
           [tenantId,objectApi,fieldApi,value,order]);
+      }
+      if(!targetUsesPicklist){
+        await client.query('DELETE FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
+          [tenantId,objectApi,fieldApi]);
       }
       if(dependencyChanged){
         await client.query('DELETE FROM md_field_dependencies WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
@@ -504,6 +894,53 @@ export class ObjectDefinitionService {
       await client.query(`UPDATE md_record_values SET is_unique=$4 OR $5,case_sensitive=$6
         WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
       [tenantId,objectApi,fieldApi,unique,externalId,caseSensitive]);
+      if(typeDefinitionChanged&&field.dataType==='rollup'){
+        if(!this.migrationRuntime.recalculateRollup)
+          throw new Error('Roll-Up Summary migration requires the shared record runtime');
+        await this.migrationRuntime.recalculateRollup(client,tenantId,objectApi,fieldApi);
+        await client.query(`UPDATE md_field_type_migration_values m SET
+            after_value_text=v.value_text,after_value_number=v.value_number::text,
+            after_value_boolean=v.value_boolean,after_value_date=v.value_date::text,
+            after_value_datetime=v.value_datetime,after_reference_record_id=v.reference_record_id,
+            after_geo_latitude=v.geo_latitude,after_geo_longitude=v.geo_longitude,
+            after_address_street=v.address_street,after_address_city=v.address_city,
+            after_address_state=v.address_state,after_address_postal_code=v.address_postal_code,
+            after_address_country=v.address_country,after_value_exists=true
+          FROM md_record_values v WHERE m.tenant_id=$1 AND m.migration_id=$4
+            AND v.tenant_id=m.tenant_id AND v.record_id=m.record_id
+            AND v.object_api=m.object_api AND v.field_api=$3`,
+        [tenantId,objectApi,fieldApi,fieldTypeMigrationId]);
+      }
+    });
+    return this.get(tenantId,objectApi);
+  }
+  async listFieldTypeMigrations(tenantId:string,objectApi:string,fieldApi:string){
+    const {rows}=await this.db.query<{
+      id:string;from_data_type:string;to_data_type:string;status:string;records_migrated:number;
+      created_at:Date;rolled_back_at:Date|null;actor_user_id:string|null
+    }>(`SELECT id,from_data_type,to_data_type,status,records_migrated,created_at,rolled_back_at,actor_user_id
+      FROM md_field_type_migrations WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3
+      ORDER BY created_at DESC,id DESC LIMIT 50`,[tenantId,objectApi,fieldApi]);
+    return rows.map(row=>({
+      id:row.id,fromDataType:row.from_data_type,toDataType:row.to_data_type,status:row.status,
+      recordsMigrated:row.records_migrated,createdAt:row.created_at,rolledBackAt:row.rolled_back_at,
+      actorUserId:row.actor_user_id
+    }));
+  }
+  async rollbackFieldTypeMigration(tenantId:string,objectApi:string,fieldApi:string,migrationId:string){
+    await this.db.transaction(async client=>{
+      await rollbackFieldTypeMigration(client,tenantId,objectApi,fieldApi,migrationId,
+        this.migrationRuntime);
+      await client.query(`DELETE FROM md_field_formulas
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,[tenantId,objectApi,fieldApi]);
+      const formula=await client.query<{expression:string|null;return_type:string|null}>(
+        `SELECT formula_expression AS expression,formula_return_type AS return_type
+          FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
+            AND data_type='formula'`,[tenantId,objectApi,fieldApi]);
+      if(formula.rows[0]?.expression&&formula.rows[0].return_type)
+        await client.query(`INSERT INTO md_field_formulas
+          (tenant_id,object_api,field_api,expression,return_type) VALUES($1,$2,$3,$4,$5)`,
+        [tenantId,objectApi,fieldApi,formula.rows[0].expression,formula.rows[0].return_type]);
     });
     return this.get(tenantId,objectApi);
   }
@@ -629,30 +1066,53 @@ export class ObjectDefinitionService {
       `SELECT f.id,f.object_api,f.api_name,f.label,f.data_type,f.related_object,f.relationship_type,f.required,f.max_length,
         f.precision,f.scale,f.is_unique,f.external_id,f.case_sensitive,f.default_value,f.help_text,f.description,
         f.formula_expression,f.formula_return_type,f.auto_number_format,
-        f.rollup_child_object,f.rollup_relationship_field,f.rollup_operation,f.rollup_source_field,
+        f.rollup_child_object,f.rollup_relationship_field,f.rollup_operation,f.rollup_source_field,f.rollup_filter_logic,
         f.picklist_restricted,
-        d.controller_field_api AS controller_field_api_name,f.relationship_name,f.child_relationship_name,
+        d.controller_field_api AS controller_field_api_name,g.value_set_api AS global_value_set_api,
+        f.relationship_name,f.child_relationship_name,
         f.delete_behavior,f.allow_reparenting
        FROM md_field_definitions f LEFT JOIN md_field_dependencies d
         ON d.tenant_id=f.tenant_id AND d.object_api=f.object_api AND d.field_api=f.api_name
+       LEFT JOIN md_field_global_value_sets g
+        ON g.tenant_id=f.tenant_id AND g.object_api=f.object_api AND g.field_api=f.api_name
        WHERE f.tenant_id=$1 AND f.deleted_at IS NULL ORDER BY f.object_api,f.api_name`,[tenantId]);
     const byObject=new Map<string,SqlField[]>();
     for(const field of fields) {
       const list=byObject.get(field.object_api)??[];
       list.push(field);byObject.set(field.object_api,list);
     }
+    const {rows:rollupFilterRows}=fields.some(field=>field.data_type==='rollup')
+      ?await this.db.query<{object_api:string;rollup_field_api:string;child_object:string;filter_field_api:string;
+        operator:string;value_text:string;sort_order:number}>(`
+        SELECT object_api,rollup_field_api,child_object,filter_field_api,operator,value_text,sort_order
+        FROM md_field_rollup_filters WHERE tenant_id=$1 ORDER BY object_api,rollup_field_api,sort_order`,[tenantId])
+      :{rows:[]};
+    const rollupFilters=new Map<string,Array<{fieldApiName:string;operator:string;value:string}>>();
+    for(const filter of rollupFilterRows){
+      const key=JSON.stringify([filter.object_api,filter.rollup_field_api]);
+      const items=rollupFilters.get(key)??[];
+      items.push({fieldApiName:filter.filter_field_api,operator:filter.operator,value:filter.value_text});
+      rollupFilters.set(key,items);
+    }
     const typeLabel:Record<string,string>={
       text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',time:'Time',
       reference:'Lookup',email:'Email',phone:'Phone',url:'URL',picklist:'Picklist',
       multipicklist:'Multi-Select Picklist',textarea:'Text Area',longtext:'Long Text Area',
-      richtext:'Rich Text Area',currency:'Currency',percent:'Percent',formula:'Formula',
+      richtext:'Rich Text Area',encryptedtext:'Text (Encrypted)',currency:'Currency',percent:'Percent',formula:'Formula',
       geolocation:'Geolocation',address:'Address',rollup:'Roll-Up Summary',autonumber:'AutoNumber'
     };
     const layouts=await this.loadLayoutMetadata(tenantId);
     const {rows:picklistOptions}=fields.some(field=>['picklist','multipicklist'].includes(field.data_type))
       ?await this.db.query<{object_api:string;field_api:string;value:string}>(`
-        SELECT object_api,field_api,value FROM md_field_picklist_values
-        WHERE tenant_id=$1 ORDER BY object_api,field_api,sort_order`,[tenantId])
+        SELECT p.object_api,p.field_api,p.value FROM md_field_picklist_values p
+        WHERE p.tenant_id=$1 AND NOT EXISTS(SELECT 1 FROM md_field_global_value_sets g
+          WHERE g.tenant_id=p.tenant_id AND g.object_api=p.object_api AND g.field_api=p.field_api)
+        UNION
+        SELECT g.object_api,g.field_api,v.value FROM md_field_global_value_sets g
+        JOIN md_global_value_sets s ON s.tenant_id=g.tenant_id AND s.api_name=g.value_set_api
+        JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+        WHERE g.tenant_id=$1 AND v.active
+        ORDER BY object_api,field_api,value`,[tenantId])
       :{rows:[]};
     const picklistKey=(objectApi:string,fieldApi:string)=>JSON.stringify([objectApi,fieldApi]);
     const optionsByField=new Map<string,string[]>();
@@ -726,10 +1186,13 @@ export class ObjectDefinitionService {
           }}:{}),
         ...(f.data_type==='rollup'?{rollup:{
           childObject:f.rollup_child_object,relationshipField:f.rollup_relationship_field,
-          operation:f.rollup_operation,sourceField:f.rollup_source_field
+          operation:f.rollup_operation,sourceField:f.rollup_source_field,
+          filterLogic:f.rollup_filter_logic??'All',
+          filters:rollupFilters.get(picklistKey(f.object_api,f.api_name))??[]
         }}:{}),
         ...(f.auto_number_format?{autoNumberFormat:f.auto_number_format}:{}),
         ...(['picklist','multipicklist'].includes(f.data_type)?{picklistValues:optionsByField.get(picklistKey(f.object_api,f.api_name))??[],picklistRestricted:f.picklist_restricted!==false}:{}),
+        ...(f.global_value_set_api?{globalValueSetApiName:f.global_value_set_api}:{}),
         ...(f.controller_field_api_name?{
           controllerFieldApiName:f.controller_field_api_name,
           valueSettings:valuesByDependentField.get(picklistKey(f.object_api,f.api_name))??{}

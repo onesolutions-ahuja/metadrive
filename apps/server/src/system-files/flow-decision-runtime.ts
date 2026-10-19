@@ -57,8 +57,18 @@ function compare(condition: FlowDecisionCondition, resolve: DecisionResolver,
       const {actual, expected} = pair();
       return typeof actual === 'string' && typeof expected === 'string' && actual.startsWith(expected);
     }
+    case 'wasset': {
+      if (Object.hasOwn(condition, 'priorValue')) {
+        const {actual, expected: prior} = {
+          actual: resolve(condition.field),
+          expected: resolve(condition.priorValue)
+        };
+        const wasBlank = (value: unknown) => value === null || value === undefined || value === '';
+        return !wasBlank(prior) ? false : !wasBlank(actual);
+      }
+      return wasSet(condition.field);
+    }
     case 'isset':
-    case 'wasset':
       return wasSet(condition.field);
     case 'ischanged':
       if (!Object.hasOwn(condition, 'priorValue') && !Object.hasOwn(condition, 'value'))

@@ -14,17 +14,24 @@ Run the API server and SQL worker as separate services. Build command:
 `npm run build --workspace apps/server`.
 Worker start command:
 `npm run start:worker --workspace apps/server`.
-The worker runs the shared SQL migrations, then polls jobs with `METADRIVE_WORKER_POLL_MS` (default 5000). One process may handle multiple tenants only because every job carries an immutable tenant ID and every handler revalidates OneEngine RBAC and app licences.
+The worker runs the shared SQL migrations, scans active Scheduled Flow subscriptions, and polls durable jobs and queued Flow email with `METADRIVE_WORKER_POLL_MS` (default 5000). Scheduled Flow occurrences and record-triggered Scheduled Paths use the same durable job table with tenant, actor, active Flow version and an idempotency key. Scheduled Path interviews and their resume jobs are created in the triggering record transaction; record updates cancel and replace not-yet-resumed paths. Flow email payloads are encrypted in `md_flow_email_jobs`; SMTP dispatch rechecks the active Flow version, actor, tenant app entitlement and `Email:send`/`NamedCredential:read` grants. One process may handle multiple tenants only because every job carries an immutable tenant ID and every handler revalidates OneEngine RBAC and app licences.
 
 Do not change existing production service or apply unrelated staged platform changes during verification. Before launch, confirm deployment SHA/branch and service inventory, and verify the worker is healthy rather than relying on API health alone.
 
 ## Reconciliation
-An expired lease for `flow.execute` is an **unknown outcome**, not a safe retry. It is marked failed with `FLOW_RECONCILIATION_REQUIRED`. Use `GET /api/jobs/:id` with FlowDefinition.manage to review the status. Correlate SQL Flow runs, event logs and the external provider's idempotency key/receipt before taking action.
+An expired lease for `flow.execute` or `flow.resume` is an **unknown outcome**, not a safe retry. It is marked failed with `FLOW_RECONCILIATION_REQUIRED`. Use `GET /api/jobs/:id` with FlowDefinition.manage to review the status. Correlate SQL Flow runs, event logs and the external provider's idempotency key/receipt before taking action.
 
 `POST /api/jobs/:id/reconcile` accepts `{ "decision": "acknowledge" | "retry", "reviewedExternalEffects": true }`. The actor must be authenticated and authorized to manage Flows in that tenant. A retry is a conscious operator decision and can repeat external side effects; choose it only after confirming the previous effect did not happen. An acknowledgement cancels the failed job without destroying business records.
 
+Flow email is intentionally single-attempt. A failure after calling SMTP is
+recorded as `DELIVERY_OUTCOME_UNKNOWN`; SMTP may have accepted the message even
+when the client observed an error. Do not automatically requeue or retry these
+messages. Correlate the Flow run/job ID with the SMTP provider's delivery logs
+and obtain operator approval before any separately managed resend. The Flow
+email outbox does not use the generic durable-job reconciliation endpoint.
+
 ## Rollback and monitoring
-Rollback deployment code and worker independently, while preserving the additive SQL schema and all tenant records. Do not manually drop `md_durable_jobs` or typed `md_record_values` columns to roll back code. Track queued/leased/failed jobs by tenant, `FLOW_RECONCILIATION_REQUIRED` counts, lease expiry, actor revocation, app uninstall, and retries. Do not log tokens or tenant payloads.
+Rollback deployment code and worker independently, while preserving the additive SQL schema and all tenant records. Do not manually drop durable job/outbox tables or typed `md_record_values` columns to roll back code. Track queued/leased/failed jobs by tenant, `FLOW_RECONCILIATION_REQUIRED` and `DELIVERY_OUTCOME_UNKNOWN` counts, lease expiry, actor revocation, app uninstall, and retries. Do not log tokens, email payloads, recipients, or tenant data.
 
 ## Unmet release conditions
 Strict UI/API parity must have zero *genuinely missing* supported contracts, with authenticated E2E coverage. The compatibility baseline is not proof of working endpoints. The worker's fail-closed recovery is not the same as exactly-once external delivery. Production deployment and live SQL migration execution require separately verified results.

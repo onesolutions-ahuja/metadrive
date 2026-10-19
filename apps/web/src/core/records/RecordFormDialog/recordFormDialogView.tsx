@@ -18,6 +18,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from '../../metadata/Cache/offlineRecordQueue';
 import SchemaBuilder from '../../builders/SchemaBuilder/SchemaBuilder';
 import * as React from 'react';
+import {apiRequest} from '../../authentication/Client/authClient';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -217,6 +218,7 @@ export function RecordFormDialog({
   fieldAccess,
   userRoles,
   formValues,
+  recordId,
   lookupRecords,
   formError,
   saving,
@@ -236,6 +238,7 @@ export function RecordFormDialog({
   fieldAccess: Record<string, { read: boolean; edit: boolean }>;
   userRoles: Array<{id:string;name:string}>;
   formValues: Record<string, unknown>;
+  recordId?: string|null;
   lookupRecords: Record<string, RecordData[]>;
   formError: string;
   saving: boolean;
@@ -250,6 +253,8 @@ export function RecordFormDialog({
   const [lookupDialogField, setLookupDialogField] = useState<FieldMetadata | null>(null);
   const [lookupQuery, setLookupQuery] = useState('');
   const [includeNonmatchingOptionalLookupResults, setIncludeNonmatchingOptionalLookupResults] = useState(false);
+  const [imageUploadError,setImageUploadError]=useState('');
+  const [imageUploading,setImageUploading]=useState(false);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateViewport = () => setIsPhoneViewport(media.matches);
@@ -288,6 +293,40 @@ export function RecordFormDialog({
         }
       }
     });
+  };
+  const uploadInlineImage=async(field:FieldMetadata,file:File)=>{
+    setImageUploadError('');
+    if(!recordId){
+      setImageUploadError('Save this record before adding inline images.');
+      return;
+    }
+    if(file.size<1||file.size>1024*1024){
+      setImageUploadError('Inline images must be no larger than 1 MB.');
+      return;
+    }
+    setImageUploading(true);
+    try{
+      const dataUrl=await new Promise<string>((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onerror=()=>reject(reader.error??new Error('Unable to read the selected image'));
+        reader.onload=()=>typeof reader.result==='string'?resolve(reader.result):
+          reject(new Error('Unable to read the selected image'));
+        reader.readAsDataURL(file);
+      });
+      const contentBase64=dataUrl.slice(dataUrl.indexOf(',')+1);
+      const saved=await apiRequest<{url:string}>('/files/inline-images',{
+        method:'POST',
+        body:JSON.stringify({objectApi:object.apiName,recordId,fieldApi:field.apiName,
+          name:file.name,contentType:file.type,contentBase64})
+      });
+      const alt=file.name.replace(/[&"<>]/g,char=>({'&':'&amp;','"':'&quot;','<':'&lt;','>':'&gt;'}[char]??char));
+      const value=String(formValues[field.apiName]??'');
+      onChange(field.apiName,`${value}${value?'\n':''}<p><img src="${saved.url}" alt="${alt}"></p>`);
+    }catch(error){
+      setImageUploadError(error instanceof Error?error.message:'Unable to upload inline image');
+    }finally{
+      setImageUploading(false);
+    }
   };
   const lookupDisplayFields = (field: FieldMetadata) => {
     const targetObject = objects.find((item) => item.apiName === field.relationship?.targetObject);
@@ -483,10 +522,24 @@ export function RecordFormDialog({
         {helpText}
       </fieldset>;
     }
-    if (dataType.includes('text area') || dataType.includes('long text')) return <label className="form-label record-form-wide" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
+    if (dataType.includes('text area') || dataType.includes('long text')) return <div className="form-label record-form-wide" key={field.apiName}>
+      <label htmlFor={common.id}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</label>
       <textarea className="form-control" {...common} maxLength={['long text area', 'rich text area'].includes(dataType) ? 131072 : undefined} value={value} onChange={(event) => onChange(field.apiName, event.target.value)} />
+      {dataType==='rich text area'&&<div className="record-rich-text-tools">
+        <label className="btn" aria-disabled={common.disabled||imageUploading||!recordId}>
+          {imageUploading?'Uploading image…':'Add inline image'}
+          <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden disabled={common.disabled||imageUploading||!recordId}
+            onChange={event=>{
+              const file=event.currentTarget.files?.[0];
+              event.currentTarget.value='';
+              if(file)void uploadInlineImage(field,file);
+            }}/>
+        </label>
+        {!recordId&&<small>Save the record before adding inline images.</small>}
+        {imageUploadError&&<small role="alert">{imageUploadError}</small>}
+      </div>}
       {helpText}
-    </label>;
+    </div>;
     const type = dataType === 'date' ? 'date'
       : dataType.includes('datetime') ? 'datetime-local'
         : dataType === 'time' ? 'time'

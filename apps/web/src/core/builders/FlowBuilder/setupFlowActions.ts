@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Shared Flow CRUD, execution and connector actions. UI builders stay lazily mounted.
 import type { FormEvent } from 'react';
-import type { FlowDefinitionMetadata, FlowElementMetadata, FlowValidationMetadata, PlatformEventMetadata, ApprovalProcessInput, NamedCredentialMetadata, EmailAlertMetadata } from '../../metadata/Definitions/metadata';
+import type { FlowDefinitionMetadata, FlowElementMetadata, FlowValidationMetadata, FlowVersionMetadata, PlatformEventMetadata, ApprovalProcessInput, NamedCredentialMetadata, EmailAlertMetadata } from '../../metadata/Definitions/metadata';
 import { initialScreenValues } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
 
 export function createSetupFlowActions(ctx: any) {
@@ -550,21 +550,27 @@ export function createSetupFlowActions(ctx: any) {
     navigateRoute(destination, true);
   };
 
-  const restoreFlowVersion = (version: FlowDefinitionMetadata['versions'][number]) => {
+  const restoreFlowVersion = async (version: FlowVersionMetadata) => {
     if (!confirmDiscardFlowChanges()) return;
-    void saveFlow({
-      ...flow,
-      label: version.label ?? flow.label,
-      description: version.description ?? flow.description,
-      flowType: version.flowType ?? flow.flowType,
-      triggerObject: version.triggerObject === undefined ? flow.triggerObject : version.triggerObject,
-      startConfig: version.startConfig ?? flow.startConfig,
-      elements: structuredClone(version.elements),
-      connectors: structuredClone(version.connectors),
-      resources: structuredClone(version.resources),
-      status: 'Draft',
-      activeVersion: null
-    });
+    try {
+      const restored = await apiRequest<{ version: FlowVersionMetadata }>(
+        `/metadata/flows/${encodeURIComponent(flow.apiName)}/versions/${version.versionNumber}`);
+      await saveFlow({
+        ...flow,
+        label: restored.version.label ?? flow.label,
+        description: restored.version.description ?? flow.description,
+        flowType: restored.version.flowType ?? flow.flowType,
+        triggerObject: restored.version.triggerObject === undefined ? flow.triggerObject : restored.version.triggerObject,
+        startConfig: restored.version.startConfig ?? flow.startConfig,
+        elements: structuredClone(restored.version.elements),
+        connectors: structuredClone(restored.version.connectors),
+        resources: structuredClone(restored.version.resources),
+        tests: structuredClone(restored.version.tests ?? []),
+        status: 'Draft'
+      });
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Unable to restore Flow version');
+    }
   };
 
   const exportFlow = () => {

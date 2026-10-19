@@ -13,12 +13,17 @@ export type ObjectSettings = {
   recordNameFormat:string;
 };
 export type FieldSet = {apiName:string;label:string;fieldApiNames:string[]};
+export type ObjectAction = {
+  id:string;label:string;type:'Standard'|'Custom';enabled:boolean;
+  behavior?:'Set Field Value';fieldApiName?:string;value?:string
+};
 export type ObjectManagerConfiguration = {
   pluralLabel:string;
   description:string;
   helpText:string;
   settings:ObjectSettings;
   fieldSets:FieldSet[];
+  actions:ObjectAction[];
 };
 const defaults: ObjectSettings = {
   allowReports:true,allowActivities:false,trackFieldHistory:false,allowInChatter:false,
@@ -38,8 +43,8 @@ function validateSettings(value:unknown):ObjectSettings {
     ||!['Text','Auto Number'].includes(String(recordNameType))
     ||typeof recordNameFormat!=='string'||recordNameFormat.length>80)
     throw new Error('Invalid object settings');
-  if(recordNameType==='Auto Number'&&!/\{0+\}/.test(recordNameFormat))
-    throw new Error('Auto Number record names require a {0} display token');
+  if(recordNameType==='Auto Number'&&!/\{0+\}/.test(recordNameFormat)&&!/\{YYYY\}/.test(recordNameFormat))
+    throw new Error('Auto Number record names require a {0} or {YYYY} display token');
   return {
     allowReports:settings.allowReports===undefined?defaults.allowReports:settings.allowReports as boolean,
     allowActivities:settings.allowActivities===undefined?defaults.allowActivities:settings.allowActivities as boolean,
@@ -77,6 +82,32 @@ function validateFieldSets(value:unknown,fieldNames:Set<string>):FieldSet[] {
     return {apiName:fieldSet.apiName,label:fieldSet.label.trim(),fieldApiNames:fieldSet.fieldApiNames as string[]};
   });
 }
+function validateActions(value:unknown,fields:Map<string,string>):ObjectAction[] {
+  if(value===undefined)return [];
+  if(!Array.isArray(value)||value.length>100)throw new Error('Invalid object actions');
+  const ids=new Set<string>(),labels=new Set<string>();
+  return value.map(item=>{
+    if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid object action');
+    const action=item as Record<string,unknown>;
+    if(typeof action.id!=='string'||!/^[A-Za-z][A-Za-z0-9_-]*$/.test(action.id)||action.id.length>100
+      ||typeof action.label!=='string'||!action.label.trim()||action.label.length>80
+      ||!['Standard','Custom'].includes(String(action.type))||typeof action.enabled!=='boolean')
+      throw new Error('Invalid object action');
+    if(ids.has(action.id.toLowerCase())||labels.has(action.label.trim().toLowerCase()))
+      throw new Error('Duplicate object action');
+    ids.add(action.id.toLowerCase());labels.add(action.label.trim().toLowerCase());
+    if(action.type==='Standard')
+      return {id:action.id,label:action.label.trim(),type:'Standard' as const,enabled:action.enabled};
+    const fieldApiName=action.fieldApiName;
+    const dataType=typeof fieldApiName==='string'?fields.get(fieldApiName):undefined;
+    if(typeof fieldApiName!=='string'||action.behavior!=='Set Field Value'||!dataType
+      ||['formula','rollup','autonumber','reference','encryptedtext'].includes(dataType)
+      ||typeof action.value!=='string'||action.value.length>10000)
+      throw new Error('Custom object actions require a writable field and bounded value');
+    return {id:action.id,label:action.label.trim(),type:'Custom' as const,
+      enabled:action.enabled,behavior:'Set Field Value' as const,fieldApiName,value:action.value};
+  });
+}
 
 export class ObjectManagerMetadataService {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
@@ -85,7 +116,7 @@ export class ObjectManagerMetadataService {
     await this.rbac.require(tenantId,userId,'ObjectDefinition','read');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     return this.loadForObjects(tenantId,[objectApi]).then(items=>items.get(objectApi)??{
-      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},fieldSets:[]
+      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},fieldSets:[],actions:[]
     });
   }
 
@@ -105,6 +136,12 @@ export class ObjectManagerMetadataService {
          AND i.object_api=s.object_api AND i.field_set_api=s.api_name
        WHERE s.tenant_id=$1 AND s.object_api=ANY($2::text[]) ORDER BY s.object_api,s.sort_order,i.sort_order`,
       [tenantId,objectApis]);
+    const actions=await this.db.query<{
+      object_api:string;action_id:string;label:string;action_type:'Standard'|'Custom';enabled:boolean;
+      behavior:string|null;field_api:string|null;value_text:string|null;sort_order:number
+    }>(`SELECT object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order
+        FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
+        ORDER BY object_api,sort_order,action_id`,[tenantId,objectApis]);
     const setsByObject=new Map<string,FieldSet[]>();
     for(const row of sets.rows){
       const fieldSets=setsByObject.get(row.object_api)??[];
@@ -113,6 +150,14 @@ export class ObjectManagerMetadataService {
       if(row.field_api)fieldSet.fieldApiNames.push(row.field_api);
       setsByObject.set(row.object_api,fieldSets);
     }
+    const actionsByObject=new Map<string,ObjectAction[]>();
+    for(const row of actions.rows){
+      const items=actionsByObject.get(row.object_api)??[];
+      items.push({id:row.action_id,label:row.label,type:row.action_type,enabled:row.enabled,
+        ...(row.behavior==='Set Field Value'?{behavior:'Set Field Value' as const,
+          fieldApiName:row.field_api??undefined,value:row.value_text??''}:{})});
+      actionsByObject.set(row.object_api,items);
+    }
     const result=new Map<string,ObjectManagerConfiguration>();
     for(const row of config.rows)result.set(row.object_api,{pluralLabel:row.plural_label,description:row.description,helpText:row.help_text,
       settings:{
@@ -120,9 +165,10 @@ export class ObjectManagerMetadataService {
         trackFieldHistory:row.track_field_history,allowInChatter:row.allow_in_chatter,
         allowSearch:row.allow_search,deploymentStatus:row.deployment_status,
         recordNameType:row.record_name_type,recordNameFormat:row.record_name_format
-      },fieldSets:setsByObject.get(row.object_api)??[]});
+      },fieldSets:setsByObject.get(row.object_api)??[],actions:actionsByObject.get(row.object_api)??[]});
     for(const objectApi of objectApis)if(!result.has(objectApi))result.set(objectApi,{
-      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},fieldSets:setsByObject.get(objectApi)??[]
+      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},
+      fieldSets:setsByObject.get(objectApi)??[],actions:actionsByObject.get(objectApi)??[]
     });
     return result;
   }
@@ -151,12 +197,14 @@ export class ObjectManagerMetadataService {
         FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL`,
     [tenantId,objectApi]);
     const fieldNames=new Set(fields.rows.map(field=>field.api_name));
+    const fieldTypes=new Map(fields.rows.map(field=>[field.api_name,field.data_type]));
     const recordName=fields.rows.find(field=>field.api_name==='Name');
     if(settings.recordNameType==='Auto Number'&&recordName?.data_type!=='autonumber')
       throw new Error('The Name field must use Auto Number before enabling Auto Number record names');
     if(settings.recordNameType==='Text'&&recordName?.data_type==='autonumber')
       throw new Error('The Name field uses Auto Number; change its field type to select Text record names');
     const fieldSets=validateFieldSets(input.fieldSets,fieldNames);
+    const actions=validateActions(input.actions,fieldTypes);
     await client.query(`INSERT INTO md_object_manager_settings
         (tenant_id,object_api,plural_label,description,help_text,allow_reports,allow_activities,track_field_history,
          allow_in_chatter,allow_search,deployment_status,record_name_type,record_name_format)
@@ -181,6 +229,13 @@ export class ObjectManagerMetadataService {
             (tenant_id,object_api,field_set_api,field_api,sort_order) VALUES($1,$2,$3,$4,$5)`,
         [tenantId,objectApi,fieldSet.apiName,fieldApi,order]);
     }
-    return {pluralLabel,description,helpText,settings,fieldSets};
+    await client.query('DELETE FROM md_object_actions WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
+    for(const [index,action] of actions.entries())
+      await client.query(`INSERT INTO md_object_actions
+        (tenant_id,object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [tenantId,objectApi,action.id,action.label,action.type,action.enabled,
+        action.behavior??null,action.fieldApiName??null,action.value??null,index]);
+    return {pluralLabel,description,helpText,settings,fieldSets,actions};
   }
 }

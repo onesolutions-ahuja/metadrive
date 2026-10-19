@@ -8,7 +8,10 @@ const expected=['sql-persistence.ts','object-definition.ts','authentication.ts',
  'system-definition-service.ts','custom-metadata-service.ts','object-manager-metadata.ts',
  'flow-data-actions.ts','flow-decision-runtime.ts','flow-formula-runtime.ts','flow-record-query.ts',
  'flow-record-triggers.ts','flow-subflow-runtime.ts','flow-validation.ts',
- 'object-metadata-history.ts','formula-engine.ts'];
+ 'flow-interview-persistence.ts','flow-wait-runtime.ts','flow-action-runtime.ts',
+ 'flow-subscription-runtime.ts','flow-scalar-runtime.ts','flow-error-runtime.ts',
+ 'auto-number-format.ts','platform-event-runtime.ts','record-file-service.ts','rich-text.ts',
+ 'field-type-migration.ts','encrypted-field.ts','object-metadata-history.ts'];
 const allowed=new Set(expected);
 const forbidden=files.filter(f=>!f.isFile() || !allowed.has(f.name));
 if(forbidden.length){

@@ -536,7 +536,7 @@ test('Flow logs expose only the caller tenant failed SQL runs with RBAC',async()
 test('Pending Flow interviews use SQL pending runs rather than fabricated sample records',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const db={query:async(sql:string,args:unknown[])=>{
-   assert.match(sql,/status='pending'/);
+   assert.match(sql,/status IN \('pending','waiting'\)/);
    assert.deepEqual(args,['tenant']);
    return {rows:[]};
  }} as unknown as SqlPersistence;
@@ -563,9 +563,6 @@ test('Flow deactivation changes SQL state only for caller tenant and requires On
  const calls:unknown[][]=[];
  const db={query:async(sql:string,args:unknown[])=>{
   calls.push(args);
-  if(sql.includes('UPDATE md_flow_definitions')){
-   assert.match(sql,/tenant_id=\$1/);return {rows:[],rowCount:1};
-  }
   if(sql.includes('SELECT id,api_name,label,flow_type')){
    return {rows:[{id:'f1',api_name:'MyFlow',label:'My Flow',flow_type:'Autolaunched Flow',version:2,active:false}]};
   }
@@ -574,7 +571,15 @@ test('Flow deactivation changes SQL state only for caller tenant and requires On
   if(sql.includes('FROM md_flow_nodes'))return {rows:[{api_name:'start',node_type:'Start'},{api_name:'end',node_type:'End'}]};
   if(sql.includes('FROM md_flow_edges'))return {rows:[{source_api:'start',target_api:'end',outcome:'default'}]};
   throw Error('Unexpected SQL');
- }} as unknown as SqlPersistence;
+ },transaction:async(run:(client:{query:(sql:string,args?:unknown[])=>Promise<{rowCount:number;rows:unknown[]}>})=>Promise<unknown>)=>
+  run({query:async(sql,args=[])=>{
+   calls.push(args);
+   if(sql.includes('UPDATE md_flow_definitions')){
+    assert.match(sql,/tenant_id=\$1/);return {rowCount:1,rows:[]};
+   }
+   return {rowCount:0,rows:[]};
+  }})
+ } as unknown as SqlPersistence;
  const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
   assert.deepEqual([tenant,user,resource,action],['tenant','user','FlowDefinition','manage']);
  }} as unknown as RbacEngine;
@@ -613,6 +618,35 @@ test('Tenant currency validation rejects duplicate ISO codes and invalid rates b
  }),/Invalid automation settings/);
 });
 
+test('Automation service user is tenant-validated, relationally stored, and audited',async()=>{
+ const {PlatformTenantService}=await import('../../src/system-files/platform-tenant-service.js');
+ const serviceUser='00000000-0000-4000-8000-000000000022';
+ const writes:Array<{sql:string;args:unknown[]}>=[];
+ const txClient={query:async(sql:string,args:unknown[]=[])=>(writes.push({sql,args}),
+   {rows:sql.includes('FOR UPDATE')?[]:[],rowCount:1})};
+ const db={
+  query:async(sql:string)=>sql.includes('FROM md_users')
+   ?{rows:[{id:serviceUser}]}:{rows:[]},
+  transaction:async<T>(operation:(client:typeof txClient)=>Promise<T>)=>operation(txClient)
+ } as unknown as SqlPersistence;
+ const service=new PlatformTenantService(db,{require:async()=>undefined} as unknown as RbacEngine);
+ const saved=await service.saveSetting('tenant','admin','automation-settings',{
+  autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15,
+  flowServiceUserId:serviceUser
+ });
+ assert.deepEqual(saved,{
+  autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15,
+  flowServiceUserId:serviceUser
+ });
+ const settingsWrite=writes.find(write=>write.sql.includes('INSERT INTO md_tenant_settings'));
+ assert.ok(settingsWrite);
+ assert.deepEqual(JSON.parse(String(settingsWrite.args[1])),{
+  autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15
+ });
+ assert.ok(writes.some(write=>write.sql.includes('INSERT INTO md_tenant_automation_settings')));
+ assert.ok(writes.some(write=>write.sql.includes('automation.flow-service-user.change')));
+});
+
 test('Field deletion retains field data in a recoverable recycle bin',async()=>{
  let hardDeletes=0,softDeletes=0;
  const db={
@@ -638,15 +672,21 @@ test('Field deletion retains field data in a recoverable recycle bin',async()=>{
  assert.equal(softDeletes,1);
  assert.equal(hardDeletes,0);
 });
-test('Field update rejects datatype changes instead of silently discarding metadata',async()=>{
+test('Field update rejects unsupported datatype changes before mutating values',async()=>{
  const db={query:async(sql:string)=>{
   if(sql.includes('FROM md_field_formulas'))return {rows:[]};
   if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Sale__c',label:'Sale',is_system:false}]};
-  if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Sale__c',api_name:'Total',label:'Total',data_type:'number',related_object:null,required:false,max_length:null}]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Sale__c',api_name:'Total',label:'Total',data_type:'number',related_object:null,required:false,max_length:null,precision:18,scale:0,is_unique:false,external_id:false,case_sensitive:false,default_value:null}]};
   if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')||sql.includes('FROM md_object_record_type'))return {rows:[]};
   throw new Error('Unexpected SQL write');
- }} as unknown as SqlPersistence;
- await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',{label:'Total',dataType:'Text'}),/datatype migration/);
+ },transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
+  query:async(sql:string)=>{
+   if(sql.includes('FOR UPDATE'))return {rows:[{data_type:'number',max_length:null,precision:18,scale:0,required:false,is_unique:false,external_id:false,case_sensitive:false,default_value:null}]};
+   return {rows:[],rowCount:0};
+  }
+ })} as unknown as SqlPersistence;
+ await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',
+  {label:'Total',dataType:'Geolocation'}),/Field datatype migration is not supported/);
 });
 
 test('SQL Flow draft validator rejects unsupported actions and broken branches',async()=>{
@@ -674,7 +714,7 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
  const collectionResult=await runtime.validateDraft('tenant','user','TestFlow',collectionDraft);
  assert.equal(collectionResult.valid,true,collectionResult.errors.join('; '));
 });
-test('SQL Flow supports scoped Update Records only with explicit record target and assignments',async()=>{
+test('SQL Flow supports bounded Update Records targets with explicit assignments',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  const runtime=new FlowRuntime({} as SqlPersistence,rbac);
@@ -690,9 +730,12 @@ test('SQL Flow supports scoped Update Records only with explicit record target a
  const invalid=await runtime.validateDraft('tenant','user','TestFlow',{
   ...draft,elements:[elements[0],{...elements[1],config:{...elements[1].config,recordId:'',conditions:[{field:'Taxable',operator:'Equals',value:true}]}},elements[2]]
  });
- assert.equal(invalid.valid,false);
- assert.ok(invalid.errors.some(e=>e.includes('explicit record ID')));
- assert.ok(invalid.errors.some(e=>e.includes('bulk updates')));
+ assert.equal(invalid.valid,true,invalid.errors.join('; '));
+ const unbounded=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,elements:[elements[0],{...elements[1],config:{...elements[1].config,recordId:'',conditions:[]}},elements[2]]
+ });
+ assert.equal(unbounded.valid,false);
+ assert.ok(unbounded.errors.some(e=>e.includes('filter requires between 1 and 50 conditions')));
 });
 test('Flow validator requires each Decision outcome and prohibits unterminated branches',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
@@ -756,20 +799,25 @@ test('SQL Flow validation fails closed without permission',async()=>{
 test('Flow interview cancellation preserves tenant scope and durable run row',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const checks:unknown[][]=[];
- const db={query:async(sql:string,args:unknown[])=>{
-  assert.match(sql,/UPDATE md_flow_runs/);
-  assert.match(sql,/status='cancelled'/);
-  assert.match(sql,/status='pending'/);
-  checks.push(args);
-  return {rowCount:1,rows:[{id:args[1]}]};
- }} as unknown as SqlPersistence;
+ const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
+  run({query:async(sql:string,args:unknown[])=>{
+   checks.push(args);
+   if(sql.includes('UPDATE md_flow_runs')){
+    assert.match(sql,/status='cancelled'/);
+    assert.match(sql,/status IN \('pending','waiting'\)/);
+    return {rowCount:1,rows:[{id:args[1]}]};
+   }
+   assert.match(sql,/job_type='flow.resume'/);
+   return {rowCount:1,rows:[]};
+  }})
+ } as unknown as SqlPersistence;
  const rbac={require:async(t:string,u:string,r:string,a:string)=>{
   assert.deepEqual([t,u,r,a],['tenant','user','FlowDefinition','manage']);
  }} as unknown as RbacEngine;
  const id='c439f882-7316-4cf1-86fb-81d95b135c97';
  const value=await new FlowRuntime(db,rbac).cancelInterview('tenant','user',id);
  assert.equal(value.cancelled,true);
- assert.deepEqual(checks,[['tenant',id]]);
+ assert.deepEqual(checks,[['tenant',id],['tenant',id]]);
 });
 test('Flow interview cancellation rejects unauthorised or malformed requests',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
@@ -828,6 +876,15 @@ test('SQL picklist field creation persists validated options and rejects invalid
   const writes:Array<{sql:string;args:unknown[]}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
     writes.push({sql,args});
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes("data_type='autonumber'")||sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
+    if(sql.includes('FROM md_field_definitions'))return {rows:[{
+      api_name:'Status',data_type:'picklist',related_object:null,required:false,max_length:null,
+      precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
+      default_value:null,auto_number_format:null,picklist_restricted:true
+    }],rowCount:1};
+    if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'Approved'},{value:'Rejected'}],rowCount:2};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     return {rows:[{id:'created'}],rowCount:1};
   }};
   const db={
@@ -860,6 +917,8 @@ test('SQL object creation rejects picklists with no selectable values before tra
 test('SQL field creation persists numeric, relationship and builder field metadata',async()=>{
   const writes:Array<{sql:string;args:unknown[]}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('SELECT f.data_type,f.formula_return_type'))
+      return {rows:[{data_type:'currency',formula_return_type:null,rollup_source_type:null}],rowCount:1};
     if(sql.includes('WITH RECURSIVE parent_chain'))return {rows:[],rowCount:0};
     if(sql.includes('count(*)::integer AS total'))return {rows:[{total:0}],rowCount:1};
     writes.push({sql,args});return {rows:[{id:'field'}],rowCount:1};
@@ -985,6 +1044,12 @@ test('dependent picklist values are enforced during record creation',async()=>{
   ];
   const insertValues:Array<{field:string;value:string|null}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:definitions.length};
+    if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'New'},{value:'Qualified'}],rowCount:2};
+    if(sql.includes('FROM md_field_dependency_values'))return args[3]==='true'
+      ?{rows:[{picklist_value:'Qualified'}],rowCount:1}:{rows:[],rowCount:0};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
     if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
@@ -1015,7 +1080,15 @@ test('dependent picklist values are enforced during record creation',async()=>{
 });
 test('numeric fields round to their configured scale before saving',async()=>{
   const savedValues:string[]=[];
+  const definitions=[{
+    api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null,
+    precision:5,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+    auto_number_format:null
+  }];
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:1};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
     if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
@@ -1027,11 +1100,7 @@ test('numeric fields round to their configured scale before saving',async()=>{
   }};
   const db={
     query:async(sql:string)=>{
-      if(sql.includes('FROM md_field_definitions'))return {rows:[{
-        api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null,
-        precision:5,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
-        auto_number_format:null
-      }],rowCount:1};
+      if(sql.includes('FROM md_field_definitions'))return {rows:definitions,rowCount:1};
       if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
       throw new Error('Unexpected query '+sql);
     },
@@ -1040,7 +1109,9 @@ test('numeric fields round to their configured scale before saving',async()=>{
   const rbac={require:async()=>{}} as unknown as RbacEngine;
   const records=new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac);
   await records.create('tenant','user','Invoice__c',{Amount:1.235});
+  await records.create('tenant','user','Invoice__c',{Amount:-1.235});
   assert.equal(savedValues[0],'1.24');
+  assert.equal(savedValues[1],'-1.24');
   await assert.rejects(()=>records.create('tenant','user','Invoice__c',{Amount:999.995}),
     /Number exceeds field precision or scale/);
 });
@@ -1081,6 +1152,13 @@ test('phone fields accept formatted numbers and reject malformed input',async()=
 test('auto-number fields substitute both sequence and year tokens',async()=>{
   let saved:string|undefined;
   const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
+    if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:[{
+      api_name:'Number',data_type:'autonumber',related_object:null,required:true,max_length:null,
+      precision:null,scale:null,is_unique:true,external_id:false,case_sensitive:false,
+      default_value:null,auto_number_format:'INV-{YYYY}-{0000}'
+    }],rowCount:1};
+    if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
     if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
     if(sql.includes("data_type='autonumber'"))return {rows:[{
       api_name:'Number',auto_number_format:'INV-{YYYY}-{0000}',is_unique:false,external_id:false,case_sensitive:false
@@ -1141,7 +1219,7 @@ test('Record list applies authorised sort, search and field filters before pagin
   assert.deepEqual(result,{records:[],total:1});
   const list=sqlCalls.find(item=>item.sql.includes('WITH selected AS'));
   assert.ok(list);
-  assert.match(list.sql,/sv\.value_text::numeric END DESC/);
+  assert.match(list.sql,/sv\.value_number DESC NULLS LAST/);
   assert.match(list.sql,/fv\.field_api=\$4/);
   assert.match(list.sql,/strpos\(lower\(COALESCE\(qv\.value_text/);
   assert.deepEqual(list.args.slice(-3),['Amount',25,0]);

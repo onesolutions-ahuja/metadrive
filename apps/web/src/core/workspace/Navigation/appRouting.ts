@@ -4,6 +4,10 @@ import type { WorkspaceId } from '../../metadata/Definitions/metadata';
 export const objectSettings = [
   'Details',
   'Schema Builder',
+  'Global Value Sets',
+  'Custom Labels',
+  'Custom Metadata Types',
+  'Custom Settings',
   'Fields & Relationships',
   'Page Layouts',
   'Lightning Record Pages',
@@ -19,6 +23,10 @@ export const objectSettings = [
 
 const settingRouteNames: Record<string, string> = {
   'Schema Builder': 'SchemaBuilder',
+  'Global Value Sets': 'GlobalValueSets',
+  'Custom Labels': 'CustomLabels',
+  'Custom Metadata Types': 'CustomMetadataTypes',
+  'Custom Settings': 'CustomSettings',
   'Fields & Relationships': 'FieldsAndRelationships',
   'Page Layouts': 'PageLayouts',
   'Lightning Record Pages': 'LightningRecordPages',

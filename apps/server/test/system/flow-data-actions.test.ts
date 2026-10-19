@@ -82,3 +82,26 @@ test('Create Records collection uses the shared record engine and records create
   assert.deepEqual(createdFields,[{Name:'Acme'},{Name:'Beta'}]);
   assert.deepEqual((vars.created as Array<{Id:string}>).map(row=>row.Id),['new-1','new-2']);
 });
+
+test('Update and Delete Records support bounded collection and filter sources',async()=>{
+  const updated:Array<{id:string;values:Record<string,unknown>}>=[],deleted:string[]=[];
+  const fakeRecords={
+    update:async(_tenant:string,_user:string,_object:string,id:string,values:Record<string,unknown>)=>{
+      updated.push({id,values});
+    },
+    remove:async(_tenant:string,_user:string,_object:string,id:string)=>{deleted.push(id);}
+  } as unknown as RecordEngine;
+  const vars:Record<string,unknown>={accounts:[{Id:'id-1'},{Id:'id-2'}]};
+  await executeFlowDataAction({...makeContext({
+    id:7,type:'Update Records',config:{object:'Account',recordSource:'collection',
+      collection:'accounts',fieldValues:[{field:'Status',value:'Active'}]}
+  },vars),records:fakeRecords});
+  assert.deepEqual(updated,[
+    {id:'id-1',values:{Status:'Active'}},{id:'id-2',values:{Status:'Active'}}
+  ]);
+  await executeFlowDataAction({...makeContext({
+    id:8,type:'Delete Records',config:{object:'Account',recordSource:'filter',
+      conditions:[{field:'Name',operator:'Equals',value:'Acme'}]}
+  },vars),records:fakeRecords});
+  assert.deepEqual(deleted,['id-1','id-2']);
+});

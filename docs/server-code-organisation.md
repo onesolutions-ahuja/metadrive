@@ -1,6 +1,6 @@
 # MetaDrive SQL runtime architecture
 
-The approved Core is exactly the following twenty-six modules in `apps/server/src/system-files/`:
+The approved Core is exactly the following thirty-five modules in `apps/server/src/system-files/`:
 `sql-persistence.ts`, `object-definition.ts`, `authentication.ts`,
 `rbac-engine.ts`, `record-engine.ts`, `component-runtime.ts`,
 `page-runtime.ts`, `flow-runtime.ts`, `app-runtime.ts`,
@@ -9,8 +9,13 @@ The approved Core is exactly the following twenty-six modules in `apps/server/sr
 `system-definition-service.ts`, `custom-metadata-service.ts`,
 `object-manager-metadata.ts`, `flow-data-actions.ts`,
 `flow-decision-runtime.ts`, `flow-formula-runtime.ts`, `flow-record-query.ts`,
-`flow-record-triggers.ts`, `flow-subflow-runtime.ts`, and
-`flow-validation.ts`, `formula-engine.ts`, and `object-metadata-history.ts`.
+`flow-record-triggers.ts`, `flow-subflow-runtime.ts`, `flow-validation.ts`,
+`flow-interview-persistence.ts`, `flow-wait-runtime.ts`,
+`flow-action-runtime.ts`, `flow-subscription-runtime.ts`,
+`flow-scalar-runtime.ts`, `flow-error-runtime.ts`, `auto-number-format.ts`,
+`platform-event-runtime.ts`,
+`field-type-migration.ts`, `encrypted-field.ts`, and
+`object-metadata-history.ts`.
 
 Auxiliary HTTP entrypoints, encrypted credential handling, authentication bootstrap
 and SQL upgrade migrations live in `apps/server/src/system-support/`.

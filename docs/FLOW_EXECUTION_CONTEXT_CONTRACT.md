@@ -8,7 +8,11 @@ Status: **security architecture contract** (not a claim of automatic-trigger run
 - The shared SQL Flow runtime is the only executor. App-specific code, including ONEpos, may bind or launch Flows but must not implement a separate workflow engine.
 - All Flow definitions, installations, version history, activation and run state are SQL-backed and tenant-scoped.
 - OneEngine is the sole authorization service; no role/email shortcut grants access.
-- Flow type is selected by the author, not inferred from an API name. Currently only Screen and Autolaunched Flows pass SQL activation; unsupported trigger types must continue to fail closed until the corresponding dispatcher and tests are delivered.
+- Flow type is selected by the author, not inferred from an API name. Screen, Autolaunched, supported Record-Triggered, Scheduled and Platform Event-Triggered Flows pass SQL activation against their supported capability sets.
+- Screen and Autolaunched Flows, and after-save Record-Triggered Flows, can pause at Wait elements. The interview cursor, variables and durable resume job commit together; resumption retains the initiating user and rechecks current authorization and active version. Before-save record-triggered paths cannot wait.
+- Record-Triggered Flows can raise a Custom Error to roll back the record transaction. Field-level errors require a tenant-scoped field metadata match and are returned with the field identifier.
+- Roll Back Records rolls back SQL mutations to the current interview's start savepoint and continues execution; it cannot reverse external provider effects.
+- Decision outcomes support scalar equality/order comparisons, null checks, Contains, Starts With, custom condition logic, and record-trigger-only Is Changed/Was Set checks. Is Changed compares `$Record` to `$Record__Prior`; Was Set matches a blank-to-populated field transition. Unsupported operators and invalid trigger-field references fail activation.
 
 ## Permission boundaries
 
@@ -21,13 +25,15 @@ Status: **security architecture contract** (not a claim of automatic-trigger run
 | Scheduler/event-triggered invocation | Trusted tenant-scoped dispatcher with explicit execution-context policy and activation checks, not the end user's manual Run Flows UI permission |
 | Elevated system context | Separately configured scope, least-privilege service identity, audit and administrator approval; never implicit or email-based |
 
-## Automatic-trigger implementation requirements (not yet shipped)
+## Automatic-trigger implementation status
 
-1. Persist a versioned per-tenant trigger subscription referencing a published, active Flow version and its installed application's entitlement. Record-Triggered, Scheduled and Platform Event triggers use the shared SQL event/worker infrastructure, not browser listeners.
-2. Dispatch with a tenant-scoped actor identity. Evaluate installation, licensing, active version and OneEngine permissions before starting each run. A system context grant must be explicit and audited. Support tenant-admin revocation without code changes.
+1. Versioned tenant-scoped SQL subscriptions now track active Record-Triggered, Scheduled and Platform Event Flow versions, trigger keys and optional app identity. Activation, save, deactivation and archive synchronize subscription state transactionally. Migrations backfill eligible existing active record/scheduled trigger Flows. Platform Events publish into typed SQL outbox rows and dispatch as per-subscriber durable jobs.
+2. Scheduled dispatch uses the configured tenant service identity and a durable, idempotent occurrence job. The worker checks enabled identity, installation, licensing, active version/subscription and OneEngine execute permission before starting each run. A system context grant must be explicit and audited. Support tenant-admin revocation without code changes.
+   Tenant automation settings store an optional service-user identity in a tenant-scoped relational row and audit changes. Scheduled and Platform Event dispatch use durable workers; an identity is not an authorization bypass.
 3. Run the same generic Record Engine for all data mutations, enforcing tenant, record, object and field boundaries. No direct app-specific SQL mutations or shared passwords.
-4. Track event/run idempotency keys, source record/version, retries, dead-letter/failure states, and logs. A deactivated/uninstalled app cannot enqueue or continue new work; durable in-flight execution follows a documented cancellation/retry policy.
-5. Prevent recursion and cross-tenant triggers, enforce time/depth limits, and make failed/denied runs observable without leaking business data.
+4. Scheduled occurrence keys and Platform Event delivery IDs are idempotent; durable jobs retain the active Flow version and actor. A deactivated/uninstalled app cannot enqueue or continue new scheduled/event work; durable in-flight execution follows the documented reconciliation policy. Failed authorization and execution remain visible in the durable job/delivery state.
+5. Prevent recursion and cross-tenant triggers, enforce time/depth limits, and make failed/denied runs observable without leaking business data. Record-trigger dispatch suppresses recursive trigger invocation from CRUD inside a Flow, permits at most 50 matching Flows per record operation, and each interview is bounded to 200 element steps.
+6. Wait elements use SQL durable jobs, not browser timers. They are bounded to 365 days, tenant-scoped, transactionally persisted with interview state, and fail closed if the actor, grant, active version or tenant changes before resume. After-save record-triggered waits pause only after all interview state and the durable resume job are enlisted in the record operation transaction.
 
 ## Acceptance gates
 
@@ -38,4 +44,4 @@ Status: **security architecture contract** (not a claim of automatic-trigger run
 - A triggered Flow cannot gain access solely by being automatic. Test with revoked rights, tenant mismatch, unpublished/inactive versions, uninstalled apps, retries, deactivation and attempted cross-tenant access.
 - Production rollout additionally needs passing CI, a real PostgreSQL integration run, an independent security review, and authenticated end-to-end testing of published flows.
 
-This contract intentionally does **not** enable unimplemented automatic Flow types or relax existing authorization guards.
+Scheduled Flow dispatch currently resolves local times in an IANA zone and supports Once, Daily and every-seven-days Weekly schedules, with a 500-active-schedule scan cap and a 500-record per-run cap. This is not complete Salesforce scheduling. Production SQL validation and authenticated end-to-end release readiness are still required; unsupported automatic Flow capabilities remain disabled, and existing authorization guards are not relaxed.

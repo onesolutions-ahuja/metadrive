@@ -41,16 +41,20 @@ export type FieldMetadata = {
   helpText?: string;
   picklistValues?: string[];
   picklistRestricted?: boolean;
+  globalValueSetApiName?: string;
   controllerFieldApiName?: string;
   valueSettings?: Record<string, string[]>;
   trackHistory?: boolean;
   defaultValue?: string | number | boolean;
+  autoNumberFormat?: string;
   formula?: { expression: string; returnType: string };
   rollup?: {
     childObject: string;
     relationshipField: string;
     operation: 'COUNT' | 'SUM' | 'MIN' | 'MAX';
     sourceField?: string;
+    filterLogic?: 'All' | 'Any';
+    filters?: Array<{ fieldApiName: string; operator: string; value: string }>;
   };
   relationship?: {
     type: 'Lookup' | 'Master-Detail' | 'Hierarchical';
@@ -1141,6 +1145,10 @@ export const setupShortcuts = [
 export const flowElementMetadata = [
   { type: 'End', group: 'Logic', icon: '■' },
   { type: 'Screen', group: 'Interaction', icon: '▣' },
+  { type: 'Wait', group: 'Interaction', icon: '◷' },
+  { type: 'Action', group: 'Interaction', icon: '⚡' },
+  { type: 'Roll Back Records', group: 'Data', icon: '↶' },
+  { type: 'Custom Error', group: 'Logic', icon: '!' },
   { type: 'Decision', group: 'Logic', icon: '◇' },
   { type: 'Assignment', group: 'Logic', icon: '⇄' },
   { type: 'Create Records', group: 'Data', icon: '+' },

@@ -72,6 +72,32 @@ test('custom setting hierarchy resolves user over profile over organization',asy
   assert.deepEqual(result.values,{theme:'dark',enabled:true});
 });
 
+test('custom setting scoped reads are tenant scoped and require manage permission',async()=>{
+  const queries:Array<{sql:string;args:readonly unknown[]}>=[];
+  const db={
+    query:async(sql:string,args:readonly unknown[]=[])=>{
+      queries.push({sql,args});
+      if(sql.includes('FROM md_custom_settings'))return {rows:[{exists:1}],rowCount:1};
+      if(sql.includes('FROM md_profiles'))return {rows:[{exists:1}],rowCount:1};
+      if(sql.includes('FROM md_custom_setting_entries e JOIN'))return {rows:[{
+        field_api:'Endpoint',data_type:'text',value_text:'https://example.test',
+        value_number:null,value_boolean:null,value_date:null,value_datetime:null
+      }],rowCount:1};
+      return {rows:[],rowCount:1};
+    }
+  } as unknown as SqlPersistence;
+  const required:string[]=[];
+  const rbac={require:async(_tenant:string,_user:string,resource:string,action:string)=>{
+    required.push(`${resource}:${action}`);
+  }} as unknown as RbacEngine;
+  const service=new CustomMetadataService(db,rbac);
+  const result=await service.getCustomSettingValues('tenant','user','Connection','user','profile','profile-id');
+  assert.deepEqual(result,{settingApi:'Connection',scope:'profile',ownerId:'profile-id',values:{Endpoint:'https://example.test'}});
+  assert.ok(required.includes('CustomSetting:Connection:manage'));
+  assert.ok(queries.some(query=>query.sql.includes('e.profile_id=$4')
+    &&query.args[0]==='tenant'&&query.args[3]==='profile-id'));
+});
+
 test('setting hierarchy writes validate scope and use central setting permissions',async()=>{
   const calls:Array<{sql:string;args:readonly unknown[]}>=[];
   const svc=service(async(sql,args=[])=>{

@@ -1,4 +1,5 @@
 import { RecordFormDialog } from '../RecordFormDialog/recordFormDialogView';
+import RichTextContent from './RichTextContent';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
 import { initialScreenValues, screenFieldIsVisible } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
@@ -660,6 +661,8 @@ function RecordWorkspace({
   };
   const openList = () => onNavigate({ kind: 'record-list', objectApiName: route.objectApiName });
   const formatFieldValue = (field: FieldMetadata, value: unknown) => {
+    if(field.dataType==='Rich Text Area'&&typeof value==='string'&&value)
+      return <RichTextContent html={value}/>;
     if (typeof value === 'string' && ['URL','Text','Long Text Area'].includes(field.dataType) && /^https:\/\//i.test(value) && /(?:image|photo|thumbnail|picture)/i.test(field.apiName+' '+field.label) && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|images\.unsplash\.com\//i.test(value)) return <img className="record-image-thumbnail" src={value} alt={field.label} loading="lazy" referrerPolicy="no-referrer" />; if (field.relationship && typeof value === 'string') {
       const related = lookupRecords[field.relationship.targetObject]?.find((item) => item.Id === value);
       if (related) return String(related.Name ?? related.Email ?? value);
@@ -732,7 +735,10 @@ function RecordWorkspace({
     try {
       const path = `/records/${encodeURIComponent(object.apiName)}${editingId ? `/${encodeURIComponent(editingId)}` : ''}`;
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
-        apiName !== 'OwnerId' && (object.apiName === 'User'
+        apiName !== 'OwnerId' && !(editingId
+          && object.fields.some((field) => field.apiName === apiName
+            && field.dataType === 'Text (Encrypted)')
+          && formValues[apiName] === '********') && (object.apiName === 'User'
           ? ['Name', 'Email', 'Username', 'IsActive', 'Password'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
@@ -1113,7 +1119,7 @@ function RecordWorkspace({
     </div>
     <RecordFormDialog embedded object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
         fieldAccess={fieldAccess} userRoles={userRoles}
-        formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
+        formValues={formValues} recordId={editingId} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
         actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
         onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />

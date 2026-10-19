@@ -2,7 +2,7 @@
 // Object/Field metadata CRUD and wizard state transformations. No application-specific objects.
 import type { ObjectMetadata, FieldMetadata, RelatedLookupFilterMetadata } from '../../metadata/Definitions/metadata';
 export function createSetupObjectActions(ctx: any) {
- const { apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace } = ctx;
+ const { apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldAutoNumberFormat, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldAutoNumberFormat, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace } = ctx;
   const validateNewFieldFormula = async (): Promise<boolean> => {
     setNewFieldFormulaValidation({ status: 'checking', message: '' });
     try {
@@ -43,6 +43,7 @@ export function createSetupObjectActions(ctx: any) {
     setNewFieldStage(0);
     setNewFieldLabel('');
     setNewFieldTextLength(255);
+    setNewFieldAutoNumberFormat('REC-{0000}');
     setNewFieldPrecision(18);
     setNewFieldScale(0);
     setNewFieldDescription('');
@@ -156,7 +157,8 @@ export function createSetupObjectActions(ctx: any) {
                               ? 'Complete each lookup filter or remove it before continuing.'
                               : newFieldDefaultError;
 
-  const addField = async (rollupConfig?: FieldMetadata['rollup']) => {
+  const addField = async (rollupConfig?: FieldMetadata['rollup'], globalValueSetApiName?: string,
+    autoNumberFormatOverride?:string) => {
     const label = newFieldLabel.trim();
     if (!label) return;
     const apiName = newFieldApiName;
@@ -177,9 +179,9 @@ export function createSetupObjectActions(ctx: any) {
       apiName,
       label,
       dataType,
-      required: newFieldType === 'Master-Detail Relationship'
+      required: newFieldType === 'Master-Detail Relationship' || newFieldType === 'Auto Number'
         || (!['Formula', 'Roll-Up Summary'].includes(newFieldType) && newFieldRequired),
-      unique: !['Formula', 'Roll-Up Summary', 'Long Text Area', 'Rich Text Area', 'Geolocation', 'Address'].includes(newFieldType)
+      unique: !['Formula', 'Roll-Up Summary', 'Auto Number', 'Text (Encrypted)', 'Long Text Area', 'Rich Text Area', 'Geolocation', 'Address'].includes(newFieldType)
         && !relationshipType && newFieldUnique,
       ...(newFieldExternalId && newFieldType !== 'Roll-Up Summary' ? { externalId: true } : {}),
       ...(newFieldUnique && ['Text', 'Email', 'Phone'].includes(newFieldType)
@@ -188,16 +190,18 @@ export function createSetupObjectActions(ctx: any) {
       ...(newFieldDescription.trim() ? { description: newFieldDescription.trim() } : {}),
       ...(newFieldHelpText.trim() ? { helpText: newFieldHelpText.trim() } : {}),
       ...(newFieldType === 'Formula' ? { formula: { expression: newFieldFormula.trim(), returnType: newFieldReturnType } } : {}),
+      ...(newFieldType === 'Auto Number' ? { autoNumberFormat: (autoNumberFormatOverride??newFieldAutoNumberFormat).trim() } : {}),
       ...(newFieldType === 'Roll-Up Summary' && rollupConfig ? { rollup: rollupConfig } : {}),
       ...(['Picklist', 'Multi-Select Picklist'].includes(newFieldType) ? {
         picklistValues: newFieldPicklistOptions,
         picklistRestricted: newFieldPicklistRestricted,
+        ...(globalValueSetApiName ? { globalValueSetApiName } : {}),
         ...(newFieldControllerApiName ? {
           controllerFieldApiName: newFieldControllerApiName,
           valueSettings: newFieldValueSettings
         } : {})
       } : {}),
-      ...(newFieldHasDefault && newFieldType !== 'Roll-Up Summary' ? {
+      ...(newFieldHasDefault && !['Roll-Up Summary','Auto Number'].includes(newFieldType) ? {
         defaultValue: newFieldType === 'Checkbox'
           ? newFieldDefaultValue === 'true'
           : ['Number', 'Currency', 'Percent'].includes(newFieldType)

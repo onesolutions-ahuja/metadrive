@@ -1,9 +1,15 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
-import sanitizeHtml from 'sanitize-html';
 import type {RbacEngine} from './rbac-engine.js';
+import {formatAutoNumberValue} from './auto-number-format.js';
 import {evaluateFlowFormula,validateFlowFormula} from './flow-formula-runtime.js';
-type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null};
+import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
+import {sanitizeRichText} from './rich-text.js';
+type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;rollup_source_data_type?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;global_value_set_api?:string|null};
+type EncryptedValueVault={
+  encryptOpaque(value:string):{ciphertext:Buffer;keyId:string};
+  decryptOpaque(ciphertext:Buffer,keyId:string):string;
+};
 type Storable={value_text:string|null;reference_record_id:string|null;value_number?:string|null;value_date?:string|null;value_datetime?:Date|null;value_boolean?:boolean|null;geo_latitude?:number|null;geo_longitude?:number|null;address_street?:string|null;address_city?:string|null;address_state?:string|null;address_postal_code?:string|null;address_country?:string|null;multi_values?:string[];is_unique:boolean;case_sensitive:boolean};
 type RecordTriggerHandler=(
   client:PoolClient,tenantId:string,userId:string,objectApi:string,
@@ -34,22 +40,62 @@ const roundDecimal=(value:number,scale:number)=>{
 };
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
-  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
+  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
+    private readonly encryptedValueVault?:EncryptedValueVault) {}
+  private async lockObjectForWrite(client:PoolClient,tenantId:string,objectApi:string) {
+    await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
+      [`${tenantId}:${objectApi}`]);
+  }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
     this.recordTrigger=handler;
   }
   private async fields(tenantId:string,objectApi:string,client?:PoolClient):Promise<FieldDefinition[]> {
     const {rows}=await (client??this.db).query<FieldDefinition>(
       `SELECT api_name,data_type,related_object,relationship_type,allow_reparenting,required,max_length,precision,scale,is_unique,external_id,
-       formula_expression,formula_return_type,
+       formula_expression,formula_return_type,g.value_set_api AS global_value_set_api,
         case_sensitive,default_value,auto_number_format,picklist_restricted,
         rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=md_field_definitions.tenant_id
+           AND s.object_api=md_field_definitions.rollup_child_object
+           AND s.api_name=md_field_definitions.rollup_source_field AND s.deleted_at IS NULL)
+          AS rollup_source_data_type,
         (SELECT d.controller_field_api FROM md_field_dependencies d
          WHERE d.tenant_id=md_field_definitions.tenant_id AND d.object_api=md_field_definitions.object_api
            AND d.field_api=md_field_definitions.api_name) AS controller_field_api_name
-       FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL`,
+       FROM md_field_definitions LEFT JOIN md_field_global_value_sets g
+         ON g.tenant_id=md_field_definitions.tenant_id AND g.object_api=md_field_definitions.object_api
+          AND g.field_api=md_field_definitions.api_name
+       WHERE md_field_definitions.tenant_id=$1 AND md_field_definitions.object_api=$2
+         AND md_field_definitions.deleted_at IS NULL`,
       [tenantId,objectApi]);
     return rows;
+  }
+  private async picklistValues(tenantId:string,objectApi:string,fieldApi:string,client?:PoolClient) {
+    const {rows}=await (client??this.db).query<{value:string}>(`
+      SELECT p.value FROM md_field_picklist_values p
+      WHERE p.tenant_id=$1 AND p.object_api=$2 AND p.field_api=$3
+        AND NOT EXISTS(SELECT 1 FROM md_field_global_value_sets g
+          WHERE g.tenant_id=p.tenant_id AND g.object_api=p.object_api AND g.field_api=p.field_api)
+      UNION
+      SELECT v.value FROM md_field_global_value_sets g
+      JOIN md_global_value_sets s ON s.tenant_id=g.tenant_id AND s.api_name=g.value_set_api
+      JOIN md_global_value_set_values v ON v.tenant_id=s.tenant_id AND v.value_set_id=s.id
+      WHERE g.tenant_id=$1 AND g.object_api=$2 AND g.field_api=$3 AND v.active
+      ORDER BY value`,[tenantId,objectApi,fieldApi]);
+    return rows.map(row=>row.value);
+  }
+  private async outputFieldValue(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    recordId:string,value:string|null) {
+    if(value===null)return null;
+    const reveal=await this.rbac.allowed(tenantId,userId,'ViewEncryptedData','read');
+    if(!reveal)return maskEncryptedFieldValue();
+    if(!this.encryptedValueVault)throw new Error('Encrypted field vault is unavailable');
+    const plaintext=decryptFieldValue(this.encryptedValueVault,tenantId,objectApi,fieldApi,value);
+    await this.db.query(`INSERT INTO md_encrypted_field_access_audit
+      (tenant_id,record_id,object_api,field_api,accessed_by)
+      VALUES($1,$2,$3,$4,$5)`,[tenantId,recordId,objectApi,fieldApi,userId]);
+    return plaintext;
   }
   private async rollupParents(client:PoolClient,tenantId:string,childObject:string,recordId:string) {
     const {rows}=await client.query<{
@@ -82,9 +128,15 @@ export class RecordEngine {
     if(depth>50)throw new Error('Roll-Up Summary nesting limit exceeded');
     const {rows}=await client.query<{
       parent_object:string;field_api:string;relationship_field:string;operation:string;source_field:string|null;
+      source_data_type:string|null;filter_logic:string;
     }>(`SELECT object_api AS parent_object,api_name AS field_api,
         rollup_relationship_field AS relationship_field,rollup_operation AS operation,
-        rollup_source_field AS source_field
+        rollup_source_field AS source_field,rollup_filter_logic AS filter_logic,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=md_field_definitions.tenant_id
+           AND s.object_api=md_field_definitions.rollup_child_object
+           AND s.api_name=md_field_definitions.rollup_source_field AND s.deleted_at IS NULL)
+          AS source_data_type
       FROM md_field_definitions WHERE tenant_id=$1 AND data_type='rollup'
         AND rollup_child_object=$2 AND deleted_at IS NULL`,
     [tenantId,childObject]);
@@ -98,29 +150,82 @@ export class RecordEngine {
           throw new Error('Invalid roll-up summary operation');
         if(operation!=='COUNT'&&!rollup.source_field)
           throw new Error('Roll-up summary source field is required');
+        const {rows:filters}=await client.query<{
+          field_api:string;operator:string;value_text:string;data_type:string;
+        }>(`SELECT f.filter_field_api AS field_api,f.operator,f.value_text,d.data_type
+          FROM md_field_rollup_filters f JOIN md_field_definitions d
+            ON d.tenant_id=f.tenant_id AND d.object_api=f.child_object
+              AND d.api_name=f.filter_field_api AND d.deleted_at IS NULL
+          WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.rollup_field_api=$3
+          ORDER BY f.sort_order`,[tenantId,rollup.parent_object,rollup.field_api]);
+        const filterParams:unknown[]=[tenantId,childObject,rollup.relationship_field,
+          rollup.source_field,parentId];
+        const filterJoins:string[]=[];
+        const filterPredicates:string[]=[];
+        for(const [index,filter] of filters.entries()){
+          const alias=`rf${index}`;
+          const fieldParameter=`$${filterParams.length+1}`;
+          filterParams.push(filter.field_api);
+          filterJoins.push(`LEFT JOIN md_record_values ${alias}
+            ON ${alias}.tenant_id=c.tenant_id AND ${alias}.record_id=c.id
+              AND ${alias}.object_api=c.object_api AND ${alias}.field_api=${fieldParameter}`);
+          const valueColumn:['value_text'|'value_number'|'value_boolean'|'value_date'|'value_datetime'|'reference_record_id'][number]=
+            ['number','currency','percent'].includes(filter.data_type)?'value_number':
+            filter.data_type==='boolean'?'value_boolean':filter.data_type==='date'?'value_date':
+            filter.data_type==='datetime'?'value_datetime':filter.data_type==='reference'
+              ?'reference_record_id':'value_text';
+          if(filter.operator==='Is Null'||filter.operator==='Is Not Null'){
+            filterPredicates.push(`${alias}.${valueColumn} IS ${filter.operator==='Is Null'?'':'NOT '}NULL`);
+            continue;
+          }
+          const parameter=`$${filterParams.length+1}`;
+          filterParams.push(filter.value_text);
+          const cast=filter.data_type==='date'?'::date':filter.data_type==='datetime'?'::timestamptz':
+            filter.data_type==='time'?'::time':filter.data_type==='boolean'?'::boolean':
+            ['number','currency','percent'].includes(filter.data_type)?'::numeric':'';
+          const operator=filter.operator==='Equals'?'=':filter.operator==='Not Equal To'?'IS DISTINCT FROM':
+            filter.operator==='Greater Than'?'>':filter.operator==='Less Than'?'<':
+            filter.operator==='Contains'?null:null;
+          if(filter.operator==='Contains'){
+            filterPredicates.push(`position(${parameter} in ${alias}.${valueColumn})>0`);
+          }else if(operator){
+            filterPredicates.push(`${alias}.${valueColumn} ${operator} ${parameter}${cast}`);
+          }else throw new Error('Invalid roll-up filter operator');
+        }
+        const filterPredicate=filterPredicates.length
+          ?` AND (${filterPredicates.join(rollup.filter_logic==='Any'?' OR ':' AND ')})`:'';
+        const sourceType=rollup.source_data_type;
+        const valueColumn=sourceType==='date'?'sv.value_date':
+          sourceType==='datetime'?'sv.value_datetime':'sv.value_number';
         const aggregate=operation==='COUNT'?'count(*)::text':
-          `${operation.toLowerCase()}(CASE WHEN sv.value_text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN sv.value_text::numeric END)::text`;
-        const parentParameter=operation==='COUNT'?'$4':'$5';
+          operation==='SUM'
+            ?`COALESCE(sum(CASE WHEN sv.value_text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN sv.value_number END),0)::text`
+            :`${operation.toLowerCase()}(${valueColumn})::text`;
         const result=await client.query<{value:string|null}>(`
-          SELECT COALESCE(${aggregate},'0') AS value
+          SELECT ${aggregate} AS value
           FROM md_records c
           JOIN md_record_values rel ON rel.tenant_id=c.tenant_id AND rel.record_id=c.id
             AND rel.object_api=c.object_api AND rel.field_api=$3
-          ${operation==='COUNT'?'':`LEFT JOIN md_record_values sv
+          LEFT JOIN md_record_values sv
             ON sv.tenant_id=c.tenant_id AND sv.record_id=c.id AND sv.object_api=c.object_api
-              AND sv.field_api=$4`}
-          WHERE c.tenant_id=$1 AND c.object_api=$2 AND rel.reference_record_id=${parentParameter}
-        `,operation==='COUNT'
-          ?[tenantId,childObject,rollup.relationship_field,parentId]
-          :[tenantId,childObject,rollup.relationship_field,rollup.source_field,parentId]);
+              AND sv.field_api=$4
+          ${filterJoins.join('\n')}
+          WHERE c.tenant_id=$1 AND c.object_api=$2 AND rel.reference_record_id=$5${filterPredicate}
+        `,filterParams);
+        const value=result.rows[0]?.value??(operation==='COUNT'||operation==='SUM'?'0':null);
+        const numericValue=sourceType==='date'||sourceType==='datetime'?null:value;
+        const dateValue=sourceType==='date'?value:null;
+        const dateTimeValue=sourceType==='datetime'?value:null;
         await client.query(`INSERT INTO md_record_values
-          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,value_number)
-          VALUES($1,$2,$3,$4,$5,NULL,false,false,$5::numeric)
+          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,
+           value_number,value_date,value_datetime)
+          VALUES($1,$2,$3,$4,$5,NULL,false,false,$6::numeric,$7::date,$8::timestamptz)
           ON CONFLICT(tenant_id,record_id,field_api) DO UPDATE SET value_text=EXCLUDED.value_text,
             reference_record_id=NULL,geo_latitude=NULL,geo_longitude=NULL,address_street=NULL,
             address_city=NULL,address_state=NULL,address_postal_code=NULL,address_country=NULL,
-            value_number=EXCLUDED.value_number,value_date=NULL,value_datetime=NULL,value_boolean=NULL`,
-        [tenantId,parentId,rollup.parent_object,rollup.field_api,result.rows[0]?.value??'0']);
+            value_number=EXCLUDED.value_number,value_date=EXCLUDED.value_date,
+            value_datetime=EXCLUDED.value_datetime,value_boolean=NULL`,
+        [tenantId,parentId,rollup.parent_object,rollup.field_api,value,numericValue,dateValue,dateTimeValue]);
         await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
           [tenantId,rollup.parent_object,parentId]);
       }
@@ -143,7 +248,8 @@ export class RecordEngine {
       await this.refreshRollups(client,tenantId,parentObject,ancestors,visited,depth+1);
   }
   private async applyFormulaFields(tenantId:string,userId:string,objectApi:string,
-    record:Record<string,unknown>,definitions:readonly FieldDefinition[]) {
+    record:Record<string,unknown>,definitions:readonly FieldDefinition[],client?:PoolClient,
+    migrationMode=false) {
     const formulas=new Map(definitions.filter(field=>field.data_type==='formula'
       &&typeof field.formula_expression==='string').map(field=>[field.api_name,field]));
     const calculated=new Map<string,unknown>();
@@ -151,6 +257,7 @@ export class RecordEngine {
     const referenceCache=new Map<string,unknown>();
     const visible=new Map<string,boolean>();
     const canRead=async(targetObject:string,fieldApi:string)=>{
+      if(migrationMode)return true;
       const key=targetObject+'.'+fieldApi;
       if(!visible.has(key))visible.set(key,await this.rbac.allowed(tenantId,userId,key,'read'));
       return visible.get(key)===true;
@@ -165,19 +272,32 @@ export class RecordEngine {
         ||!await canRead(objectApi,relationship.api_name)||!await canRead(targetObject,fieldApi)){
         referenceCache.set(key,null);return;
       }
-      const result=await this.db.query<{
+      const result=await (client??this.db).query<{
         value_text:string|null;reference_record_id:string|null;data_type:string|null;
-      }>(`SELECT v.value_text,v.reference_record_id,f.data_type
+        value_date:string|null;value_datetime:Date|string|null;rollup_source_data_type:string|null;
+      }>(`SELECT v.value_text,v.reference_record_id,f.data_type,v.value_date::text AS value_date,
+          v.value_datetime,
+          (SELECT source.data_type FROM md_field_definitions summary
+           JOIN md_field_definitions source ON source.tenant_id=summary.tenant_id
+             AND source.object_api=summary.rollup_child_object
+             AND source.api_name=summary.rollup_source_field AND source.deleted_at IS NULL
+           WHERE summary.tenant_id=f.tenant_id AND summary.object_api=f.object_api
+             AND summary.api_name=f.api_name AND summary.data_type='rollup') AS rollup_source_data_type
         FROM md_records r
         LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id
           AND v.object_api=r.object_api AND v.field_api=$4
         LEFT JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
           AND f.api_name=v.field_api AND f.deleted_at IS NULL
         WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3
-          AND md_record_access($1,$5,r.id,'read')`,
-      [tenantId,targetObject,recordId,fieldApi,userId]);
+          AND ${migrationMode?'true':"md_record_access($1,$5,r.id,'read')"}`,
+      migrationMode?[tenantId,targetObject,recordId,fieldApi]:
+        [tenantId,targetObject,recordId,fieldApi,userId]);
       const row=result.rows[0];
-      const value=!row?null:row.reference_record_id??row.value_text;
+      const value=!row||row.data_type==='encryptedtext'?null:
+        row.data_type==='rollup'&&row.rollup_source_data_type==='date'?row.value_date:
+        row.data_type==='rollup'&&row.rollup_source_data_type==='datetime'?
+          row.value_datetime===null?null:new Date(row.value_datetime).toISOString():
+        row.reference_record_id??row.value_text;
       referenceCache.set(key,value===null?null:
         ['number','currency','percent'].includes(String(row?.data_type))?Number(value):
           row?.data_type==='boolean'?value==='true':value);
@@ -230,9 +350,86 @@ export class RecordEngine {
         if(date!==null&&!/^\d{4}-\d{2}-\d{2}$/.test(date))
           throw new Error('Formula did not return a date value: '+field.api_name);
         record[field.api_name]=date;
+      }else if(returnType==='datetime'){
+        const dateTime=value===null?null:String(value);
+        const timestamp=dateTime===null?null:Date.parse(dateTime);
+        if(timestamp!==null&&!Number.isFinite(timestamp))
+          throw new Error('Formula did not return a date/time value: '+field.api_name);
+        record[field.api_name]=timestamp===null?null:new Date(timestamp).toISOString();
+      }else if(returnType==='time'){
+        const time=value===null?null:String(value);
+        const match=time===null?null:/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,3}))?)?$/.exec(time);
+        if(time!==null&&!match)throw new Error('Formula did not return a time value: '+field.api_name);
+        record[field.api_name]=match
+          ?`${match[1]}:${match[2]}:${match[3]??'00'}.${(match[4]??'').padEnd(3,'0')}`
+          :null;
       }else record[field.api_name]=value===null?null:String(value);
     }
   }
+  async evaluateFormulaForMigration(client:PoolClient,tenantId:string,userId:string,
+    objectApi:string,fieldApi:string,recordId:string) {
+    const definitions=await this.fields(tenantId,objectApi,client);
+    const formula=definitions.find(field=>field.api_name===fieldApi&&field.data_type==='formula');
+    if(!formula||!formula.formula_expression)
+      throw new Error('Formula field definition is unavailable for migration');
+    const {rows}=await client.query<{
+      field_api:string;data_type:string;value_text:string|null;value_number:string|null;
+      value_boolean:boolean|null;value_date:string|null;value_datetime:Date|string|null;
+      reference_record_id:string|null;geo_latitude:number|null;geo_longitude:number|null;
+      address_street:string|null;address_city:string|null;address_state:string|null;
+      address_postal_code:string|null;address_country:string|null
+    }>(`SELECT v.field_api,f.data_type,v.value_text,v.value_number::text AS value_number,
+        v.value_boolean,v.value_date::text AS value_date,v.value_datetime,v.reference_record_id,
+        v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,
+        v.address_postal_code,v.address_country
+      FROM md_record_values v JOIN md_field_definitions f
+        ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api AND f.api_name=v.field_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.record_id=$3 AND f.deleted_at IS NULL`,
+    [tenantId,objectApi,recordId]);
+    const byApi=new Map(rows.map(row=>[row.field_api,row]));
+    const record:Record<string,unknown>={Id:recordId};
+    for(const field of definitions){
+      if(field.data_type==='formula')continue;
+      const row=byApi.get(field.api_name);
+      if(!row)continue;
+      if(field.data_type==='encryptedtext')record[field.api_name]=null;
+      else if(field.data_type==='reference')record[field.api_name]=row.reference_record_id;
+      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='date')
+        record[field.api_name]=row.value_date;
+      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='datetime')
+        record[field.api_name]=row.value_datetime===null?null:new Date(row.value_datetime).toISOString();
+      else if(['number','currency','percent','rollup'].includes(field.data_type))
+        record[field.api_name]=row.value_number===null?null:Number(row.value_number);
+      else if(field.data_type==='boolean')record[field.api_name]=row.value_boolean;
+      else if(field.data_type==='date')record[field.api_name]=row.value_date;
+      else if(field.data_type==='datetime')record[field.api_name]=row.value_datetime===null?null:
+        new Date(row.value_datetime).toISOString();
+      else if(field.data_type==='address')record[field.api_name]={
+        street:row.address_street,city:row.address_city,state:row.address_state,
+        postalCode:row.address_postal_code,country:row.address_country
+      };
+      else if(field.data_type==='geolocation')record[field.api_name]=
+        row.geo_latitude===null||row.geo_longitude===null?null:
+          {latitude:row.geo_latitude,longitude:row.geo_longitude};
+      else record[field.api_name]=row.value_text;
+    }
+    await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,true);
+    return record[fieldApi]??null;
+  }
+
+  async recalculateRollupForMigration(client:PoolClient,tenantId:string,objectApi:string,fieldApi:string) {
+    const field=await client.query<{child_object:string}>(`SELECT rollup_child_object AS child_object
+      FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
+        AND data_type='rollup' AND deleted_at IS NULL`,
+    [tenantId,objectApi,fieldApi]);
+    if(!field.rows[0])throw new Error('Roll-Up Summary definition is unavailable for migration');
+    const records=await client.query<{id:string}>(
+      'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 ORDER BY id',
+      [tenantId,objectApi]);
+    await this.refreshRollups(client,tenantId,field.rows[0].child_object,
+      new Map([[objectApi,new Set(records.rows.map(row=>row.id))]]));
+  }
+
   private async prepare(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>,creating:boolean,client?:PoolClient,recordId?:string,deferRequired=false) {
     if(Object.getPrototypeOf(values)!==Object.prototype && Object.getPrototypeOf(values)!==null) throw new Error('Invalid record');
     const definitions=await this.fields(tenantId,objectApi,client);
@@ -291,6 +488,7 @@ export class RecordEngine {
         case 'textarea':
         case 'longtext':
         case 'richtext':
+        case 'encryptedtext':
         case 'picklist':
         case 'multipicklist':
           if(typeof value!=='string')throw new Error('Invalid text field: '+key);
@@ -307,17 +505,17 @@ export class RecordEngine {
             const selected=field.data_type==='multipicklist'?value.split(';'):[value];
             if(new Set(selected).size!==selected.length||selected.some(item=>!item))
               throw new Error('Invalid picklist value: '+key);
-            for(const item of selected){
-              const allowed=await (client??this.db).query(
-                'SELECT 1 FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 AND value=$4',
-                [tenantId,objectApi,key,item]);
-              if(!allowed.rowCount)throw new Error('Invalid picklist value: '+key);
-            }
+            const allowed=new Set(await this.picklistValues(tenantId,objectApi,key,client));
+            if(selected.some(item=>!allowed.has(item)))throw new Error('Invalid picklist value: '+key);
           }
-          text=field.data_type==='richtext'?sanitizeHtml(value):value;
+          text=field.data_type==='richtext'?sanitizeRichText(value):value;
           if(field.data_type==='richtext'&&field.max_length!==null&&field.max_length!==undefined
             &&text.length>field.max_length)
             throw new Error('Invalid text length: '+key);
+          if(field.data_type==='encryptedtext'){
+            if(!this.encryptedValueVault)throw new Error('Encrypted field vault is unavailable');
+            text=encryptFieldValue(this.encryptedValueVault,tenantId,objectApi,key,value);
+          }
           break;
         case 'time': {
           if(typeof value!=='string')throw new Error('Invalid time field: '+key);
@@ -334,8 +532,7 @@ export class RecordEngine {
           if(field.precision!==null&&field.precision!==undefined){
             const scale=field.scale??0;
             const rounded=roundDecimal(value,scale);
-            if(!Number.isFinite(rounded.value)||rounded.units>=10n**BigInt(field.precision)
-              ||rounded.units<0n)
+            if(!Number.isFinite(rounded.value)||rounded.units>=10n**BigInt(field.precision))
               throw new Error('Number exceeds field precision or scale: '+key);
             normalized=rounded.value;
             text=rounded.text;
@@ -460,6 +657,7 @@ export class RecordEngine {
     // Reject invalid input before reserving a transaction connection.
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,Boolean(this.recordTrigger));
     return this.db.transaction(async client=>{
+      await this.lockObjectForWrite(client,tenantId,objectApi);
       let rowValues={...values};
       if(this.recordTrigger){
         const defaults=await this.fields(tenantId,objectApi,client);
@@ -470,9 +668,8 @@ export class RecordEngine {
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
           rowValues,null,'before-save')??rowValues;
       }
-      const finalValues=this.recordTrigger
-        ?await this.prepare(tenantId,userId,objectApi,rowValues,true,client)
-        :prepared;
+      let finalValues=prepared;
+      finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
@@ -484,6 +681,7 @@ export class RecordEngine {
   /** All Flow record mutations share one transaction, including relationship checks. */
   async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
+    await this.lockObjectForWrite(client,tenantId,objectApi);
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
@@ -532,12 +730,20 @@ export class RecordEngine {
     const autoFields=await client.query<{api_name:string;auto_number_format:string|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean}>(
       `SELECT api_name,auto_number_format,is_unique,external_id,case_sensitive FROM md_field_definitions
        WHERE tenant_id=$1 AND object_api=$2 AND data_type='autonumber' AND deleted_at IS NULL`,[tenantId,objectApi]);
-    const rollupFields=await client.query<{api_name:string}>(
-      `SELECT api_name FROM md_field_definitions
-       WHERE tenant_id=$1 AND object_api=$2 AND data_type='rollup' AND deleted_at IS NULL`,
+    const rollupFields=await client.query<{api_name:string;operation:string;source_data_type:string|null}>(
+      `SELECT f.api_name,f.rollup_operation AS operation,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=f.tenant_id AND s.object_api=f.rollup_child_object
+           AND s.api_name=f.rollup_source_field AND s.deleted_at IS NULL) AS source_data_type
+       FROM md_field_definitions f
+       WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.data_type='rollup' AND f.deleted_at IS NULL`,
       [tenantId,objectApi]);
-    for(const field of rollupFields.rows)if(typeof field.api_name==='string')
-      prepared.set(field.api_name,{value_text:'0',reference_record_id:null,value_number:'0',is_unique:false,case_sensitive:false});
+    for(const field of rollupFields.rows)if(typeof field.api_name==='string'){
+      const zero=field.operation==='COUNT'||field.operation==='SUM';
+      prepared.set(field.api_name,{value_text:zero?'0':null,reference_record_id:null,
+        value_number:zero&&field.source_data_type!=='date'&&field.source_data_type!=='datetime'?'0':null,
+        value_date:null,value_datetime:null,is_unique:false,case_sensitive:false});
+    }
     for(const field of autoFields.rows){
       if(typeof field.api_name!=='string')continue;
       if(prepared.has(field.api_name))continue;
@@ -548,11 +754,7 @@ export class RecordEngine {
         RETURNING (next_value-1)::text AS sequence`,[tenantId,objectApi,field.api_name]);
       const sequence=counter.rows[0]?.sequence;
       if(!sequence)throw new Error('Unable to allocate auto-number value');
-      const format=field.auto_number_format??'{000000}';
-      const numberPattern=/\{(0+)\}/;
-      const token=numberPattern.exec(format);
-      const value=(token?format.replace(numberPattern,sequence.padStart(token[1].length,'0')):sequence)
-        .replace(/\{YYYY\}/g,String(new Date().getUTCFullYear()));
+      const value=formatAutoNumberValue(field.auto_number_format??'{000000}',Number(sequence));
       prepared.set(field.api_name,{value_text:value,reference_record_id:null,
         is_unique:field.is_unique||field.external_id,case_sensitive:field.case_sensitive});
     }
@@ -587,7 +789,7 @@ export class RecordEngine {
       if(name===undefined)return undefined;
       if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))throw new Error('Invalid list field');
       const field=byApi.get(name);
-      if(!field||field.data_type==='formula'||field.data_type==='geolocation'||field.data_type==='address')
+      if(!field||['formula','geolocation','address','encryptedtext'].includes(field.data_type))
         throw new Error('Invalid list field');
       return field;
     };
@@ -605,10 +807,8 @@ export class RecordEngine {
       ||multiValues.length>200||new Set(multiValues).size!==multiValues.length))
       throw new Error('Invalid multi-select list filter');
     if(multiValues){
-      const configured=await this.db.query<{value:string}>(
-        'SELECT value FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
-        [tenantId,objectApi,filterField?.api_name]);
-      if(multiValues.some(value=>!configured.rows.some(option=>option.value===value)))
+      const configured=new Set(await this.picklistValues(tenantId,objectApi,filterField?.api_name??''));
+      if(multiValues.some(value=>!configured.has(value)))
         throw new Error('Invalid multi-select list filter');
     }
     if(options.sortDirection!==undefined&&!['asc','desc'].includes(options.sortDirection))
@@ -623,7 +823,7 @@ export class RecordEngine {
     if(filterField&&!await canRead(filterField.api_name))throw new Error('Field is not readable');
     const searchFields:string[]=[];
     if(search)for(const field of definitions)
-      if(field.data_type!=='formula'&&field.data_type!=='geolocation'&&field.data_type!=='address'&&await canRead(field.api_name))
+      if(!['formula','geolocation','address','encryptedtext'].includes(field.data_type)&&await canRead(field.api_name))
         searchFields.push(field.api_name);
     const predicates:string[]=[];
     const conditionParams:unknown[]=[];
@@ -678,11 +878,15 @@ export class RecordEngine {
       sortJoin=`LEFT JOIN md_record_values sv ON sv.tenant_id=r.tenant_id AND sv.record_id=r.id
         AND sv.object_api=r.object_api AND sv.field_api=$${params.length}`;
       const direction=options.sortDirection==='desc'?'DESC':'ASC';
-      const sortValue=['number','currency','percent'].includes(sortField.data_type)
-        ?`CASE WHEN sv.value_text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN sv.value_text::numeric END`
-        :sortField.data_type==='reference'?'sv.reference_record_id::text'
-          :sortField.data_type==='boolean'?'sv.value_text'
-            :'lower(COALESCE(sv.value_text,sv.reference_record_id::text))';
+      const sortType=sortField.data_type==='rollup'
+        ?sortField.rollup_source_data_type:sortField.data_type;
+      const sortValue=['number','currency','percent'].includes(String(sortType))
+        ?'sv.value_number'
+        :sortType==='date'?'sv.value_date'
+          :sortType==='datetime'?'sv.value_datetime'
+            :sortField.data_type==='reference'?'sv.reference_record_id::text'
+              :sortField.data_type==='boolean'?'sv.value_text'
+                :'lower(COALESCE(sv.value_text,sv.reference_record_id::text))';
       sortSelection=`${sortValue} AS sort_value`;
       orderBy=`${sortValue} ${direction} NULLS LAST,r.created_at ASC,r.id ASC`;
       resultOrder=`r.sort_value ${direction} NULLS LAST,r.created_at ASC,r.id ASC,v.field_api`;
@@ -729,6 +933,12 @@ export class RecordEngine {
         :row.data_type==='address'
           ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
             ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api,row.id,row.value_text)
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='date'
+          ?row.value_date
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='datetime'
+          ?row.value_datetime?new Date(row.value_datetime).toISOString():null
         :value===null?null:
         ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??value):
         row.data_type==='boolean'?(row.value_boolean??value==='true'):
@@ -750,10 +960,17 @@ export class RecordEngine {
     if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
-    const {rows:fields}=await this.db.query<{data_type:string}>(
-      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+    const {rows:fields}=await this.db.query<{data_type:string;rollup_source_type:string|null}>(`
+      SELECT f.data_type,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=f.tenant_id AND s.object_api=f.rollup_child_object
+           AND s.api_name=f.rollup_source_field AND s.deleted_at IS NULL) AS rollup_source_type
+      FROM md_field_definitions f
+      WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=$3`,
       [tenantId,objectApi,fieldApi]);
-    const type=fields[0]?.data_type;
+    const definition=fields[0];
+    const type=definition?.data_type==='rollup'?definition.rollup_source_type:definition?.data_type;
+    if(!type)throw new Error('Invalid typed filter field');
     const columns:Record<string,string>={number:'value_number',currency:'value_number',
       percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
     const column=columns[type];
@@ -836,6 +1053,8 @@ export class RecordEngine {
         :row.data_type==='address'
           ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
             ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api as string,row.id,row.value_text)
         :val===null?null:
         ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??val):
         row.data_type==='boolean'?(row.value_boolean??val==='true'):
@@ -857,6 +1076,7 @@ export class RecordEngine {
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
     await this.rbac.require(tenantId,userId,objectApi,'edit');
+    if(client)await this.lockObjectForWrite(client,tenantId,objectApi);
     const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client,id);
     const write=async(transactionClient:PoolClient,writeValues:Map<string,Storable>)=>{
       const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
@@ -934,12 +1154,14 @@ export class RecordEngine {
     };
     if(client)await write(client,prepared);
     else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
         "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!locked.rowCount)throw new Error('Record not found');
       const prior=await this.get(tenantId,userId,objectApi,id,transactionClient);
       let finalPrepared=prepared;
+      finalPrepared=await this.prepare(tenantId,userId,objectApi,values,false,transactionClient,id);
       if(this.recordTrigger){
         const proposed=await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',
           {...prior,...values},prior,'before-save');
@@ -1006,6 +1228,7 @@ export class RecordEngine {
   }
   private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
     root:boolean,visiting:Set<string>){
+    await this.lockObjectForWrite(client,tenantId,objectApi);
     const recordKey=JSON.stringify([objectApi,id]);
     if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
     const record=await client.query<{id:string}>(root
@@ -1064,8 +1287,12 @@ export class RecordEngine {
   }
   async remove(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
     await this.rbac.require(tenantId,userId,objectApi,'delete');
-    if(client)await this.removeRecordTree(client,tenantId,userId,objectApi,id,true,new Set());
+    if(client){
+      await this.lockObjectForWrite(client,tenantId,objectApi);
+      await this.removeRecordTree(client,tenantId,userId,objectApi,id,true,new Set());
+    }
     else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
         "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'delete') FOR UPDATE",
         [tenantId,objectApi,id,userId]);

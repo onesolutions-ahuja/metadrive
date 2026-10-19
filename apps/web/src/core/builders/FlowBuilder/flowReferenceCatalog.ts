@@ -100,6 +100,8 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
   };
   if(flow.triggerObject && ['Record-Triggered Flow','Schedule-Triggered Flow'].includes(flow.flowType))
     recordChoices('$Record','Trigger record',flow.triggerObject,'Trigger record');
+  if(flow.triggerObject&&flow.flowType==='Record-Triggered Flow')
+    recordChoices('$Record__Prior','Prior trigger record',flow.triggerObject,'Trigger record');
   for(const resource of flow.resources){
     if(resource.type==='Record'){
       if(resource.availableForInput)recordChoices(resource.name,resource.label,resource.dataType,'Flow inputs and variables');
