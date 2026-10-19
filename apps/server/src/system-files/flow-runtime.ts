@@ -7,6 +7,7 @@ import {FlowRecordQuery} from './flow-record-query.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
 import {evaluateFlowFormula} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
+import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
 import {persistFlowInterviewPause} from './flow-interview-persistence.js';
 import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
@@ -42,7 +43,8 @@ export class FlowRuntime {
   }
   /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
   async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
-    return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft,this.db);
+    const capabilities=await loadFlowCapabilityCatalog(this.db,tenantId);
+    return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft,this.db,capabilities);
   }
   /** Complete metadata Editor contract: one latest definition per API name. */
   async loadEditor(tenantId:string,apiName:string) {
