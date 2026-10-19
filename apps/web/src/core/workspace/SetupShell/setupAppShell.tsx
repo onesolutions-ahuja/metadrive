@@ -12,6 +12,7 @@ import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from '../N
 import { NavigationLoadTime, resolveCurrentAppNavigation } from '../Navigation/appNavigationView';
 import { isStandalonePagePresentation } from '../../pages/PageRuntime/pageRuntimePresentation';
 import { insertFlowElementAtPath } from '../../builders/FlowBuilder/flowInsertElement.mjs';
+import {removeFlowGraphElement} from '../../builders/FlowBuilder/flowGraphOperations.mjs';
 
 import { resolveSetupNavigation } from '../../platform/Workspace/platformSetupNavigation';
 import { readVerifiedMetadata, saveVerifiedMetadata } from '../../metadata/Cache/verifiedMetadataCache';
@@ -757,27 +758,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
 
   const removeFlowElement = (id: number) => {
-    if (flow.elements.find((item) => item.id === id)?.type === 'Start') {
-      notify('The Start element cannot be removed');
-      return;
+    try {
+      const edited=removeFlowGraphElement(flow,id);
+      commitFlow(edited);
+      const next=edited.connectors.find(edge=>edge.from===selectedFlowId)
+        ??flow.connectors.find(edge=>edge.to===id);
+      setSelectedFlowId(next?.from??edited.elements[0]?.id??1);
+    }catch(error){
+      notify(error instanceof Error?error.message:'Unable to remove Flow element');
     }
-    if (flow.connectors.some((connector) => connector.from === id)) {
-      notify('Disconnect child paths before removing this Flow element.');
-      return;
-    }
-    const incoming = flow.connectors.filter((connector) => connector.to === id);
-    const outgoing = flow.connectors.filter((connector) => connector.from === id);
-    const remaining = flow.elements.filter((item) => item.id !== id);
-    const connectors = flow.connectors.filter((connector) => connector.from !== id && connector.to !== id);
-    for (const source of incoming) {
-      for (const target of outgoing) {
-        if (source.from !== target.to && !connectors.some((connector) => connector.from === source.from && connector.to === target.to)) {
-          connectors.push({ id: `connector-${crypto.randomUUID()}`, from: source.from, to: target.to, label: source.label || target.label, kind: target.kind });
-        }
-      }
-    }
-    commitFlow({ ...flow, elements: remaining, connectors });
-    setSelectedFlowId(incoming[0]?.from ?? remaining[0]?.id ?? 1);
   };
 
   const { validateNewFieldFormula, insertFormulaText, resetNewFieldDraft, newFieldApiName, newFieldPicklistOptions, newFieldController, newFieldControllerValues, newFieldDefaultError, newFieldConfigurationError, addField, saveObject, refreshObject, deleteObject, saveField, deleteField, createObject, saveCustomTab } = createSetupObjectActions({ apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldAutoNumberFormat, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldRollupChildObject, newFieldRollupOperation, newFieldRollupRelationshipField, newFieldRollupSourceField, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldAutoNumberFormat, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldRollupChildObject, setNewFieldRollupOperation, setNewFieldRollupRelationshipField, setNewFieldRollupSourceField, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace });
