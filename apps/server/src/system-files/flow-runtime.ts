@@ -328,12 +328,70 @@ export class FlowRuntime {
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs)||Object.keys(inputs).length>100)
       throw new Error('Invalid Flow inputs');
     const normalized=new Map<string,Scalar>();
+    const collections=new Map<string,{objectApi:string;records:Array<Record<string,Scalar>>}>();
     for(const [name,value] of Object.entries(inputs)) {
-      if(!namePattern.test(name)||!scalar(value)||typeof value==='string'&&value.length>4096)
-        throw new Error('Invalid Flow input: '+name);
-      normalized.set(name,value);
+      if(!namePattern.test(name))throw new Error('Invalid Flow input: '+name);
+      if(scalar(value)){
+        if(typeof value==='string'&&value.length>4096)throw new Error('Invalid Flow input: '+name);
+        normalized.set(name,value);
+      }else if(Array.isArray(value)){
+        collections.set(name,{objectApi:'',records:[]});
+      }else throw new Error('Invalid Flow input: '+name);
     }
     const flow=await this.loadActive(tenantId,flowApi);
+    let collectionStart:number|undefined;
+    if(collections.size){
+      const editor=await this.db.query<MetadataValueRow>(
+        'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+        [tenantId,flow.id]);
+      const graph=decodeMetadataValues(editor.rows).builder as Record<string,unknown>|undefined;
+      const resources=Array.isArray(graph?.resources)
+        ?graph.resources as Array<Record<string,unknown>>:[];
+      const elements=Array.isArray(graph?.elements)
+        ?graph.elements as Array<Record<string,unknown>>:[];
+      const starts=elements.filter(element=>element.type==='Start');
+      if(starts.length!==1||typeof starts[0].id!=='number'||!Number.isSafeInteger(starts[0].id))
+        throw new Error('Record Collection inputs require a valid Flow Start element');
+      collectionStart=starts[0].id;
+      let totalTextLength=0;
+      let totalRecordCount=0;
+      for(const [name,input] of collections){
+        const resource=resources.find(item=>item.name===name);
+        if(resource?.type!=='Record Collection'||resource.isCollection!==true
+          ||resource.availableForInput!==true||typeof resource.dataType!=='string'
+          ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(resource.dataType))
+          throw new Error('Flow input is not a declared Record Collection: '+name);
+        const object=await this.db.query(
+          'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
+          [tenantId,resource.dataType]);
+        if(!object.rowCount)throw new Error('Flow Record Collection Object is unavailable: '+resource.dataType);
+        input.objectApi=resource.dataType;
+        const raw=inputs[name] as unknown[];
+        if(raw.length>200)throw new Error('Flow Record Collection input exceeds the 200-record limit: '+name);
+        totalRecordCount+=raw.length;
+        if(totalRecordCount>200)
+          throw new Error('Flow Record Collection inputs exceed the 200-record limit');
+        input.records=raw.map(record=>{
+          if(!record||typeof record!=='object'||Array.isArray(record)
+            ||(Object.getPrototypeOf(record)!==Object.prototype&&Object.getPrototypeOf(record)!==null))
+            throw new Error('Flow Record Collection items must be records: '+name);
+          const entries=Object.entries(record);
+          if(!entries.length||entries.length>100)
+            throw new Error('Flow Record Collection records must contain between 1 and 100 fields: '+name);
+          const fields:Record<string,Scalar>=Object.create(null) as Record<string,Scalar>;
+          for(const [field,value] of entries){
+            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||field==='Id'||!scalar(value)
+              ||typeof value==='string'&&value.length>4096)
+              throw new Error('Invalid Flow Record Collection field: '+field);
+            totalTextLength+=field.length+(typeof value==='string'?value.length:String(value).length);
+            if(totalTextLength>262144)
+              throw new Error('Flow Record Collection inputs exceed the 256 KB limit');
+            fields[field]=value;
+          }
+          return fields;
+        });
+      }
+    }
     return this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(
         "INSERT INTO md_flow_runs (tenant_id,flow_id,started_by,status) VALUES ($1,$2,$3,'pending') RETURNING id",
@@ -344,6 +402,27 @@ export class FlowRuntime {
         await client.query(
           'INSERT INTO md_flow_run_inputs (tenant_id,run_id,api_name,value_text,data_type) VALUES ($1,$2,$3,$4,$5)',
           [tenantId,id,name,encoded.text,encoded.type]);
+      }
+      if(collectionStart!==undefined){
+        await client.query(
+          'INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element) VALUES($1,$2,$3)',
+          [tenantId,id,collectionStart]);
+        for(const [name,collection] of collections){
+          const records=collection.records.length?collection.records:[Object.create(null) as Record<string,Scalar>];
+          for(const [sortOrder,record] of records.entries()){
+            await client.query(`INSERT INTO md_flow_interview_records
+              (tenant_id,run_id,api_name,object_api,sort_order,record_id,is_collection)
+              VALUES($1,$2,$3,$4,$5,NULL,true)`,
+            [tenantId,id,name,collection.objectApi,sortOrder]);
+            for(const [field,value] of Object.entries(record)){
+              const encoded=scalarText(value);
+              await client.query(`INSERT INTO md_flow_interview_record_fields
+                (tenant_id,run_id,api_name,sort_order,field_api,value_text,data_type)
+                VALUES($1,$2,$3,$4,$5,$6,$7)`,
+              [tenantId,id,name,sortOrder,field,encoded.text,encoded.type]);
+            }
+          }
+        }
       }
       return id;
     });
@@ -477,6 +556,11 @@ export class FlowRuntime {
         row.values[field.field_api]=scalarFrom(field.value_text,field.data_type);
       }
       for(const [name,group] of recordGroups){
+        if(group.collection&&group.rows.length===1&&!group.rows[0].recordId
+          &&Object.keys(group.rows[0].values).length===0){
+          vars[name]=[];
+          continue;
+        }
         const found=await Promise.all(group.rows.map(async row=>{
           const record=row.recordId&&!['$Record','$Record__Prior'].includes(name)
             ?await this.records!.get(tenantId,userId,group.objectApi,row.recordId):{};

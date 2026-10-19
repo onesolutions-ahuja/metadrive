@@ -25,6 +25,10 @@ Status: **security architecture contract** (not a claim of automatic-trigger run
 | Scheduler/event-triggered invocation | Trusted tenant-scoped dispatcher with explicit execution-context policy and activation checks, not the end user's manual Run Flows UI permission |
 | Elevated system context | Separately configured scope, least-privilege service identity, audit and administrator approval; never implicit or email-based |
 
+## User-invoked Record Collection inputs
+
+Component event bindings may pass arrays only to declared, input-enabled Record Collection resources in an active Screen or Autolaunched Flow. Each collection is limited to 200 records, each record to 100 scalar fields, and the combined field data to 256 KB. Collection values are persisted in the existing tenant-scoped interview record and record-field tables; no runtime JSON column is introduced. Empty collections remain empty when the interview resumes. Record writes still run through shared CRUD and its current Object, Field and Record permissions.
+
 ## Automatic-trigger implementation status
 
 1. Versioned tenant-scoped SQL subscriptions now track active Record-Triggered, Scheduled and Platform Event Flow versions, trigger keys and optional app identity. Activation, save, deactivation and archive synchronize subscription state transactionally. Migrations backfill eligible existing active record/scheduled trigger Flows. Platform Events publish into typed SQL outbox rows and dispatch as per-subscriber durable jobs.
