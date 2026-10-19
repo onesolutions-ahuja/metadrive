@@ -1,3 +1,4 @@
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { AuthenticationService } from '../../src/system-files/authentication.js';
@@ -692,7 +693,7 @@ test('Field update rejects unsupported datatype changes before mutating values',
 test('SQL Flow draft validator rejects unsupported actions and broken branches',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{}} as unknown as RbacEngine;
- const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const draft={
   apiName:'TestFlow',flowType:'Autolaunched Flow',
   elements:[{id:1,type:'Start'},{id:2,type:'UnsupportedWebhook'},{id:3,type:'End'}],
@@ -717,7 +718,7 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
 test('SQL Flow supports bounded Update Records targets with explicit assignments',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{}} as unknown as RbacEngine;
- const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const elements=[
   {id:1,type:'Start',config:{}},
   {id:2,type:'Update Records',config:{object:'Product',recordId:'{!recordId}',fieldValues:[{field:'Taxable',value:true}]}},
@@ -740,7 +741,7 @@ test('SQL Flow supports bounded Update Records targets with explicit assignments
 test('Flow validator requires each Decision outcome and prohibits unterminated branches',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{}} as unknown as RbacEngine;
- const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const draft={
   apiName:'TestFlow',flowType:'Autolaunched Flow',
   elements:[
