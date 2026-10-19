@@ -207,6 +207,12 @@ async function submitForApproval(context:ActionContext) {
    flowApi,userId,comments,approverIds]);
  if(inserted.rowCount!==approverIds.length)
   throw new Error('Approval recipients changed during submission');
+ return group.rows[0].id;
+}
+
+/** Orchestration stages reuse exactly the same tenant/RBAC/record approval checks. */
+export async function submitFlowStageApproval(context:ActionContext):Promise<string> {
+ return submitForApproval(context);
 }
 
 async function publishPlatformEvent(context:ActionContext) {
