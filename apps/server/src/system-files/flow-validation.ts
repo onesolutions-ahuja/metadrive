@@ -407,6 +407,25 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     if(properties.dueAt!==undefined
       &&(typeof properties.dueAt!=='string'||properties.dueAt.length>128))
      errors.push('Create Task due date must be text or a resource reference');
+   }else if(properties.actionType==='Outbound Message'){
+    if(properties.deliveryMode!==undefined&&properties.deliveryMode!=='DURABLE_ASYNC')
+     errors.push('Outbound Message requires durable SQL delivery');
+    if(properties.integrationConnectionId){
+     if(!db)errors.push('Outbound Message requires SQL integration metadata');
+     else try{
+      const resolved=await resolveFlowIntegrationCallout(db,rbac,tenantId,userId,properties);
+      if(resolved.method!=='POST')errors.push('Outbound Message requires a POST provider operation');
+     }catch(error){errors.push(error instanceof Error?error.message:'Invalid Outbound Message provider');}
+    }else if(typeof properties.namedCredentialId!=='string'
+      ||!/^[0-9a-f-]{36}$/i.test(properties.namedCredentialId))
+     errors.push('Outbound Message requires an HTTPS Named Credential or active integration');
+    if(typeof properties.body!=='string'||!properties.body.trim()
+       ||properties.body.length>32768)
+     errors.push('Outbound Message requires a structured request body');
+    else try{JSON.parse(properties.body);}
+    catch{errors.push('Outbound Message request body must be a structured mapping');}
+    if(properties.integrationConnectionResource||properties.namedCredentialResource)
+     errors.push('Outbound Message does not allow dynamic credential overrides');
    }else if(properties.actionType==='Send Email'){
     if(typeof properties.namedCredentialId!=='string'
       ||!/^[0-9a-f-]{36}$/i.test(properties.namedCredentialId))
