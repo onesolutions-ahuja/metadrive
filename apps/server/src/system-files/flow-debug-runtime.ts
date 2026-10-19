@@ -1,4 +1,5 @@
 import {evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
+import {evaluateFlowCollectionStep} from './flow-data-actions.js';
 
 type Node={id:number;type:string;label?:string;config:Record<string,unknown>};
 type Edge={from:number;to:number;label?:string;kind?:string};
@@ -166,27 +167,10 @@ export async function simulateFlowGraph(options:{
         }
         details='Selected loop path: '+outcome;
       }else if(['Collection Filter','Collection Sort','Transform'].includes(node.type)){
-        const source=vars[String(config.collection??'')],output=String(config.outputCollection??'');
-        if(!Array.isArray(source)||source.length>200||!identifier.test(output)
-          ||!source.every(record))throw new Error('Collection action needs a bounded record collection');
-        if(node.type==='Collection Filter'){
-          vars[output]=source.filter(item=>match(config.conditions,config.conditionLogic,item));
-        }else if(node.type==='Collection Sort'){
-          const field=String(config.sortField??'');
-          if(!identifier.test(field))throw new Error('Invalid collection sort field');
-          const direction=config.sortOrder==='Descending'?-1:1;
-          vars[output]=[...source].sort((left,right)=>{
-            const a=left[field],b=right[field];
-            return a===b?0:a==null?1:b==null?-1:
-              typeof a==='number'&&typeof b==='number'?direction*(a-b):
-              String(a).localeCompare(String(b))*direction;
-          });
-        }else{
-          const mappings=Array.isArray(config.mappings)?config.mappings:[];
-          if(mappings.length>100)throw new Error('Too many transform mappings');
-          vars[output]=source.map(item=>Object.fromEntries(mappings.filter(record)
-            .map(mapping=>[String(mapping.targetField??''),item[String(mapping.sourceField??'')]??null])));
-        }
+        const output=String(config.outputCollection??'');
+        if(!identifier.test(output))throw new Error('Invalid collection output variable');
+        vars[output]=evaluateFlowCollectionStep(node.type,config,
+          vars[String(config.collection??'')],resolve);
       }else if(node.type==='Get Records'){
         const object=String(config.object??'');
         if(!identifier.test(object))throw new Error('Invalid query object');
