@@ -141,3 +141,32 @@ test('revoked Flow eligibility prevents queued HTTP provider delivery',async()=>
  assert.equal(delivered,false);
  assert.equal(failed,true);
 });
+
+test('successful durable callout persists provider acknowledgement in same SQL transaction',async()=>{
+ const written:Array<{sql:string;params:unknown[]}>=[];
+
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  written.push({sql,params});
+  if(sql.includes('WITH candidate'))return {rows:[{
+   id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,
+   method:'POST',path_ciphertext:Buffer.alloc(1),headers_ciphertext:Buffer.alloc(1),
+   body_ciphertext:null,idempotency_key_ciphertext:null,attempt_count:1,timeout_ms:15000
+  }]};
+  return {rows:[],rowCount:1};
+ }} as unknown as PoolClient;
+ const db={
+  transaction:async<T>(fn:(client:PoolClient)=>Promise<T>)=>fn(client),
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{valid:true}]};
+   return {rows:[],rowCount:1};
+  }
+ } as unknown as SqlPersistence;
+ const svc=new NamedCredentialService(db,rbac);
+ (svc as unknown as {decryptValue:(encrypted:Buffer)=>string}).decryptValue=()=> 'safe-path';
+ svc.callout=async()=>({status:202,body:''});
+ assert.equal(await svc.dispatchOne(),true);
+ const receipt=written.find(x=>x.sql.includes('INSERT INTO md_http_callout_receipts'));
+ assert.ok(receipt);
+ assert.deepEqual(receipt.params,[tenantId,jobId,1,202]);
+ assert.ok(written.some(x=>x.sql.includes("SET status='completed'")));
+});
