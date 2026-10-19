@@ -31,7 +31,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   errors.push('Flow app identity is invalid');
  const decisionOperators=new Set([
   'equals','notequals','greaterthan','greaterthanorequalto','lessthan','lessthanorequalto',
-  'isnull','isnotnull','contains','startswith','ischanged','wasset'
+  'isnull','isnotnull','contains','startswith','endswith','doesnotcontain','notcontains','ischanged','wasset'
  ]);
  const normalizeOperator=(value:unknown)=>String(value??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
  const validConditionList=(value:unknown,recordTrigger:boolean,location:string,
