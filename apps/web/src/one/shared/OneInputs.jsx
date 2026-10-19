@@ -2,7 +2,11 @@ import {componentAppearance} from './componentAppearance.js';
 export function css(p) { return componentAppearance(p, 'inputs'); }
 export function fire(p, event, value) {
   if (typeof p.onChange === "function") p.onChange(value);
-  if (typeof p.onAction === "function") p.onAction({ event, value });
+  // Shared runtime uses onChange as the single Flow event path; do not run
+  // the same backend Flow again through onAction for one input change.
+  if (typeof p.onAction === "function" &&
+      !(event === "change" && p.changeEventHandledByOnChange === true &&
+        typeof p.onChange === "function")) p.onAction({ event, value });
 }
 export const list = (v) =>
   Array.isArray(v)
