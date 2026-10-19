@@ -26,6 +26,27 @@ export function needsMetadataComponentRuntime(properties: Record<string, unknown
     && Object.keys(bindings).length > 0);
 }
 
+/** Apply one field-to-field equality selection from a sibling component's event.
+ * This is presentation filtering only; the Object API already enforces tenant,
+ * object, field and record RBAC. An invalid configured field fails closed. */
+export function filterPageRecordsBySelection<T extends Record<string,unknown>>(
+  records:readonly T[],fields:ReadonlyArray<FieldMetadata>,
+  fieldName:string,selectedValue:string|undefined,requireSelection:boolean
+):T[] {
+  if(!fieldName || !fields.some(field=>field.apiName===fieldName))return [];
+  if(selectedValue===undefined||selectedValue==='')return requireSelection?[]:[...records];
+  return records.filter(row=>{
+    if(!Object.hasOwn(row,fieldName))return false;
+    const raw=row[fieldName];
+    const values=raw&&typeof raw==='object'&&!Array.isArray(raw)
+      ?[('Id' in raw ? raw.Id : undefined),('id' in raw ? raw.id : undefined),
+        ('value' in raw ? raw.value : undefined)]
+      :[raw];
+    return values.some(value=>value!==undefined&&value!==null
+      &&String(value)===selectedValue);
+  });
+}
+
 /**
  * Evaluate the Page Builder's existing record-filter contract against
  * permission-checked records. Invalid, missing or unreadable fields fail closed;
