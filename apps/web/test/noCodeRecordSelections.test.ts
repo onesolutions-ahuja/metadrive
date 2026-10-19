@@ -72,8 +72,9 @@ test('Choice record mode fails closed when the configured label field is missing
 
 test('one input change invokes the configured backend action exactly once',async()=>{
   const original=await readFile(new URL('../src/one/shared/OneInputs.jsx',import.meta.url),'utf8');
+  // Strip the imported appearance dependency before evaluating the input event helper.
   const source=original.replace(
-    "import {componentAppearance} from './componentAppearance.js';",
+    /^import \{componentAppearance\} from [^\n]+;/m,
     "const componentAppearance = () => ({});"
   );
   const compiled=await transform(source,{loader:'jsx',format:'cjs'});
