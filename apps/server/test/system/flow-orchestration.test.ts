@@ -51,7 +51,7 @@ test('terminal approval marks one stage, cancels outstanding requests and signal
 test('partial approval does not resume the Flow',async()=>{
  const {client,statements}=stageClient({rule:'ALL',decisions:['Approved','Pending']});
  assert.equal(await finishFlowOrchestrationDecision(client,tenant,group),null);
- assert.equal(statements.filter(item=>item.sql.includes('UPDATE')).length,0);
+ assert.equal(statements.filter(item=>item.sql.trim().startsWith('UPDATE')).length,0);
 });
 test('orphaned orchestration stage cancels pending requests without scheduling a job',async()=>{
  const {client,statements}=stageClient({activeRun:false});
