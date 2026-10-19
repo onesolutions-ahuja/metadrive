@@ -5,6 +5,8 @@ import {evaluateFlowDecisionComparison} from '../../src/system-files/flow-decisi
 import {evaluateFlowAssignment} from '../../src/system-files/flow-assignment-runtime.js';
 import {evaluateFlowFormula,validateFlowFormula} from '../../src/system-files/flow-formula-runtime.js';
 import {readFileSync} from 'node:fs';
+import {flowChoiceValues,hydrateFlowScreenChoices} from '../../src/system-files/flow-screen-choice-runtime.js';
+import {subflowScalarTypeMatches} from '../../src/system-files/flow-subflow-runtime.js';
 
 test('Monthly schedules anchor to calendar day and clamp short months without drift',()=>{
  const schedule={apiName:'Invoice',object:'Invoice',startDate:'2026-01-31',
@@ -63,4 +65,26 @@ test('Versioned SQL before-save registration only enables read-only elements',()
   assert.ok(migration.includes("'"+name+"'"),'Missing read-only capability '+name);
  assert.doesNotMatch(migration,/('Create Records'|'Delete Records'|'Update Records')/);
  assert.match(migration,/registry_version IN \(1,2\)/);
+});
+
+test('Choice Set resources hydrate picklists with validated bounded options',()=>{
+ const source={id:2,type:'Screen',label:'Ordering',
+  config:{fields:[{apiName:'Meal',type:'Picklist',choiceSetResource:'MealChoices'}]}};
+ const next=hydrateFlowScreenChoices(source,[{
+  name:'MealChoices',type:'Choice Set',value:'Burger\\nWrap\\nSalad'
+ }]);
+ assert.deepEqual((next.config.fields as Array<{choices:string[]}>)[0].choices,
+  ['Burger','Wrap','Salad']);
+ assert.equal((source.config.fields[0] as Record<string,unknown>).choices,undefined);
+ assert.throws(()=>flowChoiceValues('Burger\\nBurger'),/unique/);
+ assert.throws(()=>hydrateFlowScreenChoices(source,[]),/unavailable/);
+});
+
+test('Subflow resource scalar typing matches declaration not just JS scalar type',()=>{
+ assert.equal(subflowScalarTypeMatches({name:'Count',dataType:'Number'},3),true);
+ assert.equal(subflowScalarTypeMatches({name:'Count',dataType:'Number'},'3'),false);
+ assert.equal(subflowScalarTypeMatches({name:'Enabled',dataType:'Boolean'},true),true);
+ assert.equal(subflowScalarTypeMatches({name:'Enabled',dataType:'Boolean'},'true'),false);
+ assert.equal(subflowScalarTypeMatches({name:'Name',dataType:'Text'},'Coffee'),true);
+ assert.equal(subflowScalarTypeMatches({name:'Name',dataType:'Text'},{Name:'Coffee'}),false);
 });
