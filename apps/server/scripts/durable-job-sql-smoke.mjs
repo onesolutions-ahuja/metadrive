@@ -11,6 +11,10 @@ if(!url)throw new Error('METADRIVE_SQL_TEST_DATABASE_URL is required');
 const db=new SqlPersistence(url);
 try{
  await applySystemMigrations(db);
+ await applySystemMigrations(db);
+ const {rows:[providerReceipts]}=await db.query(
+  "SELECT to_regclass('md_http_callout_receipts') IS NOT NULL AS exists");
+ assert.equal(providerReceipts.exists,true);
  const tenants=[];
  for(const name of ['ci-durable-a','ci-durable-b']){
   const {rows}=await db.query('INSERT INTO md_tenants(slug,name) VALUES($1,$2) RETURNING id',
