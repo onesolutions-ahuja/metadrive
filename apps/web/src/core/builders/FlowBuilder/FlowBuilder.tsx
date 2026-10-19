@@ -725,6 +725,10 @@ export default function FlowBuilder({
           </p>}
         </>}
         {selected.type === 'Get Records' && <>
+          <h3>Filter Records</h3>
+          {renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All',
+            rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}
+          {renderConditions('conditions', object?.fields ?? [])}
           <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit === 'all' || recordLimit === '1' ? recordLimit : 'limited'} onChange={(event) => {
             setConfig('recordLimit', event.target.value === 'limited' ? '50' : event.target.value);
           }}><option value="1">Only the first record</option><option value="limited">Up to a specified limit</option><option value="all">All records</option></select></label>
