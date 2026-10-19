@@ -291,7 +291,8 @@ export class NamedCredentialService {
 
  /** One reusable, host-independent outbound HTTP transport. Credential secrets are never returned to a Flow. */
  async callout(tenantId:string,userId:string,config:Record<string,unknown>,
-   variables:Record<string,string|number|boolean|null>,idempotencyKey:string){
+   variables:Record<string,string|number|boolean|null>,idempotencyKey:string,
+   context?:{jobId?:string;attempt?:number;flowRunId?:string;flowNodeId?:string}){
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
@@ -420,9 +421,11 @@ export class NamedCredentialService {
     throw new Error('Invalid outbound execution key');
    const {rows:reserved}=await this.db.query<{id:string}>(`
     INSERT INTO md_outbound_execution_receipts
-      (tenant_id,execution_key,credential_id,request_method)
-    VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,execution_key) DO NOTHING RETURNING id
-   `,[tenantId,idempotencyKey,config.namedCredentialId,method]);
+      (tenant_id,execution_key,credential_id,request_method,job_id,attempt_number,flow_run_id,flow_node_id)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT(tenant_id,execution_key) DO NOTHING RETURNING id
+   `,[tenantId,idempotencyKey,config.namedCredentialId,method,context?.jobId??null,
+      context?.attempt??null,context?.flowRunId??null,context?.flowNodeId??null]);
    if(!reserved[0])throw new Error('Outbound execution requires reconciliation before retry');
    reservationId=reserved[0].id;
   }
