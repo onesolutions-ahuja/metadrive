@@ -141,7 +141,7 @@ const supportedFunctions=new Set(['IF','IFERROR','AND','OR','NOT','XOR','ISBLANK
   'CASE','DATE','DATEVALUE','DATETIMEVALUE','TODAY','NOW','DAY','MONTH','YEAR','HOUR',
   'MINUTE','SECOND','WEEKDAY','ADDMONTHS','TIMEVALUE','TIMENOW','PI','SIN','COS','TAN',
   'ASIN','ACOS','ATAN','ATAN2','SINH','COSH','TANH','DEGREES','RADIANS',
-  'GEOLOCATION','DISTANCE']);
+  'GEOLOCATION','DISTANCE','COLLECTION_COUNT','COLLECTION_SUM']);
 const text=(value:unknown):string=>value===null||value===undefined?'':String(value);
 const truth=(value:unknown):boolean=>value===true||value===1||value==='true';
 function triggerFieldReference(node:Expression):string {
@@ -256,6 +256,28 @@ function evaluate(node:Expression,resolve:FormulaResolver):unknown {
     }
     case 'BLANKVALUE':case 'NULLVALUE':arity(2);{
       const value=argument(0);return value===null||value===undefined||value===''?argument(1):value;
+    }
+    case 'COLLECTION_COUNT':case 'COLLECTION_SUM':{
+      arity(node.name==='COLLECTION_COUNT'?1:2);
+      const value=argument(0);
+      if(!Array.isArray(value)||value.length>200
+        ||value.some(item=>!item||typeof item!=='object'||Array.isArray(item)))
+        throw new Error(node.name+' requires a record collection of at most 200 records');
+      if(node.name==='COLLECTION_COUNT')return value.length;
+      const field=argument(1);
+      if(typeof field!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
+        throw new Error('COLLECTION_SUM requires a valid numeric field name');
+      return value.reduce((total:number,row:Record<string,unknown>)=>{
+        if(!Object.hasOwn(row,field))
+          throw new Error('COLLECTION_SUM field is unavailable: '+field);
+        const amount=row[field];
+        if(amount===null)return total;
+        if(typeof amount!=='number'||!Number.isFinite(amount))
+          throw new Error('COLLECTION_SUM requires finite numeric field values');
+        const sum=total+amount;
+        if(!Number.isFinite(sum))throw new Error('COLLECTION_SUM result is not finite');
+        return sum;
+      },0);
     }
     case 'TEXT':arity(1);return text(argument(0));
     case 'VALUE':arity(1);return numeric(argument(0));
@@ -531,7 +553,7 @@ export function validateFlowFormula(expression:string):void {
 }
 
 export type FormulaValueType='Number'|'Text'|'Checkbox'|'Date'|'DateTime'|'Time'
-  |'Picklist'|'MultiPicklist'|'Geolocation'|'Null';
+  |'Picklist'|'MultiPicklist'|'Geolocation'|'Collection'|'Null';
 type FormulaTypeResolver=(reference:string)=>FormulaValueType|null;
 const formulaTextTypes=new Set<FormulaValueType>(['Text','Picklist']);
 const formulaNumeric=(type:FormulaValueType)=>type==='Number';
@@ -624,6 +646,8 @@ export function inferFlowFormulaType(expression:string,resolve:FormulaTypeResolv
         if(!result)throw new Error(node.name+' argument types do not match');
         return result;
       }
+      case 'COLLECTION_COUNT':arity(1);requireType(0,['Collection']);return 'Number';
+      case 'COLLECTION_SUM':arity(2);requireType(0,['Collection']);requireText(1);return 'Number';
       case 'TEXT':arity(1);return 'Text';
       case 'VALUE':arity(1);requireText(0);return 'Number';
       case 'LEN':case 'ASCII':arity(1);requireText(0);return 'Number';
