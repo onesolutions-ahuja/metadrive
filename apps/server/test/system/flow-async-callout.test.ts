@@ -99,3 +99,19 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
   else process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=previousKey;
  }
 });
+
+test('abandoned HTTP callout leases are quarantined and cannot be selected again',async()=>{
+ const statements:string[]=[];
+ const db={
+  transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
+   query:async(sql:string)=>{statements.push(sql);return {rows:[]};}
+  } as unknown as PoolClient)
+ } as unknown as SqlPersistence;
+ const service=new NamedCredentialService(db,rbac);
+ assert.equal(await service.dispatchOne(),false);
+ assert.match(statements[0],/status='failed'/);
+ assert.match(statements[0],/RECONCILIATION_REQUIRED/);
+ assert.match(statements[0],/status='processing' AND claimed_at</);
+ assert.match(statements[1],/WHERE status='queued' AND next_attempt_at<=now\(\)/);
+ assert.doesNotMatch(statements[1],/OR \(status='processing'/);
+});
