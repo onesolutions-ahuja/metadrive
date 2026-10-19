@@ -55,7 +55,7 @@ INSERT INTO md_flow_capability_elements
 (element_type,display_group,display_icon,sort_order,builder_enabled,before_save_allowed,
  config_schema_key,validator_key,runtime_handler_key,debug_behavior)
 VALUES
- ('Start','Logic','▶',0,false,true,'flow:Start','Start','Start','unsupported'),
+ ('Start','Logic','▶',0,false,true,'flow:Start','Start','Start','execute'),
  ('End','Logic','■',10,true,true,'flow:End','End','End','execute'),
  ('Screen','Interaction','▣',20,true,false,'flow:Screen','Screen','Screen','execute'),
  ('Wait','Interaction','◷',30,true,false,'flow:Wait','Wait','Wait','unsupported'),
@@ -80,7 +80,7 @@ ON CONFLICT (element_type) DO NOTHING;
 
 INSERT INTO md_flow_capability_element_flows (element_type,flow_type,builder_allowed)
 SELECT e.element_type,f.flow_type,
- e.builder_enabled
+ (e.builder_enabled OR e.element_type='Publish Platform Event')
  AND (e.element_type <> 'Wait' OR f.flow_type IN ('Screen Flow','Autolaunched Flow','Record-Triggered Flow'))
  FROM md_flow_capability_elements e CROSS JOIN md_flow_capability_flow_types f
  WHERE f.validate_enabled AND e.enabled
