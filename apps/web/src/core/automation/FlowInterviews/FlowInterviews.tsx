@@ -35,8 +35,15 @@ export default function FlowInterviews({
     if(!canManage)return;
     setFailedLoading(true);setFailedError('');
     try{
-      const payload=await request<{jobs:FailedFlowJob[]}>('/metadata/flow-job-failures');
-      setFailedJobs(payload.jobs);
+      const payload=await request<{jobs:Array<{
+        id:string;job_type:string;resource_id:string|null;resource_version:number|null;
+        attempt:number;max_attempts:number;error_code:string|null;updated_at:string
+      }>}>('/job-admin/jobs?status=failed');
+      setFailedJobs(payload.jobs.filter(job=>job.job_type.startsWith('flow.')).map(job=>({
+        id:job.id,jobType:job.job_type,resourceId:job.resource_id,
+        versionNumber:job.resource_version,attempts:job.attempt,
+        maxAttempts:job.max_attempts,error:job.error_code,updatedAt:job.updated_at
+      })));
     }catch(error){setFailedError(error instanceof Error?error.message:'Unable to load failed Flow jobs');}
     finally{setFailedLoading(false);}
   };
@@ -49,7 +56,7 @@ export default function FlowInterviews({
     if(!window.confirm(risk))return;
     setBusyJob(job.id);
     try{
-      await request('/metadata/flow-job-failures/'+encodeURIComponent(job.id)+'/reconcile',{
+      await request('/job-admin/jobs/'+encodeURIComponent(job.id)+'/reconcile',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({decision,...(decision==='retry'?{acknowledgedReplayRisk:true}:{})})
       });
@@ -103,7 +110,7 @@ export default function FlowInterviews({
       {canManage&&<section className="surface" aria-label="Failed durable Flow jobs">
         <div className="list-view-header">
           <div><h2>Failed durable Flow jobs</h2>
-            <p>Review failed or outcome-ambiguous jobs. Replays require explicit operator approval and are audited.</p>
+            <p>Tenant administrators can review failed or outcome-ambiguous jobs. Replays require explicit operator approval and are audited.</p>
           </div>
         </div>
         {failedError&&<div className="info-callout" role="alert">{failedError}</div>}
