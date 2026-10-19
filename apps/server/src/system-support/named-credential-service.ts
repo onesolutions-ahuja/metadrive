@@ -362,7 +362,7 @@ export class NamedCredentialService {
      body:job.body_ciphertext?this.decryptValue(job.body_ciphertext):'',
      timeoutMs:job.timeout_ms
     },variables,job.idempotency_key_ciphertext
-      ?this.decryptValue(job.idempotency_key_ciphertext):job.id);
+      ?this.decryptValue(job.idempotency_key_ciphertext):job.id,true);
     // Commit terminal state and provider acknowledgement atomically.
     await this.db.transaction(async client=>{
      const {rowCount}=await client.query(`
@@ -622,11 +622,16 @@ export class NamedCredentialService {
 
  /** One reusable, host-independent outbound HTTP transport. Credential secrets are never returned to a Flow. */
  async callout(tenantId:string,userId:string,config:Record<string,unknown>,
-   variables:Record<string,string|number|boolean|null>,idempotencyKey:string){
+   variables:Record<string,string|number|boolean|null>,idempotencyKey:string,
+   previouslyPrepared=false){
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   config=await resolveFlowIntegrationCallout(this.db,this.rbac,tenantId,userId,config);
-  const prepared=prepareFlowHttpRequest(config,variables);
+  // Durable jobs hold an encrypted, already-expanded snapshot. Never expand it twice.
+  const prepared=previouslyPrepared?{
+   path:String(config.path??''),body:typeof config.body==='string'&&config.body
+    ?config.body:undefined
+  }:prepareFlowHttpRequest(config,variables);
   if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
