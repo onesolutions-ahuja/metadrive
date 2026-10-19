@@ -105,7 +105,7 @@ export function createSystemServer(db:SqlPersistence) {
   const library=new ComponentLibraryService(db,rbac);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records,
-    (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
+    (tenantId,userId,config,variables,key,context)=>namedCredentials.callout(tenantId,userId,config,variables,key,context));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
   const recoveryContacts=new TenantRecoveryContacts(db,rbac,mfa,namedCredentials);
