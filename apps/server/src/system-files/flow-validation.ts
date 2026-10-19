@@ -2,7 +2,7 @@ import type {RbacEngine} from './rbac-engine.js';
 import type {SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
-import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
+import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
 
 export async function flowAppIsEntitled(db:SqlPersistence,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
@@ -19,7 +19,7 @@ export async function flowAppIsEntitled(db:SqlPersistence,tenantId:string,appApi
 }
 
 export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:string,userId:string,
-  apiName:string,draft:unknown,db?:SqlPersistence) {
+  apiName:string,draft:unknown,db?:SqlPersistence,capabilities:FlowCapabilityCatalog|null=null) {
  if(!rbac)throw new Error('Flow permissions not configured');
  await rbac.require(tenantId,userId,'FlowDefinition','manage');
  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
@@ -67,7 +67,6 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
  const startConfig=startNode?.config&&typeof startNode.config==='object'
   &&!Array.isArray(startNode.config)?startNode.config as Record<string,unknown>:{};
  const beforeSave=data.flowType==='Record-Triggered Flow'&&startConfig.runWhen==='before-save';
- const capabilities=db?await loadFlowCapabilityCatalog(db,tenantId):null;
  const catalogType=capabilities?.flowTypes.find(type=>type.type===data.flowType);
  if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
  if(capabilities?!catalogType?.validateEnabled:!['Autolaunched Flow','Screen Flow',
