@@ -3,7 +3,7 @@ import * as React from 'react';
 import {useState,useEffect,useRef} from 'react';
 // Load the browser API client only during the mounted effect, not on SSR import.
 import {presentPageRecords,type ChannelGrant} from '../../records/RecordWorkspace/recordPresentationAdapters';
-import {filterPageComponentRecords} from '../PageRuntime/pageComponentBindings';
+import {filterPageComponentRecords,filterPageRecordsBySelection} from '../PageRuntime/pageComponentBindings';
 import {resolveMentionProperties} from '../../../one/OneSmartFieldInput/smartFieldMentions';
 import { explicitMentionRecordId, useRelationshipMentionContext } from '../../records/RecordFormDialog/useRelationshipMentionContext';
 import {resolvePageActionRoute} from '../PageRuntime/pageActionRouting';
@@ -117,7 +117,16 @@ export default function MetadataBoundPageComponent({
     return () => {active = false;};
   }, [properties.channelAccessPath, properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
-  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const baseRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const sharedFilterKey = String(properties.sharedFilterKey ?? '').trim();
+  const sharedFilterField = String(properties.sharedFilterFieldApiName ?? '').trim();
+  const sharedFilter = selectedFilterRecords[sharedFilterKey];
+  const sharedFilterValue = properties.sharedFilterValueSource === 'recordId'
+    ? sharedFilter?.recordId : selectedCategories[sharedFilterKey];
+  const visibleRecords = sharedFilterKey || sharedFilterField
+    ? filterPageRecordsBySelection(baseRecords,fields,sharedFilterField,
+        sharedFilterKey ? sharedFilterValue : undefined,properties.sharedFilterRequired===true)
+    : baseRecords;
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
@@ -155,14 +164,19 @@ export default function MetadataBoundPageComponent({
     if (binding.actionType === 'SetFilter') {
       const filterKey = String(binding.filterKey || 'category');
       if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(filterKey)) throw new Error('Invalid filter key');
-      const value = typeof action.value === 'object' && action.value !== null
-        ? String(('value' in action.value ? (action.value as {value:unknown}).value : 'label' in action.value
-          ? (action.value as {label:unknown}).label : '') ?? '')
-        : String(action.value ?? '');
-      const source = action.value && typeof action.value === 'object' ? action.value as Record<string,unknown> : {};
+      const source = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
+        ? action.value as Record<string,unknown> : {};
+      const sourceField = (key:unknown,fallback:unknown) =>
+        typeof key==='string'&&/^[A-Za-z][A-Za-z0-9_]*$/.test(key)
+          ? source[key]??fallback : fallback;
+      const value = String(sourceField(binding.filterValueFieldApiName,
+        source.value??source.Id??source.id??source.label??action.value??'')??'');
+      const label = String(sourceField(binding.filterLabelFieldApiName,
+        source.label??source.Name??source.name??value)??value);
+      const recordId = String(source.recordId??source.Id??source.id??'');
       window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{
-        pageSessionKey,filterKey,value,label:String(source.label??value),
-        recordId:String(source.recordId??''),sourceObjectApiName:String(source.sourceObjectApiName??'')
+        pageSessionKey,filterKey,value,label,recordId,
+        sourceObjectApiName:String(source.sourceObjectApiName??objectApiName)
       }}));
       return {selected:value};
     }
