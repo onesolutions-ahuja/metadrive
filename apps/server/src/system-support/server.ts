@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {ComponentLibraryService} from './component-library-service.js';
 import {DashboardSnapshotService} from './dashboard-snapshot-service.js';
+import {DurableJobService} from './durable-job-service.js';
 import {DashboardSubscriptionService} from './dashboard-subscription-service.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
@@ -97,6 +98,7 @@ export function createSystemServer(db:SqlPersistence) {
   const tenantDeveloper=new TenantDeveloperService(db,rbac,auth,mfa);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
+  const durableJobs=new DurableJobService(db);
   const definitions=new ObjectDefinitionService(db);
   const objectHistory=new ObjectMetadataHistory(db);
   const components=new ComponentRuntime(db);
@@ -210,6 +212,57 @@ export function createSystemServer(db:SqlPersistence) {
     res.json(await recoveryCases.proof(req.params.id,req.body,true));
   }));
   app.use('/api',authorize);
+
+  // Operator controls are authenticated and gated through configurable central RBAC.
+  // Never expose job payloads or credentials through administration endpoints.
+  const validJobId=(id:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  app.get('/api/system/jobs',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const status=req.query.status;
+    if(status!==undefined && (typeof status!=='string'||!['queued','leased','completed','failed','cancelled'].includes(status)))
+      {res.status(400).json({error:'Invalid job status'});return;}
+    const {rows}=await db.query(
+      `SELECT id,job_type,app_api_name,resource_id,resource_version,status,attempt,max_attempts,
+              error_code,scheduled_at,lease_until,created_at,updated_at
+         FROM md_durable_jobs
+        WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
+        ORDER BY updated_at DESC,id DESC LIMIT 100`,[actor.tenant_id,status??null]);
+    res.setHeader('Cache-Control','no-store');
+    res.json({jobs:rows});
+  }));
+  app.get('/api/system/jobs/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    if(!validJobId(req.params.id)){res.status(400).json({error:'Invalid job ID'});return;}
+    const {rows}=await db.query(
+      `SELECT id,job_type,app_api_name,resource_id,resource_version,status,attempt,max_attempts,
+              error_code,scheduled_at,lease_until,created_at,updated_at
+         FROM md_durable_jobs WHERE tenant_id=$1 AND id=$2`,[actor.tenant_id,req.params.id]);
+    if(!rows[0]){res.status(404).json({error:'Job not found'});return;}
+    const {rows:history}=await db.query(
+      `SELECT id,actor_id,decision,created_at FROM md_durable_job_audit
+       WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100`,
+      [actor.tenant_id,req.params.id]);
+    res.setHeader('Cache-Control','no-store');
+    res.json({job:rows[0],history});
+  }));
+  app.post('/api/system/jobs/:id/decision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    if(!validJobId(req.params.id)||!['retry','acknowledge','cancel'].includes(req.body?.decision))
+      {res.status(400).json({error:'Invalid job decision'});return;}
+    try {
+      await durableJobs.operatorDecision(actor.tenant_id,req.params.id,actor.user_id,req.body.decision);
+    }catch(error){
+      if(error instanceof Error && error.message==='Failed job not found'){
+        res.status(404).json({error:'Failed job not found'});return;
+      }
+      throw error;
+    }
+    res.status(204).end();
+  }));
+
   // Durable notifications: only the addressed user can list or acknowledge them.
   const notificationView=(row:{id:string;recipient_id:string;title:string;body:string;flow_api_name:string;sent_by:string|null;created_at:Date;read_at:Date|null})=>({
     id:row.id,recipientId:row.recipient_id,title:row.title,body:row.body,
