@@ -1331,9 +1331,9 @@ function PageBuilder({
                     ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
                     : component.type === 'Chatter' && libraryPreview
                       ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
-                  : customDefinition && !isLayoutContainer(component) && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
-                    && component.properties.objectApiName
-                    ? <MetadataBoundPageComponent definition={customDefinition} component={component}
+                  : customDefinition && !isLayoutContainer(component) && (!libraryPreview || interactivePreview) &&
+                    needsMetadataComponentRuntime(component.properties)
+                    ? <MetadataBoundPageComponent apiRequest={request} definition={customDefinition} component={component}
                         objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
                         pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
