@@ -1003,7 +1003,7 @@ export class FlowRuntime {
       };
     }
     return simulateFlowGraph({
-      apiName,version:version.version,flowType:String(doc.flowType??version.flow_type),
+      apiName,version:version.version,flowType:String(doc.flowType??'Autolaunched Flow'),
       nodes:doc.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>,
       edges:doc.connectors as Array<{from:number;to:number;label:string;kind:string}>,
       inputs,recordTriggered,
