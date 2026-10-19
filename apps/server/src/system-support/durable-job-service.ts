@@ -142,6 +142,33 @@ export class DurableJobService {
   if(!rows[0])throw new Error('Failed job not found');
  }
 
+ /** Evidence-backed manual provider reconciliation. Never clear a receipt while its job is running. */
+ async providerDecision(tenantId:string,receiptId:string,actorId:string,
+   decision:'confirmed_not_sent'|'provider_idempotent_retry'|'acknowledge',evidenceReference:string){
+  if(!['confirmed_not_sent','provider_idempotent_retry','acknowledge'].includes(decision))
+   throw new Error('Invalid provider decision');
+  if(typeof evidenceReference!=='string'||evidenceReference.trim().length<4||
+    evidenceReference.length>256)throw new Error('Provider reconciliation evidence required');
+  const {rows}=await this.db.query<{receipt_id:string}>(`
+   WITH changed AS (
+    UPDATE md_outbound_execution_receipts r
+    SET state=CASE WHEN $4='acknowledge' THEN 'completed' ELSE 'cleared' END,
+        updated_at=now()
+    FROM md_durable_jobs j
+    WHERE r.tenant_id=$1 AND r.id=$2 AND r.state IN ('pending','uncertain')
+      AND j.tenant_id=r.tenant_id AND j.id=r.job_id AND j.status='failed'
+      AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
+    RETURNING r.tenant_id,r.id
+   ), audited AS (
+    INSERT INTO md_outbound_receipt_audit
+     (tenant_id,receipt_id,actor_id,decision,evidence_reference)
+    SELECT tenant_id,id,$3,$4,$5 FROM changed RETURNING receipt_id
+   )
+   SELECT receipt_id FROM audited
+  `,[tenantId,receiptId,actorId,decision,evidenceReference.trim()]);
+  if(!rows[0])throw new Error('Reconciliation receipt not found');
+ }
+
  async cancelApp(tenantId:string,appApiName:string) {
   return this.db.query(`
    UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,lease_until=NULL,updated_at=now()
