@@ -157,7 +157,24 @@ test('after-save Record-Triggered Flow may durably pause at a Wait element',asyn
 
 test('Flow activation validates Scheduled Path context, source field type, and offset',async()=>{
  let dataType='date';
- const db={query:async()=>({rows:dataType?[{data_type:dataType}]:[]})} as never;
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_flow_capability_flow_types'))
+   return {rows:[{flow_type:'Record-Triggered Flow',description:'Record trigger',
+     create_enabled:false,validate_enabled:true,debug_enabled:true}]};
+  if(sql.includes('FROM md_flow_capability_elements e'))
+   return {rows:['Start','End'].map(element_type=>({
+     element_type,display_group:'Logic',display_icon:'■',builder_enabled:element_type==='End',
+     before_save_allowed:true,config_schema_key:'flow:'+element_type,
+     validator_key:element_type,runtime_handler_key:element_type,
+     debug_behavior:'execute',registry_version:1
+   }))};
+  if(sql.includes('FROM md_flow_capability_element_flows'))
+   return {rows:['Start','End'].map(element_type=>({
+     element_type,flow_type:'Record-Triggered Flow',builder_allowed:element_type==='End'
+   }))};
+  if(sql.includes('FROM md_flow_capability_properties'))return {rows:[]};
+  return {rows:dataType?[{data_type:dataType}]:[]};
+ }} as never;
  const rbac={require:async()=>undefined} as unknown as RbacEngine;
  const draft=(runWhen='after-save',offsetAmount=1)=>({
   apiName:'ScheduledPathFlow',flowType:'Record-Triggered Flow',resources:[],
