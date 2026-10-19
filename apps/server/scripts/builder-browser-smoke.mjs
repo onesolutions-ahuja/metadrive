@@ -85,11 +85,22 @@ try{
    method:'POST',body:JSON.stringify({values:{Accepted:true}})});
   if(pending.code!==200||pending.json.completed!==true)
    return {failed:'Complete',pending};
+  const history=await request('/metadata/flow-history?status=completed&limit=10');
+  if(history.code!==200||!Array.isArray(history.json.runs)
+    ||!history.json.runs.some(run=>run.flowApiName===name&&run.status==='completed'
+      &&Number.isFinite(run.durationMs)))
+    return {failed:'Flow history',history};
+  const debug=await request('/flows/'+name+'/debug',{method:'POST',body:'{}'});
+  if(debug.code!==200||debug.json.dryRun!==true||debug.json.status!=='waiting'
+    ||!Array.isArray(debug.json.debugTrace)
+    ||!debug.json.debugTrace.every(step=>typeof step.durationMs==='number'
+      &&step.variables!==undefined))
+    return {failed:'Flow debug trace',debug};
   const deleted=await request('/metadata/flows/'+name,{method:'DELETE'});
   return {saved:saved.code,started:started.code,completed:pending.code,
-   archived:deleted.code};
+   history:history.code,debug:debug.code,archived:deleted.code};
  },{token:tokens.accessToken});
- assert.deepEqual(status,{saved:200,started:200,completed:200,archived:204},
+ assert.deepEqual(status,{saved:200,started:200,completed:200,history:200,debug:200,archived:204},
   'Real browser builder save/Screen Flow API check: '+JSON.stringify(status));
 
  // Phase 1: confirm SQL metadata and the actual no-code browser controls agree.

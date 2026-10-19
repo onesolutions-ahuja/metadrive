@@ -43,6 +43,56 @@ function recordValues(value:unknown):Record<string,unknown>[] {
   return value as Record<string,unknown>[];
 }
 
+/** Shared pure collection operations, used by both execution and read-only debug. */
+export function evaluateFlowCollectionStep(type:string,config:Record<string,unknown>,
+  source:unknown,evaluate:(value:unknown)=>unknown):Record<string,unknown>[] {
+  const node={type};
+  let result:Record<string,unknown>[]=[];
+  const records=recordValues(source);
+    if(node.type==='Collection Filter'){
+      const conditions=conditionsFrom(config.conditions,evaluate);
+      if(conditions.length===0)throw new Error('Collection Filter requires at least one condition');
+      const filtered=records.filter(item=>{
+        const rows=conditions.map(condition=>({...condition,
+          field:item[String(condition.field)]}));
+        return evaluateFlowDecisionOutcome(rows,
+          typeof config.conditionLogic==='string'?config.conditionLogic:undefined,value=>value);
+      });
+      result=filtered;
+    }else if(node.type==='Collection Sort'){
+      const field=String(config.sortField??'');
+      if(!apiName.test(field))throw new Error('Invalid Collection Sort field');
+      const direction=config.sortOrder==='Descending'?-1:1;
+      result=[...records].sort((left,right)=>{
+        const a=left[field],b=right[field];
+        if(a===b)return 0;
+        if(a===null||a===undefined)return 1;
+        if(b===null||b===undefined)return -1;
+        if(typeof a!==typeof b||!['string','number'].includes(typeof a))
+          throw new Error('Collection Sort values must be matching text or numbers');
+        return a<b?-direction:direction;
+      });
+    }else{
+      const mappings=Array.isArray(config.mappings)?config.mappings:[];
+      if(mappings.length<1||mappings.length>100)
+        throw new Error('Transform requires between 1 and 100 field mappings');
+      result=records.map(item=>{
+        const target:Record<string,unknown>={};
+        for(const mapping of mappings){
+          if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))
+            throw new Error('Invalid Transform mapping');
+          const row=mapping as Record<string,unknown>;
+          if(typeof row.sourceField!=='string'||typeof row.targetField!=='string'
+            ||!apiName.test(row.sourceField)||!apiName.test(row.targetField))
+            throw new Error('Invalid Transform field mapping');
+          target[row.targetField]=item[row.sourceField]??null;
+        }
+        return target;
+      });
+    }
+    return result;
+}
+
 export async function executeFlowDataAction(context:Context):Promise<FlowActionResult> {
   const {tenantId,userId,client,node,records,recordQuery,vars,loops,evaluate,set}=context;
   const config=node.config;
@@ -134,51 +184,10 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
     return {handled:true,selected:'For Each'};
   }
   if(node.type==='Collection Filter'||node.type==='Collection Sort'||node.type==='Transform'){
-    const source=vars[String(config.collection??'')];
-    if(!Array.isArray(source))throw new Error('Collection action source must be a record collection');
     const output=String(config.outputCollection??'');
     if(!apiName.test(output))throw new Error('Invalid collection output variable');
-    if(node.type==='Collection Filter'){
-      const conditions=conditionsFrom(config.conditions,evaluate);
-      if(conditions.length===0)throw new Error('Collection Filter requires at least one condition');
-      const filtered=recordValues(source).filter(item=>{
-        const rows=conditions.map(condition=>({...condition,
-          field:item[String(condition.field)]}));
-        return evaluateFlowDecisionOutcome(rows,
-          typeof config.conditionLogic==='string'?config.conditionLogic:undefined,value=>value);
-      });
-      vars[output]=filtered;
-    }else if(node.type==='Collection Sort'){
-      const field=String(config.sortField??'');
-      if(!apiName.test(field))throw new Error('Invalid Collection Sort field');
-      const direction=config.sortOrder==='Descending'?-1:1;
-      vars[output]=[...recordValues(source)].sort((left,right)=>{
-        const a=left[field],b=right[field];
-        if(a===b)return 0;
-        if(a===null||a===undefined)return 1;
-        if(b===null||b===undefined)return -1;
-        if(typeof a!==typeof b||!['string','number'].includes(typeof a))
-          throw new Error('Collection Sort values must be matching text or numbers');
-        return a<b?-direction:direction;
-      });
-    }else{
-      const mappings=Array.isArray(config.mappings)?config.mappings:[];
-      if(mappings.length<1||mappings.length>100)
-        throw new Error('Transform requires between 1 and 100 field mappings');
-      vars[output]=recordValues(source).map(item=>{
-        const target:Record<string,unknown>={};
-        for(const mapping of mappings){
-          if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))
-            throw new Error('Invalid Transform mapping');
-          const row=mapping as Record<string,unknown>;
-          if(typeof row.sourceField!=='string'||typeof row.targetField!=='string'
-            ||!apiName.test(row.sourceField)||!apiName.test(row.targetField))
-            throw new Error('Invalid Transform field mapping');
-          target[row.targetField]=item[row.sourceField]??null;
-        }
-        return target;
-      });
-    }
+    vars[output]=evaluateFlowCollectionStep(node.type,config,
+      vars[String(config.collection??'')],evaluate);
     return {handled:true};
   }
   if(node.type==='Create Records'||node.type==='CreateRecord'){

@@ -317,6 +317,12 @@ export type FlowExecutionLogMetadata = {
   failedAt: string;
   error: string;
   userId: string | null;
+  status?: 'pending' | 'waiting' | 'completed' | 'failed' | 'cancelled';
+  flowType?: string;
+  versionNumber?: number;
+  startedAt?: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 };
 
 export type FlowInterviewMetadata = {
@@ -987,7 +993,7 @@ export const setupNavigation = [
   { group: 'Company Settings', items: ['Company Settings'] },
   { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Page Builder', 'App Manager', 'AppExchange'] },
   { group: 'Integrations', items: ['Named Credentials', 'Named Devices'] },
-  { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Process Automation Settings'] },
+  { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Flow History', 'Process Automation Settings'] },
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
   { group: 'Security', items: ['Users', 'Roles', 'Public Groups', 'Profiles', 'Permission Sets', 'Permission Set Groups', 'Sharing Settings', 'Sharing Rules'] }
 ];

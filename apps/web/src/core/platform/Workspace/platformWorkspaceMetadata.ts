@@ -73,7 +73,7 @@ const workspaceAliases:Readonly<Record<string,string>>={
  'Permission Sets':'rbac','Permission Set Groups':'rbac',
  'Sharing Settings':'rbac','Sharing Rules':'rbac',
  'Paused and Waiting Interviews':'flow-builder','Scheduled Flows':'flow-builder',
- 'Failed Flow Logs':'flow-builder'
+ 'Flow History':'flow-builder'
 };
 export function platformNavigationEntries():PlatformWorkspaceDescriptor[]{
  const canonical=new Map(workspaces.map(item=>[item.label,item.id]));
