@@ -15,6 +15,9 @@ try{
  const {rows:[providerReceipts]}=await db.query(
   "SELECT to_regclass('md_http_callout_receipts') IS NOT NULL AS exists");
  assert.equal(providerReceipts.exists,true);
+ const {rows:requiredMigrations}=await db.query(
+  "SELECT version FROM md_system_migrations WHERE version IN ('20261027-durable-job-history.sql','20261027-http-callout-receipts.sql')");
+ assert.equal(requiredMigrations.length,2,'both recovery migrations must be applied');
  const tenants=[];
  for(const name of ['ci-durable-a','ci-durable-b']){
   const {rows}=await db.query('INSERT INTO md_tenants(slug,name) VALUES($1,$2) RETURNING id',
