@@ -29,7 +29,7 @@ test('ambiguous Flow retry is terminal rather than silently rescheduled',async()
  let sql='';
  const db={query:async(q:string)=>{sql=q;return {rowCount:1};}} as unknown as SqlPersistence;
  await new DurableJobService(db).fail('tenant','job','worker','FLOW_RECONCILIATION_REQUIRED');
- assert.match(sql,/\$4='FLOW_RECONCILIATION_REQUIRED' THEN 'failed'/);
+ assert.match(sql,/status='failed'/);
 });
 test('reconciliation is tenant-scoped and requires a failed job plus enabled reviewer',async()=>{
  let sql='';
@@ -50,5 +50,14 @@ test('expired Flow leases are quarantined before any re-claim',async()=>{
  await new DurableJobService(db).claim('worker');
  assert.match(statements[0],/status='queued' AND scheduled_at<=now\(\)/);
  assert.doesNotMatch(statements[0],/status='leased' AND lease_until<now\(\)/);
- assert.ok(statements.some(q=>q.includes("job_type='flow.execute'")&&q.includes("FLOW_RECONCILIATION_REQUIRED")));
+ assert.ok(statements.some(q=>q.includes("status='leased' AND lease_until<now()")&&q.includes("JOB_RECONCILIATION_REQUIRED")));
+ assert.equal(statements.some(q=>q.includes("SET status='queued'")&&q.includes("lease_until<now()")),false);
+});
+
+test('unknown generic provider failure remains terminal until operator reconciliation',async()=>{
+ let sql='';
+ const db={query:async(q:string)=>{sql=q;return {rowCount:1};}} as unknown as SqlPersistence;
+ await new DurableJobService(db).fail('tenant','job','worker','JOB_EXECUTION_FAILED');
+ assert.match(sql,/status='failed'/);
+ assert.doesNotMatch(sql,/THEN 'queued'/);
 });
