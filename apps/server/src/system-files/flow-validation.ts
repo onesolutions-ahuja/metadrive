@@ -115,6 +115,19 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     errors.push('Assignments to $Record fields require a valid before-save Record-Triggered Flow target');
    if(target&&properties.operator!==undefined&&properties.operator!=='Assign')
     errors.push('Before-save $Record assignments support only the Assign operator');
+   const resources=Array.isArray(data.resources)?data.resources as Array<Record<string,unknown>>:[];
+   const resource=resources.find(item=>item.name===variable);
+   const collection=resource?.type==='Record Collection'||resource?.isCollection===true;
+   const validOperators=collection
+    ?['Assign','Add','Add At Beginning','Add At End','Remove','Remove All']
+    :['Assign','Add','Subtract','Multiply','Divide','Add At Beginning','Add At End','Remove All'];
+   if(!validOperators.includes(String(properties.operator??'Assign')))
+    errors.push('Assignment operator is incompatible with the selected Flow resource');
+   if(!target&&!/^[A-Za-z][A-Za-z0-9_]*$/.test(variable))
+    errors.push('Assignment requires a valid variable or Record field');
+   if(collection&&properties.operator!=='Remove All'
+    &&(typeof properties.value!=='string'||!/^\{![A-Za-z_$][A-Za-z0-9_$.]*\}$|^@[A-Za-z_$][A-Za-z0-9_$.]*$/.test(properties.value)))
+    errors.push('Record collection Assignment requires a record or collection reference');
   }
   if(type==='Custom Error'){
    if(data.flowType!=='Record-Triggered Flow')
