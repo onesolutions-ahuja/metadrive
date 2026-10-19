@@ -256,7 +256,13 @@ export function createSystemServer(db:SqlPersistence) {
        FROM md_outbound_execution_receipts
        WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100`,
       [actor.tenant_id,req.params.id]);
-    res.json({job:rows[0],history,executions,receipts});
+    const {rows:providerDecisions}=await db.query(
+      `SELECT a.id,a.receipt_id,a.actor_id,a.decision,a.evidence_reference,a.created_at
+       FROM md_outbound_receipt_audit a
+       JOIN md_outbound_execution_receipts r ON r.tenant_id=a.tenant_id AND r.id=a.receipt_id
+       WHERE a.tenant_id=$1 AND r.job_id=$2 ORDER BY a.created_at DESC,a.id DESC LIMIT 100`,
+      [actor.tenant_id,req.params.id]);
+    res.json({job:rows[0],history,executions,receipts,providerDecisions});
   }));
   app.post('/api/system/jobs/:id/decision',route(async(req,res)=>{
     const actor=req.actor!;
@@ -268,6 +274,25 @@ export function createSystemServer(db:SqlPersistence) {
     }catch(error){
       if(error instanceof Error && error.message==='Failed job not found'){
         res.status(404).json({error:'Failed job not found'});return;
+      }
+      throw error;
+    }
+    res.status(204).end();
+  }));
+
+  app.post('/api/system/receipts/:id/decision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const decision=req.body?.decision,evidence=req.body?.evidenceReference;
+    if(!validJobId(req.params.id)||
+      !['confirmed_not_sent','provider_idempotent_retry','acknowledge'].includes(decision)||
+      typeof evidence!=='string'||evidence.trim().length<4||evidence.length>256)
+      {res.status(400).json({error:'Invalid provider reconciliation evidence'});return;}
+    try{
+      await durableJobs.providerDecision(actor.tenant_id,req.params.id,actor.user_id,decision,evidence);
+    }catch(error){
+      if(error instanceof Error&&error.message==='Reconciliation receipt not found'){
+        res.status(404).json({error:'Uncertain receipt not found'});return;
       }
       throw error;
     }
