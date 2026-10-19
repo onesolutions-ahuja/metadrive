@@ -57,7 +57,7 @@ export class DashboardSubscriptionService {
  private async dashboard(actor:Actor,api:string){
   if(!name.test(api))throw Error('Invalid dashboard');
   const available=await this.definitions.list(actor.tenant_id,actor.user_id,'dashboards');
-  const dashboard=available.find(x=>x.apiName===api);
+  const dashboard=available.find(x=>x.apiName===api) as (Record<string,unknown> & {apiName:string}) | undefined;
   if(!dashboard||dashboard.status!=='Deployed')throw Error('Dashboard unavailable');
   if(dashboard.ownerUserId!==actor.user_id&&dashboard.visibility!=='All Users'&&
    !(Array.isArray(dashboard.sharedUserIds)&&dashboard.sharedUserIds.includes(actor.user_id)))
