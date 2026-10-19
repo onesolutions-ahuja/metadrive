@@ -122,7 +122,7 @@ export function renderSetupShell(ctx: any) {
                           || (workspace === 'named-credentials' && item === 'Named Credentials')
                                                     || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
-                          || (workspace === 'flow-logs' && item === 'Failed Flow Logs')) ? 'tree-item selected' : 'tree-item'}
+                          || (workspace === 'flow-logs' && item === 'Flow History')) ? 'tree-item selected' : 'tree-item'}
                         aria-label={item === "Tenant Management" && !canManagePlatformTenants ? "Open My Tenant Management" : `Open ${item}`}
                         title={item}
                         data-short-label={item.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')}
