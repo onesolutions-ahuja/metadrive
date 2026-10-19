@@ -299,6 +299,17 @@ export function createSystemServer(db:SqlPersistence) {
        !['Approved','Rejected'].includes(decision)||typeof comments!=='string'||comments.length>4000)
       throw new Error('Invalid approval decision');
     const updated=await db.transaction(async client=>{
+      // Serialize all decisions in a stage BEFORE locking individual approval rows.
+      // Otherwise concurrent approvers can deadlock with outstanding-item cancellation.
+      const {rows:pending}=await client.query<{group_id:string}>(`
+        SELECT group_id FROM md_approval_requests
+        WHERE tenant_id=$1 AND id=$2 AND approver_id=$3 AND status='Pending'
+      `,[actor.tenant_id,req.params.id,actor.user_id]);
+      if(!pending[0])return null;
+      await client.query(`
+        SELECT 1 FROM md_flow_approval_stages
+        WHERE tenant_id=$1 AND group_id=$2 FOR UPDATE
+      `,[actor.tenant_id,pending[0].group_id]);
       const {rows}=await client.query<ApprovalSqlRow>(
         "UPDATE md_approval_requests SET status=$4,decision_comments=$5,decided_at=now(),decided_by=$2 WHERE tenant_id=$1 AND approver_id=$2 AND id=$3 AND status='Pending' RETURNING *",
         [actor.tenant_id,actor.user_id,req.params.id,decision,comments]);
