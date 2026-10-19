@@ -17,7 +17,7 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
   const records=new RecordEngine(db,rbac);
   const credentials=new NamedCredentialService(db,rbac);
   const flows=new FlowRuntime(db,rbac,records,
-   (tenant,user,config,vars,key)=>credentials.callout(tenant,user,config,vars,key));
+   (tenant,user,config,vars,key,context)=>credentials.callout(tenant,user,config,vars,key,context));
   const service=new DurableJobService(db);
   let authorize:((job:ClaimedJob)=>Promise<boolean>)|undefined;
   const worker=new DurableJobWorker(service,job=>authorize?.(job)??Promise.resolve(false),
