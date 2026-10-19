@@ -1,3 +1,4 @@
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {PoolClient} from 'pg';
@@ -475,7 +476,7 @@ test('record-triggered Flow executions are capped per record operation',async()=
 });
 
 test('Flow validation accepts supported before-save and after-save trigger paths',async()=>{
- const runtime=new FlowRuntime({} as SqlPersistence,{require:async()=>{}} as unknown as RbacEngine);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),{require:async()=>{}} as unknown as RbacEngine);
  const draft={apiName:'AccountTrigger',flowType:'Record-Triggered Flow',
   elements:[
    {id:1,type:'Start',label:'Start',config:{
@@ -504,7 +505,7 @@ test('Flow validation accepts supported before-save and after-save trigger paths
 });
 
 test('Flow validation accepts bounded record mutation sources supported by runtime',async()=>{
- const runtime=new FlowRuntime({} as SqlPersistence,{require:async()=>{}} as unknown as RbacEngine);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),{require:async()=>{}} as unknown as RbacEngine);
  const createDraft=(type:string,config:Record<string,unknown>)=>({
   apiName:'MutationFlow',flowType:'Autolaunched Flow',
   elements:[
@@ -558,7 +559,7 @@ test('Flow validation accepts bounded record mutation sources supported by runti
 });
 
 test('Flow validation accepts durable Wait elements and rejects unsafe configurations',async()=>{
- const runtime=new FlowRuntime({} as SqlPersistence,{require:async()=>{}} as unknown as RbacEngine);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),{require:async()=>{}} as unknown as RbacEngine);
  const draft=(config:Record<string,unknown>)=>({
   apiName:'WaitFlow',flowType:'Autolaunched Flow',
   elements:[
