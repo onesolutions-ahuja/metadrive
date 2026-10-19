@@ -7,7 +7,8 @@ import type {SystemDefinitionService} from '../../src/system-files/system-defini
 import {DashboardSnapshotService} from '../../src/system-support/dashboard-snapshot-service.js';
 
 test('previously saved snapshot is withheld after row access is revoked',async()=>{
- const id='123e4567-e89b-42d3-a456-426614174000',calls:unknown[][]=[];
+ const id='123e4567-e89b-42d3-a456-426614174000';
+ const calls:unknown[][]=[];
  const definitions={list:async()=>[{
   apiName:'Sales',status:'Deployed',visibility:'All Users',components:[],filters:[]}]}
   as unknown as SystemDefinitionService;
