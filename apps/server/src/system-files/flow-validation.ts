@@ -193,14 +193,16 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    if(typeof properties.object==='string'&&/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.object)){
     await rbac.require(tenantId,userId,'SystemDefinition:platform-events','read');
     if(db){
-     const {rows:events}=await db.query<{properties:unknown}>(`
-      SELECT properties FROM md_system_definitions
-      WHERE tenant_id=$1 AND kind='platform-events' AND api_name=$2 AND enabled=true`,
+     const {rows:events}=await db.query<{api_name:string;field_api:string|null}>(`
+      SELECT event.api_name,field.field_api FROM md_system_definitions AS event
+      LEFT JOIN md_platform_event_fields AS field
+       ON field.tenant_id=event.tenant_id AND field.event_api_name=event.api_name
+      WHERE event.tenant_id=$1 AND event.kind='platform-events'
+       AND event.api_name=$2 AND event.enabled=true
+      ORDER BY field.sort_order,field.field_api`,
       [tenantId,properties.object]);
-     const definition=events[0]?.properties as Record<string,unknown>|undefined;
-     const fieldNames=new Set(Array.isArray(definition?.fields)?definition.fields
-      .map(field=>field&&typeof field==='object'&&!Array.isArray(field)
-       ?String((field as Record<string,unknown>).apiName??''):''):[]);
+     const fieldNames=new Set(events.map(event=>event.field_api)
+      .filter((name):name is string=>typeof name==='string'));
      if(!events.length)errors.push('Platform Event-Triggered Flow references an unavailable event');
      for(const condition of Array.isArray(properties.entryConditions)?properties.entryConditions:[]){
       const field=condition&&typeof condition==='object'&&!Array.isArray(condition)
