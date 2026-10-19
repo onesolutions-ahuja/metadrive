@@ -859,8 +859,17 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json({components:await library.list(actor.tenant_id,actor.user_id),
-      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')});
+    const [components,registered,canManage]=await Promise.all([
+      library.list(actor.tenant_id,actor.user_id),
+      db.query<{api_name:string;renderer_key:string}>(`SELECT api_name,renderer_key
+        FROM md_component_definitions
+        WHERE tenant_id=$1 AND enabled=true AND renderer_key='one-bundled:' || api_name
+        ORDER BY api_name`,[actor.tenant_id]),
+      rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
+    ]);
+    res.json({components,registered:registered.rows.map(row=>({
+      apiName:row.api_name,rendererKey:row.renderer_key
+    })),canManage});
   }));
   app.post('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
