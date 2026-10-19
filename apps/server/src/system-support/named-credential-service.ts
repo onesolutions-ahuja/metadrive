@@ -9,6 +9,8 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
+import {prepareFlowHttpRequest} from '../system-files/flow-http-mapping.js';
+import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -224,11 +226,13 @@ export class NamedCredentialService {
    config:Record<string,unknown>,variables:Record<string,CalloutScalar>){
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
-  const credentialId=config.namedCredentialId;
-  const method=String(config.method??'GET').toUpperCase();
-  const path=config.path;
-  const headers=typeof config.headers==='string'?config.headers:'';
-  const body=typeof config.body==='string'&&config.body.trim()?config.body:null;
+  const resolvedConfig=await resolveFlowIntegrationCallout(client,this.rbac,tenantId,userId,config);
+  const prepared=prepareFlowHttpRequest(resolvedConfig,variables);
+  const credentialId=resolvedConfig.namedCredentialId;
+  const method=String(resolvedConfig.method??'GET').toUpperCase();
+  const path=prepared.path;
+  const headers=typeof resolvedConfig.headers==='string'?resolvedConfig.headers:'';
+  const body=prepared.body??null;
   const maxAttempts=Number(config.maxAttempts??5);
   const idempotencyKey=typeof config.idempotencyKey==='string'
    ?config.idempotencyKey.trim().replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_match,name:string)=>{
@@ -607,6 +611,8 @@ export class NamedCredentialService {
    variables:Record<string,string|number|boolean|null>,idempotencyKey:string){
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
+  config=await resolveFlowIntegrationCallout(this.db,this.rbac,tenantId,userId,config);
+  const prepared=prepareFlowHttpRequest(config,variables);
   if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
@@ -629,7 +635,7 @@ export class NamedCredentialService {
   const base=new URL(item.base_url);
   if(base.protocol!=='https:'||base.username||base.password||base.hash||base.port&&base.port!=='443')
     throw new Error('HTTP Callouts require a standard HTTPS origin');
-  const destination=new URL(substitute(config.path),base.href.endsWith('/')?base.href:base.href+'/');
+  const destination=new URL(prepared.path,base.href.endsWith('/')?base.href:base.href+'/');
   if(destination.origin!==base.origin||destination.username||destination.password||destination.hash)
     throw new Error('HTTP Callout destination is outside Named Credential');
   if(isIP(destination.hostname)||destination.hostname==='localhost'||destination.hostname.endsWith('.local'))
@@ -719,9 +725,7 @@ export class NamedCredentialService {
    header.Authorization='Bearer '+result.access_token;
   }
   if(method!=='GET')header['Idempotency-Key']=idempotencyKey;
-  if(typeof config.queryParameters==='string'&&config.queryParameters.trim())
-    throw new Error('Structured query parameters must be configured through supported mappings');
-  const body=typeof config.body==='string'&&config.body.trim()?substitute(config.body):undefined;
+  const body=prepared.body;
   if(body&&Buffer.byteLength(body)>32768)throw new Error('HTTP Callout body too large');
   if(body)header['Content-Type']='application/json';
   const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
