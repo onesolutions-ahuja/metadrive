@@ -116,6 +116,31 @@ export class DurableJobService {
   if(!rowCount)throw new Error('Failed job not found');
  }
 
+ /** Audited operator decision: decision and history are committed atomically. */
+ async operatorDecision(tenantId:string,id:string,actorId:string,decision:'retry'|'acknowledge'|'cancel'){
+  if(!['retry','acknowledge','cancel'].includes(decision))throw new Error('Invalid job decision');
+  const {rows}=await this.db.query<{job_id:string}>(`
+   WITH changed AS (
+    UPDATE md_durable_jobs SET
+     status=CASE WHEN $4='retry' THEN 'queued' ELSE 'cancelled' END,
+     attempt=CASE WHEN $4='retry' THEN 0 ELSE attempt END,
+     scheduled_at=CASE WHEN $4='retry' THEN now() ELSE scheduled_at END,
+     lease_owner=NULL,lease_until=NULL,
+     error_code=CASE WHEN $4='retry' THEN NULL ELSE error_code END,
+     updated_at=now()
+    WHERE tenant_id=$1 AND id=$2 AND status='failed'
+     AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
+    RETURNING tenant_id,id
+   ), audited AS (
+    INSERT INTO md_durable_job_audit(tenant_id,job_id,actor_id,decision)
+    SELECT tenant_id,id,$3,$4 FROM changed
+    RETURNING job_id
+   )
+   SELECT job_id FROM audited
+  `,[tenantId,id,actorId,decision]);
+  if(!rows[0])throw new Error('Failed job not found');
+ }
+
  async cancelApp(tenantId:string,appApiName:string) {
   return this.db.query(`
    UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,lease_until=NULL,updated_at=now()
