@@ -9,7 +9,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 
 type CalloutJob={
- id:string;tenant_id:string;user_id:string;credential_id:string;method:string;
+ id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
  path_ciphertext:Buffer;headers_ciphertext:Buffer;body_ciphertext:Buffer|null;
  idempotency_key_ciphertext:Buffer|null;max_attempts:number;timeout_ms:number;attempt_count:number
 };
@@ -281,7 +281,7 @@ export class NamedCredentialService {
      UPDATE md_http_callout_jobs j
      SET status='processing',attempt_count=j.attempt_count+1,claimed_at=now()
      FROM candidate c WHERE j.id=c.id
-     RETURNING j.id,j.tenant_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
+     RETURNING j.id,j.tenant_id,j.run_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
      j.headers_ciphertext,j.body_ciphertext,j.idempotency_key_ciphertext,j.max_attempts,
      j.timeout_ms,j.attempt_count
     `);
@@ -289,6 +289,17 @@ export class NamedCredentialService {
    });
    if(!job)return false;
    try{
+    // Validate current tenant, actor and published Flow before any remote side effect.
+    const {rows:eligible}=await this.db.query(`
+      SELECT 1 FROM md_flow_runs r
+      JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+      JOIN md_users u ON u.tenant_id=r.tenant_id AND u.id=r.started_by
+      JOIN md_tenants t ON t.id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.id=$2 AND r.started_by=$3
+        AND f.active=true AND f.archived=false
+        AND u.enabled=true AND t.status='ACTIVE'`,
+      [job.tenant_id,job.run_id,job.user_id]);
+    if(!eligible.length)throw new Error('Queued HTTP Callout eligibility changed');
     const {rows}=await this.db.query<CalloutValue>(`
      SELECT api_name,value_ciphertext,data_type FROM md_http_callout_job_values
      WHERE tenant_id=$1 AND job_id=$2
