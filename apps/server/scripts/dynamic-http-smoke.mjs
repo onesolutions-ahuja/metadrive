@@ -47,6 +47,57 @@ try{
  assert.equal(login.status,200,JSON.stringify(login));
  const token=login.body?.access_token;
  assert.equal(typeof token,'string');
+
+ // Durable job administration must honor HTTP authentication, central RBAC and tenant scoping.
+ assert.equal((await http('/system/jobs')).status,401);
+ const operatorList=await http('/system/jobs',{token});
+ assert.equal(operatorList.status,200,JSON.stringify(operatorList));
+ assert.ok(Array.isArray(operatorList.body?.jobs));
+ const {rows:jobRows}=await db.query(
+  "SELECT id FROM md_durable_jobs WHERE tenant_id=$1 AND job_type='ci.concurrent' LIMIT 1",[tenantId]);
+ const ciJobId=jobRows[0]?.id;
+ assert.ok(ciJobId,'PostgreSQL durable-job fixture is missing');
+ const operatorDetail=await http('/system/jobs/'+ciJobId,{token});
+ assert.equal(operatorDetail.status,200,JSON.stringify(operatorDetail));
+ assert.ok(operatorDetail.body.executions?.some(x=>x.event_type==='claimed'));
+ assert.equal((await http('/system/jobs/'+ciJobId+'/decision',{
+  method:'POST',token,body:{decision:'retry'}})).status,404,'A completed job must not be requeued');
+ assert.equal((await http('/system/jobs/'+ciJobId+'/decision',{
+  method:'POST',token,body:{decision:'unsafe'}})).status,400);
+
+ const {rows:restrictedRows}=await db.query(
+  "INSERT INTO md_users(tenant_id,email,password_hash) VALUES($1,$2,$3) RETURNING id",
+  [tenantId,'ci-restricted@example.invalid',await auth.hashPassword('ci-restricted-password-123')]);
+ const restrictedSession=await auth.issuePasswordSession(tenantId,restrictedRows[0].id);
+ const restrictedToken=restrictedSession.accessToken;
+ assert.equal((await http('/system/jobs',{token:restrictedToken})).status,403);
+ assert.equal((await http('/system/jobs/'+ciJobId,{token:restrictedToken})).status,403);
+ assert.equal((await http('/system/jobs/'+ciJobId+'/decision',{
+  method:'POST',token:restrictedToken,body:{decision:'retry'}})).status,403);
+
+ const {rows:foreignRows}=await db.query("SELECT id FROM md_tenants WHERE slug='ci-durable-tenant-b'");
+ const foreignTenant=foreignRows[0]?.id;
+ assert.ok(foreignTenant);
+ const {rows:foreignUsers}=await db.query(
+  "INSERT INTO md_users(tenant_id,email,password_hash) VALUES($1,$2,$3) RETURNING id",
+  [foreignTenant,'ci-operator-b@example.invalid',await auth.hashPassword('ci-operator-b-password-123')]);
+ const foreignId=foreignUsers[0].id;
+ const {rows:foreignSets}=await db.query(
+  "INSERT INTO md_permission_sets(tenant_id,api_name) VALUES($1,'CI_JOB_ADMIN') RETURNING id",
+  [foreignTenant]);
+ await db.query(
+  'INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id) VALUES($1,$2,$3)',
+  [foreignTenant,foreignId,foreignSets[0].id]);
+ await db.query(
+  "INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,'Security','manage','allow')",
+  [foreignTenant,foreignSets[0].id]);
+ const foreignSession=await auth.issuePasswordSession(foreignTenant,foreignId);
+ const foreignToken=foreignSession.accessToken;
+ assert.equal((await http('/system/jobs/'+ciJobId,{token:foreignToken})).status,404);
+ const foreignList=await http('/system/jobs',{token:foreignToken});
+ assert.equal(foreignList.status,200);
+ assert.equal(foreignList.body.jobs.length,0,'Tenant B must not see Tenant A executions');
+
  const noAuth=await http('/metadata/dashboards/LiveAudit/data/AuditItem__c');
  assert.equal(noAuth.status,401,'Authenticated-only dynamic API returned unexpected status');
 
