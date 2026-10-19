@@ -3,6 +3,7 @@ import type {SqlExecutor,SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
+import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 
 export async function flowAppIsEntitled(db:SqlExecutor,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
@@ -114,6 +115,19 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    continue;
   }
   const properties=config as Record<string,unknown>;
+  if(type==='Screen'&&Array.isArray(properties.fields)){
+    try{
+      hydrateFlowScreenChoices({
+        id:node.id as number,type:'Screen',label:String(node.label??'Screen'),
+        config:properties
+      },Array.isArray(data.resources)?data.resources.filter((item):item is
+        {name:string;type:string;value?:unknown}=>
+          !!item&&typeof item==='object'&&!Array.isArray(item)
+          &&typeof (item as Record<string,unknown>).name==='string'
+          &&typeof (item as Record<string,unknown>).type==='string') as
+        Array<{name:string;type:string;value?:unknown}>:[]);
+    }catch(error){errors.push(error instanceof Error?error.message:'Invalid Choice Set');}
+  }
   if(type==='Assignment'){
    const operator=String(properties.operator??'Assign');
    if(!['Assign','Add','Subtract','Multiply','Divide','Add At Beginning','Add At End',
