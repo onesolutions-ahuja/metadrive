@@ -57,12 +57,19 @@ export class DashboardSubscriptionService {
  private async dashboard(actor:Actor,api:string){
   if(!name.test(api))throw Error('Invalid dashboard');
   const available=await this.definitions.list(actor.tenant_id,actor.user_id,'dashboards');
-  const dashboard=available.find(x=>x.apiName===api);
+  const raw=available.find(x=>x.apiName===api);
+  // SystemDefinition properties are validated JSON metadata. Narrow optional
+  // dashboard-sharing properties before enforcing access; fail closed if absent.
+  const dashboard=raw as (typeof raw & {status?:unknown;ownerUserId?:unknown;
+   visibility?:unknown;sharedUserIds?:unknown})|undefined;
   if(!dashboard||dashboard.status!=='Deployed')throw Error('Dashboard unavailable');
-  if(dashboard.ownerUserId!==actor.user_id&&dashboard.visibility!=='All Users'&&
-   !(Array.isArray(dashboard.sharedUserIds)&&dashboard.sharedUserIds.includes(actor.user_id)))
-    throw Error('Permission denied');
-  return dashboard;
+  const ownerUserId=typeof dashboard.ownerUserId==='string'?dashboard.ownerUserId:'';
+  const visibility=dashboard.visibility==='All Users'?'All Users':'Private';
+  const sharedUserIds=Array.isArray(dashboard.sharedUserIds)
+   ?dashboard.sharedUserIds.filter((id:unknown):id is string=>typeof id==='string'):[];
+  if(ownerUserId!==actor.user_id&&visibility!=='All Users'&&
+   !sharedUserIds.includes(actor.user_id))throw Error('Permission denied');
+  return {ownerUserId,visibility,sharedUserIds};
  }
  private validate(value:unknown):Input{
   if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid dashboard subscription');
