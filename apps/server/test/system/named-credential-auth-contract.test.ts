@@ -13,7 +13,7 @@ test('invalid OAuth credentials cannot be saved as executable Named Credentials'
   headerName:'X-API-Key',authType:'OAuth Client Credentials'};
  for(const authType of ['OAuth Authorization Code']){
   await assert.rejects(service.create('tenant','user',{...request,authType,configuration:{invalid:42}}),/Invalid credential/);
-  await assert.rejects(service.update('tenant','user','123e4567-e89b-42d3-a456-426614174000',{...request,authType}),/Invalid credential/);
+  await assert.rejects(service.update('tenant','user','123e4567-e89b-42d3-a456-426614174000',{...request,authType,configuration:{invalid:42}}),/Invalid credential/);
  }
  assert.equal(writes,0);
 });
