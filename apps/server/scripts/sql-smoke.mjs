@@ -224,7 +224,14 @@ try{
  const [workerA,workerB]=await Promise.all([durable.claim('ci-worker-a',1),durable.claim('ci-worker-b',1)]);
  assert.equal(workerA.length+workerB.length,1,'two workers must not claim the same job');
  const winner=workerA.length?workerA[0]&&'ci-worker-a':'ci-worker-b';
+ await durable.renewLease(tenantId,concurrencyId,winner);
+ await assert.rejects(
+  ()=>durable.renewLease(tenantId,concurrencyId,'ci-other-worker'),
+  /Job lease missing or expired/);
  await durable.complete(tenantId,concurrencyId,winner);
+ await assert.rejects(
+  ()=>durable.renewLease(tenantId,concurrencyId,winner),
+  /Job lease missing or expired/);
  assert.equal((await durable.inspect(tenantId,concurrencyId)).status,'completed');
  const {rows:completeHistory}=await db.query(
   'SELECT event_type FROM md_durable_job_history WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at,id',
