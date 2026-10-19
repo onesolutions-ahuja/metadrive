@@ -20,7 +20,7 @@ export const flowCreateOptions=(catalog:FlowCapabilityCatalog|null)=>
 export function flowElementAvailable(catalog:FlowCapabilityCatalog|null,type:string,
   flowType:string,runWhen:unknown):boolean {
   const element=catalog?.elements.find(candidate=>candidate.type===type);
-  return Boolean(element?.builderEnabled&&element.builderFlowTypes.includes(flowType)
+  return Boolean(element?.builderFlowTypes.includes(flowType)
     &&!(flowType==='Record-Triggered Flow'&&runWhen==='before-save'
       &&!element.beforeSaveAllowed));
 }
