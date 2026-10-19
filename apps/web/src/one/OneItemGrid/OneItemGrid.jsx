@@ -127,14 +127,18 @@ function ItemGrid({ p, rows }) {
               typeof image === "string" && /^https:\/\//i.test(image);
           const name = view(r?.[titleField] ?? ""),
             price = r?.[priceField];
+          // Existing till pages preserve their default add-to-basket behaviour.
+          // Other app pages can select a record and launch metadata actions first.
+          const selectionMode = p.itemSelectMode === "action"
+            ? "action" : p.itemSelectMode === "filter" ? "filter" : "cart";
           return (
             <button
               className="one-item one-item--interactive md-product-card"
               key={r.Id ?? r.id ?? i}
               type="button"
-              aria-label={"Add " + name}
+              aria-label={(selectionMode === "cart" ? "Add " : "Select ") + name}
               onClick={() => {
-                if (
+                if (selectionMode === "cart" &&
                   p.cartTargetKey &&
                   p.pageSessionKey &&
                   typeof window !== "undefined"
@@ -148,6 +152,19 @@ function ItemGrid({ p, rows }) {
                       },
                     }),
                   );
+                if (selectionMode === "filter" && p.pageSessionKey &&
+                    typeof window !== "undefined") {
+                  const key = String(p.itemSelectionFilterKey || "selectedItem");
+                  if (/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
+                    window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected", {
+                      detail: {
+                        pageSessionKey: p.pageSessionKey, filterKey: key,
+                        value: String(r.Id ?? r.id ?? ""),
+                        recordId: String(r.Id ?? r.id ?? ""),
+                        label: name, sourceObjectApiName: p.objectApiName || ""
+                      }
+                    }));
+                }
                 if (p.actionFlows?.itemSelect) fire(p, "itemSelect", r);
               }}
             >
