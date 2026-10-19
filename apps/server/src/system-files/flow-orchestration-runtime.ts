@@ -29,7 +29,7 @@ export async function finishFlowOrchestrationDecision(client:PoolClient,tenantId
  if(!stage||stage.status!=='waiting')return null;
  const {rows:decisions}=await client.query<{status:string}>(`
   SELECT status FROM md_approval_requests WHERE tenant_id=$1 AND group_id=$2
-  ORDER BY id FOR SHARE
+  ORDER BY id
  `,[tenantId,groupId]);
  const outcome=resolveFlowApprovalOutcome(stage.rule,decisions.map(item=>item.status));
  if(!outcome)return null;
