@@ -62,6 +62,24 @@ test('Flow formulas support bounded text, predicate, and picklist functions',()=
   assert.doesNotThrow(()=>validateFlowFormula('TODAY()'));
 });
 
+test('collection formulas validate choice counts and totals without application logic',()=>{
+  const rows=[{Id:'first',ExtraMinor:0},{Id:'second',ExtraMinor:150}];
+  const resolve=(name:string)=>name==='Selections'?rows:undefined;
+  assert.equal(evaluateFlowFormula('COLLECTION_COUNT({!Selections})',resolve),2);
+  assert.equal(evaluateFlowFormula('COLLECTION_SUM({!Selections}, "ExtraMinor")',resolve),150);
+  assert.equal(inferFlowFormulaType('COLLECTION_COUNT({!Selections})',
+    name=>name==='Selections'?'Collection':null),'Number');
+  assert.equal(inferFlowFormulaType('COLLECTION_SUM({!Selections}, "ExtraMinor")',
+    name=>name==='Selections'?'Collection':null),'Number');
+  assert.doesNotThrow(()=>validateFlowFormula('COLLECTION_COUNT({!Selections}) = 2'));
+  assert.throws(()=>evaluateFlowFormula('COLLECTION_COUNT({!Missing})',resolve),/record collection/);
+  assert.throws(()=>evaluateFlowFormula('COLLECTION_SUM({!Selections}, "NotMapped")',resolve),/unavailable/);
+  assert.throws(()=>evaluateFlowFormula('COLLECTION_SUM({!Selections}, "Id")',resolve),/finite numeric/);
+  assert.throws(()=>evaluateFlowFormula('COLLECTION_SUM({!Selections}, "__proto__")',resolve),/valid numeric field/);
+  assert.throws(()=>evaluateFlowFormula('COLLECTION_COUNT({!Oversize})',
+    name=>name==='Oversize'?Array.from({length:201},()=>({Id:'x'})):null),/at most 200/);
+});
+
 test('formula DISTANCE calculates miles and kilometers between geolocations',()=>{
   const expression='DISTANCE(GEOLOCATION(0, 0), GEOLOCATION(0, 1), "km")';
   const distance=evaluateFlowFormula(expression,()=>null);
