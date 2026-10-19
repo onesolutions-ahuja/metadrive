@@ -1,6 +1,6 @@
 # MetaDrive SQL runtime architecture
 
-The approved Core is exactly the following thirty-nine modules in `apps/server/src/system-files/`:
+The approved Core is exactly the following forty modules in `apps/server/src/system-files/`:
 `sql-persistence.ts`, `object-definition.ts`, `authentication.ts`,
 `rbac-engine.ts`, `record-engine.ts`, `component-runtime.ts`,
 `page-runtime.ts`, `flow-runtime.ts`, `app-runtime.ts`,
@@ -14,7 +14,7 @@ The approved Core is exactly the following thirty-nine modules in `apps/server/s
 `flow-interview-persistence.ts`, `flow-wait-runtime.ts`,
 `flow-action-runtime.ts`, `flow-subscription-runtime.ts`,
 `flow-scalar-runtime.ts`, `flow-error-runtime.ts`, `auto-number-format.ts`,
-`flow-assignment-runtime.ts`,
+`flow-assignment-runtime.ts`, `flow-screen-choice-runtime.ts`,
 `platform-event-runtime.ts`,
 `field-type-migration.ts`, `encrypted-field.ts`, and
 `object-metadata-history.ts`.

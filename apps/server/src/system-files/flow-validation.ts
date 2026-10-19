@@ -3,6 +3,7 @@ import type {SqlExecutor,SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
+import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 
 export async function flowAppIsEntitled(db:SqlExecutor,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
@@ -31,7 +32,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   errors.push('Flow app identity is invalid');
  const decisionOperators=new Set([
   'equals','notequals','greaterthan','greaterthanorequalto','lessthan','lessthanorequalto',
-  'isnull','isnotnull','contains','startswith','ischanged','wasset'
+  'isnull','isnotnull','contains','startswith','endswith','doesnotcontain','notcontains','ischanged','wasset'
  ]);
  const normalizeOperator=(value:unknown)=>String(value??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
  const validConditionList=(value:unknown,recordTrigger:boolean,location:string,
@@ -103,8 +104,9 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   if(capabilities?!capability?.allowedFlowTypes.includes(String(data.flowType)):!legacyElementAllowed)
    errors.push('Unsupported SQL Flow element: '+type);
   if(beforeSave&&!(capabilities?capability?.beforeSaveAllowed:
-    ['Start','Assignment','Decision','Custom Error','End'].includes(type)))
-   errors.push('Before-save Record-Triggered Flows support only Assignment and Decision elements');
+    ['Start','Assignment','Decision','Custom Error','End','Get Records','Loop',
+      'Collection Filter','Collection Sort','Transform'].includes(type)))
+   errors.push('Before-save Record-Triggered Flows support only read-only data elements, Assignment and Decision');
   if(type==='Wait'&&beforeSave)
    errors.push('Wait elements are not supported in before-save Record-Triggered Flows');
   const config=node.config;
@@ -113,6 +115,16 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    continue;
   }
   const properties=config as Record<string,unknown>;
+  if(type==='Screen'&&Array.isArray(properties.fields)){
+    try{
+      const choices=Array.isArray(data.resources)?data.resources.filter(item=>item
+        &&typeof item==='object'&&!Array.isArray(item)) as Array<{
+         name:string;type:string;value?:unknown
+        }>:[];
+      hydrateFlowScreenChoices({id:node.id as number,type:'Screen',
+        label:String(node.label??'Screen'),config:properties},choices);
+    }catch(error){errors.push(error instanceof Error?error.message:'Invalid Screen Choice Set');}
+  }
   if(type==='Assignment'){
    const variable=String(properties.variable??'');
    const target=/^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(variable);
@@ -185,8 +197,8 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     try{resolveFlowLocalDateTime(properties.startDate,properties.startTime,properties.timeZone);}
     catch{errors.push('Schedule-Triggered Flow local start date and time are invalid');}
    }
-   if(!['Once','Daily','Weekly'].includes(String(properties.frequency)))
-   errors.push('Schedule-Triggered Flow frequency must be Once, Daily or Weekly');
+   if(!['Once','Daily','Weekly','Monthly'].includes(String(properties.frequency)))
+   errors.push('Schedule-Triggered Flow frequency must be Once, Daily, Weekly or Monthly');
    validConditionList(properties.entryConditions,false,'Schedule-Triggered Flow entry conditions',
    /^[A-Za-z][A-Za-z0-9_]*$/);
   }

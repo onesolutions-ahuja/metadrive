@@ -1,4 +1,5 @@
 import {resolveFlowLocalDateTime} from './flow-wait-runtime.js';
+import {flowChoiceValues} from './flow-screen-choice-runtime.js';
 
 type Token={kind:'number'|'string'|'identifier'|'reference'|'operator'|'punctuation';value:string};
 type Expression=
@@ -828,6 +829,11 @@ export function validateFlowResources(resources:unknown,recordTriggered=false):s
     if(typeof item.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(item.name)||names.has(item.name))
       errors.push('Flow resource names must be unique valid identifiers');
     else names.add(item.name);
+    if(item.type==='Choice Set'){
+      try{flowChoiceValues(item.value);}
+      catch(error){errors.push('Invalid Flow Choice Set '+String(item.name)+': '
+        +(error instanceof Error?error.message:'Invalid choices'));}
+    }
     if(item.type==='Formula'){
       try{
         const expression=String(item.value??'');
