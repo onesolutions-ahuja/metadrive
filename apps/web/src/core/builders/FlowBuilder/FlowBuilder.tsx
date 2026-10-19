@@ -939,6 +939,16 @@ export default function FlowBuilder({
             <label className="form-label">Validation Pattern<input className="form-control" value={displayValue(field.pattern)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, pattern: event.target.value || undefined } : item))} /></label>
             <label className="form-label">Validation Message<input className="form-control" maxLength={255} value={displayValue(field.validationMessage)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, validationMessage: event.target.value || undefined } : item))} /></label>
           </>}
+          {field.type === 'Picklist' && <label className="form-label">Reusable Choice Set
+            <select className="form-control" aria-label="Picklist Choice Set"
+              value={displayValue(field.choiceSetResource)}
+              onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, choiceSetResource: event.target.value } : item))}>
+              <option value="">Use choices defined below</option>
+              {flow.resources.filter(resource => resource.type === 'Choice Set').map(resource =>
+                <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+            </select>
+          </label>}
           {['Picklist', 'Multi-Select Picklist'].includes(String(field.type)) && <label className="form-label">Choices (one per line)<textarea className="form-control" rows={3} value={Array.isArray(field.choices) ? field.choices.filter((choice): choice is string => typeof choice === 'string').join('\n') : ''} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, choices: event.target.value.split(/\r?\n/).map((choice) => choice.trim()).filter(Boolean) } : item))} /></label>}
           {['Picklist', 'Multi-Select Picklist'].includes(String(field.type)) && <label className="form-label">Display As<select className="form-control" value={displayValue(field.displayAs) || (field.type === 'Picklist' ? 'Dropdown' : 'Multi-Select Dropdown')} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, displayAs: event.target.value } : item))}>{(field.type === 'Picklist' ? ['Dropdown', 'Radio Buttons'] : ['Multi-Select Dropdown', 'Checkbox Group']).map((mode) => <option key={mode}>{mode}</option>)}</select></label>}
           {!['Display Text', 'Display Image', 'Section', 'Custom Component'].includes(String(field.type)) && <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>}
@@ -1373,11 +1383,11 @@ export default function FlowBuilder({
             const type = event.target.value as FlowResourceMetadata['type'];
             setResourceType(type);
             if (type === 'Record' || type === 'Record Collection') setResourceDataType(objects[0]?.apiName ?? '');
-            else if (type === 'Variable' || type === 'Formula' || type === 'Constant' || type === 'Choice') setResourceDataType('Text');
-          }}>{['Variable', 'Record', 'Record Collection', 'Formula', 'Constant', 'Choice', 'Text Template'].map((type) => <option key={type}>{type}</option>)}</select></label>
+            else if (type === 'Variable' || type === 'Formula' || type === 'Constant' || type === 'Choice' || type === 'Choice Set') setResourceDataType('Text');
+          }}>{['Variable', 'Record', 'Record Collection', 'Formula', 'Constant', 'Choice', 'Choice Set', 'Text Template'].map((type) => <option key={type}>{type}</option>)}</select></label>
             <label className="form-label">Data Type{resourceType === 'Record' || resourceType === 'Record Collection'
               ? <select className="form-control" value={resourceDataType} onChange={(event) => setResourceDataType(event.target.value)}>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select>
-              : ['Variable', 'Formula', 'Constant', 'Choice'].includes(resourceType)
+              : ['Variable', 'Formula', 'Constant', 'Choice', 'Choice Set'].includes(resourceType)
                 ? <select className="form-control" value={resourceDataType} onChange={(event) => setResourceDataType(event.target.value)}>
                     {['Text', 'Number', 'Currency', 'Percent', 'Boolean', 'Date', 'Date/Time', 'Time', 'Id', 'Picklist', 'Multi-Select Picklist'].map((type) => <option key={type}>{type}</option>)}
                   </select>
@@ -1402,13 +1412,13 @@ export default function FlowBuilder({
               </div>
               <p className="settings-panel-copy">Insert controls add text at the cursor. Use Check to validate the expression and the rest of the Flow.</p>
             </div>}
-            <label className="form-label">{resourceType === 'Formula' ? 'Formula Expression' : resourceType === 'Text Template' ? 'Template' : 'Default Value'}{resourceType === 'Formula' || resourceType === 'Text Template'
+            <label className="form-label">{resourceType === 'Formula' ? 'Formula Expression' : resourceType === 'Text Template' ? 'Template' : resourceType === 'Choice Set' ? 'Choices (one per line)' : 'Default Value'}{resourceType === 'Formula' || resourceType === 'Text Template'
               ? <SmartFieldInput multiline rows={resourceType === 'Text Template' ? 9 : 5} textareaRef={resourceType === 'Formula' ? formulaEditorRef : undefined} kind={resourceType === 'Formula' ? 'formula' : 'text'} objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} placeholder={resourceType === 'Text Template' ? 'Write your message here. Press Enter for a new line.' : undefined} value={resourceValue} onChange={setResourceValue} />
               : <input className="form-control" value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} />}</label>
             <button className="btn" disabled={!resourceLabel.trim()} onClick={addResource}><Plus size={13} />New Resource</button>
             {flow.resources.map((resource) => <div className="flow-resource-card" key={resource.name}>
               <strong>{resource.label}</strong><small>{resource.name} · {resource.type} · {resource.dataType}</small>
-              <label className="form-label">{resource.type === 'Formula' ? 'Formula Expression' : resource.type === 'Text Template' ? 'Template' : 'Default Value'}{resource.type === 'Formula' || resource.type === 'Text Template'
+              <label className="form-label">{resource.type === 'Formula' ? 'Formula Expression' : resource.type === 'Text Template' ? 'Template' : resource.type === 'Choice Set' ? 'Choices (one per line)' : 'Default Value'}{resource.type === 'Formula' || resource.type === 'Text Template'
                 ? <SmartFieldInput multiline rows={resource.type === 'Text Template' ? 9 : 4} kind={resource.type === 'Formula' ? 'formula' : 'text'} objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} value={displayValue(resource.value)} onChange={next => updateResource(resource.name, { value: next })} />
                 : <input className="form-control" value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />}</label>
               <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={resource.availableForInput} disabled={!['Variable', 'Record', 'Record Collection'].includes(resource.type)} onChange={(event) => updateResource(resource.name, { availableForInput: event.target.checked })} />Available for input</label><label className="checkbox-row"><input type="checkbox" checked={resource.availableForOutput} onChange={(event) => updateResource(resource.name, { availableForOutput: event.target.checked })} />Available for output</label></div>
