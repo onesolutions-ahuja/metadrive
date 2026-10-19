@@ -47,16 +47,11 @@ export class DurableJobService {
      FROM due WHERE j.id=due.id AND j.attempt<j.max_attempts
      RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.resource_version,j.attempt
    `,[limit,workerId,leaseSeconds]);
-   // Expired leases have an unknown outcome; never automatically replay side-effectful Flows.
+   // Every abandoned lease is outcome-ambiguous. Fail closed for all registered
+   // job types; only an authorised operator may approve a subsequent retry.
    await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
-     lease_until=NULL,updated_at=now(),error_code='FLOW_RECONCILIATION_REQUIRED'
-     WHERE job_type='flow.execute' AND status='leased' AND lease_until<now()`);
-   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
-     lease_until=NULL,updated_at=now(),error_code='LEASE_EXHAUSTED'
-     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt>=max_attempts`);
-   await client.query(`UPDATE md_durable_jobs SET status='queued',lease_owner=NULL,
-     lease_until=NULL,scheduled_at=now(),updated_at=now()
-     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt<max_attempts`);
+     lease_until=NULL,updated_at=now(),error_code='JOB_RECONCILIATION_REQUIRED'
+     WHERE status='leased' AND lease_until<now()`);
    return rows;
   });
  }
@@ -79,7 +74,7 @@ export class DurableJobService {
    throw new Error('Invalid retry delay');
   const {rowCount}=await this.db.query(`
    UPDATE md_durable_jobs SET
-    status=CASE WHEN attempt>=max_attempts OR $4='FLOW_RECONCILIATION_REQUIRED' THEN 'failed' ELSE 'queued' END,
+    status='failed',
     scheduled_at=now()+($5::integer * interval '1 second'),lease_owner=NULL,lease_until=NULL,
     error_code=$4,updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
