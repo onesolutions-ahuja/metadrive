@@ -6,6 +6,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {flowDebugResources,simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
+import {mapFlowHttpResponse} from './flow-http-mapping.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
@@ -934,6 +935,11 @@ export class FlowRuntime {
             if(!asynchronous){
               if(node.config.statusVariable)set(node.config.statusVariable,response.status);
               if(node.config.responseVariable)set(node.config.responseVariable,response.body);
+              if(node.config.responseMapping){
+                const mapped=mapFlowHttpResponse(node.config.responseMapping,response.body,
+                  resources.filter(item=>item.type==='Variable').map(item=>item.name));
+                for(const [name,value] of Object.entries(mapped))set(name,value);
+              }
             }
           }catch(error){
             if(node.config.onError==='FAULT_PATH'){
@@ -945,6 +951,26 @@ export class FlowRuntime {
               }
             }
             if(node.config.onError!=='CONTINUE')throw error;
+          }
+          history=[];
+        }else if(node.type==='Action'&&node.config.actionType==='Outbound Message'){
+          if(!this.httpCallout)throw new Error('Outbound Message transport unavailable');
+          const stableKey=runId+'-'+node.id;
+          const scalarVars=Object.fromEntries(Object.entries(vars).filter(
+            (entry):entry is [string,Scalar]=>scalar(entry[1])));
+          // The named provider chooses the external transport; no hardcoded SMS/WhatsApp adapter.
+          const transport={...node.config,method:'POST',
+            deliveryMode:node.config.deliveryMode??'DURABLE_ASYNC'};
+          const asynchronous=transport.deliveryMode==='DURABLE_ASYNC';
+          try{
+            await this.httpCallout(tenantId,userId,transport,scalarVars,stableKey,
+              asynchronous?{client,runId,nodeId:current}:undefined);
+          }catch(error){
+            const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+            if(!fault)throw error;
+            vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
+            vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
+            current=fault.to;history=[];continue;
           }
           history=[];
         }else if(node.type==='Action'||node.type==='Publish Platform Event'){
