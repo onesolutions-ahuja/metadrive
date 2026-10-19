@@ -21,6 +21,43 @@ export function normalizeChoice(o) {
       }
     : { label: String(o), value: String(o) };
 }
+/** Resolve choice options from the same tenant-scoped, permission-filtered record data
+ * that the shared Page/Flow runtime already supplies. The server/Flow remains
+ * responsible for validating prices, availability, and selection rules. */
+export function recordChoiceOptions(p) {
+  if (p.optionSource !== "records") return null;
+  const rows = Array.isArray(p.records) ? p.records : [];
+  const labelField = String(p.optionLabelFieldApiName || "").trim();
+  const valueField = String(p.optionValueFieldApiName || "Id").trim();
+  const availableField = String(p.optionAvailableFieldApiName || "").trim();
+  const priceField = String(p.optionPriceFieldApiName || "").trim();
+  const validField = (field) => /^[A-Za-z][A-Za-z0-9_]*$/.test(field);
+  if (!validField(labelField) || !validField(valueField) ||
+      (availableField && !validField(availableField)) ||
+      (priceField && !validField(priceField))) return [];
+  let currency;
+  if (priceField && p.currencyCode) {
+    try { currency = new Intl.NumberFormat(undefined, {
+      style: "currency", currency: p.currencyCode,
+    }); } catch { /* Invalid optional presentation currency does not change data */ }
+  }
+  return rows.slice(0, 200).flatMap((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row) ||
+        !Object.prototype.hasOwnProperty.call(row, labelField) ||
+        !Object.prototype.hasOwnProperty.call(row, valueField) ||
+        (availableField && row[availableField] !== true)) return [];
+    const label = row[labelField], value = row[valueField];
+    if (label === null || label === undefined || value === null || value === undefined ||
+        !["string", "number"].includes(typeof value)) return [];
+    const rawPrice = priceField ? row[priceField] : null;
+    const price = typeof rawPrice === "number" && Number.isFinite(rawPrice)
+      ? (currency ? currency.format(rawPrice) : String(rawPrice)) : "";
+    return [{
+      label: String(label) + (price ? " · " + price : ""),
+      value: String(value),
+    }];
+  });
+}
 export function useOneInputs(p) {
   const kind = p.kind || "Input",
     root = css(p),
