@@ -26,7 +26,7 @@ export class DurableJobWorker {
   if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(kind))throw new Error('Invalid job kind');
   this.handlers.set(kind,handler);
  }
- async runOnce(batch=10){
+ async runOnce(batch=1){
   const due=await this.jobs.claim(this.workerId,batch);
   let completed=0,failed=0;
   for(const job of due){
