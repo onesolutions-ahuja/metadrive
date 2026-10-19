@@ -4,7 +4,7 @@ import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 import {NamedCredentialService} from '../../src/system-support/named-credential-service.js';
 
-test('unsupported OAuth credentials cannot be saved as executable Named Credentials',async()=>{
+test('invalid OAuth credentials cannot be saved as executable Named Credentials',async()=>{
  let writes=0;
  const db={query:async(sql:string)=>{if(sql.startsWith('SELECT encryption_key_id'))return {rows:[{encryption_key_id:'legacy',secret_ciphertext:null,configuration_ciphertext:null}],rowCount:1};writes++;return {rows:[],rowCount:0};}} as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
@@ -12,7 +12,7 @@ test('unsupported OAuth credentials cannot be saved as executable Named Credenti
  const request={name:'demo',label:'Demo',protocol:'HTTPS',baseUrl:'https://example.com',
   headerName:'X-API-Key',authType:'OAuth Client Credentials'};
  for(const authType of ['OAuth Authorization Code']){
-  await assert.rejects(service.create('tenant','user',{...request,authType}),/Invalid credential/);
+  await assert.rejects(service.create('tenant','user',{...request,authType,configuration:{invalid:42}}),/Invalid credential/);
   await assert.rejects(service.update('tenant','user','123e4567-e89b-42d3-a456-426614174000',{...request,authType}),/Invalid credential/);
  }
  assert.equal(writes,0);
