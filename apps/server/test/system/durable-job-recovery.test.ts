@@ -76,3 +76,21 @@ test('all uncertain handler failures require explicit operator retry',async()=>{
  assert.doesNotMatch(sql,/ELSE 'queued'/);
  assert.match(sql,/lease_owner=\$3 AND lease_until>now\(\)/);
 });
+
+test('operator decision atomically records an audited, tenant-scoped recovery',async()=>{
+ let sql='',params:unknown[]=[];
+ const db={query:async(q:string,p:unknown[])=>{sql=q;params=p;return {rows:[{job_id:'job'}]};}} as unknown as SqlPersistence;
+ await new DurableJobService(db).operatorDecision('tenant','job','actor','retry');
+ assert.deepEqual(params,['tenant','job','actor','retry']);
+ assert.match(sql,/WHERE tenant_id=\$1 AND id=\$2 AND status='failed'/);
+ assert.match(sql,/md_durable_job_audit\(tenant_id,job_id,actor_id,decision\)/);
+ assert.match(sql,/SELECT job_id FROM audited/);
+ assert.doesNotMatch(sql,/DELETE FROM/);
+});
+
+test('reconciliation rejects invalid decisions and absent tenant-scoped jobs',async()=>{
+ const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
+ const service=new DurableJobService(db);
+ await assert.rejects(()=>service.operatorDecision('tenant','job','actor','invalid' as 'retry'),/Invalid job decision/);
+ await assert.rejects(()=>service.operatorDecision('tenant','job','actor','cancel'),/Failed job not found/);
+});
