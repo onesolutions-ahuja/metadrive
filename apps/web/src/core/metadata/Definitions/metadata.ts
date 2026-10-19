@@ -280,7 +280,7 @@ export type FlowConnectorMetadata = {
 export type FlowResourceMetadata = {
   name: string;
   label: string;
-  type: 'Variable' | 'Record' | 'Record Collection' | 'Formula' | 'Constant' | 'Choice' | 'Text Template';
+  type: 'Variable' | 'Record' | 'Record Collection' | 'Formula' | 'Constant' | 'Choice' | 'Choice Set' | 'Text Template';
   dataType: string;
   isCollection: boolean;
   availableForInput: boolean;
