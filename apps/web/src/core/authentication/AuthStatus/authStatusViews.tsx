@@ -69,11 +69,12 @@ export function ConnectionHealthIndicator() {
         try {
           const response = await fetch(`${apiBase.replace(/\/api\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
           const latency = Math.round(performance.now() - started);
-          const result = response.ok ? await response.json() as { database?: string } : null;
-          const database = result?.database ?? 'unknown';
+          const result = response.ok ? await response.json() as { status?: string; persistence?: string; database?: string } : null;
+          // /health exposes status and persistence; older API versions may expose database.
+          const database = result?.database ?? (result?.status === 'ok' && result.persistence === 'sql' ? 'healthy' : 'unknown');
+          const healthy = response.ok && (result?.status === 'ok' || result?.database === 'healthy') && database === 'healthy';
           if (alive) setHealth({
-            status: !response.ok || database === 'unavailable' ? 'offline'
-              : database !== 'healthy' || latency > 2500 ? 'slow' : 'healthy',
+            status: !healthy ? 'offline' : latency > 2500 ? 'slow' : 'healthy',
             database, latency, checked: new Date().toLocaleTimeString()
           });
         } finally { window.clearTimeout(timeout); }
