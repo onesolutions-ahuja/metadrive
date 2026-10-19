@@ -879,6 +879,7 @@ export class FlowRuntime {
           try{
             await executeFlowSubflow({client,tenantId,userId,
               initiatingUserId:active.initiated_by??userId,config:node.config,
+              parentResources:resources,
               rbac:this.rbac!,callStack:activeCallStack,evaluate,
               set:(name,value)=>set(name,value),
               advance:async(childRunId,childCallStack,childUserId)=>{
