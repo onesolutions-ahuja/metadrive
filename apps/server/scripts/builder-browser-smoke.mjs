@@ -103,6 +103,47 @@ try{
  assert.deepEqual(status,{saved:200,started:200,completed:200,history:200,debug:200,archived:204},
   'Real browser builder save/Screen Flow API check: '+JSON.stringify(status));
 
+ const choicesResult=await page.evaluate(async token=>{
+   const request=async(path,init={})=>{
+     const response=await fetch('/api'+path,{
+       ...init,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...init.headers}
+     });
+     return {code:response.status,body:await response.json().catch(()=>({}))};
+   };
+   const api='BrowserChoiceSetFlow';
+   const graph={apiName:api,label:'Browser Choice Set Flow',flowType:'Screen Flow',
+    status:'Active',triggerObject:null,startConfig:{},tests:[],versions:[],
+    resources:[{name:'MealChoices',label:'Meal Choices',type:'Choice Set',dataType:'Text',
+     isCollection:false,availableForInput:false,availableForOutput:false,value:'Burger\\nWrap'}],
+    elements:[{id:1,type:'Start',label:'Start',config:{}},
+     {id:2,type:'Screen',label:'Choose',config:{fields:[{
+       apiName:'Meal',label:'Meal',type:'Picklist',required:true,choiceSetResource:'MealChoices'
+     }]}},{id:3,type:'End',label:'End',config:{}}],
+    connectors:[{id:'a',from:1,to:2,kind:'normal',label:'Default'},
+     {id:'b',from:2,to:3,kind:'normal',label:'Next'}]};
+   const saved=await request('/metadata/flows/'+api,{method:'PUT',body:JSON.stringify(graph)});
+   if(saved.code!==200)return {failed:'Choice Set save',saved};
+   const badInterview=await request('/flows/'+api+'/execute',{method:'POST',body:'{}'});
+   if(badInterview.code!==200)return {failed:'Choice Set launch',badInterview};
+   const choices=badInterview.body.screen?.config?.fields?.[0]?.choices;
+   if(!Array.isArray(choices)||choices.join('|')!=='Burger|Wrap')
+     return {failed:'Choice Set hydration',choices,badInterview};
+   const invalid=await request('/flow-interviews/'+badInterview.body.interviewId+'/next',{
+     method:'POST',body:JSON.stringify({values:{Meal:'Not a valid meal'}})});
+   if(invalid.code===200)return {failed:'Choice Set invalid-value rejection',invalid};
+   const goodInterview=await request('/flows/'+api+'/execute',{method:'POST',body:'{}'});
+   if(goodInterview.code!==200)return {failed:'Choice Set second launch',goodInterview};
+   const valid=await request('/flow-interviews/'+goodInterview.body.interviewId+'/next',{
+     method:'POST',body:JSON.stringify({values:{Meal:'Burger'}})});
+   if(valid.code!==200||valid.body.completed!==true)
+     return {failed:'Choice Set selected value',valid};
+   const deleted=await request('/metadata/flows/'+api,{method:'DELETE'});
+   return {saved:saved.code,invalid:invalid.code,completed:valid.code,deleted:deleted.code};
+ },tokens.accessToken);
+ assert.deepEqual(choicesResult,{saved:200,invalid:400,completed:200,deleted:204},
+   'Browser SQL Choice Set runtime contract: '+JSON.stringify(choicesResult));
+
+
  // Phase 1: confirm SQL metadata and the actual no-code browser controls agree.
  const capabilities=await page.evaluate(async(token)=>{
    const response=await fetch('/api/metadata/flow-capabilities',{
