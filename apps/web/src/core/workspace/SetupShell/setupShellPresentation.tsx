@@ -331,6 +331,7 @@ export function renderSetupShell(ctx: any) {
           )}
           {route.kind === 'setup' && workspace === 'flow-interviews' && (
             <FlowInterviews
+              request={apiRequest}
               interviews={flowInterviews}
               loading={flowInterviewsLoading}
               canManage={canManageFlows}

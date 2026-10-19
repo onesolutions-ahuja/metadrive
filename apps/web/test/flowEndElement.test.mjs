@@ -82,3 +82,23 @@ test('Legacy Decision repair adds missing default path without overwriting assig
   assert.equal(repaired.connectors.find(c => c.from === 4 && c.label === 'Default').to,3);
   assert.deepEqual(completeFlowEndPaths(repaired,'again'),repaired);
 });
+
+test('Orchestration Stage splits a path into exactly Approved/Rejected branches',()=>{
+ const graph={elements:[start,end],connectors:[link('orig',1,3)]};
+ const stage={id:4,type:'Orchestration Stage',label:'Manager Review',config:{}};
+ const next=insertFlowElementAtPath(graph,1,stage,undefined,'new-path');
+ assert.equal(next.connectors.find(item=>item.id==='orig').to,4);
+ assert.deepEqual(next.connectors.filter(item=>item.from===4).map(item=>item.label),
+  ['Approved','Rejected']);
+ assert.ok(next.connectors.filter(item=>item.from===4).every(item=>item.to===3));
+ assert.equal(graph.connectors[0].to,3);
+});
+
+test('Complete End Paths repairs a disconnected orchestration stage without losing branches',()=>{
+ const graph={status:'Draft',elements:[start,{id:4,type:'Orchestration Stage',label:'Review',config:{}}],
+  connectors:[link('before',1,4)]};
+ const result=completeFlowEndPaths(graph,'terminal');
+ assert.deepEqual(result.connectors.filter(item=>item.from===4).map(item=>item.label),
+  ['Approved','Rejected']);
+ assert.equal(result.elements.filter(item=>item.type==='End').length,1);
+});

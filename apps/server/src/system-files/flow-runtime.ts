@@ -15,7 +15,7 @@ import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
 import {persistFlowInterviewPause} from './flow-interview-persistence.js';
 import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
-import {executeFlowAction,loadFlowUserResource} from './flow-action-runtime.js';
+import {executeFlowAction,submitFlowStageApproval,loadFlowUserResource} from './flow-action-runtime.js';
 import {createFlowCustomError} from './flow-error-runtime.js';
 import {cancelScheduledPathInterviews,deactivateFlowDefinition,
   syncFlowTriggerSubscription} from './flow-subscription-runtime.js';
@@ -305,7 +305,8 @@ export class FlowRuntime {
     return {interviews:rows.map(r=>({
       id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
       versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const
-        :r.wait_kind==='scheduled-path'?'scheduled' as const:'wait' as const,
+        :r.wait_kind==='scheduled-path'?'scheduled' as const
+        :r.wait_kind==='orchestration'?'orchestration' as const:'wait' as const,
       userId:r.started_by,userName:r.email,screenLabel:null,recordId:null,
       createdAt:new Date(r.started_at).toISOString(),
       expiresAt:new Date(new Date(r.started_at).getTime()+86400000).toISOString(),
@@ -319,10 +320,26 @@ export class FlowRuntime {
       throw new Error('Invalid interview ID');
     await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
     const result=await this.db.transaction(async client=>{
+      // Approval decisions lock the stage before the run. Cancellation must
+      // use the same order to avoid cross-approver/cancel deadlocks.
+      await client.query(`
+        SELECT 1 FROM md_flow_approval_stages
+        WHERE tenant_id=$1 AND run_id=$2 FOR UPDATE
+      `,[tenantId,interviewId]);
       const cancelled=await client.query(
         "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),wait_until=NULL,error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status IN ('pending','waiting') RETURNING id",
         [tenantId,interviewId]);
       if(!cancelled.rowCount)throw new Error('Pending interview not found');
+      await client.query(`
+        UPDATE md_flow_approval_stages SET status='cancelled',finished_at=now()
+        WHERE tenant_id=$1 AND run_id=$2 AND status='waiting'
+      `,[tenantId,interviewId]);
+      await client.query(`
+        UPDATE md_approval_requests SET status='Canceled'
+        WHERE tenant_id=$1 AND group_id IN
+          (SELECT group_id FROM md_flow_approval_stages WHERE tenant_id=$1 AND run_id=$2)
+          AND status='Pending'
+      `,[tenantId,interviewId]);
       await client.query(`UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,
         lease_until=NULL,updated_at=now()
         WHERE tenant_id=$1 AND job_type='flow.resume' AND resource_id=$2 AND status IN ('queued','leased')`,
@@ -535,7 +552,7 @@ export class FlowRuntime {
       const active=rows[0];
       if(!active||active.status!=='pending'||active.started_by!==userId
         ||!['Screen Flow','Autolaunched Flow','Record-Triggered Flow','Schedule-Triggered Flow',
-          'Platform Event-Triggered Flow'].includes(active.flow_type))
+          'Platform Event-Triggered Flow','Flow Orchestration'].includes(active.flow_type))
         throw new Error('Pending Flow interview not found');
       const nested=callStack.at(-1)===active.api_name;
       if(callStack.length>16||!nested&&callStack.includes(active.api_name))
@@ -958,6 +975,41 @@ export class FlowRuntime {
             if(node.config.onError!=='CONTINUE')throw error;
           }
           history=[];
+        }else if(node.type==='Orchestration Stage'){
+          if(active.flow_type!=='Flow Orchestration')
+            throw new Error('Approval stages require a Flow Orchestration');
+          const {rows:existing}=await client.query<{status:string;group_id:string}>(`
+            SELECT status,group_id FROM md_flow_approval_stages
+            WHERE tenant_id=$1 AND run_id=$2 AND element_id=$3 FOR UPDATE
+          `,[tenantId,runId,current]);
+          if(existing[0]){
+            if(!['Approved','Rejected'].includes(existing[0].status))
+              throw new Error('Orchestration stage is still awaiting a decision');
+            selected=existing[0].status;
+            const output=node.config.statusVariable;
+            if(output)set(output,selected);
+          }else{
+            if(!this.records)throw new Error('Flow Record Engine is unavailable');
+            if(!['ANY','ALL'].includes(String(node.config.approvalMode??'ANY')))
+              throw new Error('Invalid orchestration approval rule');
+            const groupId=await submitFlowStageApproval({
+              client,rbac:this.rbac!,tenantId,userId,flowApi:active.api_name,
+              config:{...node.config,actionType:'Submit for Approval'},resolve:evaluate,
+              variables:vars,records:this.records,connectors:[],elementId:current,runId});
+            await client.query(`
+              INSERT INTO md_flow_approval_stages
+              (tenant_id,run_id,element_id,group_id,rule)
+              VALUES($1,$2,$3,$4,$5)
+            `,[tenantId,runId,current,groupId,node.config.approvalMode??'ANY']);
+            await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
+              loopIndexes,vars,persistenceResources);
+            await client.query(`
+              UPDATE md_flow_runs
+              SET status='waiting',wait_kind='orchestration',wait_until=NULL
+              WHERE tenant_id=$1 AND id=$2 AND status='pending'
+            `,[tenantId,runId]);
+            return {interviewId:runId,status:'waiting',kind:'orchestration'};
+          }
         }else if(node.type==='Action'&&node.config.actionType==='Outbound Message'){
           if(!this.httpCallout)throw new Error('Outbound Message transport unavailable');
           const stableKey=runId+'-'+node.id;
@@ -1017,7 +1069,7 @@ export class FlowRuntime {
         }
         current=next.to;
       }
-      throw new Error('Screen Flow exceeded maximum steps');
+      throw new Error('Flow interview exceeded maximum steps');
     };
     try{return executor?await advance(executor):await this.db.transaction(advance);}
     catch(error){

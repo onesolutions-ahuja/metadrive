@@ -33,6 +33,14 @@ try{
   [tenantId,userId,set.rows[0].id]);
  await db.query("INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,'*','*','allow')",
   [tenantId,set.rows[0].id]);
+ await db.query("INSERT INTO md_object_definitions(tenant_id,api_name,label) VALUES($1,'ReviewCase','Review Case')",
+  [tenantId]);
+ const reviewCase=await db.query(`
+  INSERT INTO md_records(tenant_id,object_api,owner_id)
+  VALUES($1,'ReviewCase',$2) RETURNING id
+ `,[tenantId,userId]);
+ const caseId=reviewCase.rows[0].id;
+
  const tokens=await new AuthenticationService(db).signIn(tenantId,'developer@example.invalid',password);
  frontend=spawn('npm',['run','dev','--workspace','apps/web','--','--host','127.0.0.1','--port','4173'],{
   cwd:new URL('../../../',import.meta.url).pathname,
@@ -142,6 +150,71 @@ try{
  },tokens.accessToken);
  assert.deepEqual(choicesResult,{saved:200,invalid:400,completed:200,deleted:204},
    'Browser SQL Choice Set runtime contract: '+JSON.stringify(choicesResult));
+
+ // Phase 5: SQL-backed approval stage goes from active Flow to waiting and
+ // atomically queues one resume after a human decision; no browser polling timer.
+ const orchestration=await page.evaluate(async({token,caseId,userId})=>{
+   const request=async(path,init={})=>{
+     const response=await fetch('/api'+path,{
+       ...init,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...init.headers}
+     });
+     return {code:response.status,body:await response.json().catch(()=>({}))};
+   };
+   const api='BrowserApprovalFlow';
+   const graph={apiName:api,label:'Browser Approval Flow',flowType:'Flow Orchestration',
+    status:'Active',triggerObject:null,startConfig:{},tests:[],versions:[],resources:[],
+    elements:[
+     {id:1,type:'Start',label:'Start',config:{}},
+     {id:2,type:'Orchestration Stage',label:'Manager Approval',config:{
+       objectApiName:'ReviewCase',recordId:caseId,approverIds:userId,
+       approvalMode:'ANY',comments:'Approval requested in browser contract test'
+     }},
+     {id:3,type:'End',label:'End',config:{}}
+    ],
+    connectors:[
+     {id:'start',from:1,to:2,kind:'normal',label:''},
+     {id:'approved',from:2,to:3,kind:'normal',label:'Approved'},
+     {id:'rejected',from:2,to:3,kind:'normal',label:'Rejected'}
+    ]};
+   const saved=await request('/metadata/flows/'+api,{method:'PUT',body:JSON.stringify(graph)});
+   if(saved.code!==200)return {failed:'Orchestration save',saved};
+   const started=await request('/flows/'+api+'/execute',{method:'POST',body:'{}'});
+   if(started.code!==200||started.body.status!=='waiting')
+     return {failed:'Orchestration pause',started};
+   const pending=await request('/metadata/flow-interviews');
+   if(pending.code!==200||!pending.body.interviews.some(item=>
+     item.id===started.body.interviewId&&item.kind==='orchestration'))
+     return {failed:'Orchestration pending work',pending,started};
+   const inbox=await request('/approvals/inbox');
+   const approval=inbox.body.requests?.find(item=>item.flowApiName===api);
+   if(inbox.code!==200||!approval)return {failed:'Orchestration approval inbox',inbox};
+   const decision=await request('/approvals/'+approval.id+'/decision',{
+     method:'POST',body:JSON.stringify({decision:'Approved',comments:'Accepted'})});
+   if(decision.code!==200)return {failed:'Orchestration decision',decision};
+   const second=await request('/approvals/'+approval.id+'/decision',{
+     method:'POST',body:JSON.stringify({decision:'Rejected'})});
+   if(second.code===200)return {failed:'Approval accepted twice',second};
+   return {saved:saved.code,started:started.code,decision:decision.code,
+     interviewId:started.body.interviewId,api};
+ },{token:tokens.accessToken,caseId,userId});
+ assert.ok(!orchestration.failed,'Browser orchestration: '+JSON.stringify(orchestration));
+ const queued=await db.query(`
+   SELECT j.id FROM md_durable_jobs j
+   WHERE j.tenant_id=$1 AND j.resource_id=$2 AND j.job_type='flow.resume' AND j.status='queued'
+ `,[tenantId,orchestration.interviewId]);
+ assert.equal(queued.rows.length,1,'Human approval did not queue exactly one durable resume');
+ const {FlowRuntime}=await import(new URL('flow-runtime.js',built).href);
+ const {RbacEngine}=await import(new URL('rbac-engine.js',built).href);
+ const {RecordEngine}=await import(new URL('record-engine.js',built).href);
+ const rbac=new RbacEngine(db);
+ const resumed=await new FlowRuntime(db,rbac,new RecordEngine(db,rbac))
+   .resumeWaitingInterview(tenantId,userId,orchestration.interviewId,1);
+ assert.equal(resumed.status,'completed','Approval decision did not resume the published Flow');
+ const completed=await db.query(
+   'SELECT status FROM md_flow_runs WHERE tenant_id=$1 AND id=$2',
+   [tenantId,orchestration.interviewId]);
+ assert.equal(completed.rows[0].status,'completed');
+
 
 
  // Phase 1: confirm SQL metadata and the actual no-code browser controls agree.

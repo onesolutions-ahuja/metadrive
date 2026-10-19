@@ -33,7 +33,7 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
   }
   const outcomes = element.type === 'Decision'
     ? decisionOutcomeLabels(element.config?.outcomes)
-    : [];
+    : element.type === 'Orchestration Stage' ? ['Approved','Rejected'] : [];
   const needsTerminal = outcomes.length > 0 && !selected;
   const terminalId = needsTerminal
     ? Math.max(element.id, ...flow.elements.map(item => item.id)) + 1
@@ -167,6 +167,9 @@ export function completeFlowEndPaths(flow, connectorPrefix) {
         connectors[connectors.findIndex(edge => edge.id === defaultEdge.id)] = { ...defaultEdge, label: 'Default' };
       const current = new Set(connectors.filter(edge => edge.from === node.id && edge.kind === 'normal').map(edge => edge.label));
       for (const label of labels) if (!current.has(label)) link(node.id, label);
+    } else if(node.type === 'Orchestration Stage') {
+      const current=new Set(paths.map(edge=>edge.label));
+      for(const label of ['Approved','Rejected'])if(!current.has(label))link(node.id,label);
     } else if (!paths.length) {
       link(node.id, '');
     }

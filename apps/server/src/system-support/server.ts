@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import {loadFlowCapabilityCatalog} from '../system-files/flow-capability-catalog.js';
+import {finishFlowOrchestrationDecision} from '../system-files/flow-orchestration-runtime.js';
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
@@ -297,11 +298,35 @@ export function createSystemServer(db:SqlPersistence) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)||
        !['Approved','Rejected'].includes(decision)||typeof comments!=='string'||comments.length>4000)
       throw new Error('Invalid approval decision');
-    const {rows}=await db.query<ApprovalSqlRow>(
-      "UPDATE md_approval_requests SET status=$4,decision_comments=$5,decided_at=now(),decided_by=$2 WHERE tenant_id=$1 AND approver_id=$2 AND id=$3 AND status='Pending' RETURNING *",
-      [actor.tenant_id,actor.user_id,req.params.id,decision,comments]);
-    if(!rows[0]){res.status(404).json({error:'Pending approval not found'});return;}
-    res.json({request:approvalView(rows[0])});
+    const updated=await db.transaction(async client=>{
+      // Serialize all decisions in a stage BEFORE locking individual approval rows.
+      // Otherwise concurrent approvers can deadlock with outstanding-item cancellation.
+      const {rows:pending}=await client.query<{group_id:string}>(`
+        SELECT group_id FROM md_approval_requests
+        WHERE tenant_id=$1 AND id=$2 AND approver_id=$3 AND status='Pending'
+      `,[actor.tenant_id,req.params.id,actor.user_id]);
+      if(!pending[0])return null;
+      await client.query(`
+        SELECT 1 FROM md_flow_approval_stages
+        WHERE tenant_id=$1 AND group_id=$2 FOR UPDATE
+      `,[actor.tenant_id,pending[0].group_id]);
+      const {rows}=await client.query<ApprovalSqlRow>(
+        "UPDATE md_approval_requests SET status=$4,decision_comments=$5,decided_at=now(),decided_by=$2 WHERE tenant_id=$1 AND approver_id=$2 AND id=$3 AND status='Pending' RETURNING *",
+        [actor.tenant_id,actor.user_id,req.params.id,decision,comments]);
+      if(!rows[0])return null;
+      // A normal approval is unchanged. Only approvals tied to a durable
+      // orchestration stage can schedule interview resumption.
+      const resume=await finishFlowOrchestrationDecision(client,actor.tenant_id,rows[0].group_id);
+      if(resume)await flowJobs.enqueue(actor.tenant_id,'flow.resume',{
+        actorUserId:resume.actorUserId,resourceId:resume.runId,
+        resourceVersion:resume.version,
+        ...(resume.appApiName?{appApiName:resume.appApiName}:{}),
+        idempotencyKey:resume.runId+':orchestration:'+rows[0].group_id
+      },client);
+      return rows[0];
+    });
+    if(!updated){res.status(404).json({error:'Pending approval not found'});return;}
+    res.json({request:approvalView(updated)});
   }));
   app.get('/api/notifications',route(async(req,res)=>{
     const actor=req.actor!;

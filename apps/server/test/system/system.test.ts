@@ -842,7 +842,8 @@ test('Flow interview cancellation preserves tenant scope and durable run row',as
     assert.match(sql,/status IN \('pending','waiting'\)/);
     return {rowCount:1,rows:[{id:args[1]}]};
    }
-   assert.match(sql,/job_type='flow.resume'/);
+   assert.match(sql,/md_flow_approval_stages|md_approval_requests|job_type='flow.resume'/);
+   assert.match(sql,/tenant_id=\$1/);
    return {rowCount:1,rows:[]};
   }})
  } as unknown as SqlPersistence;
@@ -852,7 +853,8 @@ test('Flow interview cancellation preserves tenant scope and durable run row',as
  const id='c439f882-7316-4cf1-86fb-81d95b135c97';
  const value=await new FlowRuntime(db,rbac).cancelInterview('tenant','user',id);
  assert.equal(value.cancelled,true);
- assert.deepEqual(checks,[['tenant',id],['tenant',id]]);
+ assert.equal(checks.length,5);
+ assert.ok(checks.every(args=>JSON.stringify(args)===JSON.stringify(['tenant',id])));
 });
 test('Flow interview cancellation rejects unauthorised or malformed requests',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');

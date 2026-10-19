@@ -78,8 +78,8 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   errors.push('System execution context is not supported for Screen or before-save Record-Triggered Flows');
  if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
  if(capabilities?!catalogType?.validateEnabled:!['Autolaunched Flow','Screen Flow',
-  'Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow'].includes(String(data.flowType)))
- errors.push('This SQL runtime supports Autolaunched Flow, Screen Flow, supported Record-Triggered Flows, durable Schedule-Triggered Flows, and Platform Event-Triggered Flows');
+  'Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow','Flow Orchestration'].includes(String(data.flowType)))
+ errors.push('This SQL runtime supports Autolaunched Flow, Screen Flow, supported Record-Triggered Flows, durable Schedule-Triggered Flows, Platform Event-Triggered Flows and Flow Orchestration');
  errors.push(...validateFlowResources(data.resources,data.flowType==='Record-Triggered Flow'));
  if(!Array.isArray(data.elements)||!Array.isArray(data.connectors))
   return {valid:false,errors:['Flow must contain elements and connectors'],warnings};
@@ -101,7 +101,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   const legacyElementAllowed=['Start','Assignment','Decision','Create Records','CreateRecord',
     'HTTP Callout','Action','End','Get Records','Update Records','Delete Records','Loop',
     'Collection Filter','Collection Sort','Transform','Subflow','Wait','Roll Back Records',
-    'Custom Error','Publish Platform Event',
+    'Custom Error','Publish Platform Event','Orchestration Stage',
     ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type);
   if(capabilities?!capability?.allowedFlowTypes.includes(String(data.flowType)):!legacyElementAllowed)
    errors.push('Unsupported SQL Flow element: '+type);
@@ -619,6 +619,40 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
      data.flowType==='Record-Triggered Flow'?/^\{!\$Record\.[A-Za-z][A-Za-z0-9_]*\}$/:undefined);
    }
   }
+  if(type==='Orchestration Stage'){
+   if(data.flowType!=='Flow Orchestration')
+    errors.push('Orchestration Stage is only supported in Flow Orchestration');
+   const object=properties.objectApiName,record=properties.recordId;
+   if(typeof object!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(object))
+    errors.push('Orchestration Stage requires an Object');
+   if(typeof record!=='string'||!record.trim()||record.length>255)
+    errors.push('Orchestration Stage requires a target record ID or resource');
+   if(!['ANY','ALL'].includes(String(properties.approvalMode??'ANY')))
+    errors.push('Orchestration Stage approval rule must be ANY or ALL');
+   const process=properties.approvalProcessApiName;
+   if(process&&
+     (typeof process!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(process)))
+    errors.push('Orchestration Stage approval process is invalid');
+   if(!process&&
+      (typeof properties.approverIds!=='string'||!properties.approverIds.trim()))
+    errors.push('Orchestration Stage requires active approval process or approvers');
+   if(properties.comments!==undefined&&
+      (typeof properties.comments!=='string'||properties.comments.length>2000))
+    errors.push('Orchestration Stage comments exceed 2000 characters');
+   if(properties.statusVariable!==undefined&&properties.statusVariable!==''
+       &&(typeof properties.statusVariable!=='string'
+          ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.statusVariable)))
+    errors.push('Orchestration Stage output variable must be a declared Text variable');
+   if(typeof properties.statusVariable==='string'&&properties.statusVariable){
+     const value=Array.isArray(data.resources)?data.resources.find(resource=>
+       resource&&typeof resource==='object'&&
+       (resource as Record<string,unknown>).name===properties.statusVariable
+       &&(resource as Record<string,unknown>).type==='Variable'
+       &&(resource as Record<string,unknown>).dataType==='Text'
+       &&(resource as Record<string,unknown>).isCollection!==true):undefined;
+     if(!value)errors.push('Orchestration Stage requires an existing Text output variable');
+   }
+  }
   if(type==='Wait'){
    try{resolveFlowWaitUntil(properties);}
    catch(error){errors.push(error instanceof Error?error.message:'Wait configuration is invalid');}
@@ -804,7 +838,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   if(typeof edge.from!=='number'||typeof edge.to!=='number'||!ids.has(edge.from)||!ids.has(edge.to)){
    errors.push('Flow connector references an unknown element');continue;
   }
-  if(edge.kind!==undefined&&!['normal','fault','scheduled'].includes(String(edge.kind)))
+  if(edge.kind!==undefined&&!['normal','fault','scheduled','async'].includes(String(edge.kind)))
    errors.push('Unsupported SQL Flow connector type');
   const kind=String(edge.kind??'normal');
   if(kind==='fault'){
@@ -824,6 +858,13 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     if(config.onError!=='FAULT_PATH')
      errors.push('HTTP Callout Fault connector requires the Fault Path error policy: '+edge.from);
    }
+  }
+  if(kind==='async'){
+    const origin=nodes.find(item=>item&&typeof item==='object'&&!Array.isArray(item)
+      &&(item as Record<string,unknown>).id===edge.from) as Record<string,unknown>|undefined;
+    if(data.flowType!=='Record-Triggered Flow'||beforeSave||origin?.type!=='Start'
+       ||startConfig.trigger==='deleted')
+      errors.push('Asynchronous paths require an after-save Record-Triggered Flow Start');
   }
   if(kind==='scheduled'){
    scheduledPathCount++;
@@ -900,6 +941,17 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     errors.push('Flow element requires a normal outgoing path: '+id);
   }
   for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
+ }
+ for(const raw of nodes){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
+  const node=raw as Record<string,unknown>;
+  if(node.type!=='Orchestration Stage'||typeof node.id!=='number')continue;
+  const paths=(connectors.get(node.id)??[]).filter(edge=>edge.kind==='normal');
+  for(const label of ['Approved','Rejected'])
+   if(paths.filter(edge=>edge.label===label).length!==1)
+    errors.push('Orchestration Stage requires exactly one '+label+' connector: '+node.id);
+  if(paths.some(edge=>!['Approved','Rejected'].includes(edge.label)))
+   errors.push('Orchestration Stage has an invalid connector outcome: '+node.id);
  }
  for(const raw of nodes){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
