@@ -1,3 +1,4 @@
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {PoolClient} from 'pg';
@@ -14,7 +15,7 @@ const jobId='00000000-0000-4000-8000-000000000005';
 const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
 
 test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
- const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const draft={apiName:'AsyncFlow',flowType:'Autolaunched Flow',
   elements:[
    {id:1,type:'Start',config:{}},

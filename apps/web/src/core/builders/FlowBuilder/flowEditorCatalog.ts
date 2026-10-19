@@ -1,8 +1,3 @@
-import type { FlowDefinitionMetadata } from '../../metadata/Definitions/metadata';
-export const flowTypeOptions: Array<{ type: FlowDefinitionMetadata['flowType']; description: string }> = [
-    { type: 'Screen Flow', description: 'Guide a user through screens and actions.' },
-    { type: 'Autolaunched Flow', description: 'Run in the background or from another flow.' }
-  ];
 export const formulaFunctions = [
   'IF', 'AND', 'OR', 'NOT', 'XOR', 'ISBLANK', 'ISNULL', 'ISNUMBER', 'ISCHANGED',
   'ISNEW', 'PRIORVALUE', 'BLANKVALUE',

@@ -2,6 +2,7 @@ import type {RbacEngine} from './rbac-engine.js';
 import type {SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
+import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
 
 export async function flowAppIsEntitled(db:SqlPersistence,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
@@ -18,7 +19,7 @@ export async function flowAppIsEntitled(db:SqlPersistence,tenantId:string,appApi
 }
 
 export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:string,userId:string,
-  apiName:string,draft:unknown,db?:SqlPersistence) {
+  apiName:string,draft:unknown,db?:SqlPersistence,capabilities:FlowCapabilityCatalog|null=null) {
  if(!rbac)throw new Error('Flow permissions not configured');
  await rbac.require(tenantId,userId,'FlowDefinition','manage');
  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
@@ -66,9 +67,10 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
  const startConfig=startNode?.config&&typeof startNode.config==='object'
   &&!Array.isArray(startNode.config)?startNode.config as Record<string,unknown>:{};
  const beforeSave=data.flowType==='Record-Triggered Flow'&&startConfig.runWhen==='before-save';
+ const catalogType=capabilities?.flowTypes.find(type=>type.type===data.flowType);
  if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
- if(!['Autolaunched Flow','Screen Flow','Record-Triggered Flow','Schedule-Triggered Flow',
-  'Platform Event-Triggered Flow'].includes(String(data.flowType)))
+ if(capabilities?!catalogType?.validateEnabled:!['Autolaunched Flow','Screen Flow',
+  'Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow'].includes(String(data.flowType)))
  errors.push('This SQL runtime supports Autolaunched Flow, Screen Flow, supported Record-Triggered Flows, durable Schedule-Triggered Flows, and Platform Event-Triggered Flows');
  errors.push(...validateFlowResources(data.resources,data.flowType==='Record-Triggered Flow'));
  if(!Array.isArray(data.elements)||!Array.isArray(data.connectors))
@@ -85,13 +87,19 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   ids.add(node.id);
   const type=String(node.type??'');
   types.set(node.id,type);
-  if(!['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','Action','End',
-   'Get Records','Update Records','Delete Records','Loop','Collection Filter','Collection Sort','Transform',
-  'Subflow','Wait','Roll Back Records','Custom Error','Publish Platform Event',
-  ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type))
+  const capability=capabilities?.elements.find(item=>item.type===type);
+  // Without a SQL connection, isolated validator unit tests retain the legacy contract.
+  // Production activate/validate always passes db and fails closed against SQL capabilities.
+  const legacyElementAllowed=['Start','Assignment','Decision','Create Records','CreateRecord',
+    'HTTP Callout','Action','End','Get Records','Update Records','Delete Records','Loop',
+    'Collection Filter','Collection Sort','Transform','Subflow','Wait','Roll Back Records',
+    'Custom Error','Publish Platform Event',
+    ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type);
+  if(capabilities?!capability?.allowedFlowTypes.includes(String(data.flowType)):!legacyElementAllowed)
    errors.push('Unsupported SQL Flow element: '+type);
-  if(beforeSave&&!['Start','Assignment','Decision','Custom Error','End'].includes(type))
-  errors.push('Before-save Record-Triggered Flows support only Assignment and Decision elements');
+  if(beforeSave&&!(capabilities?capability?.beforeSaveAllowed:
+    ['Start','Assignment','Decision','Custom Error','End'].includes(type)))
+   errors.push('Before-save Record-Triggered Flows support only Assignment and Decision elements');
   if(type==='Wait'&&beforeSave)
    errors.push('Wait elements are not supported in before-save Record-Triggered Flows');
   const config=node.config;

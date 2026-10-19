@@ -5,6 +5,7 @@ import {DashboardSubscriptionService} from './dashboard-subscription-service.js'
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
+import {loadFlowCapabilityCatalog} from '../system-files/flow-capability-catalog.js';
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
@@ -956,6 +957,13 @@ export function createSystemServer(db:SqlPersistence) {
       revision:{version:1,publishedAt:Date.now(),digest},
       verifiedDigest:digest,minimumVersion:1
     }});
+  }));
+  // Builder-only metadata is loaded on demand; never include it in tenant login bootstrap.
+  app.get('/api/metadata/flow-capabilities',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
+    res.setHeader('Cache-Control','no-store');
+    res.json(await loadFlowCapabilityCatalog(db,actor.tenant_id));
   }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;

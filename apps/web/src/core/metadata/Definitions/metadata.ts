@@ -1142,20 +1142,6 @@ export const setupShortcuts = [
   { title: 'Permission Sets', description: 'Manage access to apps and data', workspace: 'rbac' as const, icon: ShieldCheck }
 ];
 
-export const flowElementMetadata = [
-  { type: 'End', group: 'Logic', icon: '■' },
-  { type: 'Screen', group: 'Interaction', icon: '▣' },
-  { type: 'Wait', group: 'Interaction', icon: '◷' },
-  { type: 'Action', group: 'Interaction', icon: '⚡' },
-  { type: 'Roll Back Records', group: 'Data', icon: '↶' },
-  { type: 'Custom Error', group: 'Logic', icon: '!' },
-  { type: 'Decision', group: 'Logic', icon: '◇' },
-  { type: 'Assignment', group: 'Logic', icon: '⇄' },
-  { type: 'Loop', group: 'Logic', icon: '↻' },
-  { type: 'Create Records', group: 'Data', icon: '+' },
-  { type: 'HTTP Callout', group: 'Interaction', icon: '⇧' }
-];
-
 export const recordMetadata = [
   { name: 'Edge Communications', owner: 'Alexandra Curtis', type: 'Customer - Direct', industry: 'Electronics', employees: '1,000', status: 'Active' },
   { name: 'Express Logistics and Transport', owner: 'David Kim', type: 'Customer - Channel', industry: 'Transportation', employees: '4,800', status: 'Active' },

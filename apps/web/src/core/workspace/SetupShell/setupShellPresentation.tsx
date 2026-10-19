@@ -349,6 +349,7 @@ export function renderSetupShell(ctx: any) {
               flow={flow}
               flows={flows}
               onListFlows={fetchFlowListPage}
+              onLoadCapabilities={() => apiRequest('/metadata/flow-capabilities')}
               libraryComponents={libraryComponents}
               platformEvents={platformEvents}
               objects={objects}

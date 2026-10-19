@@ -1,22 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { insertFlowElementAtPath, reconcileDecisionOutcomePaths, completeFlowEndPaths } from '../src/core/builders/FlowBuilder/flowInsertElement.mjs';
-import { flowElementMetadata } from '../src/core/metadata/Definitions/metadata.ts';
 
 const start = { id: 1, type: 'Start', label: 'Start', config: {} };
 const step = { id: 2, type: 'Assignment', label: 'Assign', config: {} };
 const end = { id: 3, type: 'End', label: 'End', config: {} };
 const link = (id, from, to) => ({ id, from, to, label: '', kind: 'normal' });
-
-test('durable Wait is registered in the Flow Builder toolbox', () => {
-  assert.ok(flowElementMetadata.some(item => item.type === 'Wait' && item.group === 'Interaction'));
-  assert.ok(flowElementMetadata.some(item => item.type === 'Action' && item.group === 'Interaction'));
-  assert.ok(flowElementMetadata.some(item => item.type === 'Roll Back Records' && item.group === 'Data'));
-});
-
-test('Loop is registered in the Flow Builder toolbox', () => {
-  assert.ok(flowElementMetadata.some(item => item.type === 'Loop' && item.group === 'Logic'));
-});
 
 test('End terminates a leaf path without an outgoing connector', () => {
   const graph = { elements: [start, step], connectors: [link('a', 1, 2)] };

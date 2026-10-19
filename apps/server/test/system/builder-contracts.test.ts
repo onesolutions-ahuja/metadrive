@@ -1,3 +1,4 @@
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {once} from 'node:events';
@@ -53,7 +54,7 @@ test('tenant App authoring rejects malformed metadata without database writes',a
 });
 
 test('Flow drafts are checked before writes and supported Screen graph validation is enabled',async()=>{
-  const db={transaction:async()=>{throw new Error('SQL should not be touched')}} as unknown as SqlPersistence;
+  const db=withFlowCapabilities({transaction:async()=>{throw new Error('SQL should not be touched')}} as unknown as SqlPersistence);
   const rbac={require:async()=>{}} as unknown as RbacEngine;
   const engine=new FlowRuntime(db,rbac);
   await assert.rejects(
