@@ -87,7 +87,7 @@ export class FlowRecordQuery {
         continue;
       }
       if(!['equals','notequals','greaterthan','greaterthanorequalto','lessthan',
-        'lessthanorequalto','contains','startswith'].includes(operator))
+        'lessthanorequalto','contains','startswith','endswith','doesnotcontain','notcontains'].includes(operator))
         throw new Error('Unsupported Flow query operator: '+String(item.operator));
       const value=item.value;
       if(value===undefined||value===null){
@@ -100,7 +100,7 @@ export class FlowRecordQuery {
         throw new Error('Flow query values must be scalar');
       params.push(value);
       const valueParam='$'+params.length;
-      if(operator==='contains'||operator==='startswith'){
+      if(['contains','startswith','endswith','doesnotcontain','notcontains'].includes(operator)){
         if(typeof value!=='string')throw new Error('Flow text query requires a text value');
         if(field&&!['text','email','phone','url','textarea','longtext','richtext',
           'picklist','multipicklist'].includes(field.data_type))
@@ -110,7 +110,11 @@ export class FlowRecordQuery {
         params[params.length-1]=value.toLowerCase();
         predicates.push(operator==='contains'
           ?`strpos(${textExpression},${searchParam})>0`
-          :`left(${textExpression},length(${searchParam}))=${searchParam}`);
+          :operator==='startswith'
+           ?`left(${textExpression},length(${searchParam}))=${searchParam}`
+           :operator==='endswith'
+            ?`right(${textExpression},length(${searchParam}))=${searchParam}`
+            :`strpos(${textExpression},${searchParam})=0 AND ${textExpression} IS NOT NULL`);
       }else if(field&&['number','currency','percent'].includes(field.data_type)){
         if((typeof value!=='number'&&typeof value!=='string')
           ||! /^-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(String(value)))
