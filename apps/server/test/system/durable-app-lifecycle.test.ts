@@ -14,7 +14,9 @@ test('app uninstall cancels tenant app jobs in the uninstall transaction',()=>{
 
 test('durable Flow dispatch requires valid licence expiry and current actor',()=>{
  const source=readFileSync(new URL('../../src/system-support/flow-job-handler.ts',import.meta.url),'utf8');
- assert.match(source,/md_users WHERE tenant_id=\$1 AND id=\$2 AND enabled=true/);
+ assert.match(source,/md_users u JOIN md_tenants t ON t.id=u.tenant_id/);
+ assert.match(source,/u.tenant_id=\$1 AND u.id=\$2 AND u.enabled=true AND t.status='ACTIVE'/);
+ assert.match(source,/u.locked_until IS NULL OR u.locked_until<=now\(\)/);
  assert.match(source,/e\.active=true/);
  assert.match(source,/e\.expires_at IS NULL OR e\.expires_at>now\(\)/);
  assert.match(source,/active=true AND archived=false/);
