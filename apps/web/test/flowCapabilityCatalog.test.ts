@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {flowCreateOptions,flowElementAvailable,type FlowCapabilityCatalog} from '../../web/src/core/builders/FlowBuilder/flowCapabilityCatalog';
+import {flowCreateOptions,flowElementAvailable,type FlowCapabilityCatalog} from '../src/core/builders/FlowBuilder/flowCapabilityCatalog';
 
 const migration=readFileSync(new URL('../../server/src/system-support/migrations/20261112-flow-capability-registry.sql',import.meta.url),'utf8');
 const permitted=['Screen Flow','Autolaunched Flow','Record-Triggered Flow'];
