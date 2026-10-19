@@ -1,5 +1,6 @@
 import {evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
 import {evaluateFlowCollectionStep} from './flow-data-actions.js';
+import {evaluateFlowAssignment} from './flow-assignment-runtime.js';
 
 type Node={id:number;type:string;label?:string;config:Record<string,unknown>};
 type Edge={from:number;to:number;label?:string;kind?:string};
@@ -130,21 +131,15 @@ export async function simulateFlowGraph(options:{
       }else if(node.type==='Assignment'){
         const name=String(config.variable??'');
         const value=resolve(config.value??null);
-        if(!scalar(value))throw new Error('Assignment needs a scalar resource');
-        const field=/^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(name);
-        if(field&&record(vars.$Record))vars.$Record[field[1]]=value;
-        else if(identifier.test(name)){
-          const operator=String(config.operator??'Assign');
-          if(operator==='Assign')vars[name]=value;
-          else if(['Add','Subtract','Multiply','Divide'].includes(operator)){
-            if(typeof vars[name]!=='number'||typeof value!=='number')
-              throw new Error('Numeric Assignment needs numeric values');
-            const previous=vars[name] as number;
-            vars[name]=operator==='Add'?previous+value:
-              operator==='Subtract'?previous-value:
-              operator==='Multiply'?previous*value:previous/value;
-            if(!Number.isFinite(vars[name] as number))throw new Error('Invalid numeric Assignment');
-          }else throw new Error('Debug does not support this Assignment operator');
+        const target=/^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(name);
+        if(target&&record(vars.$Record)){
+          if(String(config.operator??'Assign')!=='Assign'||!scalar(value))
+            throw new Error('Before-save field Assignment needs a scalar value');
+          vars.$Record[target[1]]=value;
+        }else if(identifier.test(name)){
+          vars[name]=evaluateFlowAssignment(vars[name],value,
+            String(config.operator??'Assign'),Array.isArray(vars[name])
+              ||Array.isArray(value));
         }else throw new Error('Invalid Assignment variable');
       }else if(node.type==='Decision'){
         const choices=Array.isArray(config.outcomes)?config.outcomes.filter(record):[];
