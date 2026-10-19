@@ -7,6 +7,7 @@ import {FlowRecordQuery} from './flow-record-query.js';
 import {flowDebugResources,simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
+import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
@@ -752,7 +753,7 @@ export class FlowRuntime {
         const screen=byId.get(current);
         if(!screen||screen.type!=='Screen')throw new Error('Invalid Screen history');
         const fields=Array.isArray(screen.config.fields)?screen.config.fields as Array<Record<string,unknown>>:[];
-        return {interviewId:runId,screen,outcomes:this.screenOutcomes(screen),
+        return {interviewId:runId,screen:hydrateFlowScreenChoices(screen,resources),outcomes:this.screenOutcomes(screen),
           canGoBack:history.length>0,
           values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
             .map(f=>[f.apiName,vars[String(f.apiName)]]))};
@@ -762,8 +763,18 @@ export class FlowRuntime {
       if(!values||typeof values!=='object'||Array.isArray(values))throw new Error('Invalid Screen values');
       if(visible?.type==='Screen'&&persisted.rows[0]){
         const fields=Array.isArray(visible.config.fields)?visible.config.fields as Array<Record<string,unknown>>:[];
+        const hydrated=hydrateFlowScreenChoices(visible,resources);
+        const choiceFields=Array.isArray(hydrated.config.fields)
+          ?hydrated.config.fields as Array<Record<string,unknown>>:[];
         const allowed=new Set(fields.map(field=>field.apiName).filter((key):key is string=>typeof key==='string'));
         for(const [key,value] of Object.entries(values)){
+          const field=choiceFields.find(item=>item.apiName===key);
+          if(field?.type==='Picklist'){
+            const choices=Array.isArray(field.choices)?field.choices:[];
+            if(value!==''&&value!==null&&value!==undefined
+              &&(typeof value!=='string'||!choices.includes(value)))
+              throw new Error('Invalid Screen choice for field: '+key);
+          }
           if(!allowed.has(key)){
             // The UI may echo previously returned Flow resource values; never let
             // a Screen silently overwrite variables it does not own.
@@ -805,7 +816,7 @@ export class FlowRuntime {
           await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
             loopIndexes,vars,persistenceResources);
           const fields=Array.isArray(node.config.fields)?node.config.fields as Array<Record<string,unknown>>:[];
-          return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
+          return {interviewId:runId,screen:hydrateFlowScreenChoices(node,resources),outcomes:this.screenOutcomes(node),
             canGoBack:history.length>0,
             values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
               .map(f=>[f.apiName,vars[String(f.apiName)]]))};
@@ -860,8 +871,9 @@ export class FlowRuntime {
           selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
         }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
           'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
-          if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save')
-            throw new Error('Before-save Record-Triggered Flows cannot execute data actions');
+          if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save'
+             &&!['Get Records','Loop','Collection Filter','Collection Sort','Transform'].includes(node.type))
+            throw new Error('Before-save Flows allow read-only data elements only');
           if(!this.records||!this.recordQuery)throw new Error('Flow record engine unavailable');
           let action;
           const savepoint='flow_action_'+node.id;
@@ -889,6 +901,7 @@ export class FlowRuntime {
           try{
             await executeFlowSubflow({client,tenantId,userId,
               initiatingUserId:active.initiated_by??userId,config:node.config,
+              parentResources:resources,
               rbac:this.rbac!,callStack:activeCallStack,evaluate,
               set:(name,value)=>set(name,value),
               advance:async(childRunId,childCallStack,childUserId)=>{
