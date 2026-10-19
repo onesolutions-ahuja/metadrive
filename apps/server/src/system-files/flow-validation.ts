@@ -115,6 +115,10 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   }
   const properties=config as Record<string,unknown>;
   if(type==='Assignment'){
+   const operator=String(properties.operator??'Assign');
+   if(!['Assign','Add','Subtract','Multiply','Divide','Add At Beginning','Add At End',
+     'Remove','Remove All'].includes(operator))
+    errors.push('Assignment operator is not supported');
    const variable=String(properties.variable??'');
    const target=/^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(variable);
    if(variable.startsWith('$Record.')&&(!beforeSave||!target))
