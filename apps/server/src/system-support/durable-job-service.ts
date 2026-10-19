@@ -90,14 +90,21 @@ export class DurableJobService {
   return rows[0];
  }
  /** Explicit cancel of terminal failed work, preserving historical job state until reviewed. */
- async cancelFailed(tenantId:string,id:string){
-  const {rowCount}=await this.db.query(`
-   UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
-   WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
-  if(!rowCount)throw new Error('Failed job not found');
+ async cancelFailed(tenantId:string,id:string,actorId?:string){
+  const cancel=async(query:(sql:string,params:unknown[])=>Promise<{rowCount:number|null}>)=>{
+   const {rowCount}=await query(`
+    UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
+    WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
+   if(!rowCount)throw new Error('Failed job not found');
+   if(actorId)await query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,actorId,'durable_job.cancel',JSON.stringify({jobId:id})]);
+  };
+  if(actorId)await this.db.transaction(client=>cancel((sql,params)=>client.query(sql,params)));
+  else await cancel((sql,params)=>this.db.query(sql,params));
  }
 
- /** Record an operator decision without silently replaying ambiguous side effects. */
+  /** Record an operator decision without silently replaying ambiguous side effects. */
  async reconcileFailed(tenantId:string,id:string,actorId:string,decision:'acknowledge'|'retry'){
   if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
   await this.db.transaction(async client=>{
