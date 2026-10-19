@@ -70,20 +70,28 @@ export class ScheduledFlowDispatcher {
  }
 
  async enqueueDue(now=new Date()) {
-  const {rows}=await this.db.query<{
-   id:string;tenant_id:string;api_name:string;version:number;flow_service_user_id:string;
-   app_api_name:string|null
-  }>(`
-   SELECT f.id,f.tenant_id,f.api_name,f.version,s.flow_service_user_id,t.app_api_name
-   FROM md_flow_definitions f
-   JOIN md_flow_trigger_subscriptions t ON t.tenant_id=f.tenant_id AND t.flow_id=f.id
-    AND t.flow_type='Schedule-Triggered Flow' AND t.active=true
-   JOIN md_tenant_automation_settings s ON s.tenant_id=f.tenant_id
-   JOIN md_users u ON u.tenant_id=s.tenant_id AND u.id=s.flow_service_user_id AND u.enabled=true
-   WHERE f.flow_type='Schedule-Triggered Flow' AND f.active=true AND f.archived=false
-   ORDER BY f.tenant_id,f.api_name LIMIT 501
-  `);
-  if(rows.length>500)throw new Error('Scheduled Flow dispatcher limit exceeded (500 active schedules)');
+  let scanned=0;
+  let cursor:{tenantId:string;apiName:string;version:number;id:string}|null=null;
+  // Stable keyset paging: tenants with >500 active schedules are not blocked.
+  // Cap each poll at 20,000 rows to bound memory and worker latency.
+  for(let batch=0;batch<100;batch++){
+   const last=cursor as {tenantId:string;apiName:string;version:number;id:string}|null;
+   const {rows}=await this.db.query<{
+    id:string;tenant_id:string;api_name:string;version:number;flow_service_user_id:string;
+    app_api_name:string|null
+   }>(`
+    SELECT f.id,f.tenant_id,f.api_name,f.version,s.flow_service_user_id,t.app_api_name
+    FROM md_flow_definitions f
+    JOIN md_flow_trigger_subscriptions t ON t.tenant_id=f.tenant_id AND t.flow_id=f.id
+     AND t.flow_type='Schedule-Triggered Flow' AND t.active=true
+    JOIN md_tenant_automation_settings s ON s.tenant_id=f.tenant_id
+    JOIN md_users u ON u.tenant_id=s.tenant_id AND u.id=s.flow_service_user_id AND u.enabled=true
+    WHERE f.flow_type='Schedule-Triggered Flow' AND f.active=true AND f.archived=false
+      AND ($1::uuid IS NULL OR (f.tenant_id,f.api_name,f.version,f.id)>
+        ($1::uuid,$2::text,$3::integer,$4::uuid))
+    ORDER BY f.tenant_id,f.api_name,f.version,f.id LIMIT 200
+   `,[last?.tenantId??null,last?.apiName??null,last?.version??null,last?.id??null]);
+   if(!rows.length)return scanned;
   for(const row of rows){
    const {rows:metadata}=await this.db.query<MetadataValueRow>(`
     SELECT property_path,value_kind,value_text FROM md_flow_editor_values
@@ -117,6 +125,12 @@ export class ScheduledFlowDispatcher {
     scheduledAt,idempotencyKey:key
    });
   }
-  return rows.length;
+   scanned+=rows.length;
+   const final=rows[rows.length-1];
+   cursor={tenantId:final.tenant_id,apiName:final.api_name,version:final.version,id:final.id};
+   if(rows.length<200)return scanned;
+  }
+  throw new Error('Scheduled Flow dispatcher scan limit exceeded (20,000)');
+
  }
 }
