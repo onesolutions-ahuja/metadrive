@@ -1460,6 +1460,8 @@ export async function startSystemServer() {
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
+    const bundledTenants=await seedBundledComponentsForExistingTenants(db);
+    console.info('Bundled component registrations checked for tenants:',bundledTenants);
     await reconcileCoreObjectDefaults(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
