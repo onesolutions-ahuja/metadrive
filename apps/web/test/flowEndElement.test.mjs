@@ -14,6 +14,10 @@ test('durable Wait is registered in the Flow Builder toolbox', () => {
   assert.ok(flowElementMetadata.some(item => item.type === 'Roll Back Records' && item.group === 'Data'));
 });
 
+test('Loop is registered in the Flow Builder toolbox', () => {
+  assert.ok(flowElementMetadata.some(item => item.type === 'Loop' && item.group === 'Logic'));
+});
+
 test('End terminates a leaf path without an outgoing connector', () => {
   const graph = { elements: [start, step], connectors: [link('a', 1, 2)] };
   const result = insertFlowElementAtPath(graph, 2, end, undefined, 'b');

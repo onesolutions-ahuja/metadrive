@@ -1151,6 +1151,7 @@ export const flowElementMetadata = [
   { type: 'Custom Error', group: 'Logic', icon: '!' },
   { type: 'Decision', group: 'Logic', icon: '◇' },
   { type: 'Assignment', group: 'Logic', icon: '⇄' },
+  { type: 'Loop', group: 'Logic', icon: '↻' },
   { type: 'Create Records', group: 'Data', icon: '+' },
   { type: 'HTTP Callout', group: 'Interaction', icon: '⇧' }
 ];

@@ -139,7 +139,7 @@ export default function FlowBuilder({
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
-    ['End', 'Screen', 'Wait', 'Action', 'Roll Back Records', 'Custom Error', 'Decision', 'Assignment', 'Create Records', 'HTTP Callout', 'Publish Platform Event'].includes(type)
+    ['End', 'Screen', 'Wait', 'Action', 'Roll Back Records', 'Custom Error', 'Decision', 'Assignment', 'Loop', 'Create Records', 'HTTP Callout', 'Publish Platform Event'].includes(type)
     && (type !== 'Screen' || flow.flowType === 'Screen Flow')
     && (type !== 'Wait' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType)
       || flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen !== 'before-save')
