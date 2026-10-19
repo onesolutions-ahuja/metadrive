@@ -3,6 +3,11 @@
 import { useEffect, useRef } from 'react';
 import { resolveSqlComponentLibrary } from '../../components/Registry/bundledRegistryClient';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
+
+export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
+  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder');
+}
+
 export function useSetupMetadata(ctx: any) {
   const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
@@ -25,12 +30,13 @@ export function useSetupMetadata(ctx: any) {
       || components.some((component) => component.type === 'Report Chart');
     // Administration is a separate workspace, not a dependency of a Till-only tenant.
     const isAdmin = route.kind === 'setup';
+    const needsFlowDefinitions = shouldLoadFlowDefinitions(isAdmin, workspace);
     const needsFlowAdministration = isAdmin && workspace === 'flow-builder';
     const needsApprovalAdministration = isAdmin && (workspace === 'approval-processes' || needsFlowAdministration);
     const needsConnectorAdministration = isAdmin && (needsFlowAdministration);
     const optionalGroups = [
       {
-        key: 'flow-definitions', enabled: needsFlowAdministration,
+        key: 'flow-definitions', enabled: needsFlowDefinitions,
         run: () => apiRequest<{flows: FlowDefinitionMetadata[]}>('/metadata/flows')
           .then((payload) => {
             const definitions = payload.flows ?? [];
