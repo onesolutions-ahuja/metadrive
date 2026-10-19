@@ -1,6 +1,7 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
+import {FormulaEngine} from './formula-engine.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
 type Storable={value_text:string|null;reference_record_id:string|null};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -44,6 +45,7 @@ export class RecordEngine {
       }
       const field=fields.get(key);
       if(!field) throw new Error('Unknown field: '+key);
+      if(field.data_type==='formula')throw Error('Formula fields are read-only');
       await this.rbac.require(tenantId,userId,objectApi+'.'+key,creating?'create':'edit');
       if(value===null) {if(field.required)throw new Error('Required field cannot be null: '+key);prepared.set(key,{value_text:null,reference_record_id:null});continue;}
       let text:string,reference:string|null=null;
@@ -166,6 +168,34 @@ export class RecordEngine {
       [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id]);}
     return rows[0].id;
   }
+  private async attachFormulas(tenantId:string,userId:string,objectApi:string,
+    records:Record<string,unknown>[]):Promise<void>{
+    if(!records.length)return;
+    const {rows}=await this.db.query<{
+      field_api:string;expression:string;return_type:string
+    }>('SELECT field_api,expression,return_type FROM md_field_formulas WHERE tenant_id=$1 AND object_api=$2',
+      [tenantId,objectApi]);
+    if(!rows.length)return;
+    const engine=new FormulaEngine(this.db);
+    for(const formula of rows){
+      if(!(await this.rbac.allowed(tenantId,userId,objectApi+'.'+formula.field_api,'read')))
+        continue;
+      const ast=engine.parse(formula.expression);
+      const refs=engine.references(ast);
+      const accesses=await this.rbac.allowedMany(tenantId,userId,
+        refs.map(field=>({resource:objectApi+'.'+field,action:'read'})));
+      if(accesses.some(allowed=>!allowed))continue;
+      for(const record of records){
+        try {
+          const result=engine.evaluate(ast,record);
+          const wanted=formula.return_type==='Text'?'string':
+            formula.return_type==='Checkbox'?'boolean':'number';
+          if(result!==null&&typeof result!==wanted)throw Error('Formula return type mismatch');
+          record[formula.field_api]=result;
+        }catch {record[formula.field_api]=null;}
+      }
+    }
+  }
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
@@ -199,7 +229,9 @@ export class RecordEngine {
     }
     const total=await this.db.query<{total:string}>(
       "SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$3,id,'read')",[tenantId,objectApi,userId]);
-    return {records:[...collected.values()],total:Number(total.rows[0]?.total??0)};
+    const records=[...collected.values()];
+    await this.attachFormulas(tenantId,userId,objectApi,records);
+    return {records,total:Number(total.rows[0]?.total??0)};
   }
   /** Typed SQL filtering with existing Object, Field and Record authorization. */
   async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
@@ -288,6 +320,7 @@ export class RecordEngine {
         row.data_type==='date'?(row.value_date??val):
         row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
     }
+    await this.attachFormulas(tenantId,userId,objectApi,[record]);
     return record;
   }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
