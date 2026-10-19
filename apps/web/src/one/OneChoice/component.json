@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 2,
+  "version": 3,
   "scope": "platform-core",
   "jsxFile": "one/OneChoice/OneChoice.jsx",
   "cssFile": "one/OneChoice/OneChoice.css",
@@ -68,6 +68,66 @@
           "label": "Segmented"
         }
       ]
+    },
+    {
+      "propertyKey": "optionSource",
+      "label": "Choice source",
+      "kind": "SELECT",
+      "displayOrder": 320,
+      "defaultValue": "static",
+      "choices": [
+        { "key": "static", "label": "Options configured on component" },
+        { "key": "records", "label": "Bound Object records" }
+      ]
+    },
+    {
+      "propertyKey": "optionLabelFieldApiName",
+      "label": "Record option label field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 330,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "optionValueFieldApiName",
+      "label": "Record option value field",
+      "kind": "TEXT",
+      "displayOrder": 340,
+      "defaultValue": "Id"
+    },
+    {
+      "propertyKey": "optionPriceFieldApiName",
+      "label": "Optional displayed price field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 350,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "optionAvailableFieldApiName",
+      "label": "Optional availability checkbox field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 360,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "currencyCode",
+      "label": "Price display currency",
+      "kind": "TEXT",
+      "displayOrder": 370,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "minSelections",
+      "label": "Minimum selections (Flow must enforce)",
+      "kind": "NUMBER",
+      "displayOrder": 380,
+      "defaultValue": 0
+    },
+    {
+      "propertyKey": "maxSelections",
+      "label": "Maximum selections (Flow must enforce)",
+      "kind": "NUMBER",
+      "displayOrder": 390,
+      "defaultValue": 0
     }
   ]
 }
