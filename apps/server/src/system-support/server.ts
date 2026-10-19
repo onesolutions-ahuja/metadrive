@@ -1,4 +1,7 @@
 import {createHash} from 'node:crypto';
+import {ComponentLibraryService} from './component-library-service.js';
+import {DashboardSnapshotService} from './dashboard-snapshot-service.js';
+import {DashboardSubscriptionService} from './dashboard-subscription-service.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
@@ -8,14 +11,22 @@ import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-co
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
+import {PasswordResetService} from './password-reset-service.js';
+import {MfaService} from './mfa-service.js';
+import {TenantDeveloperService} from './tenant-developer-service.js';
+import {TenantRecoveryContacts} from './tenant-recovery-contacts.js';
+import {TenantRecoveryCases} from './tenant-recovery-cases.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
+import {ObjectMetadataHistory} from '../system-files/object-metadata-history.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
 import {permittedApps} from './rbac-navigation.js';
 import {RbacAdministration} from './rbac-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
+import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {FormulaEngine} from '../system-files/formula-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
@@ -78,14 +89,25 @@ export function createSystemServer(db:SqlPersistence) {
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
+  const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
   const namedCredentials=new NamedCredentialService(db,rbac);
+  const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
+  const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
+  const mfa=new MfaService(db,rbac,auth,namedCredentials);
+  const tenantDeveloper=new TenantDeveloperService(db,rbac,auth,mfa);
+  const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
+    namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
   const definitions=new ObjectDefinitionService(db);
+  const objectHistory=new ObjectMetadataHistory(db);
   const components=new ComponentRuntime(db);
+  const library=new ComponentLibraryService(db,rbac);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records,
     (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
+  const recoveryContacts=new TenantRecoveryContacts(db,rbac,mfa,namedCredentials);
+  const recoveryCases=new TenantRecoveryCases(db,rbac,platformTenants,mfa,recoveryContacts,namedCredentials);
 
   // CORS is granted only to origins registered for a SQL tenant.
   app.use(async (req,res,next)=>{
@@ -130,7 +152,10 @@ export function createSystemServer(db:SqlPersistence) {
     const tenantId=await resolveTenant(db,req,tenantSlug);
     if(!tenantId) {res.status(401).json({error:'Invalid credentials or tenant domain'});return;}
     try {
-      const session=await auth.signIn(tenantId,email,password);
+      const userId=await auth.verifyIdentity(tenantId,email,password);
+      const challenge=await mfa.createChallenge(tenantId,userId);
+      if(challenge){res.json(challenge);return;}
+      const session=await auth.issuePasswordSession(tenantId,userId);
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch(error) {
@@ -149,6 +174,40 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
+  }));
+  app.post('/api/auth/password-reset/request',route(async(req,res)=>{
+    const tenantId=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenantId){res.status(400).json({error:'Tenant domain is required'});return;}
+    res.status(202).json(await passwordReset.request(tenantId,req.body?.email));
+  }));
+  app.post('/api/auth/password-reset/confirm',route(async(req,res)=>{
+    const tenantId=await resolveTenant(db,req,req.body?.tenantSlug);
+    if(!tenantId){res.status(400).json({error:'Tenant domain is required'});return;}
+    res.json(await passwordReset.confirm(tenantId,req.body?.email,req.body?.token,req.body?.newPassword));
+  }));
+  app.post('/api/auth/mfa/verify',route(async(req,res)=>{
+    const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code);
+    res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+  }));
+  // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
+  app.get('/api/oauth/callback',route(async(req,res)=>{
+    const redirect=await oauth.complete(req.query.state,req.query.code);
+    res.setHeader('Cache-Control','no-store');
+    res.redirect(303,redirect);
+  }));
+  // Public verification endpoints require high-entropy one-time tokens, not bearer identity.
+  app.post('/api/recovery/contacts/verify',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryContacts.verify(req.body));
+  }));
+  app.post('/api/recovery/cases/:id/confirm',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.proof(req.params.id,req.body,false));
+  }));
+  app.post('/api/recovery/cases/:id/dispute',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.proof(req.params.id,req.body,true));
   }));
   app.use('/api',authorize);
   // Durable notifications: only the addressed user can list or acknowledge them.
@@ -220,6 +279,74 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await recoverySettings.save(actor.tenant_id,actor.user_id,req.body));
   }));
+  app.get('/api/auth/mfa/status',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.status(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/auth/mfa/policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.policy(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/auth/mfa/policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.setPolicy(actor.tenant_id,actor.user_id,req.body?.mode));
+  }));
+  app.post('/api/auth/mfa/enroll',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.enroll(actor.tenant_id,actor.user_id,req.body?.password));
+  }));
+  app.post('/api/auth/mfa/enroll/confirm',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.confirmEnrollment(actor.tenant_id,actor.user_id,req.body?.enrollment_token,req.body?.code));
+  }));
+  app.post('/api/auth/mfa/disable',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await mfa.disable(actor.tenant_id,actor.user_id,req.body?.password,req.body?.code));
+  }));
+  app.get('/api/tenant/recovery/contacts',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryContacts.list(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/tenant/recovery/contacts',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.status(201).json(await recoveryContacts.enroll(actor.tenant_id,actor.user_id,req.body));
+  }));
+  app.post('/api/platform/recovery/cases',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.status(201).json(await recoveryCases.open(req.actor!,req.body));
+  }));
+  app.get('/api/platform/recovery/cases/:id',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.read(req.actor!,req.params.id));
+  }));
+  app.post('/api/platform/recovery/cases/:id/approve',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.approve(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/platform/recovery/cases/:id/invite',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.invite(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/tenant/recovery/cases/:id/redeem',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.redeem(req.actor!,req.params.id,req.body));
+  }));
+  app.post('/api/tenant/recovery/cases/:id/repair',route(async(req,res)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.json(await recoveryCases.repair(req.actor!,req.params.id,req.body));
+  }));
+  app.get('/api/tenant/developer-account',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await tenantDeveloper.status(actor.tenant_id,actor.user_id));
+  }));
+  app.post('/api/tenant/developer-account/activate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await tenantDeveloper.activate(actor.tenant_id,actor.user_id,req.body));
+  }));
   app.get('/api/auth/user-locks',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
@@ -228,6 +355,32 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({users:rows.map(r=>({id:r.id,name:r.display_name||r.email,email:r.email,active:r.enabled,
       lockedUntil:r.locked_until?new Date(r.locked_until).getTime():null}))});
   }));
+  // Security administration: tenant-scoped account locks and session revocation.
+  const setAccountLock=route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const id=req.params.id;
+    if(!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))
+      throw new Error('Invalid user ID');
+    if(id===actor.user_id)throw new Error('Cannot alter own account lock');
+    const locking=req.path.endsWith('/lock');
+    const duration=req.body?.durationMinutes;
+    if(locking && (!Number.isInteger(duration)||duration<1||duration>1440))
+      throw new Error('Invalid account lock duration');
+    await db.transaction(async client=>{
+      const updated=await client.query(`UPDATE md_users SET locked_until=${locking?"now() + ($3::integer * interval '1 minute')":"NULL"}
+        WHERE tenant_id=$1 AND id=$2 RETURNING id`,locking
+        ?[actor.tenant_id,id,duration]:[actor.tenant_id,id]);
+      if(!updated.rowCount)throw new Error('User not found');
+      if(locking)for(const table of ['md_sessions','md_refresh_sessions'])
+        await client.query('UPDATE '+table+' SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,id]);
+      await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,subject_user_id) VALUES($1,$2,$3,$4)',
+        [actor.tenant_id,actor.user_id,locking?'UserLocked':'UserUnlocked',id]);
+    });
+    res.json({success:true});
+  });
+  app.post('/api/auth/users/:id/lock',setAccountLock);
+  app.post('/api/auth/users/:id/unlock',setAccountLock);
   app.get('/api/auth/security-events',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
@@ -446,6 +599,20 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
     res.json(await definitions.fieldDependencies(actor.tenant_id,req.params.apiName));
   }));
+  app.get('/api/metadata/objects/:apiName/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    const limit=Number(req.query.limit??100);
+    res.json({history:await objectHistory.list(actor.tenant_id,req.params.apiName,limit)});
+  }));
+  app.get('/api/metadata/objects/:apiName/history/:revision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    if(!/^[1-9][0-9]*$/.test(req.params.revision))throw new Error('Invalid metadata revision');
+    res.json({change:await objectHistory.revision(actor.tenant_id,req.params.apiName,Number(req.params.revision))});
+  }));
   app.get('/api/metadata/objects/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
@@ -495,8 +662,19 @@ export function createSystemServer(db:SqlPersistence) {
     if(draft.validationRules?.length||draft.formulaFields?.length
       ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
       throw new Error('Invalid unsupported object configuration');
-    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
+    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)),actor.user_id);
     res.json({object});
+  }));
+  app.post('/api/metadata/objects/:apiName/formulas/validate',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||
+      typeof req.body.expression!=='string'||typeof req.body.returnType!=='string')
+      throw Error('Invalid formula validation request');
+    res.json(await new FormulaEngine(db).validate(actor.tenant_id,req.params.apiName,
+      req.body.expression,req.body.returnType));
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
@@ -512,11 +690,30 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/component-library',route(async(req,res)=>{
     const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
-    res.json({
-      components:await components.list(actor.tenant_id),
-      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
-    });
+    res.json({components:await library.list(actor.tenant_id,actor.user_id),
+      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')});
+  }));
+  app.post('/api/component-library',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.status(201).json({component:await library.save(actor.tenant_id,actor.user_id,req.body)});
+  }));
+  app.put('/api/component-library/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.save(actor.tenant_id,actor.user_id,req.body,req.params.apiName)});
+  }));
+  app.post('/api/component-library/:apiName/publish',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.publish(actor.tenant_id,actor.user_id,req.params.apiName)});
+  }));
+  app.post('/api/component-library/:apiName/rollback',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({component:await library.publish(actor.tenant_id,actor.user_id,
+      req.params.apiName,req.body?.version)});
+  }));
+  app.delete('/api/component-library/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await library.remove(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.status(204).end();
   }));
   // Authenticated publication of display-only metadata. No cached record data or grants.
   app.get('/api/metadata/offline-publication',route(async(req,res)=>{
@@ -574,6 +771,11 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
   }));
+  app.post('/api/named-credentials/:id/oauth/start',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await oauth.start(actor.tenant_id,actor.user_id,req.params.id));
+  }));
   app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','manage');
@@ -596,7 +798,41 @@ export function createSystemServer(db:SqlPersistence) {
     await namedCredentials.remove(actor.tenant_id,actor.user_id,req.params.id);
     res.status(204).end();
   }));
+  app.get('/api/metadata/dashboards/:apiName/snapshots',route(async(req,res)=>{
+    res.json({snapshots:await dashboardSnapshots.list(req.actor!,req.params.apiName)});
+  }));
+  app.post('/api/metadata/dashboards/:apiName/snapshots',route(async(req,res)=>{
+    res.status(201).json({snapshot:await dashboardSnapshots.create(req.actor!,req.params.apiName,req.body)});
+  }));
+  app.delete('/api/metadata/dashboards/:apiName/snapshots/:id',route(async(req,res)=>{
+    await dashboardSnapshots.remove(req.actor!,req.params.apiName,req.params.id);
+    res.status(204).end();
+  }));
+  app.get('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.json({subscriptions:await dashboardSubscriptions.list(req.actor!,req.params.apiName)});
+  }));
+  app.post('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.status(201).json({subscription:await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body)});
+  }));
+  app.put('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    res.json({subscription:await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body,req.params.id)});
+  }));
+  app.delete('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    await dashboardSubscriptions.remove(req.actor!,req.params.apiName,req.params.id);
+    res.status(204).end();
+  }));
+  app.post('/api/metadata/dashboards/:apiName/subscriptions/:id/run',route(async(req,res)=>{
+    res.json({subscription:await dashboardSubscriptions.run(req.actor!,req.params.apiName,req.params.id)});
+  }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
+  app.post('/api/integration-connections/:id/test',route(async(req,res)=>{
+    const actor=req.actor!;
+    const connection=await systemDefinitions.testConnection(
+      actor.tenant_id,actor.user_id,req.params.id,
+      (credentialId,path)=>namedCredentials.callout(actor.tenant_id,actor.user_id,
+        {namedCredentialId:credentialId,method:'GET',path},{},'integration-connection-test'));
+    res.json({connection});
+  }));
   const definitionPaths:Record<string,DefinitionKind>={
     '/metadata/platform-events':'platform-events',
     '/metadata/email-alerts':'email-alerts',
@@ -716,6 +952,28 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await flows.deleteEditor(actor.tenant_id,actor.user_id,req.params.apiName);
     res.status(204).end();
+  }));
+  // Explicit licence administration is separate from installation and activation.
+  app.post('/api/connector-apps/:appKey/licence',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Licence','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(req.params.appKey))
+      throw new Error('Invalid connector app');
+    await db.transaction(async client=>{
+      const found=await client.query<{id:string}>(
+        'SELECT id FROM md_apps WHERE api_name=$1 AND enabled=true AND (tenant_owner_id IS NULL OR tenant_owner_id=$2)',
+        [req.params.appKey,actor.tenant_id]);
+      if(!found.rows[0])throw new Error('Connector application not found');
+      await client.query(`INSERT INTO md_app_entitlements(tenant_id,app_id,active,expires_at)
+        VALUES ($1,$2,true,NULL)
+        ON CONFLICT(tenant_id,app_id) DO UPDATE SET active=true,expires_at=NULL`,
+        [actor.tenant_id,found.rows[0].id]);
+      await client.query(
+        'INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,$3)',
+        [actor.tenant_id,actor.user_id,'ConnectorLicenceGranted']);
+    });
+    res.json({granted:true});
   }));
   app.post('/api/apps/:apiName/install',route(async(req,res)=>{
     const actor=req.actor!;
