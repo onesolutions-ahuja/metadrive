@@ -10,7 +10,9 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
   if(job.job_type!=='flow.execute'||!job.actor_user_id||!job.resource_id||!job.resource_version||
    !/^[A-Za-z][A-Za-z0-9_]*$/.test(job.resource_id))return false;
   const {rows:actors}=await db.query(
-   'SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
+   `SELECT 1 FROM md_users u JOIN md_tenants t ON t.id=u.tenant_id
+    WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true AND t.status='ACTIVE'
+      AND (u.locked_until IS NULL OR u.locked_until<=now())`,
    [job.tenant_id,job.actor_user_id]);
   if(!actors.length)return false;
   if(job.app_api_name){
