@@ -822,7 +822,7 @@ export class FlowRuntime {
         };
         const matched=conditions.find(option=>option.name!=='Default'&&match(option));
         outcome=String(matched?.label??matched?.name??'Default');
-      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord'].includes(node.type)){
+      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord','Update Records'].includes(node.type)){
         throw new Error('Cannot safely debug unsupported Flow action: '+node.type);
       }
       const available=edges.filter(edge=>edge.from===current&&edge.kind==='normal');

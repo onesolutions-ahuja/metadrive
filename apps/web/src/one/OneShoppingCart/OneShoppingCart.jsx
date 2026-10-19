@@ -461,6 +461,12 @@ function ShoppingCartTill({ props }) {
   }, [displaySession, cart]);
   const add = (product) => {
     if (locked || !sessionReady) return;
+    // Financial settings are loaded asynchronously: never classify a product
+    // using the initial NaN rate before the effective tenant rate is verified.
+    if (!settingsReady || !Number.isFinite(vatRate)) {
+      setError("Financial settings are not ready. Wait for tax configuration to load.");
+      return;
+    }
     const id = String(product.Id || ""),
       label = name(product),
       unit = price(product);
@@ -468,6 +474,13 @@ function ShoppingCartTill({ props }) {
       setError(
         "This product is missing a valid record ID, name or selling price.",
       );
+      return;
+    }
+    // A missing/incorrectly typed tax flag is not evidence that a product is VAT-exempt.
+    // Do not silently turn unknown tax metadata into false for VAT-enabled tills.
+    const vatValue = product[props.vatApplicableFieldApiName || ""];
+    if (vatRate > 0 && typeof vatValue !== "boolean") {
+      setError("This product has no verified VAT applicability value. Update its Product record before adding it to the sale.");
       return;
     }
     const current = cart.find((item) => item.productId === id);
@@ -484,8 +497,7 @@ function ShoppingCartTill({ props }) {
             name: label,
             quantity: 1,
             unitPriceMinor: unit,
-            vatApplicable:
-              product[props.vatApplicableFieldApiName || ""] === true,
+            vatApplicable: vatValue === true,
             ageRestricted:
               product[props.ageRestrictedFieldApiName || ""] === true,
           },
@@ -506,7 +518,9 @@ function ShoppingCartTill({ props }) {
     };
     window.addEventListener("metadrive:page-cart-add", receive);
     return () => window.removeEventListener("metadrive:page-cart-add", receive);
-  }, [props.pageSessionKey, props.cartTargetKey, cart, locked, sessionReady]);
+  }, [props.pageSessionKey, props.cartTargetKey, props.nameFieldApiName,
+      props.priceFieldApiName, props.vatApplicableFieldApiName, props.ageRestrictedFieldApiName,
+      cart, locked, sessionReady, settingsReady, vatRate]);
   const changeQuantity = (id, amount) => {
     if (locked || !sessionReady) return;
     updateCart(

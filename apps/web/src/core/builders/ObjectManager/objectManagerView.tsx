@@ -555,6 +555,7 @@ function ObjectManager({
       allowActivities: true,
       trackFieldHistory: false,
       allowInChatter: false,
+      allowSearch: true,
       deploymentStatus: 'Deployed',
       recordNameType: 'Text',
       recordNameFormat: '',
@@ -740,18 +741,20 @@ function ObjectManager({
     : [...selected, apiName];
   const renderDetails = () => (
     <section className="surface object-setting-surface">
-      <div className="section-toolbar"><div><h2>Details</h2><p>Manage the object’s labels and description.</p></div><div className="toolbar-actions">{draft.kind === 'Custom Object' && <button className="btn" onClick={() => setShowDeleteObjectConfirmation(true)}><Trash2 size={14} />Delete</button>}<button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div></div>
+      <div className="section-toolbar"><div><h2>Details</h2><p>Manage the object’s labels, help text, and features.</p></div><div className="toolbar-actions">{draft.kind === 'Custom Object' && <button className="btn" onClick={() => setShowDeleteObjectConfirmation(true)}><Trash2 size={14} />Delete</button>}<button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div></div>
       <div className="object-edit-form">
         <PlatformPageSlot slotKey="field-object-01"><label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} /></label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-object-02"><label className="form-label">Plural Label<input className="form-control" value={draft.pluralLabel} onChange={(event) => updateDraft({ pluralLabel: event.target.value })} /></label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-object-03"><label className="form-label">Object Name<div className="form-display">{draft.apiName}</div></label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-object-04"><label className="form-label">Description<textarea className="form-control" rows={4} value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} /></label></PlatformPageSlot>
+        <label className="form-label">Help Text<textarea className="form-control" rows={3} maxLength={1000} value={draft.helpText ?? ''} onChange={(event) => updateDraft({ helpText: event.target.value })} /></label>
         <div className="form-display">Object Type: {draft.kind}</div>
         <div className="metadata-card"><h3>Object Features</h3>{([
           ['allowReports', 'Allow Reports'],
           ['allowActivities', 'Allow Activities'],
           ['trackFieldHistory', 'Track Field History'],
-          ['allowInChatter', 'Allow in Chatter']
+          ['allowInChatter', 'Allow in Chatter'],
+          ['allowSearch', 'Allow Search']
         ] as const).map(([key, label]) => <label className="metadata-row" key={key}><span>{label}</span><input type="checkbox" checked={draft.settings?.[key] ?? false} onChange={(event) => updateObjectSettings({ [key]: event.target.checked })} /></label>)}
           <PlatformPageSlot slotKey="field-object-05"><label className="form-label">Deployment Status<select className="form-control" value={draft.settings?.deploymentStatus ?? 'Deployed'} onChange={(event) => updateObjectSettings({ deploymentStatus: event.target.value as ObjectSettingsMetadata['deploymentStatus'] })}><option>In Development</option><option>Deployed</option></select></label></PlatformPageSlot>
           <div className="info-callout">Record name: {draft.fields.find((field) => field.apiName === 'Name')?.label ?? 'Name'} · {draft.settings?.recordNameType ?? 'Text'}{draft.settings?.recordNameFormat ? ` · ${draft.settings.recordNameFormat}` : ''}</div>

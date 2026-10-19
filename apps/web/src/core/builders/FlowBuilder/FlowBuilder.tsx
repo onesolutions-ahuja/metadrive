@@ -1,6 +1,7 @@
 import { uniqueLibraryComponents, libraryComponentLabel } from '../../components/Registry/componentLibraryDiscovery';
 import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './flowGraphLayout';
+import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
 import { flowTypeOptions, formulaFunctions, formulaOperators } from './flowEditorCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
@@ -360,7 +361,7 @@ export default function FlowBuilder({
         onNotify('Every Decision outcome already has a connector');
         return;
       }
-      label = outcome.label;
+      label = outcome.name === 'Default' ? 'Default' : outcome.label;
     } else if (selected.type === 'Screen') {
       const outcomes = screenOutcomesFrom(selected.config.outcomes);
       const outcome = outcomes.find((item) => !outgoing.some((connector) => connector.label === item.label || connector.label === item.name));
@@ -529,7 +530,13 @@ export default function FlowBuilder({
     if (selected.type === 'Decision') {
       const outcomes = outcomesFrom(selected.config.outcomes);
       const decisionObject = objects.find((object) => object.apiName === displayValue(selected.config.object)) ?? selectedObject;
-      const setOutcomes = (next: DecisionOutcome[]) => setConfig('outcomes', next);
+      const setOutcomes = (next: DecisionOutcome[]) => {
+        try {
+          onFlowChange(reconcileDecisionOutcomePaths(flow, selected.id, next, `connector-${crypto.randomUUID()}`));
+        } catch (error) {
+          onNotify(error instanceof Error ? error.message : 'Unable to update Decision paths');
+        }
+      };
       return <div className="flow-config-list"><h3>Outcomes</h3>
         <label className="form-label">Object<select className="form-control" value={decisionObject?.apiName ?? ''} onChange={(event) => setConfig('object', event.target.value)}><option value="">Select object</option>{objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         {outcomes.map((outcome, index) => <div className="metadata-card" key={outcome.name}>
@@ -674,7 +681,8 @@ export default function FlowBuilder({
           <label className="form-label">Fields to Store<select className="form-control" value={fieldsToStore ? 'selected' : 'all'} onChange={(event) => setConfig('fields', event.target.value === 'all' ? 'all' : [])}><option value="all">Automatically store all fields</option><option value="selected">Choose fields</option></select></label>
           {fieldsToStore && <div className="field-selector-list">{object?.fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={fieldsToStore.includes(field.apiName)} onChange={() => setConfig('fields', fieldsToStore.includes(field.apiName) ? fieldsToStore.filter((name) => name !== field.apiName) : [...fieldsToStore, field.apiName])} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>}
         </>}
-        {selected.type !== 'Create Records' && <>{renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All', rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}<label className="form-label">Filter Conditions</label>{renderConditions('conditions', object?.fields ?? [])}</>}
+        {selected.type === 'Update Records' && <label className="form-label">Record ID / Flow Resource<input className="form-control" value={displayValue(selected.config.recordId)} placeholder="{!recordId}" onChange={(event) => setConfig('recordId', event.target.value)} /><small>Update one record by ID. Filter-based bulk updates are not supported by the SQL runtime.</small></label>}
+        {selected.type !== 'Create Records' && selected.type !== 'Update Records' && <>{renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All', rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}<label className="form-label">Filter Conditions</label>{renderConditions('conditions', object?.fields ?? [])}</>}
         {selected.type !== 'Delete Records' && selected.type !== 'Get Records' && !(selected.type === 'Create Records' && selected.config.recordSource === 'collection') && <><label className="form-label">Set Field Values</label>{renderFieldValues()}</>}
       </>;
     }
@@ -1327,6 +1335,15 @@ export default function FlowBuilder({
             <button type="button" className="btn btn-small" onClick={switchCanvasMode}
               aria-pressed={freeformLayout}>{freeformLayout ? 'Switch to Auto-Layout' : 'Switch to Freeform'}</button>
             {freeformLayout && <button type="button" className="btn btn-small" onClick={resetFreeformLayout}>Reset Positions</button>}
+            {flow.status === 'Draft' && <button type="button" className="btn btn-small" onClick={() => {
+              const repaired = completeFlowEndPaths(flow, `connector-${crypto.randomUUID()}`);
+              if (JSON.stringify(repaired) === JSON.stringify(flow)) {
+                onNotify('All current paths already have an End.');
+              } else {
+                onFlowChange(repaired);
+                onNotify('End paths added to the draft. Review, Check and Save the Flow.');
+              }
+            }}><Check size={13} />Complete End Paths</button>}
             <button className="btn btn-small" onClick={onValidate}><Activity size={13} />Errors and Warnings</button>
           </div>
         </div>

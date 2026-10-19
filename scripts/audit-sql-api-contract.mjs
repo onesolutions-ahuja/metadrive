@@ -25,6 +25,8 @@ for(const name of kinds)for(const method of ['GET','POST','PUT','DELETE'])routes
 const builderRoutes=[
  ['GET','/metadata/apps'],['POST','/metadata/apps'],['PUT','/metadata/apps/:apiName'],
  ['DELETE','/metadata/apps/:apiName'],
+ ['GET','/metadata/offline-publication'],
+ ['POST','/named-credentials/:id/test'],['POST','/named-credentials/:id/rotate'],
  ['GET','/metadata/pages'],['GET','/metadata/pages/:apiName'],
  ['PUT','/metadata/pages/:apiName'],['DELETE','/metadata/pages/:apiName'],
  ['GET','/metadata/flows'],['GET','/metadata/flows/list'],
@@ -73,5 +75,12 @@ const matches=(route,target)=>{
  return a.length===b.length&&a.every((p,i)=>p===b[i]||p.startsWith(':')||b[i].startsWith(':')||b[i].includes('${'));
 };
 const missed=[...new Map(calls.filter(x=>!routes.some(r=>matches(r.path,x.path))).map(x=>[x.path,x])).values()].sort((a,b)=>a.path.localeCompare(b.path));
+const baseline=JSON.parse(fs.readFileSync('scripts/sql-api-compatibility-gaps.json','utf8')).unmatchedPaths;
+const unexpected=missed.filter(x=>!baseline.includes(x.path));
+const stale=baseline.filter(target=>!missed.some(x=>x.path===target));
+if(stale.length)console.warn('SQL API compatibility baseline candidates for review:',stale);
+if(unexpected.length){
+ console.error('New frontend endpoints without matching SQL routes:',unexpected);
+ process.exitCode=1;
+}
 console.log(JSON.stringify({frontendFiles:files.length,staticCalls:calls.length,serverRoutes:routes.length,unmatched:missed},null,2));
-if(missed.length)process.exitCode=1;

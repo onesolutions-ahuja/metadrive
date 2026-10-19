@@ -4,7 +4,7 @@ import sanitizeHtml from 'sanitize-html';
 import type {RbacEngine} from './rbac-engine.js';
 import {evaluateFlowFormula,validateFlowFormula} from './flow-formula-runtime.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null};
-type Storable={value_text:string|null;reference_record_id:string|null;geo_latitude?:number|null;geo_longitude?:number|null;address_street?:string|null;address_city?:string|null;address_state?:string|null;address_postal_code?:string|null;address_country?:string|null;multi_values?:string[];is_unique:boolean;case_sensitive:boolean};
+type Storable={value_text:string|null;reference_record_id:string|null;value_number?:string|null;value_date?:string|null;value_datetime?:Date|null;value_boolean?:boolean|null;geo_latitude?:number|null;geo_longitude?:number|null;address_street?:string|null;address_city?:string|null;address_state?:string|null;address_postal_code?:string|null;address_country?:string|null;multi_values?:string[];is_unique:boolean;case_sensitive:boolean};
 type RecordTriggerHandler=(
   client:PoolClient,tenantId:string,userId:string,objectApi:string,
   operation:'created'|'updated'|'deleted',
@@ -114,11 +114,12 @@ export class RecordEngine {
           ?[tenantId,childObject,rollup.relationship_field,parentId]
           :[tenantId,childObject,rollup.relationship_field,rollup.source_field,parentId]);
         await client.query(`INSERT INTO md_record_values
-          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive)
-          VALUES($1,$2,$3,$4,$5,NULL,false,false)
+          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,value_number)
+          VALUES($1,$2,$3,$4,$5,NULL,false,false,$5::numeric)
           ON CONFLICT(tenant_id,record_id,field_api) DO UPDATE SET value_text=EXCLUDED.value_text,
             reference_record_id=NULL,geo_latitude=NULL,geo_longitude=NULL,address_street=NULL,
-            address_city=NULL,address_state=NULL,address_postal_code=NULL,address_country=NULL`,
+            address_city=NULL,address_state=NULL,address_postal_code=NULL,address_country=NULL,
+            value_number=EXCLUDED.value_number,value_date=NULL,value_datetime=NULL,value_boolean=NULL`,
         [tenantId,parentId,rollup.parent_object,rollup.field_api,result.rows[0]?.value??'0']);
         await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
           [tenantId,rollup.parent_object,parentId]);
@@ -407,6 +408,11 @@ export class RecordEngine {
         default:throw new Error('Invalid metadata data type: '+field.data_type);
       }
       prepared.set(key,{value_text:reference?null:text,reference_record_id:reference,
+        ...(field.data_type==='number'||field.data_type==='currency'||field.data_type==='percent'
+          ?{value_number:text}:{}),
+        ...(field.data_type==='date'?{value_date:text}:{}),
+        ...(field.data_type==='datetime'?{value_datetime:new Date(text)}:{}),
+        ...(field.data_type==='boolean'?{value_boolean:value as boolean}:{}),
         ...(field.data_type==='multipicklist'?{multi_values:(value as string).split(';')}:{}),...metadata});
     }
     for(const field of definitions){
@@ -481,6 +487,42 @@ export class RecordEngine {
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
+  /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
+  async importRecords(tenantId:string,userId:string,objectApi:string,records:unknown) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi) || objectApi==='User')
+      throw new Error('Invalid import object');
+    if(!Array.isArray(records)||records.length===0||records.length>200)
+      throw new Error('Invalid import batch size (1-200 records)');
+    const ids=new Set<string>();
+    const updates=records.map((item:unknown)=>{
+      if(!item||typeof item!=='object'||Array.isArray(item)
+        ||(Object.getPrototypeOf(item)!==Object.prototype&&Object.getPrototypeOf(item)!==null))
+        throw new Error('Invalid import record');
+      const data=item as Record<string,unknown>;
+      const id=data.Id;
+      if(id!==undefined&&(!('Id' in data)||typeof id!=='string'||!uuid.test(id)))
+        throw new Error('Invalid import record ID');
+      if(typeof id==='string'){
+        if(ids.has(id.toLowerCase()))throw new Error('Duplicate import record ID');
+        ids.add(id.toLowerCase());
+      }
+      const values=Object.fromEntries(Object.entries(data).filter(([key])=>key!=='Id'));
+      if(!Object.keys(values).length)throw new Error('Invalid import record without fields');
+      return {id,values};
+    });
+    const mode=updates.every(item=>typeof item.id==='string')?'update'
+      :updates.every(item=>item.id===undefined)?'create':null;
+    if(!mode)throw new Error('Invalid import batch: cannot mix creates and updates');
+    await this.db.transaction(async client=>{
+      for(const item of updates){
+        if(mode==='update')
+          await this.updateInTransaction(client,tenantId,userId,objectApi,item.id as string,item.values);
+        else
+          await this.createInTransaction(client,tenantId,userId,objectApi,item.values);
+      }
+    });
+    return {count:updates.length,mode};
+  }
   private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,prepared:Map<string,Storable>) {
     const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const selectedOwner=prepared.get('__OwnerId__')?.value_text??userId,queue=prepared.get('__OwnerQueue__')?.value_text==='true';
@@ -495,7 +537,7 @@ export class RecordEngine {
        WHERE tenant_id=$1 AND object_api=$2 AND data_type='rollup' AND deleted_at IS NULL`,
       [tenantId,objectApi]);
     for(const field of rollupFields.rows)if(typeof field.api_name==='string')
-      prepared.set(field.api_name,{value_text:'0',reference_record_id:null,is_unique:false,case_sensitive:false});
+      prepared.set(field.api_name,{value_text:'0',reference_record_id:null,value_number:'0',is_unique:false,case_sensitive:false});
     for(const field of autoFields.rows){
       if(typeof field.api_name!=='string')continue;
       if(prepared.has(field.api_name))continue;
@@ -517,12 +559,14 @@ export class RecordEngine {
     for(const [field,value] of prepared){if(field.startsWith('__'))continue;await client.query(
       `INSERT INTO md_record_values
         (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,
-         geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+         geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country,
+         value_number,value_date,value_datetime,value_boolean)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id,
         value.is_unique,value.case_sensitive,value.geo_latitude??null,value.geo_longitude??null,
         value.address_street??null,value.address_city??null,value.address_state??null,
-        value.address_postal_code??null,value.address_country??null]);
+        value.address_postal_code??null,value.address_country??null,value.value_number??null,
+        value.value_date??null,value.value_datetime??null,value.value_boolean??null]);
       if(value.multi_values)for(const [sortOrder,multiValue] of value.multi_values.entries())
         await client.query(`INSERT INTO md_record_multi_values
           (tenant_id,record_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5,$6)`,
@@ -646,7 +690,11 @@ export class RecordEngine {
     params.push(pageSize,start);
     const limitParam=params.length-1,offsetParam=params.length;
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;address_state:string|null;address_postal_code:string|null;address_country:string|null
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
     }>(`
       WITH selected AS (
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
@@ -656,7 +704,9 @@ export class RecordEngine {
         ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
       )
       SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,
-        v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country,f.data_type
+        v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+        v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,
+        v.address_country,f.data_type
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
         AND EXISTS(SELECT 1 FROM md_field_definitions active_field
@@ -680,13 +730,72 @@ export class RecordEngine {
           ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
             ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
         :value===null?null:
-        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(value):row.data_type==='boolean'?value==='true':value;
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??value):
+        row.data_type==='boolean'?(row.value_boolean??value==='true'):
+        row.data_type==='date'?(row.value_date??value):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
     }
     const records=[...collected.values()];
     if(definitions.some(field=>field.data_type==='formula'))
       for(const record of records)await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions);
     return {records,total:Number(count.rows[0]?.total??0)};
   }
+  /** Typed SQL filtering with existing Object, Field and Record authorization. */
+  async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50,direction:'asc'|'desc'='asc') {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    const type=fields[0]?.data_type;
+    const columns:Record<string,string>={number:'value_number',currency:'value_number',
+      percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
+    const column=columns[type];
+    if(!column)throw new Error('Invalid typed filter field');
+    const casts:Record<string,string>={value_number:'numeric',value_date:'date',
+      value_datetime:'timestamptz',value_boolean:'boolean'};
+    if(column==='value_boolean' && operator!=='eq')throw new Error('Invalid boolean comparison');
+    const ops={eq:'=',lt:'<',lte:'<=',gt:'>',gte:'>='} as const;
+    const {rows}=await this.db.query<{id:string}>(`
+      SELECT r.id FROM md_records r JOIN md_record_values v
+        ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+        AND v.${column} ${ops[operator]} $4::${casts[column]}
+        AND md_record_access($1,$5,r.id,'read')
+      ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
+    `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
+    return rows.map(row=>row.id);
+  }
+
+  /** Numeric aggregation over only records visible to the actor. */
+  async aggregateNumeric(tenantId:string,userId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    if(!['number','currency','percent'].includes(fields[0]?.data_type??''))
+      throw new Error('Invalid numeric aggregate field');
+    const {rows}=await this.db.query<{count:string;sum:string|null;min:string|null;max:string|null;avg:string|null}>(`
+      SELECT count(v.value_number)::text AS count,sum(v.value_number)::text AS sum,
+        min(v.value_number)::text AS min,max(v.value_number)::text AS max,
+        avg(v.value_number)::text AS avg
+      FROM md_record_values v JOIN md_records r
+        ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+        AND md_record_access($1,$4,r.id,'read')`,
+      [tenantId,objectApi,fieldApi,userId]);
+    return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
+  }
+
   /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
   async get(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
@@ -694,10 +803,13 @@ export class RecordEngine {
     const query=client??this.db;
     const {rows}=await query.query<{
       id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
-      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;address_state:string|null;address_postal_code:string|null;address_country:string|null
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
     }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,r.record_type_id,
-      v.field_api,v.value_text,v.reference_record_id,v.geo_latitude,v.geo_longitude,
-      v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country,f.data_type
+      v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+      v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country
       FROM md_records r
       LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
         AND EXISTS(SELECT 1 FROM md_field_definitions active_field
@@ -725,12 +837,19 @@ export class RecordEngine {
           ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
             ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
         :val===null?null:
-        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(val):row.data_type==='boolean'?val==='true':val;
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??val):
+        row.data_type==='boolean'?(row.value_boolean??val==='true'):
+        row.data_type==='date'?(row.value_date??val):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
     }
     const definitions=await this.fields(tenantId,objectApi,client);
     if(definitions.some(field=>field.data_type==='formula'))
       await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions);
     return record;
+  }
+  async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
+    values:Record<string,unknown>,ifUnmodifiedSince?:string) {
+    return this.update(tenantId,userId,objectApi,id,values,ifUnmodifiedSince,client);
   }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
     ifUnmodifiedSince?:string,client?:PoolClient) {
@@ -779,19 +898,23 @@ export class RecordEngine {
       for(const [field,value] of writeValues){if(field.startsWith('__'))continue;await transactionClient.query(`
         INSERT INTO md_record_values
           (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,
-           geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country,
+           value_number,value_date,value_datetime,value_boolean)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         ON CONFLICT (tenant_id,record_id,field_api)
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id,
           is_unique=EXCLUDED.is_unique,case_sensitive=EXCLUDED.case_sensitive,
           geo_latitude=EXCLUDED.geo_latitude,geo_longitude=EXCLUDED.geo_longitude,
           address_street=EXCLUDED.address_street,address_city=EXCLUDED.address_city,
           address_state=EXCLUDED.address_state,address_postal_code=EXCLUDED.address_postal_code,
-          address_country=EXCLUDED.address_country
+          address_country=EXCLUDED.address_country,value_number=EXCLUDED.value_number,
+          value_date=EXCLUDED.value_date,value_datetime=EXCLUDED.value_datetime,
+          value_boolean=EXCLUDED.value_boolean
       `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id,
         value.is_unique,value.case_sensitive,value.geo_latitude??null,value.geo_longitude??null,
         value.address_street??null,value.address_city??null,value.address_state??null,
-        value.address_postal_code??null,value.address_country??null]);
+        value.address_postal_code??null,value.address_country??null,value.value_number??null,
+        value.value_date??null,value.value_datetime??null,value.value_boolean??null]);
         if(value.multi_values){
           await transactionClient.query('DELETE FROM md_record_multi_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
             [tenantId,id,field]);

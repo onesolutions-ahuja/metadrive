@@ -47,6 +47,7 @@ export function parseCsvImport(text: string, object: ObjectMetadata): Array<Reco
   row.push(cell);
   if (row.some((value) => value.trim())) rows.push(row);
   if (rows.length < 2) throw new Error('The CSV must include a header row and at least one record.');
+  if (rows.length > 201) throw new Error('CSV imports are limited to 200 records per transaction.');
   const headers = rows[0].map((header) => header.replace(/^\uFEFF/, '').trim());
   if (headers.some((header) => !header)) throw new Error('CSV column headers cannot be blank.');
   if (new Set(headers.map((header) => header.toLocaleLowerCase())).size !== headers.length) {
@@ -57,14 +58,43 @@ export function parseCsvImport(text: string, object: ObjectMetadata): Array<Reco
     [field.label.toLocaleLowerCase(), field.apiName]
   ]));
   const fieldNames = headers.map((header) => fieldByHeader.get(header.toLocaleLowerCase()));
-  const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && header.toLocaleLowerCase() !== 'recordtypeid');
+  const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && !['recordtypeid','id'].includes(header.toLocaleLowerCase()));
   if (unknownHeader) throw new Error(`CSV column "${unknownHeader}" does not match a field API name or label on ${object.label}.`);
-  const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId' : fieldNames[index]!);
+  const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId'
+    : header.toLocaleLowerCase() === 'id' ? 'Id' : fieldNames[index]!);
   if (new Set(mappedNames).size !== mappedNames.length) {
     throw new Error('CSV headers map more than once to the same field; remove duplicate label/API name columns.');
   }
-  return rows.slice(1).map((values, index) => {
+  const definitions = new Map(object.fields.map((field) => [field.apiName, field]));
+  const convert = (value: string, fieldName: string, rowNumber: number): unknown => {
+    const trimmed = value.trim(), type = definitions.get(fieldName)?.dataType?.toLowerCase();
+    if (fieldName === 'Id') {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed))
+        throw new Error(`CSV row ${rowNumber} has an invalid record ID.`);
+      return trimmed;
+    }
+    if (fieldName === 'RecordTypeId') return trimmed;
+    if (!trimmed && ['boolean', 'number', 'currency', 'percent'].includes(type ?? '')) return null;
+    if (type === 'boolean') {
+      if (trimmed.toLowerCase() === 'true') return true;
+      if (trimmed.toLowerCase() === 'false') return false;
+      throw new Error(`CSV row ${rowNumber}: ${fieldName} must be true or false.`);
+    }
+    if (['number', 'currency', 'percent'].includes(type ?? '')) {
+      if (!trimmed || !Number.isFinite(Number(trimmed)))
+        throw new Error(`CSV row ${rowNumber}: ${fieldName} must be a finite number.`);
+      return Number(trimmed);
+    }
+    return value;
+  };
+  const parsed = rows.slice(1).map((values, index) => {
     if (values.length !== headers.length) throw new Error(`CSV row ${index + 2} has ${values.length} values; expected ${headers.length}.`);
-    return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));
+    return Object.fromEntries(values.map((value, columnIndex) =>
+      [mappedNames[columnIndex], convert(value, mappedNames[columnIndex], index + 2)]));
   });
+  if (mappedNames.includes('Id')) {
+    const ids = parsed.map((record) => String(record.Id).toLowerCase());
+    if (new Set(ids).size !== ids.length) throw new Error('CSV contains duplicate record IDs.');
+  }
+  return parsed;
 }

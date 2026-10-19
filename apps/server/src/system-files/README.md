@@ -1,6 +1,6 @@
 # MetaDrive approved SQL Core
 
-This directory contains **exactly twenty-four approved Core modules**. The architecture
+This directory contains **exactly twenty-six approved Core modules**. The architecture
 contract and responsibilities are documented in `docs/server-code-organisation.md`.
 
 The active HTTP server and entrypoint live under `../system-support/`. This is

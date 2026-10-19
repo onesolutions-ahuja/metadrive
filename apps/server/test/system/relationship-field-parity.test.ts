@@ -314,7 +314,8 @@ test('Address fields validate and persist components as SQL columns',async()=>{
   });
   const insert=writes.find(call=>call.sql.includes('INSERT INTO md_record_values'));
   assert.ok(insert?.sql.includes('address_street'));
-  assert.deepEqual(insert?.args.slice(10),['1 Main St','Seattle','WA','98101','US']);
+  assert.deepEqual(insert?.args.slice(10,15),['1 Main St','Seattle','WA','98101','US']);
+  assert.deepEqual(insert?.args.slice(15),[null,null,null,null]);
   await assert.rejects(()=>records.create('tenant','user','Account__c',{
     BillingAddress:{street:'x'.repeat(256)}
   }),/Invalid address component: street/);

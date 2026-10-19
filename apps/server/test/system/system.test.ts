@@ -498,6 +498,7 @@ test('Object relationship dependency discovery reads tenant-scoped SQL with no i
  const calls:unknown[][]=[];
  const db={query:async(sql:string,args:unknown[])=>{
    calls.push(args);
+   if(sql.includes('FROM md_field_formulas'))return {rows:[]};
    if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o1',api_name:'Sale__c',label:'Sale',is_system:false}]};
    if(sql.includes('SELECT f.id,f.object_api,f.api_name'))return {rows:[{id:'f1',object_api:'Sale__c',api_name:'CustomerId',label:'Customer',data_type:'reference',related_object:'Customer__c',required:false,max_length:null}]};
    if(sql.includes('SELECT object_api,related_object'))return {rows:[{object_api:'Sale__c',related_object:'Customer__c'}]};
@@ -639,6 +640,7 @@ test('Field deletion retains field data in a recoverable recycle bin',async()=>{
 });
 test('Field update rejects datatype changes instead of silently discarding metadata',async()=>{
  const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_field_formulas'))return {rows:[]};
   if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Sale__c',label:'Sale',is_system:false}]};
   if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Sale__c',api_name:'Total',label:'Total',data_type:'number',related_object:null,required:false,max_length:null}]};
   if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')||sql.includes('FROM md_object_record_type'))return {rows:[]};
@@ -672,6 +674,79 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
  const collectionResult=await runtime.validateDraft('tenant','user','TestFlow',collectionDraft);
  assert.equal(collectionResult.valid,true,collectionResult.errors.join('; '));
 });
+test('SQL Flow supports scoped Update Records only with explicit record target and assignments',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const elements=[
+  {id:1,type:'Start',config:{}},
+  {id:2,type:'Update Records',config:{object:'Product',recordId:'{!recordId}',fieldValues:[{field:'Taxable',value:true}]}},
+  {id:3,type:'End',config:{}}
+ ];
+ const draft={apiName:'TestFlow',flowType:'Autolaunched Flow',elements,
+  connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]};
+ const valid=await runtime.validateDraft('tenant','user','TestFlow',draft);
+ assert.equal(valid.valid,true,valid.errors.join('; '));
+ const invalid=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,elements:[elements[0],{...elements[1],config:{...elements[1].config,recordId:'',conditions:[{field:'Taxable',operator:'Equals',value:true}]}},elements[2]]
+ });
+ assert.equal(invalid.valid,false);
+ assert.ok(invalid.errors.some(e=>e.includes('explicit record ID')));
+ assert.ok(invalid.errors.some(e=>e.includes('bulk updates')));
+});
+test('Flow validator requires each Decision outcome and prohibits unterminated branches',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const draft={
+  apiName:'TestFlow',flowType:'Autolaunched Flow',
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Decision',config:{outcomes:[{name:'Ready',label:'Ready'},{name:'Default',label:'Default Outcome'}]}},
+   {id:3,type:'End',config:{}},
+   {id:4,type:'Assignment',config:{variable:'flag',value:true}}
+  ],
+  connectors:[{from:1,to:2,label:'',kind:'normal'},{from:2,to:3,label:'Ready',kind:'normal'},
+   {from:2,to:4,label:'Default',kind:'normal'}]
+ };
+ const broken=await runtime.validateDraft('tenant','user','TestFlow',draft);
+ assert.equal(broken.valid,false);
+ assert.ok(broken.errors.some(error=>error.includes('cannot reach End from element: 4')));
+ const fixed=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,connectors:[...draft.connectors,{from:4,to:3,label:'',kind:'normal'}]
+ });
+ assert.equal(fixed.valid,true,fixed.errors.join('; '));
+ const missing=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,connectors:[{from:1,to:2,label:'',kind:'normal'},{from:2,to:3,label:'Ready',kind:'normal'}]
+ });
+ assert.ok(missing.errors.some(error=>error.includes('Decision outcome needs exactly one connector')));
+ const afterEnd=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,connectors:[...draft.connectors,{from:3,to:4,label:'',kind:'normal'}]
+ });
+ assert.ok(afterEnd.errors.some(error=>error.includes('End must not have outgoing')));
+});
+test('Record update in Flow transaction applies tenant, record, and field permissions',async()=>{
+ const {RecordEngine}=await import('../../src/system-files/record-engine.js');
+ const calls:Array<{sql:string;args:unknown[]}>=[],checks:string[]=[];
+ const tenant='tenant-a',user='actor',recordId='11111111-1111-4111-8111-111111111111';
+ const client={query:async(sql:string,args:unknown[])=>{
+  calls.push({sql,args});
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{api_name:'Taxable',data_type:'boolean',related_object:null,required:false,max_length:null}],rowCount:1};
+  if(sql.includes('FROM md_records WHERE'))return {rows:[{updated_at:new Date()}],rowCount:1};
+  if(sql.includes('FROM md_record_values WHERE'))return {rows:[{value_text:'false',reference_record_id:null}],rowCount:1};
+  return {rows:[],rowCount:1};
+ }};
+ const db={query:async()=>{throw Error('Transaction must use its own SQL client')},
+  transaction:async()=>{throw Error('Must not open a nested transaction')}} as unknown as SqlPersistence;
+ const rbac={require:async(t:string,u:string,resource:string,action:string)=>{
+  assert.equal(t,tenant);assert.equal(u,user);checks.push(resource+'.'+action);
+ }} as unknown as RbacEngine;
+ await new RecordEngine(db,rbac).updateInTransaction(client as any,tenant,user,'Product',recordId,{Taxable:true});
+ assert.deepEqual(checks,['Product.edit','Product.Taxable.edit']);
+ assert.ok(calls.some(call=>call.sql.includes('md_record_access')&&call.args[0]===tenant&&call.args[3]===user));
+ assert.ok(calls.some(call=>call.sql.includes('INSERT INTO md_record_history')&&call.args[0]===tenant));
+ assert.ok(calls.some(call=>call.sql.includes('INSERT INTO md_record_values')&&call.args[0]===tenant));
+});
 test('SQL Flow validation fails closed without permission',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{throw new Error('Permission denied')}} as unknown as RbacEngine;
@@ -704,7 +779,7 @@ test('Flow interview cancellation rejects unauthorised or malformed requests',as
  await assert.rejects(()=>new FlowRuntime(db,denied).cancelInterview('tenant','user','not-an-id'),/Invalid interview ID/);
 });
 
-test('App removal only clears tenant installation and app-owned home bindings',async()=>{
+test('App removal clears installation and home bindings and cancels pending jobs',async()=>{
  const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
  const sql:string[]=[];
  const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
@@ -717,7 +792,8 @@ test('App removal only clears tenant installation and app-owned home bindings',a
    }})
  } as unknown as SqlPersistence;
  await new AppRuntime(db).uninstall('tenant','MarketplaceApp');
- assert.equal(sql.length,2);
+ assert.equal(sql.length,3);
+ assert.ok(sql.some(query=>query.includes('md_durable_jobs')&&query.includes("status='cancelled'")));
  assert.ok(sql.some(query=>query.includes('md_app_installations')));
  assert.ok(sql.some(query=>query.includes('md_app_home_pages')));
 });

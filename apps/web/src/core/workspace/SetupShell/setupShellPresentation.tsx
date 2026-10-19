@@ -290,6 +290,10 @@ export function renderSetupShell(ctx: any) {
             encryptionReady={namedCredentialsEncryptionReady}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
+            onRotate={rotateNamedCredential}
+            onTest={testNamedCredential}
+            canTest={canManageNamedCredentials}
+            onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" componentRuntime={protectedPageRuntime} permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange

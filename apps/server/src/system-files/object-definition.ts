@@ -1,6 +1,7 @@
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from './sql-persistence.js';
 import {validateFlowFormula} from './flow-formula-runtime.js';
+import {ObjectMetadataHistory} from './object-metadata-history.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
 type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;help_text:string|null;description:string|null;formula_expression:string|null;formula_return_type:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;relationship_name?:string|null;child_relationship_name?:string|null;delete_behavior?:string|null;allow_reparenting?:boolean;deleted_at?:Date|null};
 const sqlFieldTypes:Record<string,string>={
@@ -231,6 +232,10 @@ export class ObjectDefinitionService {
             field.formulaExpression,field.formulaReturnType,field.autoNumberFormat,
             null,null,null,null,
             field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
+        if(field.formulaExpression&&field.formulaReturnType)await client.query(`
+          INSERT INTO md_field_formulas(tenant_id,object_api,field_api,expression,return_type)
+          VALUES($1,$2,$3,$4,$5)`,
+        [tenantId,apiName,field.apiName,field.formulaExpression,field.formulaReturnType]);
         for(const [order,value] of field.picklistValues.entries())
           await client.query('INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
             [tenantId,apiName,field.apiName,value,order]);
@@ -267,6 +272,8 @@ export class ObjectDefinitionService {
     const field=parseFieldDefinition({...(settings??{}),apiName:fieldApi,dataType,relatedObject:settings?.relationship??relatedObject,label:label??settings?.label},objectApi);
     if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
       throw new Error('Hierarchical relationships are supported only as User self-lookups');
+    const formula=field.dataType==='formula'&&field.formulaExpression
+      ?{expression:field.formulaExpression,returnType:field.formulaReturnType??'Text'}:null;
     const result=await this.db.transaction(async client=>{
       if(field.rollup){
         const relationship=await client.query<{data_type:string;related_object:string;relationship_type:string}>(
@@ -347,6 +354,10 @@ export class ObjectDefinitionService {
             (tenant_id,object_api,field_api,controller_value,picklist_value)
             VALUES($1,$2,$3,$4,$5)`,[tenantId,objectApi,fieldApi,controllerValue,value]);
       }
+      if(formula)await client.query(`
+        INSERT INTO md_field_formulas(tenant_id,object_api,field_api,expression,return_type)
+        VALUES($1,$2,$3,$4,$5)`,
+        [tenantId,objectApi,fieldApi,formula.expression,formula.returnType]);
       return inserted;
     });
     return result;
@@ -651,6 +662,11 @@ export class ObjectDefinitionService {
       values.push(option.value);
       optionsByField.set(key,values);
     }
+    const formulas=new Map(fields.filter(field=>field.formula_expression!==null).map(field=>[
+      JSON.stringify([field.object_api,field.api_name]),{
+        expression:field.formula_expression!,return_type:field.formula_return_type??'Text'
+      }
+    ]));
     const {rows:dependencyValues}=fields.some(field=>field.controller_field_api_name)
       ?await this.db.query<{object_api:string;field_api:string;controller_value:string;picklist_value:string}>(
         `SELECT object_api,field_api,controller_value,picklist_value FROM md_field_dependency_values
@@ -691,17 +707,23 @@ export class ObjectDefinitionService {
       recordTypes:typeByObject.get(obj.api_name)??[],
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
-        dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:
+        dataType:f.data_type==='formula'
+          ?`Formula(${formulas.get(picklistKey(f.object_api,f.api_name))?.return_type??f.formula_return_type??'Text'})`
+          :f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:
           ['number','currency','percent'].includes(f.data_type)&&f.precision!==null
             ?`${typeLabel[f.data_type]}(${f.precision}, ${f.scale??0})`
             :(typeLabel[f.data_type]??f.data_type),
-        required:f.required,        unique:f.is_unique===true,
+        required:f.required,unique:f.is_unique===true,
         externalId:f.external_id===true,
         caseSensitive:f.case_sensitive===true,
         ...(f.description?{description:f.description}:{}),
         ...(f.help_text?{helpText:f.help_text}:{}),
         ...(f.default_value!==null&&f.default_value!==undefined?{defaultValue:decodeFieldDefault(f.data_type,f.default_value)}:{}),
-        ...(f.formula_expression!==null?{formula:{expression:f.formula_expression,returnType:f.formula_return_type??'Text'}}:{}),
+        ...(formulas.has(picklistKey(f.object_api,f.api_name))||f.formula_expression!==null
+          ?{formula:{
+            expression:formulas.get(picklistKey(f.object_api,f.api_name))?.expression??f.formula_expression!,
+            returnType:formulas.get(picklistKey(f.object_api,f.api_name))?.return_type??f.formula_return_type??'Text'
+          }}:{}),
         ...(f.data_type==='rollup'?{rollup:{
           childObject:f.rollup_child_object,relationshipField:f.rollup_relationship_field,
           operation:f.rollup_operation,sourceField:f.rollup_source_field
@@ -777,7 +799,7 @@ export class ObjectDefinitionService {
 
   /** Atomic layout replacement with optimistic concurrency and strict referential validation. */
   async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number,
-    persistSupplemental?:(client:PoolClient)=>Promise<void>){
+    actorUserId?:string,persistSupplemental?:(client:PoolClient)=>Promise<void>){
     if(!payload||typeof payload!=='object'||Array.isArray(payload)
       ||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
       throw new Error('Invalid page layout request');
@@ -878,7 +900,7 @@ export class ObjectDefinitionService {
     }
     await this.db.transaction(async client=>{
       const found=await client.query(
-        'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
+        'SELECT label FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
       if(!found.rows.length)throw new Error('Object not found');
       await client.query(`INSERT INTO md_object_layout_versions(tenant_id,object_api)
         VALUES ($1,$2) ON CONFLICT DO NOTHING`,[tenantId,objectApi]);
@@ -943,6 +965,12 @@ export class ObjectDefinitionService {
       }
       await client.query(`UPDATE md_object_layout_versions SET revision=revision+1,updated_at=now()
         WHERE tenant_id=$1 AND object_api=$2`,[tenantId,objectApi]);
+      await ObjectMetadataHistory.capture(client,tenantId,objectApi,expectedRevision+1,actorUserId,{
+        apiName:objectApi,label:typeof input.label==='string'?input.label.trim():
+          (found.rows[0] as {label:string}).label,
+        revision:expectedRevision+1,pageLayouts:normalized,pageLayoutAssignments:assigned,
+        ...(recordTypes?{recordTypes}:{}),
+      });
     });
     return this.get(tenantId,objectApi);
   }
