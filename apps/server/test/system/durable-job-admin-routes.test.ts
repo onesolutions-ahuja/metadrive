@@ -39,7 +39,7 @@ test('job administration enforces central RBAC and scopes SQL to the requesting 
   const allowed=await fetch(base+'/api/job-admin/jobs?status=failed',{headers:{'x-test-tenant':tenantA}});
   assert.equal(allowed.status,200);
   assert.equal(seen.length,1);
-  assert.match(seen[0].sql,/WHERE tenant_id=\\$1 AND status=\\$2/);
+  assert.match(seen[0].sql,/WHERE tenant_id=\$1 AND status=\$2/);
   assert.deepEqual(seen[0].params,[tenantA,'failed']);
   const denied=await fetch(base+'/api/job-admin/jobs?status=failed',{headers:{'x-test-tenant':tenantB}});
   assert.equal(denied.status,403);
