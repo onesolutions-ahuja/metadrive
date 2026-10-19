@@ -14,6 +14,7 @@ import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-co
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
+ connection_api:string|null;operation_api:string|null;operation_path_ciphertext:Buffer|null;
  path_ciphertext:Buffer;headers_ciphertext:Buffer;body_ciphertext:Buffer|null;
  idempotency_key_ciphertext:Buffer|null;max_attempts:number;timeout_ms:number;attempt_count:number
 };
@@ -257,11 +258,14 @@ export class NamedCredentialService {
    const {rows}=await client.query<{id:string}>(`
     INSERT INTO md_http_callout_jobs(tenant_id,run_id,node_id,user_id,credential_id,method,
      path_ciphertext,headers_ciphertext,body_ciphertext,idempotency_key_ciphertext,
-     max_attempts,timeout_ms)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
+     max_attempts,timeout_ms,connection_api,operation_api,operation_path_ciphertext)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id
    `,[tenantId,runId,nodeId,userId,credentialId,method,
     this.encryptValue(path),this.encryptValue(headers),body===null?null:this.encryptValue(body),
-    idempotencyKey?this.encryptValue(idempotencyKey):null,maxAttempts,timeout]);
+    idempotencyKey?this.encryptValue(idempotencyKey):null,maxAttempts,timeout,
+    resolvedConfig.integrationConnectionId??null,resolvedConfig.integrationConnectionId
+      ?resolvedConfig.operation:null,
+    resolvedConfig.integrationConnectionId?this.encryptValue(String(resolvedConfig.path)):null]);
    for(const [apiName,value] of Object.entries(variables)){
     if(!/^[A-Za-z][A-Za-z0-9_.]*$/.test(apiName)||!isCalloutScalar(value))
      throw new Error('Invalid durable HTTP Callout variable');
@@ -299,7 +303,7 @@ export class NamedCredentialService {
      FROM candidate c WHERE j.id=c.id
      RETURNING j.id,j.tenant_id,j.run_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
      j.headers_ciphertext,j.body_ciphertext,j.idempotency_key_ciphertext,j.max_attempts,
-     j.timeout_ms,j.attempt_count
+     j.timeout_ms,j.attempt_count,j.connection_api,j.operation_api,j.operation_path_ciphertext
     `);
     return rows[0];
    });
@@ -341,6 +345,16 @@ export class NamedCredentialService {
      }else if(row.data_type==='string')value=stored;
      else throw new Error('Invalid queued HTTP Callout value type');
      variables[row.api_name]=value;
+    }
+    if(job.connection_api){
+     if(!job.operation_api||!job.operation_path_ciphertext)
+      throw new Error('Queued Flow provider identity is incomplete');
+     const approved=await resolveFlowIntegrationCallout(this.db,this.rbac,
+      job.tenant_id,job.user_id,{integrationConnectionId:job.connection_api,
+       operation:job.operation_api});
+     if(approved.namedCredentialId!==job.credential_id||approved.method!==job.method
+       ||approved.path!==this.decryptValue(job.operation_path_ciphertext))
+      throw new Error('Queued Flow provider operation is no longer approved');
     }
     const response=await this.callout(job.tenant_id,job.user_id,{
      namedCredentialId:job.credential_id,method:job.method,
