@@ -161,7 +161,9 @@ try{
    const element=capabilities.body.elements.find(item=>item.type===elementType);
    assert.ok(element?.builderEnabled&&element.builderFlowTypes.includes('Autolaunched Flow'),
      'Missing builder capability: '+elementType);
-   assert.equal(element.beforeSaveAllowed,false,'Unsafe before-save element: '+elementType);
+   const readOnly=['Get Records','Loop','Collection Filter','Collection Sort','Transform'];
+   assert.equal(element.beforeSaveAllowed,readOnly.includes(elementType),
+     'Incorrect before-save data-action gate: '+elementType);
  }
  await page.getByRole('button',{name:/Autolaunched Flow/}).first().click();
  await page.locator('#flow-start-label').fill('Phase One Browser Test');
