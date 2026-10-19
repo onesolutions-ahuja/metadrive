@@ -14,6 +14,7 @@ export default function DeveloperAccountSettings({
   const [status, setStatus] = useState<DeveloperStatus | null>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [activating, setActivating] = useState(false);
   const [error, setError] = useState('');
@@ -36,9 +37,9 @@ export default function DeveloperAccountSettings({
     setError(''); setNotice(''); setBusy(true);
     try {
       await request<{ activated: boolean }>('/tenant/developer-account/activate', {
-        method: 'POST', body: JSON.stringify({ password })
+        method: 'POST', body: JSON.stringify({ password, mfaCode })
       });
-      setPassword(''); setConfirm(''); setActivating(false);
+      setPassword(''); setConfirm(''); setMfaCode(''); setActivating(false);
       setStatus((current) => current ? { ...current, active: true, activated: true } : current);
       setNotice('Developer account activated. Manage its permissions in Users and RBAC.');
     } catch (cause) {
@@ -80,12 +81,17 @@ export default function DeveloperAccountSettings({
               value={confirm} onChange={(event) => setConfirm(event.target.value)}
               className="form-control" />
           </label>
-          <button type="submit" disabled={busy || !password || password !== confirm}
+          <label className="form-label">Fresh authenticator code
+            <input className="form-control" inputMode="numeric" autoComplete="one-time-code"
+              maxLength={6} pattern="[0-9]{6}" required value={mfaCode}
+              onChange={event => setMfaCode(event.target.value.replace(/[^0-9]/g, ''))}/>
+          </label>
+          <button type="submit" disabled={busy || !password || password !== confirm || mfaCode.length !== 6}
             className="btn btn-brand">
             {busy ? 'Activating…' : 'Activate developer account'}
           </button>
           <button type="button" className="btn" disabled={busy} onClick={() => {
-            setActivating(false); setPassword(''); setConfirm(''); setError('');
+            setActivating(false); setPassword(''); setConfirm(''); setMfaCode(''); setError('');
           }}>Cancel</button>
         </form>}
         </>}

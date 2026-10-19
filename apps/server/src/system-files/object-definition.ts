@@ -1,4 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
+import {FormulaEngine} from './formula-engine.js';
+import {ObjectMetadataHistory} from './object-metadata-history.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
 type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
 const sqlFieldTypes:Record<string,string>={
@@ -83,12 +85,13 @@ export class ObjectDefinitionService {
     });
     return this.get(tenantId,apiName);
   }
-  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:{picklistValues?:unknown;picklistRestricted?:unknown}) {
+  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:{picklistValues?:unknown;picklistRestricted?:unknown;formula?:unknown}) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     const normalized=dataType.toLowerCase().replace(/\s+/g,'');
     const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
     const types=sqlFieldTypes;
-    const type=lengthMatch?'text':types[normalized];
+    const formulaMatch=/^formula\((number|currency|percent|text|checkbox)\)$/.exec(normalized);
+    const type=formulaMatch?'formula':lengthMatch?'text':types[normalized];
     const maxLength=lengthMatch?Number(lengthMatch[1]):null;
     if(!type)throw new Error('Invalid field data type');
     if(maxLength!==null&&(!Number.isSafeInteger(maxLength)||maxLength<1||maxLength>1000000))
@@ -96,6 +99,19 @@ export class ObjectDefinitionService {
     if(type==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))
       throw new Error('Invalid relationship target');
     const values=type==='picklist'?parsePicklistValues(settings?.picklistValues):[];
+    let formula:{expression:string;returnType:string}|null=null;
+    if(type==='formula'){
+      const input=settings?.formula;
+      if(!input||typeof input!=='object'||Array.isArray(input))
+        throw Error('Formula expression required');
+      const definition=input as Record<string,unknown>;
+      if(typeof definition.expression!=='string'||typeof definition.returnType!=='string'||
+        definition.returnType.toLowerCase()!==formulaMatch![1])
+        throw Error('Invalid formula metadata');
+      await new FormulaEngine(this.db).validate(tenantId,objectApi,
+        definition.expression,definition.returnType);
+      formula={expression:definition.expression,returnType:definition.returnType};
+    }else if(settings?.formula!==undefined)throw Error('Formula requires Formula field type');
     const result=await this.db.transaction(async client=>{
       const inserted=await client.query(`
         INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label,picklist_restricted)
@@ -107,6 +123,10 @@ export class ObjectDefinitionService {
       for(const [order,value] of values.entries())await client.query(
         'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
         [tenantId,objectApi,fieldApi,value,order]);
+      if(formula)await client.query(`
+        INSERT INTO md_field_formulas(tenant_id,object_api,field_api,expression,return_type)
+        VALUES($1,$2,$3,$4,$5)`,
+        [tenantId,objectApi,fieldApi,formula.expression,formula.returnType]);
       return inserted;
     });
     return result;
@@ -189,6 +209,10 @@ export class ObjectDefinitionService {
     const typeLabel:Record<string,string>={
       text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup',email:'Email',phone:'Phone',url:'URL',picklist:'Picklist',textarea:'Text Area',longtext:'Long Text Area',currency:'Currency',percent:'Percent'
     };
+    const {rows:formulaRows}=await this.db.query<{
+      object_api:string;field_api:string;expression:string;return_type:string
+    }>('SELECT object_api,field_api,expression,return_type FROM md_field_formulas WHERE tenant_id=$1',[tenantId]);
+    const formulas=new Map(formulaRows.map(row=>[JSON.stringify([row.object_api,row.field_api]),row]));
     const layouts=await this.loadLayoutMetadata(tenantId);
     const {rows:picklistOptions}=fields.some(field=>field.data_type==='picklist')
       ?await this.db.query<{object_api:string;field_api:string;value:string}>(`
@@ -231,7 +255,8 @@ export class ObjectDefinitionService {
       recordTypes:typeByObject.get(obj.api_name)??[],
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
-        dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
+        dataType:f.data_type==='formula'?`Formula(${formulas.get(JSON.stringify([f.object_api,f.api_name]))?.return_type??'Number'})`:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
+        ...(f.data_type==='formula'&&formulas.has(JSON.stringify([f.object_api,f.api_name]))?{formula:{expression:formulas.get(JSON.stringify([f.object_api,f.api_name]))!.expression,returnType:formulas.get(JSON.stringify([f.object_api,f.api_name]))!.return_type}}:{}),
         ...(f.data_type==='picklist'?{picklistValues:optionsByField.get(picklistKey(f.object_api,f.api_name))??[],picklistRestricted:f.picklist_restricted!==false}:{}),
         ...(f.related_object?{relationship:{
           type:'Lookup' as const,targetObject:f.related_object,
@@ -295,7 +320,7 @@ export class ObjectDefinitionService {
   }
 
   /** Atomic layout replacement with optimistic concurrency and strict referential validation. */
-  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number){
+  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number,actorUserId?:string){
     if(!payload||typeof payload!=='object'||Array.isArray(payload)
       ||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
       throw new Error('Invalid page layout request');
@@ -396,7 +421,7 @@ export class ObjectDefinitionService {
     }
     await this.db.transaction(async client=>{
       const found=await client.query(
-        'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
+        'SELECT label FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
       if(!found.rows.length)throw new Error('Object not found');
       await client.query(`INSERT INTO md_object_layout_versions(tenant_id,object_api)
         VALUES ($1,$2) ON CONFLICT DO NOTHING`,[tenantId,objectApi]);
@@ -460,6 +485,12 @@ export class ObjectDefinitionService {
       }
       await client.query(`UPDATE md_object_layout_versions SET revision=revision+1,updated_at=now()
         WHERE tenant_id=$1 AND object_api=$2`,[tenantId,objectApi]);
+      await ObjectMetadataHistory.capture(client,tenantId,objectApi,expectedRevision+1,actorUserId,{
+        apiName:objectApi,label:typeof input.label==='string'?input.label.trim():
+          (found.rows[0] as {label:string}).label,
+        revision:expectedRevision+1,pageLayouts:normalized,pageLayoutAssignments:assigned,
+        ...(recordTypes?{recordTypes}:{}),
+      });
     });
     return this.get(tenantId,objectApi);
   }

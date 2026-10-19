@@ -71,7 +71,7 @@ test('tenant request retries reuse the same SQL tenant and reject changes to req
  const {TenantProvisioning}=await import('../../src/system-files/tenant-provisioning.js');
  const {createHash}=await import('node:crypto');
  const request={slug:'customer',name:'Customer',domain:'customer.example.org',
-   developerEmail:'developer@customer.example.org',developerPassword:'StrongPassword123!',developerName:'Tenant Developer'};
+   developerEmail:'admin@customer.example.org',developerPassword:'StrongPassword123!',developerName:'Tenant Developer'};
  const digest=createHash('sha256').update(JSON.stringify([
   request.slug,request.name,request.domain,request.developerEmail,request.developerPassword,request.developerName
  ])).digest('hex');
