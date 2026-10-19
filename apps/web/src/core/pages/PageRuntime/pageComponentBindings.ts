@@ -12,6 +12,12 @@ export function needsMetadataComponentRuntime(properties: Record<string, unknown
   // vertical. Keep legacy *ObjectApiName properties working without per-app code.
   if (Object.entries(properties).some(([key, value]) =>
     /objectApiName$/i.test(key) && typeof value === 'string' && value.trim().length > 0)) return true;
+  // Explicit record-field bindings also need the data runtime even while the
+  // Object binding is missing, so the editor exposes a configuration error
+  // instead of silently rendering an empty static grid.
+  if (Object.entries(properties).some(([key, value]) =>
+    /(?:name|title|price|image|category|vatApplicable|ageRestricted)FieldApiName$/i.test(key) &&
+    typeof value === 'string' && value.trim().length > 0)) return true;
   // Field mentions require the same permission-gated data runtime as Object bindings.
   if (Object.values(properties).some(value => typeof value === 'string'
     && /(^|[^A-Za-z0-9_@])@[A-Za-z][A-Za-z0-9_]*\.[A-Za-z]/.test(value))) return true;
