@@ -114,7 +114,7 @@ try{
    const graph={apiName:api,label:'Browser Choice Set Flow',flowType:'Screen Flow',
     status:'Active',triggerObject:null,startConfig:{},tests:[],versions:[],
     resources:[{name:'MealChoices',label:'Meal Choices',type:'Choice Set',dataType:'Text',
-     isCollection:false,availableForInput:false,availableForOutput:false,value:'Burger\\nWrap'}],
+     isCollection:false,availableForInput:false,availableForOutput:false,value:'Burger\nWrap'}],
     elements:[{id:1,type:'Start',label:'Start',config:{}},
      {id:2,type:'Screen',label:'Choose',config:{fields:[{
        apiName:'Meal',label:'Meal',type:'Picklist',required:true,choiceSetResource:'MealChoices'
