@@ -27,10 +27,19 @@ export class SystemDefinitionService {
       FROM md_system_definitions
       WHERE tenant_id=$1 AND kind=$2 AND enabled=true
       ORDER BY label,api_name`,[tenantId,kind]);
-    return rows.map(row=>({
-      ...(row.properties && typeof row.properties==='object' && !Array.isArray(row.properties) ? row.properties : {}),
-      apiName:row.api_name,id:row.api_name,name:row.api_name,label:row.label,revision:row.revision,enabled:row.enabled
-    }));
+    const statuses=kind==='integration-connections'
+      ?await this.db.query<{connection_api:string;status:string;message:string;tested_at:Date}>(
+        'SELECT connection_api,status,message,tested_at FROM md_integration_connection_tests WHERE tenant_id=$1',
+        [tenantId]):{rows:[]};
+    const byName=new Map(statuses.rows.map(row=>[row.connection_api,row]));
+    return rows.map(row=>{
+      const status=byName.get(row.api_name);
+      return {
+        ...(row.properties && typeof row.properties==='object' && !Array.isArray(row.properties) ? row.properties : {}),
+        apiName:row.api_name,id:row.api_name,name:row.api_name,label:row.label,revision:row.revision,enabled:row.enabled,
+        ...(status?{testStatus:status.status,lastTestMessage:status.message,lastTestedAt:status.tested_at}:{}),
+      };
+    });
   }
   async save(tenantId:string,userId:string,kind:DefinitionKind,value:unknown) {
     await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'manage');
@@ -67,6 +76,46 @@ export class SystemDefinitionService {
     if(!rows.length)throw new Error('Definition revision conflict');
     return {...properties,apiName,id:apiName,name:apiName,label,revision:rows[0].revision,enabled:enabled!==false};
   }
+ /** Execute a real HTTPS credential test; failures remain visible and tenant-scoped. */
+ async testConnection(tenantId:string,userId:string,apiName:string,
+  run:(credentialId:string,path:string)=>Promise<{status:number}>) {
+  await this.rbac.require(tenantId,userId,'SystemDefinition:integration-connections','manage');
+  await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid connection');
+  const {rows}=await this.db.query<{api_name:string;label:string;properties:unknown}>(`
+    SELECT api_name,label,properties FROM md_system_definitions
+    WHERE tenant_id=$1 AND kind='integration-connections' AND api_name=$2 AND enabled=true`,
+    [tenantId,apiName]);
+  const found=rows[0];
+  if(!found)throw new Error('Connection not found');
+  const props=(found.properties&&typeof found.properties==='object'&&!Array.isArray(found.properties)
+   ?found.properties:{}) as Record<string,unknown>;
+  const config=(props.configuration&&typeof props.configuration==='object'&&!Array.isArray(props.configuration)
+   ?props.configuration:{}) as Record<string,unknown>;
+  const credentialId=config.namedCredentialId;
+  const path=config.testPath;
+  let status:'Connected'|'Failed'|'Not configured'='Not configured',message='No saved Named Credential configured';
+  if(typeof credentialId==='string'&&/^[0-9a-f-]{36}$/i.test(credentialId)){
+   if(path!==undefined&&(typeof path!=='string'||path.length>1024))
+    throw new Error('Invalid connection test path');
+   try{
+    const result=await run(credentialId,typeof path==='string'?path:'');
+    status='Connected';message='HTTPS connection succeeded ('+result.status+')';
+   }catch{status='Failed';message='HTTPS connection test failed';}
+  }
+  const {rows:saved}=await this.db.query<{tested_at:Date}>(`
+    INSERT INTO md_integration_connection_tests
+      (tenant_id,connection_api,status,message,tested_by)
+    VALUES($1,$2,$3,$4,$5)
+    ON CONFLICT(tenant_id,connection_api)
+    DO UPDATE SET status=$3,message=$4,tested_by=$5,tested_at=now()
+    RETURNING tested_at`,
+    [tenantId,apiName,status,message,userId]);
+  return {...props,id:apiName,apiName,name:apiName,label:found.label,
+    testStatus:status,lastTestMessage:message,lastTestedAt:saved[0]?.tested_at??new Date()};
+ }
+
  async remove(tenantId:string,userId:string,kind:DefinitionKind,apiName:string){
   await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'manage');
   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid definition');
