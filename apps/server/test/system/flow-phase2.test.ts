@@ -64,6 +64,16 @@ test('record-triggered debugger reads supplied record inputs without persisting 
  assert.equal((graph.outputs as { $Record:{Name:string} }).$Record.Name,'Changed');
 });
 
+test('record entry conditions compare record fields to literal values, not same-named fields',async()=>{
+ const result=await simulateFlowGraph({apiName:'RecordFilter',version:1,
+  flowType:'Record-Triggered Flow',recordTriggered:true,
+  nodes:[{id:1,type:'Start',config:{trigger:'created',
+    entryConditions:[{field:'Status',operator:'Equals',value:'Status'}]}},end],
+  edges:[edge(1,9)],inputs:{event:'created',record:{Id:'r1',Status:'Active'}}});
+ assert.equal(result.status,'skipped');
+ assert.equal(result.debugTrace.length,1);
+});
+
 test('debug snapshots redact credentials and bound nested data',()=>{
  const snapshot=flowDebugSnapshot({CredentialToken:'abc',password:'123',
   huge:'x'.repeat(500),rows:Array.from({length:20},(_,i)=>({Id:i}))}) as Record<string,unknown>;
