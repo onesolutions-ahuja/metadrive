@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { SqlPersistence } from '../../src/system-files/sql-persistence.js';
 import { createSystemServer } from '../../src/system-support/server.js';
 
-test('registered tenant origin can preflight field updates with If-Match', async () => {
+test('registered tenant origin can preflight record updates with concurrency headers', async () => {
   const db = {
     query: async (sql: string, params: unknown[]) => {
       assert.match(sql, /FROM md_tenant_domains/);
@@ -22,13 +22,15 @@ test('registered tenant origin can preflight field updates with If-Match', async
       headers: {
         Origin: 'https://tenant.example',
         'Access-Control-Request-Method': 'PATCH',
-        'Access-Control-Request-Headers': 'content-type,if-match,authorization'
+        'Access-Control-Request-Headers': 'content-type,if-match,if-unmodified-since,x-metadrive-offline-sync,authorization'
       }
     });
     assert.equal(response.status, 204);
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://tenant.example');
     const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase().split(',').map(value => value.trim()) ?? [];
     assert.ok(allowed.includes('if-match'));
+    assert.ok(allowed.includes('if-unmodified-since'));
+    assert.ok(allowed.includes('x-metadrive-offline-sync'));
     assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
   } finally {
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
