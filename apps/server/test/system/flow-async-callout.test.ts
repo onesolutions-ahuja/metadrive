@@ -55,6 +55,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
  const db={
   transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run(client),
   query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{ready:true}]};
    if(sql.includes('SELECT api_name,value_ciphertext'))return {rows:values.map(value=>({
     api_name:value[2],value_ciphertext:value[3],data_type:value[4]
    }))};
@@ -82,7 +83,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
   assert.equal(values[0][3] instanceof Buffer,true);
   db.transaction=async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
    query:async()=>({rows:[{
-    id:jobId,tenant_id:tenantId,user_id:userId,credential_id:credentialId,method:'POST',
+    id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,method:'POST',
     path_ciphertext:jobParameters[0][6],headers_ciphertext:jobParameters[0][7],
     body_ciphertext:jobParameters[0][8],idempotency_key_ciphertext:jobParameters[0][9],
     max_attempts:3,timeout_ms:15000,attempt_count:++claims
