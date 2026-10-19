@@ -100,7 +100,8 @@ export class DurableJobService {
  /** Record an operator decision without silently replaying ambiguous side effects. */
  async reconcileFailed(tenantId:string,id:string,actorId:string,decision:'acknowledge'|'retry'){
   if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
-  const {rowCount}=await this.db.query(`
+  await this.db.transaction(async client=>{
+   const {rowCount}=await client.query(`
     UPDATE md_durable_jobs SET
       status=CASE WHEN $4='retry' THEN 'queued' ELSE 'cancelled' END,
       attempt=CASE WHEN $4='retry' THEN 0 ELSE attempt END,
@@ -110,11 +111,12 @@ export class DurableJobService {
       updated_at=now()
     WHERE tenant_id=$1 AND id=$2 AND status='failed'
       AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
-  `,[tenantId,id,actorId,decision]);
-  if(!rowCount)throw new Error('Failed job not found');
-  await this.db.query(
-   'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
-   [tenantId,actorId,'durable_job.reconcile',JSON.stringify({jobId:id,decision})]);
+   `,[tenantId,id,actorId,decision]);
+   if(!rowCount)throw new Error('Failed job not found');
+   await client.query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,actorId,'durable_job.reconcile',JSON.stringify({jobId:id,decision})]);
+  });
  }
 
  async cancelApp(tenantId:string,appApiName:string) {
