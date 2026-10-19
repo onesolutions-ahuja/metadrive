@@ -721,6 +721,13 @@ export class ObjectDefinitionService {
     let fieldTypeMigrationId:string|null=null;
     await this.db.transaction(async client=>{
       if(typeDefinitionChanged){
+        if(oldType.dataType==='richtext'&&field.dataType!=='richtext'){
+          const files=await client.query(`SELECT 1 FROM md_record_files
+            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 LIMIT 1`,
+          [tenantId,objectApi,fieldApi]);
+          if(files.rowCount)
+            throw new Error('Inline images must be removed before migrating a Rich Text field');
+        }
         if(field.rollup)await validateRollupWithin(client,tenantId,objectApi,field.rollup);
         if(field.globalValueSetApiName)
           throw new Error('Type migrations to a Global Value Set require local picklist values first');

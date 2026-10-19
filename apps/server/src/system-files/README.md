@@ -19,8 +19,13 @@ with a shared parser, field-reference type checking, same-object and lookup
 references, arithmetic, text, logical, date/time, numeric and geolocation
 (`DISTANCE`) functions. Record-triggered Flow formulas also support
 `ISCHANGED`, `ISNEW` and `PRIORVALUE` against `$Record` fields. The bounded
-formula runtime includes lazy `IFERROR` fallback and Salesforce-style
-rounding; neither formula runtime claims full Salesforce formula compatibility. Encrypted text uses the existing opaque platform vault,
+formula runtime includes lazy `IFERROR` fallback, `T`/`ISOWEEK`/`ISOYEAR`,
+user-time-zone-aware `TZOFFSET`, and
+Salesforce-style rounding; neither formula runtime claims full Salesforce
+formula compatibility. Regex formulas are intentionally unsupported, and
+`GETSESSIONID` is unavailable because formula evaluation must not expose
+authentication session credentials.
+Encrypted text uses the existing opaque platform vault,
 is context-bound to its tenant/object/field, masked by default, and audited when
 revealed under the `ViewEncryptedData` permission. The shared Records API
 applies readable-field sorting, search and exact field filters before pagination.

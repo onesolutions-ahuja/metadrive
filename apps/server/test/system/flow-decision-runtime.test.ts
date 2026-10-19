@@ -158,7 +158,9 @@ test('authored Flow routes Decision outcomes and executes Custom Notification ac
   const client = {query: async (sql: string, values?: unknown[]) => {
     if (sql.includes('SELECT r.flow_id,f.api_name')) return {rows: [{
       flow_id: 'flow-id', api_name: 'DecisionFlow', flow_type: 'Autolaunched Flow',
-      started_by: '00000000-0000-4000-8000-000000000001', status: 'pending'
+      started_by: '00000000-0000-4000-8000-000000000001',
+      initiated_by: '00000000-0000-4000-8000-000000000001',
+      execution_context: 'User', system_context_approved_by: null, status: 'pending'
     }]};
     if (sql.includes('FROM md_flow_editor_values')) return {rows: metadata.map(row => ({
       property_path: row.path, value_kind: row.kind, value_text: row.text
@@ -171,8 +173,9 @@ test('authored Flow routes Decision outcomes and executes Custom Notification ac
     if (sql.includes('FROM md_flow_interview_values')) return {rows: []};
     if (sql.includes('FROM md_flow_interview_records')) return {rows: []};
     if (sql.includes('FROM md_flow_interview_record_fields')) return {rows: []};
-    if (sql.includes('SELECT id,email,display_name FROM md_users')) return {rows:[{
-      id:'00000000-0000-4000-8000-000000000001',email:'flow@example.invalid',display_name:'Flow User'
+    if (sql.includes('SELECT u.id,u.email, u.display_name')||sql.includes('SELECT u.id,u.email,u.display_name')) return {rows:[{
+      id:'00000000-0000-4000-8000-000000000001',email:'flow@example.invalid',display_name:'Flow User',
+      time_zone:'UTC',has_currency_settings:false,currency_iso_code:null,conversion_rate:null
     }]};
     if (sql.startsWith('SAVEPOINT ')) return {rows: []};
     if (sql.startsWith('RELEASE SAVEPOINT ')||sql.startsWith('ROLLBACK TO SAVEPOINT ')) return {rows: []};

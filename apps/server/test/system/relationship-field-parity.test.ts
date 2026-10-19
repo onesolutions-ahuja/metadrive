@@ -479,13 +479,19 @@ test('formula fields calculate on read and honor field-level access',async()=>{
       default_value:null,auto_number_format:null,formula_expression:'DATETIMEVALUE("2026-01-02T03:04:05Z")',formula_return_type:'DateTime'},
     {api_name:'Clock',data_type:'formula',related_object:null,relationship_type:null,allow_reparenting:false,
       required:false,max_length:null,precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
-      default_value:null,auto_number_format:null,formula_expression:'TIMEVALUE("12:34:56")',formula_return_type:'Time'}
+      default_value:null,auto_number_format:null,formula_expression:'TIMEVALUE("12:34:56")',formula_return_type:'Time'},
+    {api_name:'CloneFlag',data_type:'formula',related_object:null,relationship_type:null,allow_reparenting:false,
+      required:false,max_length:null,precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,
+      default_value:null,auto_number_format:null,formula_expression:'ISCLONE()',formula_return_type:'Checkbox'}
   ];
   const db={query:async(sql:string)=>{
     if(sql.startsWith('SELECT api_name,data_type'))return {rows:definitions,rowCount:definitions.length};
+    if(sql.includes('FROM md_users u'))return {rows:[{
+      time_zone:'UTC',has_currency_settings:false,currency_iso_code:null,conversion_rate:null
+    }],rowCount:1};
     if(sql.includes('FROM md_records r'))return {rows:[{
       id:'record',created_at:new Date('2026-01-01T00:00:00Z'),updated_at:new Date('2026-01-02T00:00:00Z'),
-      owner_id:null,record_type_id:null,field_api:'Amount',value_text:'12.50',reference_record_id:null,
+      owner_id:null,record_type_id:null,is_clone:true,field_api:'Amount',value_text:'12.50',reference_record_id:null,
       data_type:'number',geo_latitude:null,geo_longitude:null,address_street:null,address_city:null,
       address_state:null,address_postal_code:null,address_country:null
     }],rowCount:1};
@@ -496,4 +502,5 @@ test('formula fields calculate on read and honor field-level access',async()=>{
   assert.equal(record.DoubleAmount,25);
   assert.equal(record.LoggedAt,'2026-01-02T03:04:05.000Z');
   assert.equal(record.Clock,'12:34:56.000');
+  assert.equal(record.CloneFlag,true);
 });

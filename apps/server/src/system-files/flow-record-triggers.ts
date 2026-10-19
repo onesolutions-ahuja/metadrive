@@ -7,12 +7,15 @@ import type {RecordEngine} from './record-engine.js';
 import {decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 import {evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
 import {flowAppIsEntitled} from './flow-validation.js';
+import {auditSystemFlowContext,flowExecutionMode,resolveFlowExecutionActor,
+  type FlowExecutionActor} from './flow-execution-context.js';
 import {resolveFlowScheduledPathAt} from './flow-wait-runtime.js';
 
 type TriggerOperation='created'|'updated'|'deleted';
 type TriggerPhase='before-save'|'after-save';
 type Snapshot=Record<string,unknown>;
-type Candidate={id:string;api_name:string;version:number;app_api_name?:string|null};
+type Candidate={id:string;api_name:string;version:number;app_api_name?:string|null;
+ system_context_approved_by?:string|null};
 type TriggerDocument={
  flowType?:string;triggerObject?:string;
  startConfig?:Record<string,unknown>;
@@ -49,8 +52,9 @@ export class FlowRecordTriggers {
   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(flowApi)||!Number.isSafeInteger(version)||version<1)
    throw new Error('Invalid scheduled Flow identity');
   await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
-  const {rows}=await this.db.query<{id:string;version:number;app_api_name:string|null}>(`
-  SELECT f.id,f.version,s.app_api_name FROM md_flow_definitions f
+  const {rows}=await this.db.query<{id:string;version:number;app_api_name:string|null;
+   system_context_approved_by:string|null}>(`
+  SELECT f.id,f.version,f.system_context_approved_by,s.app_api_name FROM md_flow_definitions f
   JOIN md_flow_trigger_subscriptions s ON s.tenant_id=f.tenant_id AND s.flow_id=f.id
   WHERE f.tenant_id=$1 AND f.api_name=$2 AND f.flow_type='Schedule-Triggered Flow'
    AND s.flow_type=f.flow_type AND s.active=true
@@ -69,6 +73,8 @@ export class FlowRecordTriggers {
   const start=graph.elements.find(element=>element.type==='Start');
   if(!start||typeof start.config.object!=='string')
    throw new Error('Scheduled Flow has no valid Start configuration');
+  const executionActor=await resolveFlowExecutionActor(this.db,this.rbac,tenantId,flowApi,
+   userId,flowExecutionMode(start.config.executionContext),flow.system_context_approved_by);
   const objectApi=start.config.object;
   const conditions=Array.isArray(start.config.entryConditions)
    ?start.config.entryConditions as Array<Record<string,unknown>>:[];
@@ -101,14 +107,18 @@ export class FlowRecordTriggers {
     throw new Error('Scheduled Flow received a record without a valid ID');
    const result=await this.db.transaction(async client=>{
     const created=await client.query<{id:string}>(`
-     INSERT INTO md_flow_runs(tenant_id,flow_id,started_by,status)
-     VALUES($1,$2,$3,'pending') RETURNING id`,[tenantId,flow.id,userId]);
+     INSERT INTO md_flow_runs
+      (tenant_id,flow_id,started_by,initiated_by,execution_context,status)
+     VALUES($1,$2,$3,$4,$5,'pending') RETURNING id`,
+    [tenantId,flow.id,executionActor.actorUserId,userId,executionActor.mode]);
     const runId=created.rows[0]?.id;
     if(!runId)throw new Error('Unable to create scheduled Flow run');
+    if(executionActor.mode==='System')await auditSystemFlowContext(client,tenantId,flow.id,
+     executionActor.actorUserId,userId,'system-context-run',runId);
     await client.query(`INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element)
      VALUES($1,$2,$3)`,[tenantId,runId,start.id]);
     await this.persistRecord(client,tenantId,runId,'$Record',objectApi,record,id);
-    return this.flows.advanceInterview(tenantId,userId,runId,{},client);
+    return this.flows.advanceInterview(tenantId,executionActor.actorUserId,runId,{},client);
    });
    const status='status' in result?result.status:undefined;
    if(status!=='completed'&&status!=='waiting')
@@ -121,9 +131,11 @@ export class FlowRecordTriggers {
   if(!this.db||!/^[0-9a-f-]{36}$/i.test(deliveryId)||!Number.isSafeInteger(version)||version<1)
    throw new Error('Invalid Platform Event delivery');
   const {rows}=await this.db.query<{
-   event_id:string;event_api_name:string;flow_id:string;flow_api:string;app_api_name:string|null
+   event_id:string;event_api_name:string;flow_id:string;flow_api:string;app_api_name:string|null;
+   system_context_approved_by:string|null
   }>(`
-   SELECT d.event_id,e.event_api_name,f.id AS flow_id,f.api_name AS flow_api,s.app_api_name
+   SELECT d.event_id,e.event_api_name,f.id AS flow_id,f.api_name AS flow_api,
+    f.system_context_approved_by,s.app_api_name
    FROM md_platform_event_deliveries d
    JOIN md_platform_event_messages e ON e.tenant_id=d.tenant_id AND e.id=d.event_id
    JOIN md_flow_definitions f ON f.tenant_id=d.tenant_id AND f.id=d.flow_id
@@ -175,6 +187,9 @@ export class FlowRecordTriggers {
   const start=graph.elements.find(element=>element.type==='Start');
   if(!start||start.config.object!==delivery.event_api_name)
    throw new Error('Platform Event Flow subscription is stale');
+  const executionActor=await resolveFlowExecutionActor(this.db,this.rbac,tenantId,
+   delivery.flow_api,userId,flowExecutionMode(start.config.executionContext),
+   delivery.system_context_approved_by);
   const conditions=Array.isArray(start.config.entryConditions)
    ?start.config.entryConditions as Array<Record<string,unknown>>:[];
   for(const field of new Set(conditions.map(condition=>asString(condition.field)))){
@@ -191,14 +206,18 @@ export class FlowRecordTriggers {
   if(matches){
     await this.db.transaction(async client=>{
      const created=await client.query<{id:string}>(`
-      INSERT INTO md_flow_runs(tenant_id,flow_id,started_by,status)
-      VALUES($1,$2,$3,'pending') RETURNING id`,[tenantId,delivery.flow_id,userId]);
+      INSERT INTO md_flow_runs
+       (tenant_id,flow_id,started_by,initiated_by,execution_context,status)
+      VALUES($1,$2,$3,$4,$5,'pending') RETURNING id`,
+     [tenantId,delivery.flow_id,executionActor.actorUserId,userId,executionActor.mode]);
      const runId=created.rows[0]?.id;
      if(!runId)throw new Error('Unable to create Platform Event Flow run');
+     if(executionActor.mode==='System')await auditSystemFlowContext(client,tenantId,
+      delivery.flow_id,executionActor.actorUserId,userId,'system-context-run',runId);
      await client.query(`INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element)
       VALUES($1,$2,$3)`,[tenantId,runId,start.id]);
      await this.persistRecord(client,tenantId,runId,'$Record',delivery.event_api_name,eventRecord,null);
-     const result=await this.flows.advanceInterview(tenantId,userId,runId,{},client);
+     const result=await this.flows.advanceInterview(tenantId,executionActor.actorUserId,runId,{},client);
      const status='status' in result?result.status:undefined;
      if(status!=='completed'&&status!=='waiting')
       throw new Error('Platform Event Flow returned an invalid state');
@@ -223,16 +242,18 @@ export class FlowRecordTriggers {
 
  async execute(client:PoolClient,tenantId:string,userId:string,objectApi:string,
    operation:TriggerOperation,record:Snapshot|null,prior:Snapshot|null,
-   phase:TriggerPhase='after-save'):Promise<Snapshot|void> {
+   phase:TriggerPhase='after-save',isClone=false):Promise<Snapshot|void> {
   if(this.flowExecution.getStore())return;
   const {rows}=await client.query<Candidate>(`
-  SELECT f.id,f.api_name,f.version,s.app_api_name FROM md_flow_definitions f
+  SELECT f.id,f.api_name,f.version,f.system_context_approved_by,s.app_api_name FROM md_flow_definitions f
   JOIN md_flow_trigger_subscriptions s ON s.tenant_id=f.tenant_id AND s.flow_id=f.id
   WHERE f.tenant_id=$1 AND f.active=true AND f.archived=false
    AND f.flow_type='Record-Triggered Flow' AND s.flow_type=f.flow_type AND s.active=true
   ORDER BY f.api_name
   `,[tenantId]);
-  const ready:Array<{flow:Candidate;graph:TriggerDocument;start:NonNullable<TriggerDocument['elements']>[number];order:number}>=[];
+  const ready:Array<{flow:Candidate;graph:TriggerDocument;
+   start:NonNullable<TriggerDocument['elements']>[number];order:number;
+   execution:FlowExecutionActor}>=[];
   let current=record?{...record}:null;
   let scheduledPathCount=0;
   for(const flow of rows){
@@ -252,6 +273,10 @@ export class FlowRecordTriggers {
      ||operation==='created'&&trigger==='created'
      ||operation==='updated'&&trigger==='updated'
      ||operation==='deleted'&&trigger==='deleted'))continue;
+   if(flow.app_api_name&&(!this.db||!await flowAppIsEntitled(this.db,tenantId,flow.app_api_name)))
+    continue;
+   const execution=await resolveFlowExecutionActor(this.db,this.rbac,tenantId,flow.api_name,
+    userId,flowExecutionMode(config.executionContext),flow.system_context_approved_by??null);
    const order=Number(config.triggerOrder??1000);
    if(!Number.isSafeInteger(order)||order<1||order>2000)
     throw new Error('Invalid active Record-Triggered Flow order');
@@ -260,7 +285,7 @@ export class FlowRecordTriggers {
     for(const field of new Set(conditions.map(condition=>asString(condition.field)))){
      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
       throw new Error('Record-Triggered Flow entry condition has an invalid field');
-     await this.rbac.require(tenantId,userId,objectApi+'.'+field,'read');
+     await this.rbac.require(tenantId,execution.actorUserId,objectApi+'.'+field,'read');
     }
     const matches=(subject:Snapshot|null,previous:Snapshot|null)=>conditions.length===0
      ||Boolean(subject)&&evaluateFlowDecisionOutcome(conditions.map(condition=>{
@@ -278,9 +303,7 @@ export class FlowRecordTriggers {
      &&current?.Id&&typeof current.Id==='string')
     await this.cancelScheduledPaths(client,tenantId,flow.id,current.Id);
    if(!currentMatches||transition)continue;
-   if(flow.app_api_name&&(!this.db||!await flowAppIsEntitled(this.db,tenantId,flow.app_api_name)))
-    continue;
-   ready.push({flow,graph,start,order});
+   ready.push({flow,graph,start,order,execution});
   }
   ready.sort((left,right)=>left.order-right.order
    ||left.flow.api_name.localeCompare(right.flow.api_name));
@@ -289,21 +312,28 @@ export class FlowRecordTriggers {
   for(const item of ready){
    await this.rbac.require(tenantId,userId,'Flow:'+item.flow.api_name,'execute');
    const {rows:runRows}=await client.query<{id:string}>(`
-    INSERT INTO md_flow_runs(tenant_id,flow_id,started_by,status)
-    VALUES($1,$2,$3,'pending') RETURNING id
-   `,[tenantId,item.flow.id,userId]);
+    INSERT INTO md_flow_runs
+     (tenant_id,flow_id,started_by,initiated_by,execution_context,status)
+    VALUES($1,$2,$3,$4,$5,'pending') RETURNING id
+   `,[tenantId,item.flow.id,item.execution.actorUserId,userId,item.execution.mode]);
    const runId=runRows[0]?.id;
    if(!runId)throw new Error('Unable to create Record-Triggered Flow run');
+   if(item.execution.mode==='System')await auditSystemFlowContext(client,tenantId,item.flow.id,
+    item.execution.actorUserId,userId,'system-context-run',runId);
    await client.query(`
     INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element)
     VALUES($1,$2,$3)
    `,[tenantId,runId,item.start.id]);
+   await client.query(`INSERT INTO md_flow_run_inputs
+    (tenant_id,run_id,api_name,value_text,data_type)
+    VALUES($1,$2,'$Record__IsClone',$3,'boolean')`,
+   [tenantId,runId,String(isClone)]);
    await this.persistRecord(client,tenantId,runId,'$Record',objectApi,current??prior,
     operation==='deleted'?null:(current??prior)?.Id);
    await this.persistRecord(client,tenantId,runId,'$Record__Prior',objectApi,prior,
     operation==='deleted'?null:prior?.Id);
    const result=await this.flowExecution.run(true,
-    ()=>this.flows.advanceInterview(tenantId,userId,runId,{},client));
+    ()=>this.flows.advanceInterview(tenantId,item.execution.actorUserId,runId,{},client));
    if(!('status' in result)||(result.status!=='completed'
      &&!(phase==='after-save'&&result.status==='waiting')))
     throw new Error('Record-Triggered Flow did not complete or pause durably');
@@ -311,7 +341,8 @@ export class FlowRecordTriggers {
      &&typeof result.record==='object'&&!Array.isArray(result.record))
     current={...current,...result.record as Snapshot};
    if(phase==='after-save'&&current)
-    scheduledPathCount+=await this.schedulePaths(client,tenantId,userId,item.flow,
+    scheduledPathCount+=await this.schedulePaths(client,tenantId,item.execution.actorUserId,
+     userId,item.execution,item.flow,
      item.graph,item.start,current,prior,operation,objectApi,
      maxScheduledPathInterviews-scheduledPathCount);
   }
@@ -336,7 +367,8 @@ export class FlowRecordTriggers {
   `,[tenantId,flowId,recordId]);
  }
 
- private async schedulePaths(client:PoolClient,tenantId:string,userId:string,flow:Candidate,
+ private async schedulePaths(client:PoolClient,tenantId:string,userId:string,
+  initiatingUserId:string,execution:FlowExecutionActor,flow:Candidate,
   graph:TriggerDocument,start:NonNullable<TriggerDocument['elements']>[number],
   record:Snapshot,prior:Snapshot|null,operation:TriggerOperation,objectApi:string,
   remaining:number):Promise<number> {
@@ -366,11 +398,14 @@ export class FlowRecordTriggers {
    });
    if(!scheduledAt)continue;
    const {rows}=await client.query<{id:string}>(`
-    INSERT INTO md_flow_runs(tenant_id,flow_id,started_by,status,wait_kind,wait_until)
-    VALUES($1,$2,$3,'waiting','scheduled-path',$4) RETURNING id
-   `,[tenantId,flow.id,userId,scheduledAt]);
+    INSERT INTO md_flow_runs
+     (tenant_id,flow_id,started_by,initiated_by,execution_context,status,wait_kind,wait_until)
+    VALUES($1,$2,$3,$4,$5,'waiting','scheduled-path',$6) RETURNING id
+   `,[tenantId,flow.id,userId,initiatingUserId,execution.mode,scheduledAt]);
    const runId=rows[0]?.id;
    if(!runId)throw new Error('Unable to create Scheduled Path interview');
+   if(execution.mode==='System')await auditSystemFlowContext(client,tenantId,flow.id,
+    userId,initiatingUserId,'system-context-run',runId);
    await client.query(`INSERT INTO md_flow_interview_state
     (tenant_id,run_id,current_element) VALUES($1,$2,$3)`,[tenantId,runId,target]);
    await this.persistRecord(client,tenantId,runId,'$Record',objectApi,record,record.Id);

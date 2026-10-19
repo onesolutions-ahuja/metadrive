@@ -6,6 +6,7 @@ import { loadFlowScreenRecords } from '../../authentication/Client/authClient';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from '../../records/RecordWorkspace/recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from '../../records/RecordWorkspace/recordCsvUtils';
 import { initialScreenValues, screenFieldIsVisible } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
+import {resolveFlowOutputBindings} from '../../automation/FlowScreen/flowInputBindings';
 import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from '../../workspace/Navigation/appRouting';
 import { NavigationLoadTime, resolveCurrentAppNavigation } from '../../workspace/Navigation/appNavigationView';
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
@@ -267,6 +268,7 @@ function MetadataBoundPageComponent({
   // Generic, page-scoped visual state for metadata-configured local actions.
   // Never grants data permissions or persists cross-tenant information.
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
+  const pendingFlowOutputs=useRef(new Map<string,{flowApiName:string;mappings:Record<string,unknown>}>());
   useEffect(() => {
     setPageState({});
     const sync = (event: Event) => {
@@ -276,6 +278,38 @@ function MetadataBoundPageComponent({
     };
     window.addEventListener('metadrive:page-local-state',sync);
     return ()=>window.removeEventListener('metadrive:page-local-state',sync);
+  },[pageSessionKey]);
+  useEffect(()=>{
+    const complete=(event:Event)=>{
+      const detail=(event as CustomEvent<{requestId?:string;flowApiName?:string;outputs?:Record<string,unknown>}>).detail;
+      if(typeof detail?.requestId!=='string'||typeof detail.flowApiName!=='string')return;
+      const pending=pendingFlowOutputs.current.get(detail.requestId);
+      if(!pending||pending.flowApiName!==detail.flowApiName)return;
+      pendingFlowOutputs.current.delete(detail.requestId);
+      try{
+        const outputs=detail.outputs&&typeof detail.outputs==='object'&&!Array.isArray(detail.outputs)
+          ?detail.outputs:{};
+        for(const item of resolveFlowOutputBindings(outputs,pending.mappings))
+          window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
+            detail:{pageSessionKey,key:item.key,value:item.value}
+          }));
+      }catch(error){
+        setActionError(error instanceof Error?error.message:'Unable to apply Flow outputs');
+      }
+    };
+    const fail=(event:Event)=>{
+      const detail=(event as CustomEvent<{requestId?:string}>).detail;
+      if(typeof detail?.requestId==='string')pendingFlowOutputs.current.delete(detail.requestId);
+    };
+    window.addEventListener('metadrive:flow-completed',complete);
+    window.addEventListener('metadrive:flow-failed',fail);
+    window.addEventListener('metadrive:flow-paused',fail);
+    return ()=>{
+      window.removeEventListener('metadrive:flow-completed',complete);
+      window.removeEventListener('metadrive:flow-failed',fail);
+      window.removeEventListener('metadrive:flow-paused',fail);
+      pendingFlowOutputs.current.clear();
+    };
   },[pageSessionKey]);
   const stateChannel = useFlowStateChannel(properties, sessionId, apiRequest, disableActions === true);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
@@ -457,9 +491,19 @@ function MetadataBoundPageComponent({
       binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
         ? binding.inputs as Record<string, unknown> : {}
     ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    if(binding.outputs!==undefined&&(!binding.outputs||typeof binding.outputs!=='object'||Array.isArray(binding.outputs)))
+      throw new Error('Flow output mappings must be an object.');
+    const outputMappings:Record<string,unknown>={};
+    if(binding.outputs!==undefined)Object.assign(outputMappings,binding.outputs);
+    resolveFlowOutputBindings({},outputMappings);
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
-      onLaunchFlow(flowApiName, inputs,{requestId:typeof payload.requestId==='string'?payload.requestId:undefined});
+      const requestId=crypto.randomUUID();
+      if(Object.keys(outputMappings).length){
+        if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
+        pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
+      }
+      onLaunchFlow(flowApiName, inputs,{requestId});
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {
@@ -471,6 +515,12 @@ function MetadataBoundPageComponent({
           method: 'POST', body: JSON.stringify(inputs)
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      const flowOutputs=response.outputs&&typeof response.outputs==='object'&&!Array.isArray(response.outputs)
+        ?response.outputs:{};
+      for(const item of resolveFlowOutputBindings(flowOutputs,outputMappings))
+        window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
+          detail:{pageSessionKey,key:item.key,value:item.value}
+        }));
       let completedSessionId = sessionId;
       if (binding.resetSessionOnSuccess === true) {
         const key = 'metadrive-page-session:' + pageSessionKey;

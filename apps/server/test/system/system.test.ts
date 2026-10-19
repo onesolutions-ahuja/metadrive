@@ -199,6 +199,8 @@ test('Flow with Start and End completes without unconfigured actions', async () 
   const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
   const client={query:async(sql:string)=>{
     if(sql.includes('INSERT INTO md_flow_runs'))return {rows:[{id:'run-id'}],rowCount:1};
+    if(sql.includes('SELECT started_by FROM md_flow_runs'))
+      return {rows:[{started_by:'user'}],rowCount:1};
     if(sql.includes('FROM md_flow_runs r JOIN'))return {rows:[{flow_id:'flow-id',started_by:'user',status:'pending',api_name:'SimpleFlow'}]};
     if(sql.includes('FROM md_flow_nodes WHERE'))return {rows:[
       {id:'start-node',api_name:'start',node_type:'Start'},
@@ -211,7 +213,9 @@ test('Flow with Start and End completes without unconfigured actions', async () 
     throw new Error('Unexpected Flow query');
   }};
   const db={
-    query:async(sql:string)=>sql.includes('md_flow_definitions')?{rows:[{id:'flow-id',version:1}]}:{rows:[],rowCount:1},
+    query:async(sql:string)=>sql.includes('SELECT started_by FROM md_flow_runs')
+      ?{rows:[{started_by:'user'}],rowCount:1}
+      :sql.includes('md_flow_definitions')?{rows:[{id:'flow-id',version:1}]}:{rows:[],rowCount:1},
     transaction:async(fn:(client:typeof client)=>Promise<unknown>)=>fn(client)
   } as unknown as SqlPersistence;
   const rbac={require:async()=>{}} as unknown as RbacEngine;
@@ -375,7 +379,8 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     if(sql.includes('md_rbac_decision'))return {rows:[
       {ordinal:1,allow_granted:true,deny_granted:false},
       {ordinal:2,allow_granted:true,deny_granted:false},
-      {ordinal:4,allow_granted:true,deny_granted:true}
+      {ordinal:4,allow_granted:true,deny_granted:true},
+      {ordinal:8,allow_granted:true,deny_granted:false}
     ]};
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
@@ -383,17 +388,18 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     assert.ok(sql.includes('md_rbac_decision'));
     assert.ok(sql.includes('md_rbac_decision'));
     assert.equal(params[1],'developer');
-    assert.equal((params[2] as string[]).length,8);
+    assert.equal((params[2] as string[]).length,9);
     return {rows:[
       {ordinal:1,allow_granted:true,deny_granted:false},
       {ordinal:2,allow_granted:true,deny_granted:false},
-      {ordinal:4,allow_granted:true,deny_granted:true}
+      {ordinal:4,allow_granted:true,deny_granted:true},
+      {ordinal:8,allow_granted:true,deny_granted:false}
     ]};
   }} as unknown as SqlPersistence;
   const result=await sessionMetadata(db,'tenant','developer');
   assert.equal(result.user.id,'developer');
   assert.equal(result.user.tenantId,'tenant');
-  assert.deepEqual(result.user.permissions,['metadata:read','metadata:write']);
+  assert.deepEqual(result.user.permissions,['metadata:read','metadata:write','flows:system-context']);
   assert.deepEqual(result.user.fieldAccess,{});
 });
 test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
@@ -688,6 +694,33 @@ test('Field update rejects unsupported datatype changes before mutating values',
  })} as unknown as SqlPersistence;
  await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Sale__c','Total',
   {label:'Total',dataType:'Geolocation'}),/Field datatype migration is not supported/);
+});
+
+test('Rich Text fields with inline images cannot migrate to another field type',async()=>{
+ let checkedForImages=false;
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_field_formulas'))return {rows:[]};
+  if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Note__c',label:'Note',is_system:false}]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{id:'f',object_api:'Note__c',api_name:'Body__c',label:'Body',
+    data_type:'richtext',related_object:null,required:false,max_length:131072,precision:null,scale:null,
+    is_unique:false,external_id:false,case_sensitive:false,default_value:null}]};
+  if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')
+    ||sql.includes('FROM md_object_record_type'))return {rows:[]};
+  throw new Error('Unexpected SQL write');
+ },transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
+  query:async(sql:string)=>{
+   if(sql.includes('FOR UPDATE'))return {rows:[{data_type:'richtext',max_length:131072,precision:null,
+    scale:null,required:false,is_unique:false,external_id:false,case_sensitive:false,default_value:null}]};
+   if(sql.includes('FROM md_record_files')){
+    checkedForImages=true;
+    return {rows:[{id:'file-1'}],rowCount:1};
+   }
+   return {rows:[],rowCount:0};
+  }
+ })} as unknown as SqlPersistence;
+ await assert.rejects(()=>new ObjectDefinitionService(db).updateField('tenant','Note__c','Body__c',
+  {label:'Body',dataType:'Text'}),/Inline images must be removed before migrating a Rich Text field/);
+ assert.equal(checkedForImages,true);
 });
 
 test('SQL Flow draft validator rejects unsupported actions and broken branches',async()=>{

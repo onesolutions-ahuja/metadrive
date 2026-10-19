@@ -70,6 +70,32 @@ test('Flow drafts are checked before writes and supported Screen graph validatio
   assert.deepEqual(validation.errors,[]);
 });
 
+test('activating a newer Flow version deactivates existing versions before publishing',async()=>{
+  const statements:string[]=[];
+  const db={
+    query:async()=>({rows:[]}),
+    transaction:async(run:(client:{query:(sql:string)=>Promise<{rows:Array<{id:string;version:number;active:boolean}>}>})=>Promise<void>)=>
+      run({query:async(sql:string)=>{
+        statements.push(sql);
+        return sql.includes('SELECT id,version,active FROM md_flow_definitions')
+          ?{rows:[{id:'draft',version:2,active:false}]}:{rows:[]};
+      }})
+  } as unknown as SqlPersistence;
+  const engine=new FlowRuntime(db,{require:async()=>{}} as unknown as RbacEngine);
+  engine.validateDraft=async()=>({valid:true,errors:[],warnings:[]});
+  engine.loadEditor=async()=>({} as never);
+  await engine.saveEditor('tenant','user','OrderFlow',{
+    apiName:'OrderFlow',label:'Order Flow',flowType:'Autolaunched Flow',status:'Active',
+    elements:[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'End',label:'End',config:{}}],
+    connectors:[{from:1,to:2,label:'Default',kind:'normal'}],resources:[]
+  });
+  const deactivate=statements.findIndex(sql=>sql.includes('UPDATE md_flow_definitions SET active=false'));
+  const activate=statements.findIndex(sql=>sql.includes('UPDATE md_flow_definitions SET label=$3,flow_type=$4,active=$5'));
+  assert.notEqual(deactivate,-1);
+  assert.notEqual(activate,-1);
+  assert.ok(deactivate<activate);
+});
+
 test('Flow version restore source is loaded by tenant, API name, and published version',async()=>{
   const graph={label:'Order Flow',flowType:'Screen Flow',triggerObject:null,startConfig:{},
     elements:[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'End',label:'End',config:{}}],

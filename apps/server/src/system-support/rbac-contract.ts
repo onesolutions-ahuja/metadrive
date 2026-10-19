@@ -57,7 +57,7 @@ export const fieldActions=['read','edit','create','delete'];
 export function grantRules(set:Pick<PolicySet,keyof typeof grants>):Rule[]{
  const rules=new Map<string,Rule>();
  const put=(resource:string,action:string,effect:'allow'|'deny')=>{
-  if(!/^[A-Za-z0-9_*][A-Za-z0-9_.*:-]*$/.test(resource)||!/^([A-Za-z][A-Za-z0-9_]*|\*)$/.test(action))
+  if(!/^[A-Za-z0-9_*][A-Za-z0-9_.*:-]*$/.test(resource)||!/^([A-Za-z][A-Za-z0-9_-]*|\*)$/.test(action))
    throw Error('Invalid permission rule');
   const key=resource+':'+action;
   if(rules.get(key)?.effect==='deny'&&effect==='allow')return;

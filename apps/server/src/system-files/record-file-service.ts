@@ -1,9 +1,11 @@
 import {createHash} from 'node:crypto';
+import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import type {SqlPersistence} from './sql-persistence.js';
 
 const apiName=/^[A-Za-z][A-Za-z0-9_]*$/;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const imageUrlPattern=/\/api\/files\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/content/gi;
 const maxFileBytes=1024*1024;
 const maxTenantBytes=100*1024*1024;
 const maxImagesPerField=20;
@@ -60,6 +62,16 @@ type FileRow={
 
 export class RecordFileService {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
+
+  async pruneUnreferenced(client:PoolClient,tenantId:string,objectApi:string,recordId:string,
+    fieldApi:string,html:string|null) {
+    const fileIds=[...String(html??'').matchAll(imageUrlPattern)]
+      .map(match=>match[1]).filter((id):id is string=>Boolean(id));
+    await client.query(`DELETE FROM md_record_files
+      WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 AND field_api=$4
+        AND NOT(id=ANY($5::uuid[]))`,
+    [tenantId,objectApi,recordId,fieldApi,fileIds]);
+  }
 
   private async requireRichTextRecord(tenantId:string,userId:string,objectApi:string,
     recordId:string,fieldApi:string,action:'read'|'edit',

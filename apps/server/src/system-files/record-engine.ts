@@ -2,7 +2,8 @@ import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import {formatAutoNumberValue} from './auto-number-format.js';
-import {evaluateFlowFormula,validateFlowFormula} from './flow-formula-runtime.js';
+import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
+  type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
 import {sanitizeRichText} from './rich-text.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;rollup_source_data_type?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;global_value_set_api?:string|null};
@@ -15,7 +16,7 @@ type RecordTriggerHandler=(
   client:PoolClient,tenantId:string,userId:string,objectApi:string,
   operation:'created'|'updated'|'deleted',
   record:Record<string,unknown>|null,prior:Record<string,unknown>|null,
-  phase?:'before-save'|'after-save'
+  phase?:'before-save'|'after-save',isClone?:boolean
 )=>Promise<Record<string,unknown>|void>;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const roundDecimal=(value:number,scale:number)=>{
@@ -40,6 +41,9 @@ const roundDecimal=(value:number,scale:number)=>{
 };
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
+  private richTextFilePruner?:(
+    client:PoolClient,tenantId:string,objectApi:string,recordId:string,fieldApi:string,html:string|null
+  )=>Promise<void>;
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
     private readonly encryptedValueVault?:EncryptedValueVault) {}
   private async lockObjectForWrite(client:PoolClient,tenantId:string,objectApi:string) {
@@ -48,6 +52,9 @@ export class RecordEngine {
   }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
     this.recordTrigger=handler;
+  }
+  setRichTextFilePruner(handler:NonNullable<RecordEngine['richTextFilePruner']>) {
+    this.richTextFilePruner=handler;
   }
   private async fields(tenantId:string,objectApi:string,client?:PoolClient):Promise<FieldDefinition[]> {
     const {rows}=await (client??this.db).query<FieldDefinition>(
@@ -70,6 +77,32 @@ export class RecordEngine {
          AND md_field_definitions.deleted_at IS NULL`,
       [tenantId,objectApi]);
     return rows;
+  }
+  private async formulaContext(tenantId:string,userId:string,client?:PoolClient):Promise<FormulaEvaluationContext>{
+    const {rows}=await (client??this.db).query<{
+      time_zone:string;has_currency_settings:boolean;currency_iso_code:string|null;conversion_rate:string|null
+    }>(`SELECT u.time_zone,(s.tenant_id IS NOT NULL) AS has_currency_settings,
+        currency.value->>'currencyIsoCode' AS currency_iso_code,
+        currency.value->>'conversionRate' AS conversion_rate
+      FROM md_users u
+      LEFT JOIN md_tenant_settings s ON s.tenant_id=u.tenant_id AND s.setting_key='currencies'
+      LEFT JOIN LATERAL jsonb_array_elements(
+        COALESCE(s.properties->'currencies','{"currencies":[]}'::jsonb)->'currencies'
+      ) currency(value) ON true
+      WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true`,
+    [tenantId,userId]);
+    if(!rows.length)throw new Error('Formula evaluation user is unavailable in this tenant');
+    const currencyRates:Record<string,number>={};
+    if(!rows[0].has_currency_settings)currencyRates.USD=1;
+    for(const row of rows){
+      if(row.currency_iso_code&&row.conversion_rate!==null){
+        const rate=Number(row.conversion_rate);
+        if(!/^[A-Z]{3}$/.test(row.currency_iso_code)||!Number.isFinite(rate)||rate<=0)
+          throw new Error('Invalid tenant currency rate configuration');
+        currencyRates[row.currency_iso_code]=rate;
+      }
+    }
+    return {timeZone:rows[0].time_zone,currencyRates};
   }
   private async picklistValues(tenantId:string,objectApi:string,fieldApi:string,client?:PoolClient) {
     const {rows}=await (client??this.db).query<{value:string}>(`
@@ -249,7 +282,7 @@ export class RecordEngine {
   }
   private async applyFormulaFields(tenantId:string,userId:string,objectApi:string,
     record:Record<string,unknown>,definitions:readonly FieldDefinition[],client?:PoolClient,
-    migrationMode=false) {
+    migrationMode=false,formulaContext:FormulaEvaluationContext={}) {
     const formulas=new Map(definitions.filter(field=>field.data_type==='formula'
       &&typeof field.formula_expression==='string').map(field=>[field.api_name,field]));
     const calculated=new Map<string,unknown>();
@@ -329,7 +362,7 @@ export class RecordEngine {
         if(parts[1]===objectApi)
           return calculated.has(parts[2])?calculated.get(parts[2]):record[parts[2]]??null;
         return referenceCache.get(parts[1]+'.'+parts[2])??null;
-      });
+      },{...formulaContext,isClone:record.__isClone===true});
       calculating.delete(field.api_name);
       calculated.set(field.api_name,result);
       return result;
@@ -363,7 +396,8 @@ export class RecordEngine {
         record[field.api_name]=match
           ?`${match[1]}:${match[2]}:${match[3]??'00'}.${(match[4]??'').padEnd(3,'0')}`
           :null;
-      }else record[field.api_name]=value===null?null:String(value);
+      }else record[field.api_name]=value===null?null:
+        isFormulaImageResult(value)?value:String(value);
     }
   }
   async evaluateFormulaForMigration(client:PoolClient,tenantId:string,userId:string,
@@ -386,8 +420,11 @@ export class RecordEngine {
         ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api AND f.api_name=v.field_api
       WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.record_id=$3 AND f.deleted_at IS NULL`,
     [tenantId,objectApi,recordId]);
+    const {rows:cloneRows}=await client.query<{is_clone:boolean}>(
+      'SELECT is_clone FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+      [tenantId,objectApi,recordId]);
     const byApi=new Map(rows.map(row=>[row.field_api,row]));
-    const record:Record<string,unknown>={Id:recordId};
+    const record:Record<string,unknown>={Id:recordId,__isClone:cloneRows[0]?.is_clone===true};
     for(const field of definitions){
       if(field.data_type==='formula')continue;
       const row=byApi.get(field.api_name);
@@ -413,7 +450,8 @@ export class RecordEngine {
           {latitude:row.geo_latitude,longitude:row.geo_longitude};
       else record[field.api_name]=row.value_text;
     }
-    await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,true);
+    const formulaContext=await this.formulaContext(tenantId,userId,client);
+    await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,true,formulaContext);
     return record[fieldApi]??null;
   }
 
@@ -653,6 +691,10 @@ export class RecordEngine {
     return prepared;
   }
   async create(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
+    return this.createRecord(tenantId,userId,objectApi,values,false);
+  }
+  private async createRecord(tenantId:string,userId:string,objectApi:string,
+    values:Record<string,unknown>,isClone:boolean) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
     // Reject invalid input before reserving a transaction connection.
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,Boolean(this.recordTrigger));
@@ -666,17 +708,31 @@ export class RecordEngine {
             ?Number(field.default_value):field.data_type==='boolean'
               ?field.default_value==='true':field.default_value])),...rowValues};
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
-          rowValues,null,'before-save')??rowValues;
+          rowValues,null,'before-save',isClone)??rowValues;
       }
       let finalValues=prepared;
       finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
-      const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues);
+      const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
-        await this.recordTrigger(client,tenantId,userId,objectApi,'created',record,null,'after-save');
+        await this.recordTrigger(client,tenantId,userId,objectApi,'created',record,null,'after-save',isClone);
       }
       return id;
     });
+  }
+  async clone(tenantId:string,userId:string,objectApi:string,sourceId:string) {
+    if(objectApi==='User')throw new Error('User records cannot be cloned');
+    await this.rbac.require(tenantId,userId,objectApi,'create');
+    const source=await this.get(tenantId,userId,objectApi,sourceId);
+    const definitions=await this.fields(tenantId,objectApi);
+    const values:Record<string,unknown>={};
+    for(const field of definitions){
+      if(!Object.hasOwn(source,field.api_name)
+        ||['formula','rollup','autonumber','encryptedtext','richtext'].includes(field.data_type)
+        ||!await this.rbac.allowed(tenantId,userId,objectApi+'.'+field.api_name,'create'))continue;
+      values[field.api_name]=source[field.api_name];
+    }
+    return this.createRecord(tenantId,userId,objectApi,values,true);
   }
   /** All Flow record mutations share one transaction, including relationship checks. */
   async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
@@ -721,12 +777,13 @@ export class RecordEngine {
     });
     return {count:updates.length,mode};
   }
-  private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,prepared:Map<string,Storable>) {
+  private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,
+    prepared:Map<string,Storable>,isClone=false) {
     const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const selectedOwner=prepared.get('__OwnerId__')?.value_text??userId,queue=prepared.get('__OwnerQueue__')?.value_text==='true';
     const {rows}=await client.query<{id:string}>(
-      'INSERT INTO md_records (tenant_id,object_api,record_type_id,owner_id,owner_queue_id) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [tenantId,objectApi,selectedType,queue?null:selectedOwner,queue?selectedOwner:null]);
+      'INSERT INTO md_records (tenant_id,object_api,record_type_id,owner_id,owner_queue_id,is_clone) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [tenantId,objectApi,selectedType,queue?null:selectedOwner,queue?selectedOwner:null,isClone]);
     const autoFields=await client.query<{api_name:string;auto_number_format:string|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean}>(
       `SELECT api_name,auto_number_format,is_unique,external_id,case_sensitive FROM md_field_definitions
        WHERE tenant_id=$1 AND object_api=$2 AND data_type='autonumber' AND deleted_at IS NULL`,[tenantId,objectApi]);
@@ -894,7 +951,7 @@ export class RecordEngine {
     params.push(pageSize,start);
     const limitParam=params.length-1,offsetParam=params.length;
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
       field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
       value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
       geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
@@ -902,12 +959,13 @@ export class RecordEngine {
     }>(`
       WITH selected AS (
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
-          r.record_type_id,${sortSelection}
+          r.record_type_id,r.is_clone,${sortSelection}
         FROM md_records r ${sortJoin}
         WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
         ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
       )
-      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
+        v.field_api,v.value_text,v.reference_record_id,
         v.value_number,v.value_date,v.value_datetime,v.value_boolean,
         v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,
         v.address_country,f.data_type
@@ -923,7 +981,9 @@ export class RecordEngine {
     const collected=new Map<string,Record<string,unknown>>();
     const allowed=new Map<string,boolean>();
     for(const row of rows) {
-      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,
+        LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id,
+        __isClone:row.is_clone===true});
       if(!row.field_api||row.field_api==='OwnerId')continue;
       if(!allowed.has(row.field_api))allowed.set(row.field_api,await canRead(row.field_api));
       if(!allowed.get(row.field_api))continue;
@@ -946,8 +1006,12 @@ export class RecordEngine {
         row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
     }
     const records=[...collected.values()];
-    if(definitions.some(field=>field.data_type==='formula'))
-      for(const record of records)await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions);
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId);
+      for(const record of records)
+        await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,undefined,false,formulaContext);
+    }
+    for(const record of records)delete record.__isClone;
     return {records,total:Number(count.rows[0]?.total??0)};
   }
   /** Typed SQL filtering with existing Object, Field and Record authorization. */
@@ -1019,12 +1083,13 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const query=client??this.db;
     const {rows}=await query.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
       field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
       value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
       geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
       address_state:string|null;address_postal_code:string|null;address_country:string|null
-    }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,r.record_type_id,
+    }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+      r.record_type_id,r.is_clone,
       v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean,
       v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country
       FROM md_records r
@@ -1039,7 +1104,8 @@ export class RecordEngine {
     if(!rows.length)throw new Error('Record not found');
     const record:Record<string,unknown>={
       Id:rows[0].id,CreatedAt:rows[0].created_at,
-      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id,RecordTypeId:rows[0].record_type_id
+      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id,RecordTypeId:rows[0].record_type_id,
+      __isClone:rows[0].is_clone===true
     };
     const visible=rows.filter(row=>row.field_api!==null&&row.field_api!=='OwnerId');
     const fields=visible.map(row=>row.field_api as string);
@@ -1062,8 +1128,11 @@ export class RecordEngine {
         row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
     }
     const definitions=await this.fields(tenantId,objectApi,client);
-    if(definitions.some(field=>field.data_type==='formula'))
-      await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions);
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId,client);
+      await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,false,formulaContext);
+    }
+    delete record.__isClone;
     return record;
   }
   async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
@@ -1143,6 +1212,13 @@ export class RecordEngine {
               (tenant_id,record_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5,$6)`,
             [tenantId,id,objectApi,field,multiValue,sortOrder]);
         }
+      }
+      if(this.richTextFilePruner){
+        const richTextFields=(await this.fields(tenantId,objectApi,transactionClient))
+          .filter(field=>field.data_type==='richtext'&&writeValues.has(field.api_name));
+        for(const field of richTextFields)
+          await this.richTextFilePruner(transactionClient,tenantId,objectApi,id,field.api_name,
+            writeValues.get(field.api_name)?.value_text??null);
       }
       const currentParents=await this.rollupParents(transactionClient,tenantId,objectApi,id);
       for(const [parentObject,parentIds] of currentParents){

@@ -110,6 +110,8 @@ export function createSystemServer(db:SqlPersistence) {
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const recordFiles=new RecordFileService(db,rbac);
+  records.setRichTextFilePruner((client,tenantId,objectApi,recordId,fieldApi,html)=>
+    recordFiles.pruneUnreferenced(client,tenantId,objectApi,recordId,fieldApi,html));
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
@@ -153,8 +155,8 @@ export function createSystemServer(db:SqlPersistence) {
         ...(appApiName?{appApiName}:{}),scheduledAt,idempotencyKey:runId+':'+step
       },client);
     });
-  records.setRecordTriggerHandler((client,tenantId,userId,objectApi,operation,record,prior)=>
-    flowRecordTriggers.execute(client,tenantId,userId,objectApi,operation,record,prior));
+  records.setRecordTriggerHandler((client,tenantId,userId,objectApi,operation,record,prior,phase,isClone)=>
+    flowRecordTriggers.execute(client,tenantId,userId,objectApi,operation,record,prior,phase,isClone));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
   const recoveryContacts=new TenantRecoveryContacts(db,rbac,mfa,namedCredentials);
@@ -1452,6 +1454,14 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
+    res.status(201).json({id,record:{Id:id}});
+  }));
+  app.post('/api/records/:objectApi/:id/clone',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(req.body!==undefined&&(!req.body||typeof req.body!=='object'||Array.isArray(req.body)
+      ||Object.keys(req.body).length))
+      throw new Error('Invalid record clone request');
+    const id=await records.clone(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(201).json({id,record:{Id:id}});
   }));
   const updateRecord=route(async(req,res)=>{

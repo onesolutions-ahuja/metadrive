@@ -1,5 +1,6 @@
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
+import type {FormulaEvaluationContext} from './flow-formula-runtime.js';
 import type {RecordEngine} from './record-engine.js';
 import {persistPlatformEvent} from './platform-event-runtime.js';
 
@@ -18,14 +19,37 @@ const scalar=(value:unknown):value is string|number|boolean|null=>
  value===null||typeof value==='string'||typeof value==='number'&&Number.isFinite(value)||typeof value==='boolean';
 
 export async function loadFlowUserResource(client:PoolClient,tenantId:string,userId:string,
- graph:unknown,variables:Record<string,unknown>) {
- if(typeof graph!=='string'||!/\$User\.(?:Name|Email)\b/.test(graph))return;
- const {rows}=await client.query<{id:string;email:string;display_name:string}>(
-  `SELECT id,email,display_name FROM md_users
-   WHERE tenant_id=$1 AND id=$2 AND enabled=true`,[tenantId,userId]);
+ graph:unknown,variables:Record<string,unknown>):Promise<FormulaEvaluationContext> {
+ if(typeof graph!=='string'||!(/\$User\.(?:Name|Email|TimeZone)\b/.test(graph)
+   ||/\b(?:TODAY|TIMENOW|DAY|MONTH|YEAR|HOUR|MINUTE|SECOND|WEEKDAY|ISOWEEK|ISOYEAR|DATEVALUE|DATETIMEVALUE|TIMEVALUE|ADDMONTHS|TZOFFSET|CURRENCYRATE)\s*\(/i.test(graph)))
+  return {};
+ const {rows}=await client.query<{
+  id:string;email:string;display_name:string;time_zone:string;has_currency_settings:boolean;
+  currency_iso_code:string|null;conversion_rate:string|null
+ }>(`SELECT u.id,u.email,u.display_name,u.time_zone,s.tenant_id IS NOT NULL AS has_currency_settings,
+    currency.value->>'currencyIsoCode' AS currency_iso_code,
+    currency.value->>'conversionRate' AS conversion_rate
+   FROM md_users u
+   LEFT JOIN md_tenant_settings s ON s.tenant_id=u.tenant_id AND s.setting_key='currencies'
+   LEFT JOIN LATERAL jsonb_array_elements(
+    COALESCE(s.properties->'currencies','{"currencies":[]}'::jsonb)->'currencies'
+   ) currency(value) ON true
+   WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true`,[tenantId,userId]);
  const actor=rows[0];
  if(!actor)throw new Error('Flow execution user is no longer enabled in this tenant');
- variables.$User={Id:actor.id,Name:actor.display_name.trim()||actor.email,Email:actor.email};
+ const currencyRates:Record<string,number>={};
+ if(!actor.has_currency_settings)currencyRates.USD=1;
+ for(const row of rows){
+  if(row.currency_iso_code&&row.conversion_rate!==null){
+   const rate=Number(row.conversion_rate);
+   if(!/^[A-Z]{3}$/.test(row.currency_iso_code)||!Number.isFinite(rate)||rate<=0)
+    throw new Error('Invalid tenant currency rate configuration');
+   currencyRates[row.currency_iso_code]=rate;
+  }
+ }
+ variables.$User={Id:actor.id,Name:actor.display_name.trim()||actor.email,Email:actor.email,
+  TimeZone:actor.time_zone};
+ return {timeZone:actor.time_zone,currencyRates};
 }
 
 function template(value:unknown,resolve:(value:unknown)=>unknown):string {

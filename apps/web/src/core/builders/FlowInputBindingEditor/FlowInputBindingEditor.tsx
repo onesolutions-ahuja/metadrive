@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import type { FieldMetadata, FlowDefinitionMetadata } from '../../metadata/Definitions/metadata';
-import { decodeInputSource, declaredFlowInputs, encodeInputSource, mappedInputNames, type InputSourceKind } from '../../automation/FlowScreen/flowInputBindings';
+import { decodeInputSource, declaredFlowInputs, declaredFlowOutputs, encodeInputSource, mappedInputNames, type InputSourceKind } from '../../automation/FlowScreen/flowInputBindings';
 
 /** Shared typed property control; stores the existing Flow input mapping shape. */
 export default function FlowInputBindingEditor({
-  flow, inputs, fields, onChange
+  flow, inputs, outputs, fields, onChange, onOutputChange
 }: {
   flow?: FlowDefinitionMetadata;
   inputs: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
   fields: FieldMetadata[];
   onChange: (next: Record<string, unknown>) => void;
+  onOutputChange?: (next: Record<string, unknown>) => void;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [pendingKinds, setPendingKinds] = useState<Record<string, InputSourceKind>>({});
   const resources = declaredFlowInputs(flow);
+  const outputResources = declaredFlowOutputs(flow);
   const resourceByName = new Map(resources.map(item => [item.name, item]));
   const names = mappedInputNames(flow, inputs);
   const update = (name: string, kind: Exclude<InputSourceKind, 'Legacy'>, detail: string) => {
@@ -33,7 +36,7 @@ export default function FlowInputBindingEditor({
       setErrors(current => ({ ...current, [name]: error instanceof Error ? error.message : 'Invalid input source' }));
     }
   };
-  return <div className="component-flow-input-editor" aria-label="Flow input mapping">
+  return <div className="component-flow-input-editor" aria-label="Flow variable mapping">
     <div className="properties-section-title">Flow input mapping</div>
     {!flow && <p className="properties-help">Choose an active Screen or Autolaunched Flow to see its input variables.</p>}
     {flow && !resources.length && <p className="properties-help">This Flow has no declared input variables. Create an input variable in Flow Builder first.</p>}
@@ -103,5 +106,26 @@ export default function FlowInputBindingEditor({
         {errors[name] && <p className="auth-error" role="alert">{errors[name]}</p>}
       </div>;
     })}
+    {onOutputChange && <section aria-label="Flow output mapping">
+      <div className="properties-section-title">Flow output mapping</div>
+      {flow && !outputResources.length && <p className="properties-help">This Flow has no output-enabled variables.</p>}
+      {outputResources.map(resource => {
+        const target = typeof outputs?.[resource.name] === 'string' ? outputs[resource.name] as string : '';
+        return <label className="form-label" key={resource.name}>
+          {resource.label || resource.name}
+          <small className="api-name">{resource.name} · {resource.dataType}</small>
+          <input className="form-control" aria-label={resource.name + ' output target'}
+            value={target} maxLength={64} placeholder="Page state key"
+            onChange={event => {
+              const value = event.target.value.trim();
+              if (value && !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)) return;
+              const next = { ...(outputs ?? {}) };
+              if (value) next[resource.name] = value;
+              else delete next[resource.name];
+              onOutputChange(next);
+            }} />
+        </label>;
+      })}
+    </section>}
   </div>;
 }

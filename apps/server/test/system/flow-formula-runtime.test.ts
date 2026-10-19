@@ -13,6 +13,20 @@ test('Flow formulas evaluate arithmetic, precedence, references and short-circui
   assert.equal(evaluateFlowFormula('LEFT(Name, 4) & "!"',resolve),'Meta!');
   assert.equal(evaluateFlowFormula('IFERROR(1 / 0, "fallback")',resolve),'fallback');
   assert.equal(evaluateFlowFormula('IFERROR("ok", 1 / 0)',resolve),'ok');
+  assert.equal(evaluateFlowFormula('T(Name)',resolve),'MetaDrive');
+  assert.equal(evaluateFlowFormula('T(12)',resolve),'');
+  assert.equal(evaluateFlowFormula('ISCLONE()',resolve),false);
+  assert.equal(evaluateFlowFormula('ISCLONE()',resolve,{isClone:true}),true);
+  assert.equal(evaluateFlowFormula('CURRENCYRATE("GBP")',resolve,
+    {currencyRates:{GBP:0.79}}),0.79);
+  assert.throws(()=>evaluateFlowFormula('CURRENCYRATE("EUR")',resolve,
+    {currencyRates:{GBP:0.79}}),/unavailable for currency EUR/);
+  assert.deepEqual(evaluateFlowFormula('IMAGE("https://example.com/a.png", "alt", 120, 240)',resolve),{
+    __formulaImage:'MetaDriveFormulaImage',url:'https://example.com/a.png',
+    alt:'alt',height:120,width:240
+  });
+  assert.throws(()=>evaluateFlowFormula('IMAGE("javascript:alert(1)", "unsafe")',resolve),/HTTPS or tenant file URL/);
+  assert.throws(()=>evaluateFlowFormula('IMAGE("https://example.com/a.png", "alt", 9000)',resolve),/dimensions/);
 });
 
 test('record-triggered Flow formulas expose change, prior-value, and new-record functions',()=>{
@@ -75,6 +89,22 @@ test('Salesforce formula date, CASE and numeric functions evaluate consistently'
   const resolve=()=>null;
   assert.equal(evaluateFlowFormula('DATE(2024, 2, 29)',resolve),'2024-02-29');
   assert.equal(evaluateFlowFormula('DATEVALUE("2024-06-15T12:30:00Z")',resolve),'2024-06-15');
+  assert.equal(evaluateFlowFormula('DATEVALUE("2024-06-15T00:30:00Z")',resolve,
+    {timeZone:'America/Los_Angeles'}),'2024-06-14');
+  assert.equal(evaluateFlowFormula('DATETIMEVALUE("2024-06-15T12:30:00")',resolve,
+    {timeZone:'America/Los_Angeles'}),'2024-06-15T19:30:00.000Z');
+  assert.equal(evaluateFlowFormula('TIMEVALUE("2024-06-15T00:30:00Z")',resolve,
+    {timeZone:'America/Los_Angeles'}),'17:30:00.000');
+  assert.equal(evaluateFlowFormula('HOUR("2024-06-15T00:30:00Z")',resolve,
+    {timeZone:'America/Los_Angeles'}),17);
+  assert.equal(evaluateFlowFormula('TZOFFSET("2024-06-15T00:30:00Z")',resolve,
+    {timeZone:'America/Los_Angeles'}),-25200000);
+  assert.equal(evaluateFlowFormula('TZOFFSET("2024-01-15T12:30:00Z")',resolve,
+    {timeZone:'America/Los_Angeles'}),-28800000);
+  assert.equal(evaluateFlowFormula('ISOWEEK("2021-01-01")',resolve),53);
+  assert.equal(evaluateFlowFormula('ISOWEEK("2021-01-04")',resolve),1);
+  assert.equal(evaluateFlowFormula('ISOYEAR("2021-01-01")',resolve),2020);
+  assert.equal(evaluateFlowFormula('ISOYEAR("2021-01-04")',resolve),2021);
   assert.equal(evaluateFlowFormula('TIMEVALUE("12:34:56.7")',resolve),'12:34:56.700');
   assert.equal(evaluateFlowFormula('HOUR(TIMEVALUE("12:34:56"))',resolve),12);
   assert.equal(evaluateFlowFormula('YEAR(ADDMONTHS("2024-01-31", 1))',resolve),2024);
@@ -83,7 +113,9 @@ test('Salesforce formula date, CASE and numeric functions evaluate consistently'
   assert.equal(evaluateFlowFormula('POWER(3, 2) + MOD(8, 3) + SQRT(9)',resolve),14);
   assert.equal(evaluateFlowFormula('CEILING(2.1) + FLOOR(2.9)',resolve),5);
   assert.throws(()=>evaluateFlowFormula('DATE(2024, 2, 30)',resolve),/Invalid DATE/);
-  assert.throws(()=>evaluateFlowFormula('DATEVALUE("2024-02-31")',resolve),/ISO date/);
+  assert.throws(()=>evaluateFlowFormula('DATEVALUE("2024-02-31")',resolve),/date\/time value/);
+  assert.throws(()=>evaluateFlowFormula('DATETIMEVALUE("2024-03-10T02:30:00")',resolve,
+    {timeZone:'America/Los_Angeles'}),/does not exist/);
 });
 
 test('Salesforce formula text, ID and numeric helpers remain bounded',()=>{
@@ -120,6 +152,14 @@ test('formula type inference enforces operators, functions and declared results'
   assert.equal(inferFlowFormulaType('CASESAFEID(@Invoice__c.Name)',resolve),'Text');
   assert.equal(inferFlowFormulaType('COS(PI())',resolve),'Number');
   assert.equal(inferFlowFormulaType('IFERROR(1 / 0, 0)',resolve),'Number');
+  assert.equal(inferFlowFormulaType('T(@Invoice__c.Paid__c)',resolve),'Text');
+  assert.equal(inferFlowFormulaType('ISOWEEK(TODAY())',resolve),'Number');
+  assert.equal(inferFlowFormulaType('ISOYEAR(TODAY())',resolve),'Number');
+  assert.equal(inferFlowFormulaType('TZOFFSET(NOW())',resolve),'Number');
+  assert.throws(()=>inferFlowFormulaType('TZOFFSET(TODAY())',resolve),/argument type/);
+  assert.equal(inferFlowFormulaType('ISCLONE()',resolve),'Checkbox');
+  assert.equal(inferFlowFormulaType('CURRENCYRATE("GBP")',resolve),'Number');
+  assert.equal(inferFlowFormulaType('IMAGE("https://example.com/a.png", "Alt")',resolve),'Text');
   assert.throws(()=>inferFlowFormulaType('IFERROR(1, "fallback")',resolve),/result types do not match/);
   assert.throws(()=>inferFlowFormulaType('@Invoice__c.Name + 1',resolve),/Arithmetic formula operators/);
   assert.throws(()=>inferFlowFormulaType('IF(@Invoice__c.Name, 1, 0)',resolve),/argument type/);

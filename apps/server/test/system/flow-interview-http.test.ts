@@ -31,7 +31,8 @@ test('Flow read-only debugger simulates HTTP and record actions without executin
  encodeMetadataValue(graph,'/builder',rows);
  let sideEffects=0;
  const db={query:async(sql:string)=>{
-  if(sql.startsWith('SELECT id,version FROM md_flow_definitions'))return {rows:[{id:uuid,version:2}]};
+  if(sql.startsWith('SELECT id,version,system_context_approved_by FROM md_flow_definitions'))
+   return {rows:[{id:uuid,version:2,system_context_approved_by:null}]};
   if(sql.includes('FROM md_flow_editor_values'))return {rows:rows.map(row=>({
    property_path:row.path,value_kind:row.kind,value_text:row.text
   }))};

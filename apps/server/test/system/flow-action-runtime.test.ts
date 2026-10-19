@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import type {PoolClient} from 'pg';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
-import {executeFlowAction} from '../../src/system-files/flow-action-runtime.js';
+import {executeFlowAction,loadFlowUserResource} from '../../src/system-files/flow-action-runtime.js';
 import {validateFlowDraft} from '../../src/system-files/flow-validation.js';
 
 const recipient='00000000-0000-4000-8000-000000000001';
@@ -13,6 +14,33 @@ const context=(query: (sql:string,values?:unknown[])=>Promise<{rowCount?:number|
  client:{query},rbac:{require,requireRecord} as unknown as RbacEngine,tenantId:'tenant-id',userId:recipient,
  flowApi:'NotificationFlow',runId:'run-id',config,resolve:(value:unknown)=>value==='{!$User.Id}'?recipient
   :value==='{!$User.Name}'?'Flow user':value,variables:{},connectors,elementId:2
+});
+
+test('Flow formula context uses the execution user time zone and tenant currency rates',async()=>{
+  const vars:Record<string,unknown>={};
+  const context=await loadFlowUserResource({query:async(sql:string)=>{
+   assert.match(sql,/time_zone/);
+   return {rows:[
+    {id:recipient,email:'flow@example.invalid',display_name:'Flow User',time_zone:'Europe/London',
+     has_currency_settings:true,currency_iso_code:'GBP',conversion_rate:'1'},
+    {id:recipient,email:'flow@example.invalid',display_name:'Flow User',time_zone:'Europe/London',
+     has_currency_settings:true,currency_iso_code:'USD',conversion_rate:'1.27'}
+   ]};
+  }} as unknown as PoolClient,'tenant-id',recipient,'TODAY() + TZOFFSET(NOW()) + CURRENCYRATE("USD")',vars);
+  assert.equal(context.timeZone,'Europe/London');
+  assert.deepEqual(context.currencyRates,{GBP:1,USD:1.27});
+  assert.deepEqual(vars.$User,{Id:recipient,Name:'Flow User',Email:'flow@example.invalid',
+   TimeZone:'Europe/London'});
+});
+
+test('Flow formula context does not issue a user query when no user or contextual formula is used',async()=>{
+  let queried=false;
+  const result=await loadFlowUserResource({query:async()=>{
+   queried=true;
+   return {rows:[]};
+  }} as unknown as PoolClient,'tenant-id',recipient,'1 + 2',{});
+  assert.deepEqual(result,{});
+  assert.equal(queried,false);
 });
 
 test('Custom Notification action validates, authorizes, deduplicates and persists in the Flow transaction',async()=>{

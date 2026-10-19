@@ -1,5 +1,6 @@
 import { RecordFormDialog } from '../RecordFormDialog/recordFormDialogView';
 import RichTextContent from './RichTextContent';
+import FormulaImageContent from './FormulaImageContent';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
 import { initialScreenValues, screenFieldIsVisible } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
@@ -661,6 +662,11 @@ function RecordWorkspace({
   };
   const openList = () => onNavigate({ kind: 'record-list', objectApiName: route.objectApiName });
   const formatFieldValue = (field: FieldMetadata, value: unknown) => {
+    if(field.formula&&value&&typeof value==='object'&&!Array.isArray(value)
+      &&(value as {__formulaImage?:unknown}).__formulaImage==='MetaDriveFormulaImage')
+      return <FormulaImageContent value={value as {
+        __formulaImage:'MetaDriveFormulaImage';url:string;alt:string;height:number|null;width:number|null
+      }}/>;
     if(field.dataType==='Rich Text Area'&&typeof value==='string'&&value)
       return <RichTextContent html={value}/>;
     if (typeof value === 'string' && ['URL','Text','Long Text Area'].includes(field.dataType) && /^https:\/\//i.test(value) && /(?:image|photo|thumbnail|picture)/i.test(field.apiName+' '+field.label) && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|images\.unsplash\.com\//i.test(value)) return <img className="record-image-thumbnail" src={value} alt={field.label} loading="lazy" referrerPolicy="no-referrer" />; if (field.relationship && typeof value === 'string') {
@@ -814,6 +820,18 @@ function RecordWorkspace({
       openList();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete record');
+    }
+  };
+  const cloneCurrentRecord=async()=>{
+    if(!object||!record||object.apiName==='User')return;
+    setError('');
+    try{
+      const result=await apiRequest<{id:string}>(
+        `/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/clone`,
+        {method:'POST',body:JSON.stringify({})});
+      onNavigate({kind:'record-detail',objectApiName:object.apiName,recordId:result.id});
+    }catch(failure){
+      setError(failure instanceof Error?failure.message:'Unable to clone record');
     }
   };
   const deleteSelectedRecords = async () => {
@@ -1373,6 +1391,7 @@ function RecordWorkspace({
           <div><div className="eyebrow">{object.label}</div><h1>{recordName}</h1><p>Record ID: <code>{record.Id}</code></p></div>
           <div className="record-detail-actions">
             {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
+            {canCreate&&object.apiName!=='User'&&<button className="btn" onClick={()=>void cloneCurrentRecord()}><Copy size={14}/>Clone</button>}
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}

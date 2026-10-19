@@ -349,6 +349,9 @@ export function createSetupFlowActions(ctx: any) {
         return;
       }
       if (result.interviewId) {
+        window.dispatchEvent(new CustomEvent('metadrive:flow-paused', { detail: {
+          requestId:context.requestId,flowApiName:selectedFlow.apiName,interviewId:result.interviewId
+        } }));
         notify('Flow interview started. Approval stages and waiting work are visible in Pending Work.');
         return;
       }
@@ -378,6 +381,15 @@ export function createSetupFlowActions(ctx: any) {
           outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
           canGoBack: result.canGoBack === true
         });
+        return;
+      }
+      if (result.interviewId) {
+        setFlowRun(null);
+        setFlowRunnerError('');
+        window.dispatchEvent(new CustomEvent('metadrive:flow-paused', { detail: {
+          requestId:flowRun.requestId,flowApiName:flowRun.flowApiName,interviewId:result.interviewId
+        } }));
+        notify('Flow interview is waiting. Resume status is visible in Pending Work.');
         return;
       }
       setFlowRun(null);

@@ -40,10 +40,14 @@ test('record-triggered Flows honor trigger conditions and trigger order transact
  ]);
  const calls:Array<{tenant:string;user:string;runId:string}>=[];
  const runOrder:string[]=[];
+ const cloneValues:string[]=[];
  const client={
   query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
    if(sql.includes('FROM md_flow_definitions'))return {rows:flowRows};
    if(sql.includes('FROM md_flow_editor_values'))return {rows:documents.get(String(params[1]))??[]};
+   if(sql.includes('INSERT INTO md_flow_run_inputs')){
+    cloneValues.push(String(params[2]));return {rows:[]};
+   }
    if(sql.includes('INSERT INTO md_flow_runs')){
     runOrder.push(String(params[1]));return {rows:[{id:params[1]}]};
    }
@@ -63,6 +67,9 @@ test('record-triggered Flows honor trigger conditions and trigger order transact
  assert.deepEqual(calls.map(call=>call.tenant),[tenant,tenant]);
  assert.deepEqual(calls.map(call=>call.user),[user,user]);
  assert.deepEqual(runOrder,[flowRows[1].id,flowRows[0].id]);
+ await runtime.execute(client,tenant,user,'Account','created',
+  {Id:recordId,Status:'Active'},null,'after-save',true);
+ assert.deepEqual(cloneValues,['false','false','true','true']);
 });
 
 test('after-save Record-Triggered Flow schedules a durable path with its record snapshot',async()=>{
@@ -116,8 +123,9 @@ test('after-save Record-Triggered Flow schedules a durable path with its record 
  assert.equal(scheduled[0].app,'Orders');
  assert.equal(scheduled[0].at.toISOString(),'2026-10-21T00:00:00.000Z');
  assert.deepEqual(permissions,['Flow:ScheduledPathFlow','Account.DueDate']);
- assert(statements.some(item=>item.sql.includes("VALUES($1,$2,$3,'waiting','scheduled-path',$4)")
-  &&item.values[3] instanceof Date));
+ assert(statements.some(item=>item.sql.includes(
+  "VALUES($1,$2,$3,$4,$5,'waiting','scheduled-path',$6)")
+  &&item.values[5] instanceof Date));
  assert(statements.some(item=>item.sql.includes('INSERT INTO md_flow_interview_state')
   &&item.values[2]===3));
  assert(statements.some(item=>item.sql.includes('INSERT INTO md_flow_interview_records')

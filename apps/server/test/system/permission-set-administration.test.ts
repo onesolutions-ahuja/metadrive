@@ -12,6 +12,9 @@ test('policy grants use the existing central executable resource contract',()=>{
  assert.ok(rules.some(r=>r.resource==='Invoice.Total'&&r.action==='read'));
  assert.ok(rules.some(r=>r.resource==='Flow'&&r.action==='execute'));
  assert.ok(!rules.some(r=>r.resource.startsWith('Object:')||r.resource.startsWith('Field:')));
+ const contextGrant=grantRules({...set,systemPermissions:['flows:system-context']});
+ assert.ok(contextGrant.some(r=>r.resource==='FlowDefinition'&&r.action==='system-context'
+  &&r.effect==='allow'));
 });
 test('wildcard restrictions and restoration round-trip through displayed checkboxes',()=>{
  const rules=grantRules({...set,systemPermissions:['*:*','security:read','security:manage'],

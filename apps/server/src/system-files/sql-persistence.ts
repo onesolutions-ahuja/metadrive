@@ -55,6 +55,7 @@ export class SqlPersistence {
       'md_field_type_migration_rollup_filters');
     names.push('md_flow_email_jobs','md_record_files');
     names.push('md_tenant_automation_settings');
+    names.push('md_flow_execution_audit');
     const {rows}=await this.query<{table_name:string}>(
       'SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name=ANY($1::text[])',
       [names]);

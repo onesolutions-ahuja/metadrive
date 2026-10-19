@@ -283,6 +283,8 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
       const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const outputMap = binding.outputs && typeof binding.outputs === 'object' && !Array.isArray(binding.outputs)
+        ? binding.outputs as Record<string, unknown> : {};
       const selectedFlow = metadataSelection(flows,binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
       const actionType = binding.actionType === 'Navigate' ? 'Navigate' : binding.actionType === 'SetFilter' ? 'SetFilter' : 'Flow';
@@ -325,7 +327,9 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
             </select>
           </label>
           <FlowInputBindingEditor flow={selectedFlow} inputs={map} fields={fields}
-            onChange={inputs => setBinding({ ...binding, inputs })} />
+            outputs={outputMap}
+            onChange={inputs => setBinding({ ...binding, inputs })}
+            onOutputChange={outputs => setBinding({ ...binding, outputs })} />
         </> : <div className="metadata-navigation-target" aria-label="Navigation destination">
           <label className="form-label">Destination type
             <select className="form-control" value={navigationTargetType}
@@ -474,4 +478,3 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     </>}</>}
   </div>;
 }
-

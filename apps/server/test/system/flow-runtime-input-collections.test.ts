@@ -24,8 +24,8 @@ function makeRuntime(availableForInput=true) {
   }};
   const db={
     query:async(sql:string)=>{
-      if(sql.includes('SELECT id,version FROM md_flow_definitions'))
-        return {rows:[{id:flowId,version:1}],rowCount:1};
+      if(sql.includes('SELECT id,version,system_context_approved_by FROM md_flow_definitions'))
+        return {rows:[{id:flowId,version:1,system_context_approved_by:null}],rowCount:1};
       if(sql.includes('FROM md_flow_editor_values'))
         return {rows:metadata.map(row=>({
           property_path:row.path,value_kind:row.kind,value_text:row.text

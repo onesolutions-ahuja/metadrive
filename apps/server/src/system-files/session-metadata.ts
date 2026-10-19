@@ -10,6 +10,7 @@ const capabilities:readonly (PermissionCheck&{capability:string})[]=[
   {resource:'Tenant',action:'manage',capability:'platform:tenants:manage'},
   {resource:'Flow',action:'execute',capability:'flows:run'},
   {resource:'FlowDefinition',action:'manage',capability:'flows:manage'},
+  {resource:'FlowDefinition',action:'system-context',capability:'flows:system-context'},
   {resource:'Licence',action:'manage',capability:'licence:manage'}
 ];
 export async function sessionMetadata(db:SqlPersistence,tenantId:string,userId:string) {

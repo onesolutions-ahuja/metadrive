@@ -26,6 +26,22 @@ test('Rich Text keeps only tenant-file inline image URLs and strips unsafe marku
   assert.match(clean,/<img src="\/api\/files\/00000000-0000-4000-8000-000000000004\/content" alt="Safe" \/>/);
 });
 
+test('Rich Text updates prune only unreferenced files for that field and record',async()=>{
+  let captured:{sql:string;args:unknown[]}|undefined;
+  const client={query:async(sql:string,args:unknown[])=>{
+    captured={sql,args};
+    return {rows:[],rowCount:1};
+  }} as unknown as import('pg').PoolClient;
+  const html='<p><img src="/api/files/00000000-0000-4000-8000-000000000004/content">'
+    +'<img src="/api/files/00000000-0000-4000-8000-000000000005/content"></p>';
+  await new RecordFileService({} as SqlPersistence,{} as RbacEngine)
+    .pruneUnreferenced(client,tenantId,'Note__c',recordId,'Body__c',html);
+  assert.match(captured?.sql??'',/tenant_id=\$1 AND object_api=\$2 AND record_id=\$3 AND field_api=\$4/);
+  assert.deepEqual(captured?.args,[tenantId,'Note__c',recordId,'Body__c',[
+    '00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000005'
+  ]]);
+});
+
 test('inline image upload enforces RBAC, rich-text metadata, valid image bytes and tenant-scoped storage',async()=>{
   const calls:Array<{sql:string;args:unknown[]}>= [];
   const db={query:async(sql:string,args:unknown[]=[])=>{

@@ -27,9 +27,10 @@ test('Roll Back Records rolls back the Flow savepoint and continues its path',as
  encodeMetadataValue(graph,'/builder',metadata);
  const transactionSql:string[]=[];
  const client={query:async(sql:string)=>{
-  if(sql.includes('SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.status'))
+  if(sql.includes('SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.initiated_by'))
    return {rows:[{flow_id:'flow-id',api_name:'RollbackFlow',flow_type:'Autolaunched Flow',
-    version:1,started_by:'user-id',status:'pending'}]};
+    version:1,started_by:'user-id',initiated_by:'user-id',execution_context:'User',
+    system_context_approved_by:null,status:'pending'}]};
   if(sql.includes('FROM md_flow_editor_values'))return {rows:metadata.map(row=>({
    property_path:row.path,value_kind:row.kind,value_text:row.text
   }))};

@@ -71,9 +71,10 @@ test('after-save Record-Triggered Flow Wait persists interview state and enqueue
  let runStatus='pending';
  let scheduled:{runId:string;at:Date;step:number}|undefined;
  const client={query:async(sql:string,params:unknown[]=[]):Promise<{rows:unknown[];rowCount:number}>=>{
-  if(sql.includes('SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.status'))
+  if(sql.includes('SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.initiated_by'))
    return {rows:[{flow_id:'flow-id',api_name:'WaitFlow',flow_type:'Record-Triggered Flow',
-    version:2,started_by:'user-id',status:runStatus}],rowCount:1};
+    version:2,started_by:'user-id',initiated_by:'user-id',execution_context:'User',
+    system_context_approved_by:null,status:runStatus}],rowCount:1};
   if(sql.includes('FROM md_flow_editor_values'))return {rows:metadata.map(row=>({
    property_path:row.path,value_kind:row.kind,value_text:row.text
   })),rowCount:metadata.length};

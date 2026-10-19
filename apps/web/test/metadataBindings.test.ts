@@ -9,6 +9,7 @@ import {buildChatterView} from '../src/core/records/RecordWorkspace/chatterRecor
 import {presentPageRecords} from '../src/core/records/RecordWorkspace/recordPresentationAdapters';
 import type {ObjectMetadata,FlowDefinitionMetadata} from '../src/core/metadata/Definitions/metadata';
 import {pageLayoutForRecord} from '../src/core/records/RecordWorkspace/recordMetadataUtils';
+import {declaredFlowOutputs,resolveFlowOutputBindings} from '../src/core/automation/FlowScreen/flowInputBindings';
 
 const object={id:'object-id',apiName:'RenamedObject',fields:[{id:'field-id',apiName:'RenamedPrice'}]} as ObjectMetadata;
 const flow={id:'flow-id',apiName:'RenamedFlow'} as FlowDefinitionMetadata;
@@ -26,6 +27,29 @@ test('unknown references remain invalid and cannot fall back to a different obje
  const props={objectApiName:metadataReference('deleted'),priceFieldApiName:metadataReference('field-id')};
  assert.deepEqual(resolveMetadataProperties(props,[object],[flow]),props);
  assert.equal(resolveMetadataProperties({objectApiName:'RenamedObject',priceFieldApiName:'Legacy'},[object],[]).priceFieldApiName,'Legacy');
+});
+test('Flow page output mappings expose only declared active-version outputs and validate page-state keys',()=>{
+ const activeFlow={
+  ...flow,activeVersion:2,resources:[
+   {name:'oldOutput',label:'Old',type:'Variable',dataType:'Text',isCollection:false,
+    availableForInput:false,availableForOutput:true},
+   {name:'result',label:'Result',type:'Variable',dataType:'Text',isCollection:false,
+    availableForInput:false,availableForOutput:true}
+  ],versions:[
+   {versionNumber:1,status:'Obsolete',savedAt:'',elements:[],connectors:[],resources:[
+    {name:'oldOutput',label:'Old',type:'Variable',dataType:'Text',isCollection:false,
+     availableForInput:false,availableForOutput:true}
+   ]},
+   {versionNumber:2,status:'Active',savedAt:'',elements:[],connectors:[],resources:[
+    {name:'result',label:'Result',type:'Variable',dataType:'Text',isCollection:false,
+     availableForInput:false,availableForOutput:true}
+   ]}
+  ]
+ } as FlowDefinitionMetadata;
+ assert.deepEqual(declaredFlowOutputs(activeFlow).map(resource=>resource.name),['result']);
+ assert.deepEqual(resolveFlowOutputBindings({result:'done'},{result:'checkoutStatus'}),
+  [{key:'checkoutStatus',value:'done'}]);
+ assert.throws(()=>resolveFlowOutputBindings({result:'done'},{result:'bad.key'}),/valid variable names/);
 });
 const mappings={conversationDirectionFieldApiName:'way',conversationAccountFieldApiName:'account',
  conversationFromFieldApiName:'sender',conversationToFieldApiName:'recipient',conversationOccurredFieldApiName:'time',

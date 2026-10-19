@@ -27,6 +27,10 @@ test('system migrations are additive, recorded, and idempotent',async()=>{
  const expected=readdirSync(new URL('../../src/system-support/migrations/',import.meta.url)).filter(name=>/^(?:\d{3}|\d{8})-[a-z0-9-]+\.sql$/.test(name)).length;
  assert.equal(versions.size,expected);
  assert.ok(versions.has('001-metadata-bindings.sql'),'legacy metadata bindings migration is tracked');
+ assert.ok(queries.some(query=>query.includes('md_flow_definitions_one_active_version')),
+  'the active Flow version constraint is applied as a system migration');
+ assert.ok(queries.some(query=>query.includes('md_flow_execution_audit')),
+  'explicit System-context execution has a durable audit table');
  await applySystemMigrations(db);
  assert.equal(queries.filter(q=>q.includes('CREATE TABLE IF NOT EXISTS md_named_credentials')).length,numberOfDDL);
  assert.equal(versions.size,expected);

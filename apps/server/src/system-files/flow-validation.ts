@@ -1,10 +1,10 @@
 import type {RbacEngine} from './rbac-engine.js';
-import type {SqlPersistence} from './sql-persistence.js';
+import type {SqlExecutor,SqlPersistence} from './sql-persistence.js';
 import {validateFlowResources} from './flow-formula-runtime.js';
 import {resolveFlowLocalDateTime,resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
 
-export async function flowAppIsEntitled(db:SqlPersistence,tenantId:string,appApiName:string|null) {
+export async function flowAppIsEntitled(db:SqlExecutor,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(appApiName))return false;
  const {rows}=await db.query(`
@@ -68,6 +68,11 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   &&!Array.isArray(startNode.config)?startNode.config as Record<string,unknown>:{};
  const beforeSave=data.flowType==='Record-Triggered Flow'&&startConfig.runWhen==='before-save';
  const catalogType=capabilities?.flowTypes.find(type=>type.type===data.flowType);
+ const executionContext=startConfig.executionContext??'User';
+ if(!['User','System'].includes(String(executionContext)))
+  errors.push('Flow execution context must be User or System');
+ if(executionContext==='System'&&(data.flowType==='Screen Flow'||beforeSave))
+  errors.push('System execution context is not supported for Screen or before-save Record-Triggered Flows');
  if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
  if(capabilities?!catalogType?.validateEnabled:!['Autolaunched Flow','Screen Flow',
   'Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow'].includes(String(data.flowType)))

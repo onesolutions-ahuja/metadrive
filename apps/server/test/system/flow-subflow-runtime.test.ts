@@ -39,7 +39,7 @@ test('Subflow maps enabled scalar inputs and outputs inside the caller transacti
  }} as unknown as RbacEngine;
  const assigned:Record<string,string|number|boolean|null>={};
  await executeFlowSubflow({
-  client,tenantId:tenant,userId:user,config:{
+ client,tenantId:tenant,userId:user,initiatingUserId:'00000000-0000-4000-8000-000000000004',config:{
    flowApiName:'CalculateTotal',inputValues:'count={!ParentCount}',
    outputValues:'total=ParentTotal'
   },rbac,callStack:['ParentFlow'],
@@ -55,6 +55,8 @@ test('Subflow maps enabled scalar inputs and outputs inside the caller transacti
  assert.deepEqual(permissions,['Flow:CalculateTotal']);
  const input=persisted.find(entry=>entry.sql.includes('INSERT INTO md_flow_run_inputs'));
  assert.deepEqual(input?.params,[tenant,childId,'count','42','number']);
+ const run=persisted.find(entry=>entry.sql.includes('INSERT INTO md_flow_runs'));
+ assert.deepEqual(run?.params,[tenant,childId,user,'00000000-0000-4000-8000-000000000004','User']);
 });
 
 test('Subflow rejects recursion before creating a child interview',async()=>{

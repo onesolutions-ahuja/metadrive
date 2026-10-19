@@ -15,6 +15,30 @@ export function declaredFlowInputs(flow?: FlowDefinitionMetadata): FlowResourceM
   return resources.filter(item => item.availableForInput && identifier.test(item.name));
 }
 
+export function declaredFlowOutputs(flow?: FlowDefinitionMetadata): FlowResourceMetadata[] {
+  if (!flow) return [];
+  const version = flow.versions?.find(item => item.versionNumber === flow.activeVersion);
+  const resources = version?.resources ?? flow.resources ?? [];
+  return resources.filter(item => item.availableForOutput && identifier.test(item.name));
+}
+
+export function resolveFlowOutputBindings(
+  outputs: Record<string, unknown>,
+  mappings: unknown
+): Array<{ key: string; value: unknown }> {
+  if (mappings === undefined || mappings === null) return [];
+  if (typeof mappings !== 'object' || Array.isArray(mappings)) {
+    throw new Error('Flow output mappings must be an object.');
+  }
+  return Object.entries(mappings).flatMap(([name, target]) => {
+    if (!identifier.test(name) || typeof target !== 'string'
+      || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(target)) {
+      throw new Error('Flow output mapping requires valid variable names.');
+    }
+    return Object.hasOwn(outputs, name) ? [{ key: target, value: outputs[name] }] : [];
+  });
+}
+
 export function decodeInputSource(value: unknown, hasMapping = true): InputSource {
   if (!hasMapping) return { kind: 'Unmapped', detail: '', value: undefined };
   if (value === '$session') return { kind: 'Session', detail: '', value };

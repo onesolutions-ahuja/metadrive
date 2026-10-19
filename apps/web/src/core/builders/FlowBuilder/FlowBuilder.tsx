@@ -260,12 +260,12 @@ export default function FlowBuilder({
       ? flow.triggerObject ?? objects.find((object) => object.apiName !== 'User')?.apiName ?? null
       : null;
     const startConfig = flowType === 'Schedule-Triggered Flow'
-      ? { entryConditions: [], startDate: '', startTime: '', frequency: '', timeZone: displayValue(flow.startConfig.timeZone) || 'UTC' }
+      ? { entryConditions: [], startDate: '', startTime: '', frequency: '', timeZone: displayValue(flow.startConfig.timeZone) || 'UTC', executionContext: flow.startConfig.executionContext === 'System' ? 'System' : 'User' }
       : flowType === 'Platform Event-Triggered Flow'
-        ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
+        ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), executionContext: flow.startConfig.executionContext === 'System' ? 'System' : 'User', ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
         : flowType === 'Record-Triggered Flow'
-          ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), trigger: 'created-or-updated', runWhen: 'after-save', ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
-          : {};
+          ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), trigger: 'created-or-updated', runWhen: 'after-save', executionContext: flow.startConfig.executionContext === 'System' ? 'System' : 'User', ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
+          : { executionContext: flowType === 'Screen Flow' ? 'User' : flow.startConfig.executionContext === 'System' ? 'System' : 'User' };
     const elements = flow.elements
       .filter((element) => element.type !== 'Screen' || flowType === 'Screen Flow')
       .map((element) => element.type === 'Start'
@@ -478,6 +478,16 @@ export default function FlowBuilder({
   );
   const renderStartSettings = () => (
     <>
+      <label className="form-label">Execution Context<select className="form-control"
+        value={displayValue(flow.startConfig.executionContext) || 'User'}
+        onChange={(event) => setStartConfig('executionContext', event.target.value)}>
+        <option value="User">User Context</option>
+        <option value="System" disabled={flow.flowType === 'Screen Flow'
+          || flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save'}>
+          System Context
+        </option>
+      </select></label>
+      <p className="settings-panel-copy">System Context runs as the configured tenant automation user. It does not bypass Object, Field, Record, tenant, app, or Flow permissions. Activation requires explicit Flow system-context approval.</p>
       {flow.flowType === 'Platform Event-Triggered Flow' && <>
         <label className="form-label">Platform Event<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select platform event</option>{platformEvents.map((platformEvent) => <option key={platformEvent.apiName} value={platformEvent.apiName}>{platformEvent.label} ({platformEvent.apiName})</option>)}</select></label>
         <label className="form-label">Entry Conditions</label>
@@ -488,7 +498,7 @@ export default function FlowBuilder({
         <label className="form-label">Object<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         {flow.flowType === 'Record-Triggered Flow' && <>
           <label className="form-label">Trigger<select className="form-control" value={displayValue(flow.startConfig.trigger) || 'created-or-updated'} onChange={(event) => setStartConfig('trigger', event.target.value)}><option value="created">A record is created</option><option value="updated">A record is updated</option><option value="created-or-updated">A record is created or updated</option><option value="deleted">A record is deleted</option></select></label>
-          <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig.runWhen) || 'after-save'} onChange={(event) => setStartConfig('runWhen', event.target.value)}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
+          <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig.runWhen) || 'after-save'} onChange={(event) => { setStartConfig('runWhen', event.target.value); if (event.target.value === 'before-save' && flow.startConfig.executionContext === 'System') setStartConfig('executionContext', 'User'); }}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
           <div className="info-callout">{flow.startConfig.runWhen === 'before-save' ? 'Before-save flows run assignments and decisions before the record is written. Use Assignment elements to set $Record fields; other action types are not supported in this phase.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. CRUD performed inside a Flow does not recursively dispatch record triggers; up to 50 matching Flows run for one record operation.'}</div>
           <label className="form-label">Trigger Order<input className="form-control" type="number" min={1} max={2000} step={1} value={displayValue(flow.startConfig.triggerOrder)} onChange={(event) => setStartConfig('triggerOrder', event.target.value === '' ? undefined : Number(event.target.value))} /></label>
           <p className="settings-panel-copy">Optional order from 1 to 2000. Lower numbers run first among active flows on the same object and save phase.</p>

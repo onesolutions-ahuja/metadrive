@@ -5,7 +5,7 @@ import type { RecordEngine } from './record-engine.js';
 import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
 import {FlowRecordQuery} from './flow-record-query.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
-import {evaluateFlowFormula} from './flow-formula-runtime.js';
+import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
@@ -16,6 +16,8 @@ import {createFlowCustomError} from './flow-error-runtime.js';
 import {cancelScheduledPathInterviews,deactivateFlowDefinition,
   syncFlowTriggerSubscription} from './flow-subscription-runtime.js';
 import {flowScalarText,isFlowScalar,parseFlowScalar,type FlowScalar} from './flow-scalar-runtime.js';
+import {auditSystemFlowContext,authorizeSystemFlowContext,flowExecutionMode,
+  resolveFlowExecutionActor} from './flow-execution-context.js';
 import type {PoolClient} from 'pg';
 type NodeRow={id:string;api_name:string;node_type:string};
 type EdgeRow={source_api:string;target_api:string;outcome:string};
@@ -189,6 +191,11 @@ export class FlowRuntime {
       const edge=item as Record<string,unknown>;
       if(!ids.has(Number(edge.from))||!ids.has(Number(edge.to)))throw new Error('Invalid Flow connector');
     }
+    const startNode=(input.elements as Array<Record<string,unknown>>)
+      .find(element=>element.type==='Start');
+    const startConfig=startNode?.config&&typeof startNode.config==='object'
+      &&!Array.isArray(startNode.config)?startNode.config as Record<string,unknown>:{};
+    const executionContext=flowExecutionMode(startConfig.executionContext);
     if(input.status==='Active'){
       const validation=await this.validateDraft(tenantId,userId,apiName,input);
       if(!validation.valid)throw new Error('Flow cannot activate: '+validation.errors.join('; '));
@@ -196,6 +203,8 @@ export class FlowRuntime {
         typeof input.appApiName==='string'?input.appApiName:null))
         throw new Error('Flow app is not installed or entitled for this tenant');
     }
+    const systemActor=executionContext==='System'&&input.status==='Active'
+      ?await authorizeSystemFlowContext(this.db,this.rbac,tenantId,apiName,userId):null;
     const scalarRows:Array<{path:string;kind:string;text:string|null}>=[];
     // Preserve the entire editable graph as relational path/value rows; never JSONB.
     encodeMetadataValue(input,'/builder',scalarRows);
@@ -208,22 +217,30 @@ export class FlowRuntime {
         WHERE tenant_id=$1 AND api_name=$2 AND archived=false ORDER BY version DESC LIMIT 1 FOR UPDATE
       `,[tenantId,apiName]);
       const last=latest.rows[0];
-      let id:string;
-      if(last&&!last.active){
-        id=last.id;
-        await client.query(`UPDATE md_flow_definitions SET label=$3,flow_type=$4,active=$5
-          WHERE tenant_id=$1 AND id=$2`,[tenantId,id,input.label,input.flowType,input.status==='Active']);
-      }else{
-        const inserted=await client.query<{id:string}>(`
-          INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
-          VALUES($1,$2,$3,$4,$5,$6) RETURNING id
-        `,[tenantId,apiName,input.label,input.flowType,(last?.version??0)+1,input.status==='Active']);
-        id=inserted.rows[0].id;
-      }
       if(input.status==='Active'){
         await client.query(`
           UPDATE md_flow_definitions SET active=false
-          WHERE tenant_id=$1 AND api_name=$2 AND id<>$3 AND active=true`,[tenantId,apiName,id]);
+          WHERE tenant_id=$1 AND api_name=$2 AND active=true`,[tenantId,apiName]);
+      }
+      let id:string;
+      if(last&&!last.active){
+        id=last.id;
+        await client.query(`UPDATE md_flow_definitions SET label=$3,flow_type=$4,active=$5,
+          system_context_approved_by=$6 WHERE tenant_id=$1 AND id=$2`,
+         [tenantId,id,input.label,input.flowType,input.status==='Active',
+          systemActor?userId:null]);
+      }else{
+        const inserted=await client.query<{id:string}>(`
+          INSERT INTO md_flow_definitions
+           (tenant_id,api_name,label,flow_type,version,active,system_context_approved_by)
+          VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id
+        `,[tenantId,apiName,input.label,input.flowType,(last?.version??0)+1,
+          input.status==='Active',systemActor?userId:null]);
+        id=inserted.rows[0].id;
+      }
+      if(input.status==='Active'){
+        if(systemActor)await auditSystemFlowContext(client,tenantId,id,userId,userId,
+          'system-context-approved');
         await cancelScheduledPathInterviews(client,tenantId,apiName,id);
       }
       await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
@@ -320,8 +337,9 @@ export class FlowRuntime {
     return {flow:await this.loadEditor(tenantId,apiName)};
   }
   async loadActive(tenantId:string,apiName:string) {
-    const {rows}=await this.db.query<{id:string;version:number}>(
-      'SELECT id,version FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND active=true ORDER BY version DESC LIMIT 1',
+    const {rows}=await this.db.query<{id:string;version:number;system_context_approved_by:string|null}>(
+      `SELECT id,version,system_context_approved_by FROM md_flow_definitions
+       WHERE tenant_id=$1 AND api_name=$2 AND active=true ORDER BY version DESC LIMIT 1`,
       [tenantId,apiName]);
     if(!rows[0])throw new Error('Active flow not found');
     return rows[0];
@@ -343,16 +361,24 @@ export class FlowRuntime {
       }else throw new Error('Invalid Flow input: '+name);
     }
     const flow=await this.loadActive(tenantId,flowApi);
+    const editor=await this.db.query<MetadataValueRow>(
+      'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+      [tenantId,flow.id]);
+    const graph=decodeMetadataValues(editor.rows).builder as Record<string,unknown>|undefined;
+    const elements=Array.isArray(graph?.elements)?graph.elements as Array<Record<string,unknown>>:[];
+    const startNode=elements.find(element=>element.type==='Start');
+    const startConfig=startNode?.config&&typeof startNode.config==='object'
+      &&!Array.isArray(startNode.config)?startNode.config as Record<string,unknown>:{};
+    const mode=flowExecutionMode(startConfig.executionContext);
+    if(!await flowAppIsEntitled(this.db,tenantId,
+      typeof graph?.appApiName==='string'?graph.appApiName:null))
+      throw new Error('Flow app is not installed or entitled for this tenant');
+    const executionActor=await resolveFlowExecutionActor(this.db,this.rbac,tenantId,flowApi,
+      userId,mode,flow.system_context_approved_by);
     let collectionStart:number|undefined;
     if(collections.size){
-      const editor=await this.db.query<MetadataValueRow>(
-        'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
-        [tenantId,flow.id]);
-      const graph=decodeMetadataValues(editor.rows).builder as Record<string,unknown>|undefined;
       const resources=Array.isArray(graph?.resources)
         ?graph.resources as Array<Record<string,unknown>>:[];
-      const elements=Array.isArray(graph?.elements)
-        ?graph.elements as Array<Record<string,unknown>>:[];
       const starts=elements.filter(element=>element.type==='Start');
       if(starts.length!==1||typeof starts[0].id!=='number'||!Number.isSafeInteger(starts[0].id))
         throw new Error('Record Collection inputs require a valid Flow Start element');
@@ -398,9 +424,13 @@ export class FlowRuntime {
     }
     return this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(
-        "INSERT INTO md_flow_runs (tenant_id,flow_id,started_by,status) VALUES ($1,$2,$3,'pending') RETURNING id",
-        [tenantId,flow.id,userId]);
+        `INSERT INTO md_flow_runs
+         (tenant_id,flow_id,started_by,initiated_by,execution_context,status)
+         VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id`,
+        [tenantId,flow.id,executionActor.actorUserId,userId,executionActor.mode]);
       const id=rows[0].id;
+      if(executionActor.mode==='System')await auditSystemFlowContext(client,tenantId,flow.id,
+        executionActor.actorUserId,userId,'system-context-run',id);
       for(const [name,value] of normalized) {
         const encoded=scalarText(value);
         await client.query(
@@ -443,10 +473,14 @@ export class FlowRuntime {
       ||rows[0]?.flow_type==='Platform Event-Triggered Flow')
       throw new Error('Triggered Flows cannot be manually executed');
     const id=await this.start(tenantId,flowApi,userId,inputs);
+    const {rows:actors}=await this.db.query<{started_by:string}>(
+      'SELECT started_by FROM md_flow_runs WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+    const executionUserId=actors[0]?.started_by;
+    if(!executionUserId)throw new Error('Flow run has no execution identity');
     // Authored Screen/Autolaunched Flows both use the one normalized action engine.
     // SQL-only definitions from before the Builder migration retain their legacy adapter.
-    return rows[0]?.has_editor?this.advanceInterview(tenantId,userId,id,{})
-      :this.run(tenantId,id,userId);
+    return rows[0]?.has_editor?this.advanceInterview(tenantId,executionUserId,id,{})
+      :this.run(tenantId,id,executionUserId);
   }
 
   async resumeWaitingInterview(tenantId:string,userId:string,runId:string,version:number){
@@ -487,10 +521,13 @@ export class FlowRuntime {
       throw new Error('Invalid Flow interview request');
     const advance=async(client:PoolClient)=>{
       const {rows}=await client.query<{
-        flow_id:string;api_name:string;flow_type:string;version:number;started_by:string;status:string
-      }>(`SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.status FROM md_flow_runs r
+        flow_id:string;api_name:string;flow_type:string;version:number;started_by:string;
+        initiated_by:string;execution_context:string;system_context_approved_by:string|null;status:string
+      }>(`SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.initiated_by,
+          r.execution_context,f.system_context_approved_by,r.status FROM md_flow_runs r
         JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
-        WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r`,[tenantId,runId]);
+        WHERE r.tenant_id=$1 AND r.id=$2 AND f.active=true AND f.archived=false
+        FOR UPDATE OF r,f`,[tenantId,runId]);
       const active=rows[0];
       if(!active||active.status!=='pending'||active.started_by!==userId
         ||!['Screen Flow','Autolaunched Flow','Record-Triggered Flow','Schedule-Triggered Flow',
@@ -507,11 +544,21 @@ export class FlowRuntime {
       const graph=decodeMetadataValues(doc.rows).builder as Record<string,unknown>|undefined;
       if(!graph||!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))
         throw new Error('Missing published Screen Flow graph');
+      if(!await flowAppIsEntitled(client,tenantId,
+        typeof graph.appApiName==='string'?graph.appApiName:null))
+        throw new Error('Flow app is not installed or entitled for this tenant');
       const elements=graph.elements as Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
       const connectors=graph.connectors as Array<{from:number;to:number;label:string;kind:string}>;
       const byId=new Map(elements.map(element=>[element.id,element]));
       const start=elements.filter(element=>element.type==='Start');
       if(start.length!==1||byId.size!==elements.length)throw new Error('Invalid Screen Flow graph');
+      const mode=flowExecutionMode(start[0].config.executionContext);
+      if(mode!==flowExecutionMode(active.execution_context))
+        throw new Error('Flow execution context changed during the interview');
+      const actor=await resolveFlowExecutionActor(client,this.rbac!,tenantId,active.api_name,
+        active.initiated_by??active.started_by,mode,active.system_context_approved_by??null);
+      if(actor.actorUserId!==userId||active.started_by!==userId)
+        throw new Error('Flow execution identity is no longer authorized');
       const persisted=await client.query<{current_element:number;history_elements:number[];step_count:number}>(
         'SELECT current_element,history_elements,step_count FROM md_flow_interview_state WHERE tenant_id=$1 AND run_id=$2 FOR UPDATE',
         [tenantId,runId]);
@@ -532,7 +579,8 @@ export class FlowRuntime {
       const vars:Record<string,unknown>=Object.create(null) as Record<string,unknown>;
       for(const row of [...prior.rows,...stored.rows])
         vars[row.api_name]=scalarFrom(row.value_text,row.data_type);
-      await loadFlowUserResource(client,tenantId,userId,JSON.stringify([graph.resources,graph.elements]),vars);
+      const formulaContext=await loadFlowUserResource(
+        client,tenantId,userId,JSON.stringify([graph.resources,graph.elements]),vars);
       const persistedRecords=await client.query<{
         api_name:string;object_api:string;record_id:string|null;is_collection:boolean;sort_order:number
       }>(`SELECT api_name,object_api,record_id,is_collection,sort_order
@@ -594,7 +642,10 @@ export class FlowRuntime {
             if(typeof resource.value!=='string')throw new Error('Flow formula resource has no expression: '+name);
             formulaStack.add(name);
             try{
-              const result=evaluateFlowFormula(resource.value,resolveResource);
+              const formulaResult=evaluateFlowFormula(resource.value,resolveResource,{
+                ...formulaContext,isClone:vars.$Record__IsClone===true
+              });
+              const result=isFormulaImageResult(formulaResult)?formulaResult.url:formulaResult;
               if(['Number','Currency','Percent'].includes(resource.dataType)){
                 if(typeof result!=='number'||!Number.isFinite(result))
                   throw new Error('Flow formula did not return a finite number: '+name);
@@ -810,11 +861,13 @@ export class FlowRuntime {
           const savepoint='flow_subflow_'+node.id;
           await client.query('SAVEPOINT '+savepoint);
           try{
-            await executeFlowSubflow({client,tenantId,userId,config:node.config,
+            await executeFlowSubflow({client,tenantId,userId,
+              initiatingUserId:active.initiated_by??userId,config:node.config,
               rbac:this.rbac!,callStack:activeCallStack,evaluate,
               set:(name,value)=>set(name,value),
-              advance:async(childRunId,childCallStack)=>{
-                const result=await this.advanceInterview(tenantId,userId,childRunId,{},client,childCallStack);
+              advance:async(childRunId,childCallStack,childUserId)=>{
+                const result=await this.advanceInterview(tenantId,childUserId??userId,
+                  childRunId,{},client,childCallStack);
                 return 'status' in result?result:{status:'waiting'};
               }});
             await client.query('RELEASE SAVEPOINT '+savepoint);
