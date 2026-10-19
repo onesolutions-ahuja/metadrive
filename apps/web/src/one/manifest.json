@@ -554,6 +554,44 @@
       "label": "Show card add icon",
       "kind": "BOOLEAN",
       "displayOrder": 375
+    },
+    {
+      "propertyKey": "sharedFilterKey",
+      "label": "Shared selection key",
+      "kind": "TEXT",
+      "displayOrder": 600,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "sharedFilterFieldApiName",
+      "label": "Bound Object field matching selection",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 610,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "sharedFilterValueSource",
+      "label": "Match selected value",
+      "kind": "SELECT",
+      "displayOrder": 620,
+      "defaultValue": "value",
+      "choices": [
+        {
+          "key": "value",
+          "label": "Selected value"
+        },
+        {
+          "key": "recordId",
+          "label": "Selected record ID"
+        }
+      ]
+    },
+    {
+      "propertyKey": "sharedFilterRequired",
+      "label": "Hide records until selection",
+      "kind": "BOOLEAN",
+      "displayOrder": 630,
+      "defaultValue": false
     }
   ],
   "components": [
