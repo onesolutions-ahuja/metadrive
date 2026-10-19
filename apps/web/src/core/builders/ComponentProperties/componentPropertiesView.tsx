@@ -1,4 +1,5 @@
 import {metadataReference,metadataSelection,resolveMetadataProperties,metadataFieldObject} from '../../metadata/Definitions/metadataReferences';
+import TenantMediaPicker from './TenantMediaPicker';
 import { createPageRuntimeViews } from '../../pages/PageRuntime/pageRuntimeViews';
 import { createSetupApp } from '../../workspace/SetupShell/setupAppShell';
 import { createRecordWorkspaceViews } from '../../records/RecordWorkspace/recordWorkspaceViews';
@@ -250,7 +251,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
       update(key,field?.id?metadataReference(field.id):event.target.value);
     }}>
       <option value="">Select field…</option>
-      {key === 'categoryValueFieldApiName' && <option value="Id">Record ID (lookup value)</option>}
+      {['categoryValueFieldApiName','optionValueFieldApiName','recordValueFieldApiName'].includes(key) && <option value="Id">Record ID</option>}
       {fieldsFor(key).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
     </select>
   </label>;
@@ -407,6 +408,9 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)).map(([key, value]) => {
       const definition = definitionsByKey.get(key);
       const label = definition?.label ?? labelFor(key);
+      if (definition?.kind === 'IMAGE') return <div className="form-label" key={key}>
+        <label>{label}</label><TenantMediaPicker value={String(value??'')}
+          onChange={next=>update(key,next)}/></div>;
       if (definition?.kind === 'SELECT' && definition.choices) return <label className="form-label" key={key}>{label}
         <select className="form-control" value={String(value ?? '')}
           onChange={(event) => update(key, event.target.value)}>

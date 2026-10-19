@@ -83,6 +83,7 @@ import { isComponentVisible } from '../../components/Properties/componentVisibil
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../TemplatePageRuntime/pageComponentLayout';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from '../../builders/PageBuilder/canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import {filterRelatedRecords} from './filterRelatedRecords.mjs';
 import {resolveMentionProperties} from '../../../one/OneSmartFieldInput/smartFieldMentions';
 import { explicitMentionRecordId, useRelationshipMentionContext } from '../../records/RecordFormDialog/useRelationshipMentionContext';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../TemplatePageRuntime/pageComponentLayout';
@@ -431,7 +432,11 @@ function MetadataBoundPageComponent({
     phone: String(row[String(properties.contactPhoneFieldApiName??'')]??'')
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
-  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const filteredRecords=filterPageComponentRecords(records,properties.filters,fields);
+  const relatedKey=String(properties.relatedFilterKey??'');
+  const relatedField=String(properties.relatedFieldApiName??'');
+  const selectedId=relatedKey?pageState[relatedKey]:undefined;
+  const visibleRecords=relatedKey?filterRelatedRecords(filteredRecords,selectedId,relatedField):filteredRecords;
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
@@ -559,7 +564,10 @@ function MetadataBoundPageComponent({
       ...resolvedProperties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties: resolvedProperties, objects, reports, flows: availableFlows, pageState,
        pageSessionKey, componentId: component.id,
-      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, viewRevision: revision,
+      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      loadAsset: (id:string) => /^[0-9a-f-]{36}$/i.test(id)
+        ? apiRequest<{contentType:string;contentBase64:string}>('/media-assets/'+id)
+        : Promise.reject(new Error('Invalid media asset ID')), viewRevision: revision,
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
