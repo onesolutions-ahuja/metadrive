@@ -320,6 +320,12 @@ export class FlowRuntime {
       throw new Error('Invalid interview ID');
     await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
     const result=await this.db.transaction(async client=>{
+      // Approval decisions lock the stage before the run. Cancellation must
+      // use the same order to avoid cross-approver/cancel deadlocks.
+      await client.query(`
+        SELECT 1 FROM md_flow_approval_stages
+        WHERE tenant_id=$1 AND run_id=$2 FOR UPDATE
+      `,[tenantId,interviewId]);
       const cancelled=await client.query(
         "UPDATE md_flow_runs SET status='cancelled',finished_at=now(),wait_until=NULL,error_code=NULL WHERE tenant_id=$1 AND id=$2 AND status IN ('pending','waiting') RETURNING id",
         [tenantId,interviewId]);
