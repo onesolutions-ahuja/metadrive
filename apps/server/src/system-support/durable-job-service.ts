@@ -34,7 +34,7 @@ export class DurableJobService {
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid batch');
   if(!Number.isInteger(leaseSeconds)||leaseSeconds<10||leaseSeconds>3600)throw new Error('Invalid lease');
   return this.db.transaction(async (client:PoolClient)=>{
-   const {rows}=await client.query<{id:string;tenant_id:string;job_type:string;actor_user_id:string|null;app_api_name:string|null;resource_id:string|null;resource_version:number|null;attempt:number}>(`
+   const {rows}=await client.query<{id:string;tenant_id:string;job_type:string;actor_user_id:string|null;app_api_name:string|null;resource_id:string|null;resource_version:number|null;attempt:number;execution_scope:string}>(`
      WITH due AS (
       SELECT id FROM md_durable_jobs
       WHERE status='queued' AND scheduled_at<=now() AND attempt<max_attempts
@@ -45,7 +45,7 @@ export class DurableJobService {
      SET status='leased',lease_owner=$2,lease_until=now()+($3::integer * interval '1 second'),
          attempt=j.attempt+1,updated_at=now()
      FROM due WHERE j.id=due.id AND j.attempt<j.max_attempts
-     RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.resource_version,j.attempt
+     RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.resource_version,j.attempt,j.execution_scope
    `,[limit,workerId,leaseSeconds]);
    // An expired lease does not prove the previous operation had no external effect.
    // Quarantine *every* job kind; operators must reconcile before any replay.
@@ -62,6 +62,7 @@ export class DurableJobService {
     status=CASE WHEN recurrence_seconds IS NULL THEN 'completed' ELSE 'queued' END,
     scheduled_at=CASE WHEN recurrence_seconds IS NULL THEN scheduled_at ELSE GREATEST(scheduled_at + recurrence_seconds * interval '1 second',now() + interval '1 second') END,
     attempt=CASE WHEN recurrence_seconds IS NULL THEN attempt ELSE 0 END,
+    execution_scope=CASE WHEN recurrence_seconds IS NULL THEN execution_scope ELSE gen_random_uuid() END,
     lease_owner=NULL,lease_until=NULL,updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
   `,[tenantId,id,workerId]);
