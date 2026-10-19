@@ -705,7 +705,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       'Screen': { fields: [] },
       'Action': { actionType: '', inputValues: [] },
       'HTTP Callout': { method: 'GET', namedCredentialId: '', path: '', headers: '', body: '', responseVariable: '', statusVariable: '' },
-      'Subflow': { flowApiName: '', inputValues: [] }
+      'Subflow': { flowApiName: '', inputValues: '', outputValues: '' },
+      'Publish Platform Event': { eventApiName: '', fieldValues: [] }
     };
     const next = { id: nextId, type, label, config: defaults[type] ?? {} };
     try {
