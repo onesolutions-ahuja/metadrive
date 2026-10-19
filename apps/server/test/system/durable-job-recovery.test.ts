@@ -39,8 +39,8 @@ test('reconciliation is tenant-scoped, enabled-user gated and atomically audited
    queries.push({sql,params});return {rowCount:1};
   }})} as unknown as SqlPersistence;
  await new DurableJobService(db).reconcileFailed('tenant','job','reviewer','acknowledge');
- assert.match(queries[0].sql,/WHERE tenant_id=\\$1 AND id=\\$2 AND status='failed'/);
- assert.match(queries[0].sql,/md_users WHERE tenant_id=\\$1 AND id=\\$3 AND enabled=true/);
+ assert.match(queries[0].sql,/WHERE tenant_id=\$1 AND id=\$2 AND status='failed'/);
+ assert.match(queries[0].sql,/md_users WHERE tenant_id=\$1 AND id=\$3 AND enabled=true/);
  assert.deepEqual(queries[0].params,['tenant','job','reviewer','acknowledge']);
  assert.match(queries[1].sql,/INSERT INTO md_security_events/);
  assert.equal(queries[1].params[1],'reviewer');
