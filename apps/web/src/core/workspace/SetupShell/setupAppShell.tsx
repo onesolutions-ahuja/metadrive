@@ -378,7 +378,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
 
   const flowHasUnsavedChanges = () => {
-    if (route.kind !== 'setup' || route.workspace !== 'flow-builder') return false;
+    // The Flow landing page is a catalogue, not an edited draft. Guard only an open Flow.
+    if (route.kind !== 'setup' || route.workspace !== 'flow-builder' || !route.resourceApiName) return false;
     const savedSnapshot = flowSnapshots.current.get(flow.apiName);
     return savedSnapshot === undefined || savedSnapshot !== JSON.stringify(flow);
   };
@@ -705,7 +706,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       'Screen': { fields: [] },
       'Action': { actionType: '', inputValues: [] },
       'HTTP Callout': { method: 'GET', namedCredentialId: '', path: '', headers: '', body: '', responseVariable: '', statusVariable: '' },
-      'Subflow': { flowApiName: '', inputValues: [] }
+      'Subflow': { flowApiName: '', inputValues: '', outputValues: '' },
+      'Publish Platform Event': { eventApiName: '', fieldValues: [] }
     };
     const next = { id: nextId, type, label, config: defaults[type] ?? {} };
     try {

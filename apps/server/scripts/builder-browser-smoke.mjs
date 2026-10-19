@@ -91,6 +91,40 @@ try{
  },{token:tokens.accessToken});
  assert.deepEqual(status,{saved:200,started:200,completed:200,archived:204},
   'Real browser builder save/Screen Flow API check: '+JSON.stringify(status));
+
+ // Phase 1: confirm SQL metadata and the actual no-code browser controls agree.
+ const capabilities=await page.evaluate(async(token)=>{
+   const response=await fetch('/api/metadata/flow-capabilities',{
+     headers:{Authorization:'Bearer '+token}
+   });
+   return {status:response.status,body:await response.json()};
+ },tokens.accessToken);
+ assert.equal(capabilities.status,200,'Flow capability endpoint denied the builder');
+ for(const flowType of ['Record-Triggered Flow','Schedule-Triggered Flow',
+   'Platform Event-Triggered Flow'])
+   assert.ok(capabilities.body.flowTypes.some(type=>type.type===flowType&&type.createEnabled),
+     'Missing browser Flow type: '+flowType);
+ for(const elementType of ['Get Records','Update Records','Delete Records','Subflow',
+   'Collection Filter','Collection Sort','Transform','Publish Platform Event']){
+   const element=capabilities.body.elements.find(item=>item.type===elementType);
+   assert.ok(element?.builderEnabled&&element.builderFlowTypes.includes('Autolaunched Flow'),
+     'Missing builder capability: '+elementType);
+   assert.equal(element.beforeSaveAllowed,false,'Unsafe before-save element: '+elementType);
+ }
+ await page.getByRole('button',{name:/Autolaunched Flow/}).first().click();
+ await page.locator('#flow-start-label').fill('Phase One Browser Test');
+ await page.getByRole('button',{name:'Create Flow',exact:true}).click();
+ await page.locator('.flow-element-option').filter({hasText:'Get Records'}).waitFor();
+ for(const elementType of ['Get Records','Update Records','Delete Records','Subflow',
+   'Collection Filter','Collection Sort','Transform','Publish Platform Event'])
+   assert.equal(await page.locator('.flow-element-option').filter({hasText:elementType}).count(),1,
+     'Missing browser toolbox entry: '+elementType);
+ await page.locator('.flow-element-option').filter({hasText:'Get Records'}).click();
+ await page.getByText('Filter Records',{exact:true}).waitFor();
+ const flowEditor=await page.evaluate(()=>document.querySelector('.flow-settings')?.textContent??'');
+ assert.ok(flowEditor.includes('How Many Records to Store')&&flowEditor.includes('Filter Records'),
+   'Get Records browser configuration is incomplete');
+
  const pageStatus=await page.evaluate(async ({token})=>{
   const payload={apiName:'BrowserPage',label:'Browser Page',targetObject:'',
    pageType:'Home Page',layoutMode:'free-canvas',canvasWidth:1280,canvasHeight:900,

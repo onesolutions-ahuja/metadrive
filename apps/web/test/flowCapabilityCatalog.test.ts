@@ -32,3 +32,23 @@ test('Core SQL registry covers historical elements and does not overwrite tenant
  assert.match(migration,/ON CONFLICT \(element_type\) DO NOTHING/i);
  assert.doesNotMatch(migration,/jsonb|ON CONFLICT.+DO UPDATE/i);
 });
+
+const phase1=readFileSync(new URL('../../server/src/system-support/migrations/20261113-flow-builder-phase1-unlock.sql',import.meta.url),'utf8');
+
+test('Phase 1 SQL unlocks supported flows without changing before-save restrictions',()=>{
+ for(const name of ['Record-Triggered Flow','Schedule-Triggered Flow','Platform Event-Triggered Flow',
+  'Get Records','Update Records','Delete Records','Subflow',
+  'Collection Filter','Collection Sort','Transform','Publish Platform Event'])
+  assert.ok(phase1.includes("'"+name+"'"),'Missing Phase 1 capability: '+name);
+ assert.match(phase1,/registry_version=1/);
+ assert.doesNotMatch(phase1,/before_save_allowed\s*=\s*true/i);
+ assert.doesNotMatch(phase1,/Flow Orchestration'/);
+ const next:FlowCapabilityCatalog={...catalog,
+  flowTypes:catalog.flowTypes.map(type=>({...type,createEnabled:true})),
+  elements:catalog.elements.map(element=>element.type==='Get Records'
+   ?{...element,builderEnabled:true,builderFlowTypes:permitted}:element)};
+ assert.equal(flowCreateOptions(next).length,3);
+ assert.equal(flowElementAvailable(next,'Get Records','Autolaunched Flow','after-save'),true);
+ assert.equal(flowElementAvailable(next,'Get Records','Record-Triggered Flow','before-save'),false);
+ assert.equal(flowElementAvailable(next,'Get Records','Record-Triggered Flow','after-save'),true);
+});

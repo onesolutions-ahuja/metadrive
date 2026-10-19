@@ -430,7 +430,7 @@ export function createSetupFlowActions(ctx: any) {
         ? objects.find((item) => item.apiName !== 'User')?.apiName ?? null
         : null;
     const startConfig: Record<string, unknown> = flowType === 'Schedule-Triggered Flow'
-      ? { startDate: '', startTime: '', frequency: '', entryConditions: [] }
+      ? { startDate: '', startTime: '', timeZone: 'UTC', frequency: '', entryConditions: [] }
       : flowType === 'Platform Event-Triggered Flow'
         ? { entryConditions: [] }
         : flowType === 'Record-Triggered Flow'

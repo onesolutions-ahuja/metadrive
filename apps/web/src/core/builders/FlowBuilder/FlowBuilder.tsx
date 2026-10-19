@@ -8,6 +8,7 @@ import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRo
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
 import FlowTestsPanel from './FlowTestsPanel';
+import FlowSubflowMappingEditor from './FlowSubflowMappingEditor';
 import CustomComponentPropertyEditor from '../ComponentProperties/CustomComponentPropertyEditor';
 import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
 import FlowReferenceInput from '../FlowReferenceInput/FlowReferenceInput';
@@ -725,6 +726,10 @@ export default function FlowBuilder({
           </p>}
         </>}
         {selected.type === 'Get Records' && <>
+          <h3>Filter Records</h3>
+          {renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All',
+            rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}
+          {renderConditions('conditions', object?.fields ?? [])}
           <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit === 'all' || recordLimit === '1' ? recordLimit : 'limited'} onChange={(event) => {
             setConfig('recordLimit', event.target.value === 'limited' ? '50' : event.target.value);
           }}><option value="1">Only the first record</option><option value="limited">Up to a specified limit</option><option value="all">All records</option></select></label>
@@ -1155,9 +1160,11 @@ export default function FlowBuilder({
     }
     if (selected.type === 'Subflow') return <>
       <label className="form-label">Flow<select className="form-control" value={displayValue(selected.config.flowApiName)} onChange={(event) => setConfig('flowApiName', event.target.value)}><option value="">Select an active autolaunched flow</option>{flows.filter((candidate) => candidate.apiName !== flow.apiName && candidate.flowType === 'Autolaunched Flow' && candidate.status === 'Active').map((candidate) => <option key={candidate.apiName} value={candidate.apiName}>{candidate.label}</option>)}</select></label>
-      <label className="form-label">Input Values<textarea className="form-control" rows={3} value={displayValue(selected.config.inputValues)} onChange={(event) => setConfig('inputValues', event.target.value)} placeholder="ChildInput={!ParentResource}" /></label>
-      <label className="form-label">Output Values<textarea className="form-control" rows={3} value={displayValue(selected.config.outputValues)} onChange={(event) => setConfig('outputValues', event.target.value)} placeholder="ChildOutput=ParentResource" /></label>
-      <p className="settings-panel-copy">Map one resource per line as child resource = parent resource/value. Inputs must be enabled on the selected flow; outputs must be enabled and match the parent resource type.</p>
+      <FlowSubflowMappingEditor
+        selectedFlowApiName={displayValue(selected.config.flowApiName)}
+        flows={flows} parentResources={flow.resources}
+        inputValues={selected.config.inputValues} outputValues={selected.config.outputValues}
+        onChange={(key, value) => setConfig(key, value)} />
     </>;
     return <label className="form-label">Configuration<textarea className="form-control" rows={4} value={JSON.stringify(selected.config, null, 2)} readOnly /></label>;
   };
