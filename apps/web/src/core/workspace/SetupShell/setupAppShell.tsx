@@ -723,6 +723,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       'Custom Error': { errorMessage: '', errorLocation: 'Page', fieldName: '' },
       'Screen': { fields: [] },
       'Action': { actionType: '', inputValues: [] },
+      'Orchestration Stage': { objectApiName: flow.triggerObject ?? '', recordId: '',
+        approvalProcessApiName: '', approverIds: '', approvalMode: 'ANY', statusVariable: '',
+        comments: '' },
       'HTTP Callout': { method: 'GET', namedCredentialId: '', path: '', headers: '', body: '', responseVariable: '', statusVariable: '' },
       'Subflow': { flowApiName: '', inputValues: '', outputValues: '' },
       'Publish Platform Event': { eventApiName: '', fieldValues: [] }
