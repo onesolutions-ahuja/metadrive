@@ -29,17 +29,28 @@ export default function OneOverlay(props) {
   // A reusable selection-triggered overlay can contain arbitrary nested Page
   // components. The selected record is carried by the shared filter context.
   const selectionKey = String(p.openOnSelectionKey || "");
+  const lastSelection = React.useRef(null);
   React.useEffect(() => {
     if (!selectionKey || !p.pageSessionKey || typeof window === "undefined") return;
     const receive = (event) => {
       const data = event.detail;
       if (data?.pageSessionKey !== p.pageSessionKey ||
           data.filterKey !== selectionKey) return;
-      setOpen(Boolean(data.value || data.recordId));
+      lastSelection.current = data.value || data.recordId ? data : null;
+      setOpen(Boolean(lastSelection.current));
     };
     window.addEventListener("metadrive:page-filter-selected", receive);
     return () => window.removeEventListener("metadrive:page-filter-selected", receive);
   }, [selectionKey, p.pageSessionKey, setOpen]);
+  // Child record components are mounted only after the overlay opens. Replay
+  // the active selection once they have subscribed, without persisting a
+  // potentially sensitive selection in global, shared, or durable storage.
+  React.useEffect(() => {
+    if (open && lastSelection.current && typeof window !== "undefined")
+      window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected", {
+        detail: lastSelection.current,
+      }));
+  }, [open]);
   return (
     <div {...css}>
       {!selectionKey && <button type="button" className="one-btn" onClick={() => setOpen(true)}>
