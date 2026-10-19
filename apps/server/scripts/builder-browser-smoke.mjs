@@ -205,7 +205,9 @@ try{
  assert.equal(queued.rows.length,1,'Human approval did not queue exactly one durable resume');
  const {FlowRuntime}=await import(new URL('flow-runtime.js',built).href);
  const {RbacEngine}=await import(new URL('rbac-engine.js',built).href);
- const resumed=await new FlowRuntime(db,new RbacEngine(db))
+ const {RecordEngine}=await import(new URL('record-engine.js',built).href);
+ const rbac=new RbacEngine(db);
+ const resumed=await new FlowRuntime(db,rbac,new RecordEngine(db,rbac))
    .resumeWaitingInterview(tenantId,userId,orchestration.interviewId,1);
  assert.equal(resumed.status,'completed','Approval decision did not resume the published Flow');
  const completed=await db.query(
