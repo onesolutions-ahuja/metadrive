@@ -121,6 +121,42 @@ export class RecordEngine {
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
+  /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
+  async importRecords(tenantId:string,userId:string,objectApi:string,records:unknown) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi) || objectApi==='User')
+      throw new Error('Invalid import object');
+    if(!Array.isArray(records)||records.length===0||records.length>200)
+      throw new Error('Invalid import batch size (1-200 records)');
+    const ids=new Set<string>();
+    const updates=records.map((item:unknown)=>{
+      if(!item||typeof item!=='object'||Array.isArray(item)
+        ||(Object.getPrototypeOf(item)!==Object.prototype&&Object.getPrototypeOf(item)!==null))
+        throw new Error('Invalid import record');
+      const data=item as Record<string,unknown>;
+      const id=data.Id;
+      if(id!==undefined&&(!('Id' in data)||typeof id!=='string'||!uuid.test(id)))
+        throw new Error('Invalid import record ID');
+      if(typeof id==='string'){
+        if(ids.has(id.toLowerCase()))throw new Error('Duplicate import record ID');
+        ids.add(id.toLowerCase());
+      }
+      const values=Object.fromEntries(Object.entries(data).filter(([key])=>key!=='Id'));
+      if(!Object.keys(values).length)throw new Error('Invalid import record without fields');
+      return {id,values};
+    });
+    const mode=updates.every(item=>typeof item.id==='string')?'update'
+      :updates.every(item=>item.id===undefined)?'create':null;
+    if(!mode)throw new Error('Invalid import batch: cannot mix creates and updates');
+    await this.db.transaction(async client=>{
+      for(const item of updates){
+        if(mode==='update')
+          await this.updateInTransaction(client,tenantId,userId,objectApi,item.id as string,item.values);
+        else
+          await this.createInTransaction(client,tenantId,userId,objectApi,item.values);
+      }
+    });
+    return {count:updates.length,mode};
+  }
   private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,prepared:Map<string,Storable>) {
     const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const selectedOwner=prepared.get('__OwnerId__')?.value_text??userId,queue=prepared.get('__OwnerQueue__')?.value_text==='true';
@@ -164,13 +200,13 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null
     }>(`
       WITH selected AS (
         SELECT id,created_at,updated_at,COALESCE(owner_id,owner_queue_id) AS owner_id,record_type_id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$5,id,'read')
         ORDER BY created_at,id LIMIT $3 OFFSET $4
       )
-      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -186,7 +222,10 @@ export class RecordEngine {
       if(!allowed.get(row.field_api))continue;
       const value=row.reference_record_id??row.value_text;
       collected.get(row.id)![row.field_api]=value===null?null:
-        ['number','currency','percent'].includes(String(row.data_type))?Number(value):row.data_type==='boolean'?value==='true':value;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(row.value_number??value):
+        row.data_type==='boolean'?(row.value_boolean??value==='true'):
+        row.data_type==='date'?(row.value_date??value):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
     }
     const total=await this.db.query<{total:string}>(
       "SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$3,id,'read')",[tenantId,objectApi,userId]);
@@ -194,15 +233,71 @@ export class RecordEngine {
     await this.attachFormulas(tenantId,userId,objectApi,records);
     return {records,total:Number(total.rows[0]?.total??0)};
   }
+  /** Typed SQL filtering with existing Object, Field and Record authorization. */
+  async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50,direction:'asc'|'desc'='asc') {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    const type=fields[0]?.data_type;
+    const columns:Record<string,string>={number:'value_number',currency:'value_number',
+      percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
+    const column=columns[type];
+    if(!column)throw new Error('Invalid typed filter field');
+    const casts:Record<string,string>={value_number:'numeric',value_date:'date',
+      value_datetime:'timestamptz',value_boolean:'boolean'};
+    if(column==='value_boolean' && operator!=='eq')throw new Error('Invalid boolean comparison');
+    const ops={eq:'=',lt:'<',lte:'<=',gt:'>',gte:'>='} as const;
+    const {rows}=await this.db.query<{id:string}>(`
+      SELECT r.id FROM md_records r JOIN md_record_values v
+        ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+        AND v.${column} ${ops[operator]} $4::${casts[column]}
+        AND md_record_access($1,$5,r.id,'read')
+      ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
+    `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
+    return rows.map(row=>row.id);
+  }
+
+  /** Numeric aggregation over only records visible to the actor. */
+  async aggregateNumeric(tenantId:string,userId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    if(!['number','currency','percent'].includes(fields[0]?.data_type??''))
+      throw new Error('Invalid numeric aggregate field');
+    const {rows}=await this.db.query<{count:string;sum:string|null;min:string|null;max:string|null;avg:string|null}>(`
+      SELECT count(v.value_number)::text AS count,sum(v.value_number)::text AS sum,
+        min(v.value_number)::text AS min,max(v.value_number)::text AS max,
+        avg(v.value_number)::text AS avg
+      FROM md_record_values v JOIN md_records r
+        ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+        AND md_record_access($1,$4,r.id,'read')`,
+      [tenantId,objectApi,fieldApi,userId]);
+    return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
+  }
+
   /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
   async get(tenantId:string,userId:string,objectApi:string,id:string) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const {rows}=await this.db.query<{
       id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
-      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null
     }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,r.record_type_id,
-      v.field_api,v.value_text,v.reference_record_id,f.data_type
+      v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean
       FROM md_records r
       LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
       LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api AND f.api_name=v.field_api
@@ -220,18 +315,24 @@ export class RecordEngine {
       if(!access[index])continue;
       const val=row.reference_record_id??row.value_text;
       record[row.field_api as string]=val===null?null:
-        ['number','currency','percent'].includes(String(row.data_type))?Number(val):row.data_type==='boolean'?val==='true':val;
+        ['number','currency','percent'].includes(String(row.data_type))?Number(row.value_number??val):
+        row.data_type==='boolean'?(row.value_boolean??val==='true'):
+        row.data_type==='date'?(row.value_date??val):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
     }
     await this.attachFormulas(tenantId,userId,objectApi,[record]);
     return record;
   }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
+    return this.db.transaction(client=>this.updateInTransaction(client,tenantId,userId,objectApi,id,values,ifUnmodifiedSince));
+  }
+  /** Reuse shared CRUD validation, tenant record security, history and field RBAC within a Flow transaction. */
+  async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
     await this.rbac.require(tenantId,userId,objectApi,'edit');
-    const prepared=await this.prepare(tenantId,userId,objectApi,values,false);
-    await this.db.transaction(async client=>{
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client);
       const found=await client.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rowCount)throw new Error('Record not found');
@@ -264,7 +365,6 @@ export class RecordEngine {
         ON CONFLICT (tenant_id,record_id,field_api)
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id
       `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);}
-    });
   }
   async history(tenantId:string,userId:string,objectApi:string,id:string){
     if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');

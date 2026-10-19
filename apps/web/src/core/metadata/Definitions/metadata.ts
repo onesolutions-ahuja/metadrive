@@ -1177,11 +1177,14 @@ export const defaultFlow: FlowDefinitionMetadata = {
   elements: [
     { id: 1, type: 'Start', label: 'Record-Triggered Flow', config: { trigger: 'created-or-updated', runWhen: 'after-save' } },
     { id: 2, type: 'Decision', label: 'Renewal at risk?', config: { outcomes: [{ name: 'At_Risk', label: 'At Risk' }, { name: 'Default', label: 'Default Outcome' }] } },
-    { id: 3, type: 'Update Records', label: 'Update Renewal Status', config: { object: 'Renewal__c', field: 'Status__c', value: 'At Risk' } }
+    { id: 3, type: 'Update Records', label: 'Update Renewal Status', config: { object: 'Renewal__c', recordId: '{!recordId}', fieldValues: [{ field: 'Status__c', value: 'At Risk' }] } },
+    { id: 4, type: 'End', label: 'End', config: {} }
   ],
   connectors: [
     { id: 'connector-1', from: 1, to: 2, label: '', kind: 'normal' },
-    { id: 'connector-2', from: 2, to: 3, label: 'At Risk', kind: 'normal' }
+    { id: 'connector-2', from: 2, to: 3, label: 'At Risk', kind: 'normal' },
+    { id: 'connector-3', from: 2, to: 4, label: 'Default', kind: 'normal' },
+    { id: 'connector-4', from: 3, to: 4, label: '', kind: 'normal' }
   ],
   resources: [
     { name: 'recordId', label: 'Record ID', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false }
