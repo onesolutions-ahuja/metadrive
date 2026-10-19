@@ -28,16 +28,24 @@ export async function persistFlowInterviewPause(client:PoolClient,tenantId:strin
   [tenantId,runId]);
  for(const [name,value] of Object.entries(vars)){
   const collection=Array.isArray(value);
-  if(!collection&&(!value||typeof value!=='object'||!Object.hasOwn(value,'Id')))continue;
-  const objectApi=resources.find(resource=>resource.name===name)?.dataType;
+  const resource=resources.find(resource=>resource.name===name);
+  if(!collection&&(!value||typeof value!=='object'
+    ||!Object.hasOwn(value,'Id')&&resource?.type!=='Record'))continue;
+  const objectApi=resource?.dataType;
   if(!objectApi||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
    throw new Error('Flow record resource has no Object type: '+name);
   const records=collection?value as Array<Record<string,unknown>>:[value as Record<string,unknown>];
+  if(records.length>200)throw new Error('Flow record collection exceeds the 200-record limit: '+name);
+  let totalFieldLength=0;
+  const standardFields=new Set(['CreatedAt','LastModifiedDate','OwnerId','RecordTypeId']);
   for(const [sortOrder,item] of (collection&&!records.length?[{}]:records).entries()){
    const recordId=item.Id;
    if(recordId!==null&&recordId!==undefined
     &&(typeof recordId!=='string'||!/^[0-9a-f-]{36}$/i.test(recordId)))
     throw new Error('Invalid Flow record resource');
+   const fields=Object.entries(item).filter(([field])=>field!=='Id');
+   if(fields.filter(([field])=>!standardFields.has(field)).length>100)
+    throw new Error('Flow record resource exceeds the 100-field limit: '+name);
    await client.query(`INSERT INTO md_flow_interview_records
     (tenant_id,run_id,api_name,object_api,sort_order,record_id,is_collection)
     VALUES($1,$2,$3,$4,$5,$6,$7)`,
@@ -46,6 +54,11 @@ export async function persistFlowInterviewPause(client:PoolClient,tenantId:strin
     if(field==='Id')continue;
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||!scalar(value))
      throw new Error('Invalid Flow record field value');
+    const text=value===null?'':String(value);
+    if(text.length>4096)throw new Error('Flow record field exceeds the 4096-character limit');
+    totalFieldLength+=field.length+text.length;
+    if(totalFieldLength>262144)
+     throw new Error('Flow record resource exceeds the 256 KB persistence limit: '+name);
     const type=value===null?'null':typeof value==='string'?'string':typeof value;
     await client.query(`INSERT INTO md_flow_interview_record_fields
      (tenant_id,run_id,api_name,sort_order,field_api,value_text,data_type)

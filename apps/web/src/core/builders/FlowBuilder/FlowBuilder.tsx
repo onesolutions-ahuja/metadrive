@@ -3,6 +3,7 @@ import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowProper
 import { layoutFlowGraph } from './flowGraphLayout';
 import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
 import { formulaFunctions, formulaOperators } from './flowEditorCatalog';
+import { precedingFlowSteps } from './flowReferenceCatalog';
 import { flowCreateOptions, flowElementAvailable, type FlowCapabilityCatalog } from './flowCapabilityCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
@@ -616,23 +617,59 @@ export default function FlowBuilder({
       const beforeSave = flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save';
       const selectedVariableResource = flow.resources.find((resource) => resource.name === selected.config.variable);
       const collectionOperators = ['Assign', 'Add', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'];
-      const scalarOperators = ['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove All'];
-      const assignmentOperators = selectedVariableResource?.isCollection ? collectionOperators : scalarOperators;
+      const numericTypes = ['Number', 'Currency', 'Percent'];
+      const textTypes = ['Text', 'Picklist', 'Id'];
+      const scalarOperators = ['Assign',
+        ...(numericTypes.includes(selectedVariableResource?.dataType ?? '')
+          ? ['Add', 'Subtract', 'Multiply', 'Divide'] : []),
+        ...(textTypes.includes(selectedVariableResource?.dataType ?? '')
+          ? ['Add At Beginning', 'Add At End'] : [])];
+      const isRecordCollection = selectedVariableResource?.type === 'Record Collection';
+      const assignmentOperators = isRecordCollection ? collectionOperators : scalarOperators;
+      const valueOperator = displayValue(selected.config.operator) || 'Assign';
+      const collectionObject = selectedVariableResource?.dataType;
+      const recordSources = flow.resources.filter((resource) =>
+        resource.type === 'Record' && resource.dataType === collectionObject);
+      const collectionSources = flow.resources.filter((resource) =>
+        resource.type === 'Record Collection' && resource.dataType === collectionObject);
+      const earlierSteps = precedingFlowSteps(flow, selected.id);
+      const loopSources = flow.elements.filter((element) => element.type === 'Loop'
+        && earlierSteps.has(element.id)
+        && flow.resources.some((resource) => resource.name === element.config.collection
+          && resource.type === 'Record Collection' && resource.dataType === collectionObject)
+        && typeof element.config.loopVariable === 'string' && element.config.loopVariable);
       return <>
       <label className="form-label">Variable<select className="form-control" value={displayValue(selected.config.variable)} onChange={(event) => onFlowChange({
         ...flow, elements: flow.elements.map((element) => element.id === selected.id
           ? { ...element, config: { ...element.config, variable: event.target.value, operator: 'Assign' } }
           : element)
-      })}><option value="">Select variable</option>{flow.resources.length > 0 && <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>}{beforeSave && triggerObject && <optgroup label="$Record Fields">{triggerObject.fields.filter((field) => !field.formula && !['AutoNumber', 'Auto Number'].includes(field.dataType)).map((field) => <option key={field.apiName} value={`$Record.${field.apiName}`}>{field.label}</option>)}</optgroup>}</select></label>
+      })}><option value="">Select variable</option>{flow.resources.filter((resource) =>
+        resource.type === 'Variable' || resource.type === 'Record Collection').length > 0
+        && <optgroup label="Flow Resources">{flow.resources.filter((resource) =>
+          resource.type === 'Variable' || resource.type === 'Record Collection').map((resource) =>
+            <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>}
+        {beforeSave && triggerObject && <optgroup label="$Record Fields">{triggerObject.fields.filter((field) => !field.formula && !['AutoNumber', 'Auto Number'].includes(field.dataType)).map((field) => <option key={field.apiName} value={`$Record.${field.apiName}`}>{field.label}</option>)}</optgroup>}</select></label>
       <label className="form-label">Operator<select className="form-control" value={displayValue(selected.config.operator) || 'Assign'} onChange={(event) => setConfig('operator', event.target.value)}>{assignmentOperators.map((operator) => <option key={operator}>{operator}</option>)}</select></label>
-      <label className="form-label">Value<FlowReferenceInput ariaLabel="Assignment value" multiline
+      {isRecordCollection
+        ? valueOperator !== 'Remove All' && <label className="form-label">Value<select
+          className="form-control" aria-label="Assignment value"
+          value={displayValue(selected.config.value)} onChange={(event) => setConfig('value', event.target.value)}>
+          <option value="">Select a matching record or collection</option>
+          {valueOperator === 'Assign'
+            ? collectionSources.map((resource) => <option key={resource.name} value={`@${resource.name}`}>
+              {resource.label} · collection</option>)
+            : <>{recordSources.map((resource) => <option key={resource.name} value={`@${resource.name}`}>
+              {resource.label}</option>)}{loopSources.map((element) => <option key={element.id}
+              value={`@${String(element.config.loopVariable)}`}>{element.label} · loop record</option>)}</>}
+        </select></label>
+        : <label className="form-label">Value<FlowReferenceInput ariaLabel="Assignment value" multiline
         value={displayValue(selected.config.value)} flow={flow} elementId={selected.id} objects={objects}
         field={triggerObject?.fields.find(field=>selected.config.variable===`$Record.${field.apiName}`)}
-        onChange={value=>setConfig('value',value)}/></label>
+        onChange={value=>setConfig('value',value)}/></label>}
     </>;
     }
     if (selected.type === 'Loop') return <>
-      <label className="form-label">Collection Variable<select className="form-control" value={displayValue(selected.config.collection)} onChange={(event) => setConfig('collection', event.target.value)}><option value="">Select collection</option>{flow.resources.filter((resource) => resource.isCollection).map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</select></label>
+      <label className="form-label">Collection Variable<select className="form-control" value={displayValue(selected.config.collection)} onChange={(event) => setConfig('collection', event.target.value)}><option value="">Select collection</option>{flow.resources.filter((resource) => resource.type === 'Record Collection').map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</select></label>
       <label className="form-label">Direction<select className="form-control" value={displayValue(selected.config.direction) || 'First to last'} onChange={(event) => setConfig('direction', event.target.value)}><option>First to last</option><option>Last to first</option></select></label>
       <label className="form-label">Loop Variable<input className="form-control" value={displayValue(selected.config.loopVariable)} onChange={(event) => setConfig('loopVariable', event.target.value)} /></label>
     </>;
@@ -750,7 +787,7 @@ export default function FlowBuilder({
           </label>}
           <label className="form-label">Sort By<select className="form-control" value={displayValue(selected.config.sortField)} onChange={(event) => setConfig('sortField', event.target.value)}><option value="">No sorting</option>{object?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
           <label className="form-label">Sort Order<select className="form-control" value={displayValue(selected.config.sortOrder) || 'Ascending'} onChange={(event) => setConfig('sortOrder', event.target.value)}><option>Ascending</option><option>Descending</option></select></label>
-          <label className="form-label">Output Variable<select className="form-control" value={displayValue(selected.config.outputVariable)} onChange={(event) => setConfig('outputVariable', event.target.value)}><option value="">Use default output</option>{outputResources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
+          <label className="form-label">Output Variable<select className="form-control" value={displayValue(selected.config.outputVariable)} onChange={(event) => setConfig('outputVariable', event.target.value)}><option value="">Select an output resource</option>{outputResources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
           <label className="form-label">Fields to Store<select className="form-control" value={fieldsToStore ? 'selected' : 'all'} onChange={(event) => setConfig('fields', event.target.value === 'all' ? 'all' : [])}><option value="all">Automatically store all fields</option><option value="selected">Choose fields</option></select></label>
           {fieldsToStore && <div className="field-selector-list">{object?.fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={fieldsToStore.includes(field.apiName)} onChange={() => setConfig('fields', fieldsToStore.includes(field.apiName) ? fieldsToStore.filter((name) => name !== field.apiName) : [...fieldsToStore, field.apiName])} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>}
         </>}

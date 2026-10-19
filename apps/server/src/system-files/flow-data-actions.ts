@@ -19,10 +19,14 @@ const scalar=(value:unknown):value is string|number|boolean|null=>
   ||typeof value==='number'&&Number.isFinite(value);
 
 function conditionsFrom(value:unknown,evaluate:(value:unknown)=>unknown):FlowRecordCondition[] {
-  if(!Array.isArray(value))return [];
+  if(value===undefined)return [];
+  if(!Array.isArray(value))throw new Error('Flow record conditions must be a list');
+  if(value.length>50)throw new Error('Flow record actions support at most 50 conditions');
   return value.map(item=>{
     if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid Flow record condition');
     const condition=item as Record<string,unknown>;
+    if(typeof condition.field!=='string'||!apiName.test(condition.field))
+      throw new Error('Invalid Flow record condition field');
     const compared=condition.value===undefined?undefined:evaluate(condition.value);
     if(compared!==undefined&&compared!==null&&!scalar(compared))
       throw new Error('Flow record condition values must be scalar');
@@ -93,7 +97,10 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
       }
     }else{
       const fieldValues:Record<string,unknown>={};
-      for(const item of (Array.isArray(config.fieldValues)?config.fieldValues:[]) as Array<Record<string,unknown>>){
+      const assignments=Array.isArray(config.fieldValues)?config.fieldValues:[];
+      if(assignments.length<1||assignments.length>100)
+        throw new Error('Update Records requires between 1 and 100 field assignments');
+      for(const item of assignments as Array<Record<string,unknown>>){
         const field=String(item.field??item.apiName??'');
         if(!apiName.test(field))throw new Error('Invalid Update Records field');
         const value=evaluate(item.value??null);
@@ -109,7 +116,8 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
   }
   if(node.type==='Loop'){
     const collection=vars[String(config.collection??'')];
-    if(!Array.isArray(collection))throw new Error('Loop source must be a record collection');
+    if(!Array.isArray(collection)||collection.length>200)
+      throw new Error('Loop source must be a record collection of at most 200 records');
     const direction=config.direction==='Last to first'?-1:1;
     let index=loops.get(node.id);
     if(index===undefined)index=direction===1?0:collection.length-1;
@@ -132,6 +140,7 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
     if(!apiName.test(output))throw new Error('Invalid collection output variable');
     if(node.type==='Collection Filter'){
       const conditions=conditionsFrom(config.conditions,evaluate);
+      if(conditions.length===0)throw new Error('Collection Filter requires at least one condition');
       const filtered=recordValues(source).filter(item=>{
         const rows=conditions.map(condition=>({...condition,
           field:item[String(condition.field)]}));
@@ -154,6 +163,8 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
       });
     }else{
       const mappings=Array.isArray(config.mappings)?config.mappings:[];
+      if(mappings.length<1||mappings.length>100)
+        throw new Error('Transform requires between 1 and 100 field mappings');
       vars[output]=recordValues(source).map(item=>{
         const target:Record<string,unknown>={};
         for(const mapping of mappings){
@@ -178,6 +189,8 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
       const created:Record<string,unknown>[]=[];
       for(const item of source){
         const fields:Record<string,unknown>={};
+        if(Object.keys(item).filter(field=>field!=='Id').length>100)
+          throw new Error('Create Records collection items may contain at most 100 fields');
         for(const [field,value] of Object.entries(item)){
           if(field==='Id')continue;
           if(!apiName.test(field)||!scalar(value))
@@ -191,10 +204,15 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
         vars[config.resultVariable]=created;
     }else{
       const fields:Record<string,unknown>={};
-      for(const item of (Array.isArray(config.fieldValues)?config.fieldValues:[]) as Array<Record<string,unknown>>){
+      const assignments=Array.isArray(config.fieldValues)?config.fieldValues:[];
+      if(assignments.length<1||assignments.length>100)
+        throw new Error('Create Records requires between 1 and 100 field assignments');
+      for(const item of assignments as Array<Record<string,unknown>>){
         const field=String(item.field??item.apiName??'');
         if(!apiName.test(field))throw new Error('Invalid Flow Field');
-        fields[field]=evaluate(item.value??null);
+        const value=evaluate(item.value??null);
+        if(!scalar(value))throw new Error('Create Records values must be scalar');
+        fields[field]=value;
       }
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       if(typeof config.resultVariable==='string'&&config.resultVariable)

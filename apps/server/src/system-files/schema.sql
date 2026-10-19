@@ -893,7 +893,7 @@ CREATE TABLE IF NOT EXISTS md_flow_interview_records (
  run_id uuid NOT NULL,
  api_name text NOT NULL CHECK(api_name ~ '^(\$[A-Za-z][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*)$'),
  object_api text NOT NULL,
- sort_order integer NOT NULL CHECK(sort_order >= 0),
+ sort_order integer NOT NULL CHECK(sort_order BETWEEN 0 AND 199),
  record_id uuid,
  is_collection boolean NOT NULL,
  PRIMARY KEY(tenant_id,run_id,api_name,sort_order),
@@ -1639,4 +1639,3 @@ CREATE TABLE IF NOT EXISTS md_flow_capability_properties (
  sort_order integer NOT NULL DEFAULT 0,
  PRIMARY KEY(element_type,property_name)
 );
-

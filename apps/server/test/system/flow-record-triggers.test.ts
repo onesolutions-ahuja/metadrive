@@ -522,7 +522,11 @@ test('Flow validation accepts bounded record mutation sources supported by runti
    {id:3,type:'End',label:'End',config:{}}
   ],
   connectors:[{from:1,to:2,label:'Default',kind:'normal'},
-   {from:2,to:3,label:'Default',kind:'normal'}],resources:[]
+   {from:2,to:3,label:'Default',kind:'normal'}],resources:[
+    {name:'account',label:'Account',type:'Record',dataType:'Account'},
+    ...['accounts','pendingAccounts','createdAccounts','activeAccounts','sortedAccounts',
+      'accountNames','filtered'].map(name=>({name,label:name,type:'Record Collection',dataType:'Account'}))
+   ]
  });
  const updateBase={object:'Account',fieldValues:[{field:'Name',value:'Updated'}]};
  for(const source of [
@@ -564,6 +568,95 @@ test('Flow validation accepts bounded record mutation sources supported by runti
  const emptyCollectionFilter=await runtime.validateDraft(tenant,user,'MutationFlow',
   createDraft('Collection Filter',{collection:'accounts',outputCollection:'filtered',conditions:[]}));
  assert.equal(emptyCollectionFilter.valid,false);
+ const mismatchedCollection=await runtime.validateDraft('tenant','user','MutationFlow',
+  createDraft('Create Records',{object:'Contact',recordSource:'collection',collection:'accounts'}));
+ assert.equal(mismatchedCollection.valid,false);
+ const missingGetOutput=await runtime.validateDraft('tenant','user','MutationFlow',
+  createDraft('Get Records',{object:'Account',recordLimit:'all'}));
+ assert.equal(missingGetOutput.valid,false);
+});
+
+test('Flow validation constrains fault connectors to supported elements and policies',async()=>{
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),{require:async()=>{}} as unknown as RbacEngine);
+ const graph=(type:string,config:Record<string,unknown>,faultConnectors:unknown[]=[],
+  resources:unknown[]=[])=>( {
+   apiName:'FaultFlow',flowType:'Autolaunched Flow',resources,
+   elements:[{id:1,type:'Start',config:{}},{id:2,type,config},{id:3,type:'End',config:{}}],
+   connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'},...faultConnectors]
+  });
+ const valid=await runtime.validateDraft('tenant','user','FaultFlow',graph('Get Records',{
+  object:'Account',recordLimit:'all',outputVariable:'accounts'
+ },[{from:2,to:3,kind:'fault'}],[{
+  name:'accounts',type:'Record Collection',dataType:'Account'
+ }]));
+ assert.equal(valid.valid,true,valid.errors.join('; '));
+ const duplicate=await runtime.validateDraft('tenant','user','FaultFlow',graph('Get Records',{
+  object:'Account',recordLimit:'all',outputVariable:'accounts'
+ },[{from:2,to:3,kind:'fault'},{from:2,to:3,kind:'fault'}],[{
+  name:'accounts',type:'Record Collection',dataType:'Account'
+ }]));
+ assert.ok(duplicate.errors.some(error=>error.includes('at most one Fault connector')));
+ const unsupported=await runtime.validateDraft('tenant','user','FaultFlow',graph('Assignment',{
+  variable:'flag',value:true
+ },[{from:2,to:3,kind:'fault'}]));
+ assert.ok(unsupported.errors.some(error=>error.includes('not supported from this Flow element')));
+ const missingHttpFault=await runtime.validateDraft('tenant','user','FaultFlow',graph('HTTP Callout',{
+  namedCredentialId:'123e4567-e89b-12d3-a456-426614174000',method:'GET',path:'status',
+  onError:'FAULT_PATH'
+ }));
+ assert.ok(missingHttpFault.errors.some(error=>error.includes('requires a Fault connector')));
+});
+
+test('Flow validation type-checks collection Assignment sources against the target Object',async()=>{
+ const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),{require:async()=>{}} as unknown as RbacEngine);
+ const draft=(value:string)=>({
+  apiName:'CollectionAssignmentFlow',flowType:'Autolaunched Flow',resources:[
+   {name:'accounts',type:'Record Collection',dataType:'Account'}
+  ],
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Loop',config:{collection:'accounts',loopVariable:'currentAccount'}},
+   {id:3,type:'Assignment',config:{variable:'accounts',operator:'Add',value}},
+   {id:4,type:'End',config:{}}
+  ],
+  connectors:[
+   {from:1,to:2,kind:'normal'},
+   {from:2,to:3,label:'For Each',kind:'normal'},
+   {from:2,to:4,label:'After Last',kind:'normal'},
+   {from:3,to:2,kind:'normal'}
+  ]
+ });
+ const valid=await runtime.validateDraft('tenant','user','CollectionAssignmentFlow',draft('@currentAccount'));
+ assert.equal(valid.valid,true,valid.errors.join('; '));
+ const invalid=await runtime.validateDraft('tenant','user','CollectionAssignmentFlow',draft('@notARecord'));
+ assert.ok(invalid.errors.some(error=>error.includes('source must match its target Object')));
+});
+
+test('Flow data validation rejects missing tenant Objects and fields',async()=>{
+ const db=withFlowCapabilities({
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_object_definitions'))return {rows:[{api_name:'Account'}]};
+   if(sql.includes('FROM md_field_definitions')&&sql.includes('deleted_at IS NULL'))
+    return {rows:[{object_api:'Account',api_name:'Name'}]};
+   throw new Error('Unexpected SQL query: '+sql);
+  }
+ } as unknown as SqlPersistence);
+ const runtime=new FlowRuntime(db,{require:async()=>{}} as unknown as RbacEngine);
+ const draft={
+  apiName:'MetadataFlow',flowType:'Autolaunched Flow',resources:[
+   {name:'accounts',type:'Record Collection',dataType:'Account'}
+  ],
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Get Records',config:{object:'Account',recordLimit:'all',
+    outputVariable:'accounts',conditions:[{field:'MissingField',operator:'Equals',value:'x'}]}},
+   {id:3,type:'End',config:{}}
+  ],
+  connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]
+ };
+ const result=await runtime.validateDraft('tenant','user','MetadataFlow',draft);
+ assert.equal(result.valid,false);
+ assert.ok(result.errors.some(error=>error.includes('Account.MissingField')));
 });
 
 test('Flow validation accepts durable Wait elements and rejects unsafe configurations',async()=>{

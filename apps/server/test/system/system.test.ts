@@ -738,6 +738,7 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
  assert.ok(result.errors.some(e=>e.includes('No reachable End')));
  const collectionDraft={
   apiName:'TestFlow',flowType:'Autolaunched Flow',
+  resources:[{name:'accounts',type:'Record Collection',dataType:'Account'}],
   elements:[
    {id:1,type:'Start',config:{}},
    {id:2,type:'Create Records',config:{recordSource:'collection',object:'Account',collection:'accounts'}},

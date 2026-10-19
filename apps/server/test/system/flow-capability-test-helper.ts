@@ -29,6 +29,15 @@ export function withFlowCapabilities(db:SqlPersistence):SqlPersistence {
       &&(element_type!=='Publish Platform Event'||flow_type!=='Platform Event-Triggered Flow'))
      .map(flow_type=>({element_type,flow_type,builder_allowed:true})))};
    if(sql.includes('FROM md_flow_capability_properties'))return {rows:[]};
+   if(sql.includes('FROM md_object_definitions')){
+    if(query)return query(sql,values as never);
+    return {rows:(values?.[1] as string[]??[]).map(api_name=>({api_name}))};
+   }
+   if(sql.includes('FROM md_field_definitions')&&sql.includes('deleted_at IS NULL')){
+    if(query)return query(sql,values as never);
+    return {rows:(values?.[2] as string[]??[]).flatMap(api_name=>
+     (values?.[1] as string[]??[]).map(object_api=>({object_api,api_name})))};
+   }
    if(!query)throw new Error('Unexpected test SQL query: '+sql);
    return query(sql,values as never);
   }

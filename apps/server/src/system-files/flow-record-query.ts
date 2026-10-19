@@ -171,8 +171,8 @@ export class FlowRecordQuery {
     const readable=new Set(readableFields.filter((_field,index)=>grants[index]));
     const records=new Map<string,Record<string,unknown>>();
     for(const row of result.rows){
-      if(!records.has(row.id))records.set(row.id,{Id:row.id,CreatedAt:row.created_at,
-        LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
+      if(!records.has(row.id))records.set(row.id,{Id:row.id,CreatedAt:row.created_at.toISOString(),
+        LastModifiedDate:row.updated_at.toISOString(),OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
       if(!row.field_api||row.field_api==='OwnerId'||!readable.has(row.field_api))continue;
       const value=row.reference_record_id??row.value_text;
       records.get(row.id)![row.field_api]=value===null?null:

@@ -579,10 +579,179 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
    catch(error){errors.push(error instanceof Error?error.message:'Wait configuration is invalid');}
   }
  }
+ const resources=Array.isArray(data.resources)
+  ?data.resources.filter((item):item is Record<string,unknown> =>
+   Boolean(item)&&typeof item==='object'&&!Array.isArray(item)):[];
+ const resourcesByName=new Map(resources.filter(item=>typeof item.name==='string')
+  .map(item=>[String(item.name),item]));
+ const objectApis=new Set<string>(),fieldApis=new Map<string,Set<string>>();
+ const requireRecordResource=(name:unknown,collection:boolean,objectApi:string,elementType:string)=>{
+  if(typeof name!=='string')return;
+  const resource=resourcesByName.get(name);
+  const expectedType=collection?'Record Collection':'Record';
+  if(!resource||resource.type!==expectedType||resource.dataType!==objectApi)
+   errors.push(elementType+' requires a '+expectedType+' resource for '+objectApi+': '+name);
+ };
+ const loopVariableObjects=new Map<string,string>();
+ const loopVariableNames=new Set<string>();
+ for(const item of nodes){
+  if(!item||typeof item!=='object'||Array.isArray(item))continue;
+  const node=item as Record<string,unknown>;
+  if(node.type!=='Loop'||!node.config||typeof node.config!=='object'||Array.isArray(node.config))continue;
+  const config=node.config as Record<string,unknown>;
+  const source=resourcesByName.get(String(config.collection??''));
+  if(typeof config.loopVariable==='string'){
+   if(resourcesByName.has(config.loopVariable))
+    errors.push('Loop variable must not conflict with a declared Flow resource: '+config.loopVariable);
+   if(loopVariableNames.has(config.loopVariable))
+    errors.push('Loop variable names must be unique within a Flow: '+config.loopVariable);
+   loopVariableNames.add(config.loopVariable);
+   if(source?.type!=='Record Collection')
+    errors.push('Loop requires a declared Record Collection: '+String(config.collection??''));
+   else if(typeof source.dataType==='string')loopVariableObjects.set(config.loopVariable,source.dataType);
+  }
+ }
+ const addFields=(objectApi:string,value:unknown)=>{
+  if(!Array.isArray(value))return;
+  const known=fieldApis.get(objectApi)??new Set<string>();
+  for(const field of value)if(typeof field==='string')known.add(field);
+  fieldApis.set(objectApi,known);
+ };
+ const addConditions=(objectApi:string,value:unknown)=>{
+  if(!Array.isArray(value))return;
+  addFields(objectApi,value.map(condition=>condition&&typeof condition==='object'
+   &&!Array.isArray(condition)?(condition as Record<string,unknown>).field:undefined));
+ };
+ for(const resource of resources){
+  if(resource.type==='Record'||resource.type==='Record Collection'){
+   if(typeof resource.dataType!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(resource.dataType))
+    errors.push('Flow record resources require a valid Object API name: '+String(resource.name??''));
+   else objectApis.add(resource.dataType);
+  }
+ }
+ for(const item of nodes){
+  if(!item||typeof item!=='object'||Array.isArray(item))continue;
+  const node=item as Record<string,unknown>;
+  const config=node.config&&typeof node.config==='object'&&!Array.isArray(node.config)
+   ?node.config as Record<string,unknown>:{};
+  const type=String(node.type??''),objectApi=String(config.object??'');
+  if(type==='Assignment'&&typeof config.variable==='string'
+    &&!/^\$Record\./.test(config.variable)){
+   const target=resourcesByName.get(config.variable);
+   if(target?.type==='Record Collection'){
+    const operator=String(config.operator??'Assign');
+    if(!['Assign','Add','Add At Beginning','Add At End','Remove','Remove All'].includes(operator))
+     errors.push('Unsupported record collection assignment operator: '+operator);
+    if(operator!=='Remove All'){
+     const reference=typeof config.value==='string'
+      ?(()=>{const match=/^(?:\{!([A-Za-z][A-Za-z0-9_]*)\}|@([A-Za-z][A-Za-z0-9_]*))$/
+        .exec(config.value.trim());return match?.[1]??match?.[2];})():undefined;
+     if(!reference)errors.push('Record collection assignments require a record resource reference');
+     else{
+      const source=resourcesByName.get(reference);
+      const expectedCollection=operator==='Assign';
+      const compatible=expectedCollection
+       ?source?.type==='Record Collection'&&source.dataType===target.dataType
+       :source?.type==='Record'&&source.dataType===target.dataType
+        ||loopVariableObjects.get(reference)===target.dataType;
+      if(!compatible)errors.push('Record collection assignment source must match its target Object');
+     }
+    }
+   }else if(target&&target.type!=='Variable')
+    errors.push('Flow Assignment target must be a Variable or Record Collection: '+config.variable);
+   else if(target?.type==='Variable'){
+    const operator=String(config.operator??'Assign');
+    const numeric=['Number','Currency','Percent'].includes(String(target.dataType));
+    const text=['Text','Picklist','Id'].includes(String(target.dataType));
+    if(operator!=='Assign'
+      &&!((numeric&&['Add','Subtract','Multiply','Divide'].includes(operator))
+       ||(text&&['Add At Beginning','Add At End'].includes(operator))))
+     errors.push('Flow Assignment operator is incompatible with variable type: '+operator);
+   }
+  }
+  if(['Get Records','Create Records','CreateRecord','Update Records','Delete Records'].includes(type)
+    &&/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))objectApis.add(objectApi);
+  if(type==='Get Records'){
+   const limit=config.recordLimit==='all'?200:Number(config.recordLimit??1);
+   const output=typeof config.outputVariable==='string'?config.outputVariable:'';
+   if(!output)errors.push('Get Records requires an output resource');
+   else requireRecordResource(output,limit>1,objectApi,type);
+   addConditions(objectApi,config.conditions);
+   if(Array.isArray(config.fields))addFields(objectApi,config.fields.filter(field=>
+    !['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(String(field))));
+   addFields(objectApi,[config.sortField]);
+  }else if(type==='Create Records'||type==='CreateRecord'){
+   if(config.recordSource==='collection'){
+    requireRecordResource(config.collection,true,objectApi,type);
+    if(config.resultVariable!==undefined&&config.resultVariable!=='')
+     requireRecordResource(config.resultVariable,true,objectApi,type+' output');
+   }else if(Array.isArray(config.fieldValues)){
+    addFields(objectApi,config.fieldValues.map(value=>value&&typeof value==='object'
+     &&!Array.isArray(value)?(value as Record<string,unknown>).field:undefined));
+   }
+  }else if(type==='Update Records'||type==='Delete Records'){
+   const source=String(config.recordSource??(config.recordId?'id':'filter'));
+   if(source==='record')requireRecordResource(config.recordVariable,false,objectApi,type);
+   if(source==='collection')requireRecordResource(config.collection,true,objectApi,type);
+   if(source==='filter')addConditions(objectApi,config.conditions);
+   if(type==='Update Records'&&Array.isArray(config.fieldValues))
+    addFields(objectApi,config.fieldValues.map(value=>value&&typeof value==='object'
+     &&!Array.isArray(value)?(value as Record<string,unknown>).field:undefined));
+  }else if(type==='Collection Filter'||type==='Collection Sort'||type==='Transform'){
+   const sourceName=String(config.collection??''),source=resourcesByName.get(sourceName);
+   const target=resourcesByName.get(String(config.outputCollection??''));
+   const sourceObject=typeof source?.dataType==='string'?source.dataType:'';
+   if(type==='Transform'){
+    if(source?.type!=='Record Collection')
+     errors.push('Transform requires a Record Collection input: '+sourceName);
+    if(target?.type!=='Record Collection')
+     errors.push('Transform requires a Record Collection output: '+String(config.outputCollection??''));
+    if(Array.isArray(config.mappings))for(const mapping of config.mappings){
+     if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))continue;
+     const row=mapping as Record<string,unknown>;
+     addFields(sourceObject,[row.sourceField]);
+     if(typeof target?.dataType==='string')addFields(target.dataType,[row.targetField]);
+    }
+   }else{
+    requireRecordResource(sourceName,true,sourceObject,type);
+    requireRecordResource(config.outputCollection,true,sourceObject,type+' output');
+    if(type==='Collection Filter')addConditions(sourceObject,config.conditions);
+    else addFields(sourceObject,[config.sortField]);
+   }
+  }
+ }
+ if(db&&objectApis.size){
+  const names=[...objectApis];
+  const requiredFields=[...new Set([...fieldApis.values()].flatMap(fields=>[...fields]))];
+  const [objectsResult,fieldsResult]=await Promise.all([
+   db.query<{api_name:string}>(
+    'SELECT api_name FROM md_object_definitions WHERE tenant_id=$1 AND api_name=ANY($2::text[])',
+    [tenantId,names]),
+   db.query<{object_api:string;api_name:string}>(
+    `SELECT object_api,api_name FROM md_field_definitions
+     WHERE tenant_id=$1 AND object_api=ANY($2::text[]) AND api_name=ANY($3::text[])
+      AND deleted_at IS NULL`,
+    [tenantId,names,requiredFields])
+  ]);
+  const availableObjects=new Set(objectsResult.rows.map(row=>row.api_name));
+  const availableFields=new Map<string,Set<string>>();
+  for(const row of fieldsResult.rows){
+   const fields=availableFields.get(row.object_api)??new Set<string>();
+   fields.add(row.api_name);availableFields.set(row.object_api,fields);
+  }
+  for(const objectApi of names)
+   if(!availableObjects.has(objectApi))
+    errors.push('Flow data action references an unavailable Object: '+objectApi);
+  for(const [objectApi,fields] of fieldApis)
+   for(const field of fields)
+    if(field!=='Id'&&!availableFields.get(objectApi)?.has(field))
+     errors.push('Flow data action references an unavailable field: '+objectApi+'.'+field);
+ }
  if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
  if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
  const outgoing=new Map<number,number[]>(),incoming=new Map<number,number[]>();
  const connectors=new Map<number,Array<{to:number;label:string;kind:string}>>();
+ const faultSources=new Set<number>();
  let scheduledPathCount=0;
  for(const link of links){
   if(!link||typeof link!=='object'||Array.isArray(link)){errors.push('Invalid Flow connector');continue;}
@@ -593,6 +762,24 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   if(edge.kind!==undefined&&!['normal','fault','scheduled'].includes(String(edge.kind)))
    errors.push('Unsupported SQL Flow connector type');
   const kind=String(edge.kind??'normal');
+  if(kind==='fault'){
+   const faultCapable=new Set(['Get Records','Create Records','CreateRecord','Update Records',
+    'Delete Records','Collection Filter','Collection Sort','Transform','Subflow','HTTP Callout',
+    'Action','Publish Platform Event']);
+   if(!faultCapable.has(types.get(edge.from)??''))
+    errors.push('Fault connectors are not supported from this Flow element: '+edge.from);
+   if(faultSources.has(edge.from))
+    errors.push('Flow elements may have at most one Fault connector: '+edge.from);
+   faultSources.add(edge.from);
+   if(types.get(edge.from)==='HTTP Callout'){
+    const source=nodes.find(item=>item&&typeof item==='object'&&!Array.isArray(item)
+     &&(item as Record<string,unknown>).id===edge.from) as Record<string,unknown>|undefined;
+    const config=source?.config&&typeof source.config==='object'&&!Array.isArray(source.config)
+     ?source.config as Record<string,unknown>:{};
+    if(config.onError!=='FAULT_PATH')
+     errors.push('HTTP Callout Fault connector requires the Fault Path error policy: '+edge.from);
+   }
+  }
   if(kind==='scheduled'){
    scheduledPathCount++;
    const source=nodes.find(item=>item&&typeof item==='object'&&!Array.isArray(item)
@@ -631,6 +818,15 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   connectors.set(edge.from,[...(connectors.get(edge.from)??[]),{
    to:edge.to,label:String(edge.label??''),kind
   }]);
+ }
+ for(const item of nodes){
+  if(!item||typeof item!=='object'||Array.isArray(item))continue;
+  const node=item as Record<string,unknown>;
+  if(node.type==='HTTP Callout'&&node.config&&typeof node.config==='object'
+    &&!Array.isArray(node.config)
+    &&(node.config as Record<string,unknown>).onError==='FAULT_PATH'
+    &&!faultSources.has(Number(node.id)))
+   errors.push('HTTP Callout Fault Path error policy requires a Fault connector: '+String(node.id));
  }
  for(const id of ids)
   if(types.get(id)==='End'&&(outgoing.get(id)?.length??0)>0)

@@ -30,6 +30,8 @@ test('Flow record query compiles custom logic into scoped SQL and returns comple
   assert.equal(records.length,1);
   assert.equal(records[0].Name,'Northwind');
   assert.equal(records[0].AnnualRevenue,25.5);
+  assert.equal(records[0].CreatedAt,'1970-01-01T00:00:00.000Z');
+  assert.equal(records[0].LastModifiedDate,'1970-01-01T00:00:00.000Z');
   const statement=statements[1];
   assert.match(statement.sql,/md_record_access\(\$1,\$3,r\.id,'read'\)/);
   assert.match(statement.sql,/strpos\(lower/);

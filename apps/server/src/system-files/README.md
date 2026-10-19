@@ -95,7 +95,8 @@ undo earlier SQL mutations in the Flow while retaining Flow variable values;
 it cannot reverse external side effects. Record-triggered flows support
 before-save Assignment/Decision paths and after-save paths in the same
 RecordEngine transaction. Before-save assignments can set scalar `$Record`
-fields; Custom Error can reject a record save with a page- or field-level
+fields. Record Collection assignments support bounded matching-Object records,
+including loop values; scalar assignment operators are type-checked. Custom Error can reject a record save with a page- or field-level
 message. After-save Record-Triggered Flows may pause at durable Wait elements;
 their resume job is committed with the interview state and initiating record
 transaction. CRUD performed inside a Flow does not recursively dispatch record

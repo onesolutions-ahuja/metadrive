@@ -109,3 +109,63 @@ test('after-save Record-Triggered Flow Wait persists interview state and enqueue
  assert.equal(scheduled?.step,3);
  assert.ok(scheduled?.at instanceof Date);
 });
+
+test('Loop records retain their declared Object when a Flow pauses between iterations',async()=>{
+ const graph={
+  flowType:'Autolaunched Flow',
+  resources:[{name:'accounts',type:'Record Collection',dataType:'Account',isCollection:true}],
+  elements:[
+   {id:1,type:'Start',label:'Start',config:{}},
+   {id:2,type:'Loop',label:'Loop accounts',config:{
+    collection:'accounts',loopVariable:'currentAccount',direction:'First to last'
+   }},
+   {id:3,type:'Wait',label:'Wait',config:{amount:1,unit:'Hours'}},
+   {id:4,type:'End',label:'End',config:{}}
+  ],
+  connectors:[
+   {from:1,to:2,label:'Default',kind:'normal'},
+   {from:2,to:3,label:'For Each',kind:'normal'},
+   {from:2,to:4,label:'After Last',kind:'normal'},
+   {from:3,to:2,label:'Default',kind:'normal'}
+  ]
+ };
+ const metadata:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',metadata);
+ const insertedRecords:string[]=[];
+ let runStatus='pending';
+ const client={query:async(sql:string,params:unknown[]=[]):Promise<{rows:unknown[];rowCount:number}>=>{
+  if(sql.includes('SELECT r.flow_id,f.api_name,f.flow_type,f.version,r.started_by,r.initiated_by'))
+   return {rows:[{flow_id:'flow-id',api_name:'LoopFlow',flow_type:'Autolaunched Flow',version:1,
+    started_by:'user-id',initiated_by:'user-id',execution_context:'User',
+    system_context_approved_by:null,status:runStatus}],rowCount:1};
+  if(sql.includes('FROM md_flow_editor_values'))return {rows:metadata.map(row=>({
+   property_path:row.path,value_kind:row.kind,value_text:row.text
+  })),rowCount:metadata.length};
+  if(sql.includes('SELECT current_element,history_elements,step_count'))return {rows:[],rowCount:0};
+  if(sql.includes('INSERT INTO md_flow_interview_state'))return {rows:[],rowCount:1};
+  if(sql.includes('FROM md_flow_interview_loop_state'))return {rows:[],rowCount:0};
+  if(sql.includes('FROM md_flow_run_inputs')||sql.includes('FROM md_flow_interview_values'))
+   return {rows:[],rowCount:0};
+  if(sql.includes('FROM md_flow_interview_record_fields'))return {rows:[{
+   api_name:'accounts',sort_order:0,field_api:'Name',value_text:'Acme',data_type:'string'
+  }],rowCount:1};
+  if(sql.includes('FROM md_flow_interview_records'))return {rows:[{
+   api_name:'accounts',object_api:'Account',record_id:null,is_collection:true,sort_order:0
+  }],rowCount:1};
+  if(sql.startsWith('SAVEPOINT '))return {rows:[],rowCount:0};
+  if(sql.includes('INSERT INTO md_flow_interview_records')){
+   insertedRecords.push(String(params[2]));return {rows:[],rowCount:1};
+  }
+  if(sql.includes("UPDATE md_flow_runs SET status='waiting'")){
+   runStatus='waiting';return {rows:[],rowCount:1};
+  }
+  return {rows:[],rowCount:1};
+ }};
+ const db={query:client.query} as unknown as SqlPersistence;
+ const rbac={require:async()=>undefined} as unknown as RbacEngine;
+ const runtime=new FlowRuntime(db,rbac,{} as RecordEngine,undefined,async()=>undefined);
+ const result=await runtime.advanceInterview('tenant-id','user-id',runId,{},client as never);
+ assert.equal(result.status,'waiting');
+ assert.ok(insertedRecords.includes('currentAccount'));
+ assert.ok(insertedRecords.includes('accounts'));
+});

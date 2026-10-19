@@ -5,6 +5,7 @@ import type { RecordEngine } from './record-engine.js';
 import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
 import {FlowRecordQuery} from './flow-record-query.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
+import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
@@ -623,6 +624,32 @@ export class FlowRuntime {
       }
       const resources=Array.isArray(graph.resources)
         ?graph.resources as Array<{name:string;type:string;dataType:string;value?:unknown}>:[];
+      const persistenceResources=[...resources];
+      for(const element of elements){
+        const objectApi=String(element.config.object??'');
+        const output=element.type==='Get Records'
+          ?typeof element.config.outputVariable==='string'&&element.config.outputVariable
+            ?element.config.outputVariable:'record'+element.id
+          :element.type==='Create Records'&&element.config.recordSource==='collection'
+            &&typeof element.config.resultVariable==='string'?element.config.resultVariable:'';
+        if(!output||resources.some(resource=>resource.name===output)
+          ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))continue;
+        const collection=element.type==='Get Records'
+          ?element.config.recordLimit==='all'||Number(element.config.recordLimit??1)>1
+          :true;
+        persistenceResources.push({name:output,type:collection?'Record Collection':'Record',dataType:objectApi});
+      }
+      for(const element of elements){
+        if(element.type!=='Loop'||typeof element.config.loopVariable!=='string')continue;
+        if(resources.some(resource=>resource.name===element.config.loopVariable))
+          throw new Error('Loop variable conflicts with a declared Flow resource');
+        const collection=resources.find(resource=>resource.name===element.config.collection
+          &&resource.type==='Record Collection');
+        if(!collection||!/^[A-Za-z][A-Za-z0-9_]*$/.test(collection.dataType))
+          throw new Error('Loop source has no valid Record Collection Object');
+        persistenceResources.push({name:element.config.loopVariable,type:'Record',
+          dataType:collection.dataType});
+      }
       const formulaStack=new Set<string>();
       const resolveResource=(reference:string):unknown=>{
         const separator=reference.indexOf('.');
@@ -775,7 +802,7 @@ export class FlowRuntime {
           if(active.flow_type==='Record-Triggered Flow')
             throw new Error('Record-Triggered Flows cannot pause at a Screen');
           await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
-            loopIndexes,vars,resources);
+            loopIndexes,vars,persistenceResources);
           const fields=Array.isArray(node.config.fields)?node.config.fields as Array<Record<string,unknown>>:[];
           return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
             canGoBack:history.length>0,
@@ -798,9 +825,7 @@ export class FlowRuntime {
           return completion;
         }
         if(node.type==='Assignment'){
-          const value=evaluate(node.config.value??null);
-          if(!scalar(value))throw new Error('Assignment value must be scalar');
-          set(node.config.variable,value);
+          executeFlowAssignment({node,resources:persistenceResources,vars,evaluate,set});
         }else if(node.type==='Decision'){
           const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
           const matches=(o:Record<string,unknown>)=>{
@@ -938,7 +963,7 @@ export class FlowRuntime {
             throw new Error('Wait requires a durable scheduler and is not supported in before-save Flows');
           const waitUntil=resolveFlowWaitUntil(node.config);
           await persistFlowInterviewPause(client,tenantId,runId,next.to,history,steps+1,
-            loopIndexes,vars,resources);
+            loopIndexes,vars,persistenceResources);
           await client.query(`UPDATE md_flow_runs SET status='waiting',wait_until=$3,wait_kind='wait'
             WHERE tenant_id=$1 AND id=$2 AND status='pending'`,[tenantId,runId,waitUntil]);
           await this.scheduleResume(client,tenantId,userId,active.api_name,active.version,
