@@ -57,6 +57,14 @@ function compare(condition: FlowDecisionCondition, resolve: DecisionResolver,
       const {actual, expected} = pair();
       return typeof actual === 'string' && typeof expected === 'string' && actual.startsWith(expected);
     }
+    case 'endswith': {
+      const {actual, expected} = pair();
+      return typeof actual === 'string' && typeof expected === 'string' && actual.endsWith(expected);
+    }
+    case 'doesnotcontain':case 'notcontains': {
+      const {actual, expected} = pair();
+      return typeof actual === 'string' && typeof expected === 'string' && !actual.includes(expected);
+    }
     case 'wasset': {
       if (Object.hasOwn(condition, 'priorValue')) {
         const {actual, expected: prior} = {
