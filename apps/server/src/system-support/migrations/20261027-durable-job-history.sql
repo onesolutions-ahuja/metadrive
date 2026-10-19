@@ -29,3 +29,12 @@ DROP TRIGGER IF EXISTS md_durable_job_transition_audit ON md_durable_jobs;
 CREATE TRIGGER md_durable_job_transition_audit
  AFTER INSERT OR UPDATE ON md_durable_jobs
  FOR EACH ROW EXECUTE FUNCTION md_log_durable_job_transition();
+
+-- Preserve the current state of jobs that predate this additive ledger.
+INSERT INTO md_durable_job_history(tenant_id,job_id,status,attempt,worker_id,error_code)
+SELECT j.tenant_id,j.id,j.status,j.attempt,j.lease_owner,j.error_code
+FROM md_durable_jobs j
+WHERE NOT EXISTS(
+ SELECT 1 FROM md_durable_job_history h
+ WHERE h.tenant_id=j.tenant_id AND h.job_id=j.id
+);
