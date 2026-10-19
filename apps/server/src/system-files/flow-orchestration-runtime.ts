@@ -1,4 +1,5 @@
 import type {PoolClient} from 'pg';
+import {decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 
 export type FlowApprovalStatus='waiting'|'Approved'|'Rejected';
 export type FlowApprovalStageRow={
@@ -34,14 +35,11 @@ export async function finishFlowOrchestrationDecision(client:PoolClient,tenantId
  const outcome=resolveFlowApprovalOutcome(stage.rule,decisions.map(item=>item.status));
  if(!outcome)return null;
  const {rows:running}=await client.query<{
-  actor_id:string;flow_api:string;version:number;app_api_name:string|null
+  actor_id:string;flow_api:string;version:number
  }>(`
-  SELECT r.started_by AS actor_id,f.api_name AS flow_api,f.version,
-   t.app_api_name
+  SELECT r.started_by AS actor_id,f.api_name AS flow_api,f.version
   FROM md_flow_runs r JOIN md_flow_definitions f
    ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
-  LEFT JOIN md_flow_trigger_subscriptions t
-   ON t.tenant_id=f.tenant_id AND t.flow_id=f.id
   WHERE r.tenant_id=$1 AND r.id=$2 AND r.status='waiting'
    AND r.wait_kind='orchestration' AND f.active=true AND f.archived=false
   FOR UPDATE OF r
@@ -53,6 +51,14 @@ export async function finishFlowOrchestrationDecision(client:PoolClient,tenantId
    WHERE tenant_id=$1 AND group_id=$2 AND status='Pending'`,[tenantId,groupId]);
   return null;
  }
+ const {rows:metadata}=await client.query<MetadataValueRow>(`
+  SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+  WHERE tenant_id=$1 AND flow_id=(
+   SELECT flow_id FROM md_flow_runs WHERE tenant_id=$1 AND id=$2)
+ `,[tenantId,stage.run_id]);
+ const graph=decodeMetadataValues(metadata).builder as Record<string,unknown>|undefined;
+ const appApiName=typeof graph?.appApiName==='string'&&graph.appApiName
+  ?graph.appApiName:null;
  await client.query(`UPDATE md_flow_approval_stages
   SET status=$3,finished_at=now() WHERE tenant_id=$1 AND group_id=$2 AND status='waiting'`,
  [tenantId,groupId,outcome]);
@@ -62,5 +68,5 @@ export async function finishFlowOrchestrationDecision(client:PoolClient,tenantId
   WHERE tenant_id=$1 AND id=$2 AND status='waiting' AND wait_kind='orchestration'`,
  [tenantId,stage.run_id]);
  return {tenantId,runId:stage.run_id,actorUserId:running[0].actor_id,
-  version:running[0].version,appApiName:running[0].app_api_name};
+  version:running[0].version,appApiName};
 }
