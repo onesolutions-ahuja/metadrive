@@ -2,7 +2,8 @@ import { uniqueLibraryComponents, libraryComponentLabel } from '../../components
 import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './flowGraphLayout';
 import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
-import { flowTypeOptions, formulaFunctions, formulaOperators } from './flowEditorCatalog';
+import { formulaFunctions, formulaOperators } from './flowEditorCatalog';
+import { flowCreateOptions, flowElementAvailable, type FlowCapabilityCatalog } from './flowCapabilityCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
@@ -32,7 +33,6 @@ import {
   X
 } from 'lucide-react';
 import {
-  flowElementMetadata,
   type FlowDefinitionMetadata,
   type FlowResourceMetadata,
   type FlowVersionMetadata,
@@ -54,6 +54,7 @@ type FlowBuilderProps = {
   flow: FlowDefinitionMetadata;
   flows: FlowDefinitionMetadata[];
   onListFlows?: (page: number, search: string) => Promise<FlowListResponse>;
+  onLoadCapabilities: () => Promise<FlowCapabilityCatalog>;
   libraryComponents: LibraryComponentMetadata[];
   platformEvents: PlatformEventMetadata[];
   objects: ObjectMetadata[];
@@ -109,12 +110,31 @@ type FlowBuilderProps = {
   onDeletePlatformEvent: (apiName: string) => Promise<void>;
 };
 export default function FlowBuilder({
-  landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
+  landing = false, flow, flows, onListFlows, onLoadCapabilities, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
   onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onRunTests, onNotify,
   onSaveNamedCredential, onDeleteNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
 }: FlowBuilderProps) {
   const flowComponents = uniqueLibraryComponents(libraryComponents, 'flow').map(component => ({ ...component, label: libraryComponentLabel(component) }));
+  const [capabilityCatalog, setCapabilityCatalog] = useState<FlowCapabilityCatalog | null>(null);
+  const [capabilityError, setCapabilityError] = useState('');
+  useEffect(() => {
+    // The Builder mounts only when opened; never load this catalogue for app runtime.
+    // Refetch when switching between the Flow list and editor; do not reuse tenant state.
+    let current = true;
+    setCapabilityCatalog(null);
+    setCapabilityError('');
+    void onLoadCapabilities().then((response) => {
+      if (current) setCapabilityCatalog(response);
+    }).catch(() => {
+      if (current) setCapabilityError('Flow capabilities could not be loaded. Editing is disabled until the catalogue is available.');
+    });
+    return () => { current = false; };
+    // onLoadCapabilities is provided by Setup rendering and has an unstable callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landing]);
+  const flowTypeOptions = flowCreateOptions(capabilityCatalog);
+  const flowElementMetadata = capabilityCatalog?.elements.filter(element => element.builderEnabled) ?? [];
   const [elementSearch, setElementSearch] = useState('');
   const [insertionConnectorId, setInsertionConnectorId] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
@@ -139,13 +159,7 @@ export default function FlowBuilder({
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
-    ['End', 'Screen', 'Wait', 'Action', 'Roll Back Records', 'Custom Error', 'Decision', 'Assignment', 'Loop', 'Create Records', 'HTTP Callout', 'Publish Platform Event'].includes(type)
-    && (type !== 'Screen' || flow.flowType === 'Screen Flow')
-    && (type !== 'Wait' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType)
-      || flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen !== 'before-save')
-    && (type !== 'Custom Error' || flow.flowType === 'Record-Triggered Flow')
-    && (type !== 'Publish Platform Event' || !(flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') && flow.flowType !== 'Platform Event-Triggered Flow')
-    && (type !== 'Action' || !(flow.flowType==='Record-Triggered Flow'&&flow.startConfig.runWhen==='before-save'));
+    flowElementAvailable(capabilityCatalog, type, flow.flowType, flow.startConfig.runWhen);
   const [resourceLabel, setResourceLabel] = useState('');
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
@@ -1151,6 +1165,7 @@ export default function FlowBuilder({
     <div className="flow-start-heading">
       <div className="eyebrow">AUTOMATION</div>
       <h1>Flows</h1>
+      {capabilityError && <div className="info-callout" role="alert">{capabilityError}</div>}
       <p>Create a flow or find an existing automation.</p>
     </div>
     <div className="flow-start-panels">
@@ -1244,7 +1259,8 @@ export default function FlowBuilder({
         <div className="toolbox-heading"><h2>Toolbox</h2><button className="icon-button subtle" aria-label="Toolbox options" onClick={() => onNotify('Flow Builder toolbox')}><MoreHorizontal size={16} /></button></div>
         <div className="toolbox-tabs"><button className={toolTab === 'Elements' ? 'active' : ''} onClick={() => onToolTab('Elements')}>Elements</button><button className={toolTab === 'Manager' ? 'active' : ''} onClick={() => onToolTab('Manager')}>Manager</button></div>
         {toolTab === 'Elements' ? <>
-          <div className="component-search"><Search size={14} /><input placeholder="Search elements..." aria-label="Search flow elements" value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} /></div>
+          {capabilityError && <div className="info-callout" role="alert">{capabilityError}</div>}
+           <div className="component-search"><Search size={14} /><input placeholder="Search elements..." aria-label="Search flow elements" value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} /></div>
           {insertionPaths.length > 1 && <label className="form-label">Insert onto path
             <select className="form-control" aria-label="Choose Flow insertion path"
               value={insertionPaths.some((connector) => connector.id === insertionConnectorId) ? insertionConnectorId : ''}
