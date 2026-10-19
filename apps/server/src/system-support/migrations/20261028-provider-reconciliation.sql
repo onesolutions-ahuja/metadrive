@@ -17,5 +17,3 @@ CREATE TABLE IF NOT EXISTS md_outbound_receipt_audit (
 );
 CREATE INDEX IF NOT EXISTS md_outbound_receipt_audit_lookup
  ON md_outbound_receipt_audit(tenant_id,receipt_id,created_at,id);
-ALTER TABLE md_outbound_execution_receipts
- ADD CONSTRAINT md_outbound_execution_receipts_tenant_id_id_key UNIQUE(tenant_id,id);
