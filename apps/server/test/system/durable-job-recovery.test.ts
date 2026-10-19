@@ -51,7 +51,7 @@ test('expired Flow leases are quarantined before any re-claim',async()=>{
  await new DurableJobService(db).claim('worker');
  assert.match(statements[0],/status='queued' AND scheduled_at<=now\(\)/);
  assert.doesNotMatch(statements[0],/status='leased' AND lease_until<now\(\)/);
- assert.ok(statements.some(q=>q.includes("job_type='flow.execute'")&&q.includes("FLOW_RECONCILIATION_REQUIRED")));
+ assert.ok(statements.some(q=>q.includes("status='leased' AND lease_until<now()")&&q.includes("FLOW_RECONCILIATION_REQUIRED")));
 });
 
 test('all expired leases enter manual reconciliation, including non-Flow jobs',async()=>{
