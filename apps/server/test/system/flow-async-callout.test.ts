@@ -33,7 +33,7 @@ test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
  assert.ok(result.errors.includes('Durable async HTTP Callout cannot return response variables'));
 });
 
-test('durable HTTP Callout encrypts queued payload and dispatches with a stable idempotency key',async()=>{
+test('durable HTTP Callout encrypts payload and never blindly retries uncertain provider outcome',async()=>{
  const previousKey=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
  process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=Buffer.alloc(32,7).toString('base64');
  const values:Array<unknown[]>=[];
@@ -55,6 +55,7 @@ test('durable HTTP Callout encrypts queued payload and dispatches with a stable 
  const db={
   transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run(client),
   query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{ready:true}]};
    if(sql.includes('SELECT api_name,value_ciphertext'))return {rows:values.map(value=>({
     api_name:value[2],value_ciphertext:value[3],data_type:value[4]
    }))};
@@ -82,24 +83,90 @@ test('durable HTTP Callout encrypts queued payload and dispatches with a stable 
   assert.equal(values[0][3] instanceof Buffer,true);
   db.transaction=async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
    query:async()=>({rows:[{
-    id:jobId,tenant_id:tenantId,user_id:userId,credential_id:credentialId,method:'POST',
+    id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,method:'POST',
     path_ciphertext:jobParameters[0][6],headers_ciphertext:jobParameters[0][7],
     body_ciphertext:jobParameters[0][8],idempotency_key_ciphertext:jobParameters[0][9],
     max_attempts:3,timeout_ms:15000,attempt_count:++claims
    }]})
   } as unknown as PoolClient);
   assert.equal(await service.dispatchOne(),true);
-  assert.match(updateSql,/status=\$3/);
-  assert.equal(updateParameters[2],'retrying');
-  assert.equal(updateParameters[3],'temporary outage');
-  assert.equal(await service.dispatchOne(),true);
-  assert.equal((sent?.config as Record<string,unknown>).path,'v1/{!RecordId}');
-  assert.equal((sent?.variables as Record<string,unknown>).Payload,'private-data');
-  assert.equal(sent?.key,'order-request-1');
-  assert.match(updateSql,/status='completed'/);
-  assert.deepEqual(idempotencyKeys,['order-request-1','order-request-1']);
+  assert.match(updateSql,/status='failed'/);
+  assert.match(updateSql,/status='failed'/);
+  assert.deepEqual(updateParameters,[tenantId,jobId]);
+  assert.equal(sent,undefined);
+  assert.deepEqual(idempotencyKeys,['order-request-1']);
  }finally{
   if(previousKey===undefined)delete process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
   else process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=previousKey;
  }
+});
+
+test('abandoned HTTP callout leases are quarantined and cannot be selected again',async()=>{
+ const statements:string[]=[];
+ const db={
+  transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
+   query:async(sql:string)=>{statements.push(sql);return {rows:[]};}
+  } as unknown as PoolClient)
+ } as unknown as SqlPersistence;
+ const service=new NamedCredentialService(db,rbac);
+ assert.equal(await service.dispatchOne(),false);
+ assert.match(statements[0],/status='failed'/);
+ assert.match(statements[0],/RECONCILIATION_REQUIRED/);
+ assert.match(statements[0],/status='processing' AND claimed_at</);
+ assert.match(statements[1],/WHERE status='queued' AND next_attempt_at<=now\(\)/);
+ assert.doesNotMatch(statements[1],/OR \(status='processing'/);
+});
+
+test('revoked Flow eligibility prevents queued HTTP provider delivery',async()=>{
+ let delivered=false,failed=false;
+ const db={
+  transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
+   query:async(sql:string)=>{
+    if(sql.includes('WITH candidate'))return {rows:[{
+     id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,
+     method:'POST',attempt_count:1
+    }]};
+    return {rows:[]};
+   }
+  } as unknown as PoolClient),
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[]};
+   if(sql.includes("SET status='failed'"))failed=true;
+   return {rows:[],rowCount:1};
+  }
+ } as unknown as SqlPersistence;
+ const svc=new NamedCredentialService(db,rbac);
+ svc.callout=async()=>{delivered=true;return {status:200,body:''};};
+ assert.equal(await svc.dispatchOne(),true);
+ assert.equal(delivered,false);
+ assert.equal(failed,true);
+});
+
+test('successful durable callout persists provider acknowledgement in same SQL transaction',async()=>{
+ const written:Array<{sql:string;params:unknown[]}>=[];
+
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  written.push({sql,params});
+  if(sql.includes('WITH candidate'))return {rows:[{
+   id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,
+   method:'POST',path_ciphertext:Buffer.alloc(1),headers_ciphertext:Buffer.alloc(1),
+   body_ciphertext:null,idempotency_key_ciphertext:null,attempt_count:1,timeout_ms:15000
+  }]};
+  return {rows:[],rowCount:1};
+ }} as unknown as PoolClient;
+ const db={
+  transaction:async<T>(fn:(client:PoolClient)=>Promise<T>)=>fn(client),
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{valid:true}]};
+   return {rows:[],rowCount:1};
+  }
+ } as unknown as SqlPersistence;
+ const svc=new NamedCredentialService(db,rbac);
+ (svc as unknown as {decryptValue:(encrypted:Buffer)=>string}).decryptValue=()=> 'safe-path';
+ svc.callout=async()=>({status:202,body:''});
+ assert.equal(await svc.dispatchOne(),true);
+ const receipt=written.find(x=>x.sql.includes('INSERT INTO md_http_callout_receipts'));
+ assert.ok(receipt);
+ assert.deepEqual(receipt.params,[tenantId,jobId,1,202]);
+ assert.ok(written.some(x=>x.sql.includes("SET status='completed'")));
 });
