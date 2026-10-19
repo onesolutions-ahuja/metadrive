@@ -65,7 +65,7 @@ Enforce tenant isolation across APIs, SQL, caching, Flows and jobs. Audit privil
 Seeders must rebuild platform metadata and fresh tenants. Business records require separate SQL backups. Migrations, cleanup and uninstall must not silently delete customer data or customisations.
 
 ## 21. Modular Code Limits
-Separate Core, shared runtimes, Builders, Apps, seeders and services. New/extracted files: maximum 1,000 lines. Architectural ceiling: 4,000 lines. Oversized legacy files are temporary exceptions; prevent growth and progressively split.
+Separate Core, shared runtimes, Builders, Apps, seeders and services. New/extracted files: maximum 4,000 lines. Architectural ceiling: 4,200 lines. Oversized legacy files are temporary exceptions; prevent growth and progressively split.
 
 ## 22. Development Execution
 Inspect existing architecture, reuse shared engines, implement the complete approved scope, update SQL/seeders, enforce RBAC, test and fix defects. Prefer one consolidated PR. Avoid repeated audits and partial work. Pause only for genuine blockers or unresolved owner decisions.
