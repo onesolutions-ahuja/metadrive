@@ -400,5 +400,22 @@ try{
  assert.ok(nextFlows[0]);
  await assert.rejects(()=>registeredHandler(authJob),/Published Flow version changed/);
 
+ // A lost PostgreSQL connection cannot make an abandoned external action replay automatically.
+ const interruptedId=await durable.enqueue(tenantId,'ci.disconnect',{
+  actorUserId:userId,idempotencyKey:'ci-disconnect'});
+ const disconnectedDb=new SqlPersistence(url);
+ const disconnectedJobs=new DurableJobService(disconnectedDb);
+ const disconnectedClaim=(await disconnectedJobs.claim('ci-disconnected-worker',1))[0];
+ assert.equal(disconnectedClaim.id,interruptedId);
+ await disconnectedDb.close();
+ await assert.rejects(
+  ()=>disconnectedJobs.complete(tenantId,interruptedId,'ci-disconnected-worker'));
+ await db.query("UPDATE md_durable_jobs SET lease_until=now()-interval '1 second' WHERE tenant_id=$1 AND id=$2",
+  [tenantId,interruptedId]);
+ await durable.claim('ci-after-disconnect',1);
+ const disconnectedOutcome=await durable.inspect(tenantId,interruptedId);
+ assert.equal(disconnectedOutcome.status,'failed');
+ assert.equal(disconnectedOutcome.error_code,'FLOW_RECONCILIATION_REQUIRED');
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
