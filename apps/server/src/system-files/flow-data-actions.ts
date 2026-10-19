@@ -47,7 +47,7 @@ export function evaluateFlowCollectionStep(type:string,config:Record<string,unkn
   const records=recordValues(source);
     if(node.type==='Collection Filter'){
       const conditions=conditionsFrom(config.conditions,evaluate);
-      const filtered=recordValues(source).filter(item=>{
+      const filtered=records.filter(item=>{
         const rows=conditions.map(condition=>({...condition,
           field:item[String(condition.field)]}));
         return evaluateFlowDecisionOutcome(rows,
@@ -58,7 +58,7 @@ export function evaluateFlowCollectionStep(type:string,config:Record<string,unkn
       const field=String(config.sortField??'');
       if(!apiName.test(field))throw new Error('Invalid Collection Sort field');
       const direction=config.sortOrder==='Descending'?-1:1;
-      result=[...recordValues(source)].sort((left,right)=>{
+      result=[...records].sort((left,right)=>{
         const a=left[field],b=right[field];
         if(a===b)return 0;
         if(a===null||a===undefined)return 1;
@@ -69,7 +69,7 @@ export function evaluateFlowCollectionStep(type:string,config:Record<string,unkn
       });
     }else{
       const mappings=Array.isArray(config.mappings)?config.mappings:[];
-      result=recordValues(source).map(item=>{
+      result=records.map(item=>{
         const target:Record<string,unknown>={};
         for(const mapping of mappings){
           if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))
