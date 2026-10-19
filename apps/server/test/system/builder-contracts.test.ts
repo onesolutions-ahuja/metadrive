@@ -1,3 +1,4 @@
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {once} from 'node:events';
@@ -45,7 +46,7 @@ test('registered Origin can preflight Page, App and Flow PUT endpoints',async()=
 });
 
 test('tenant App authoring rejects malformed metadata without database writes',async()=>{
-  const db={transaction:async()=>{throw new Error('SQL should not be touched')}} as unknown as SqlPersistence;
+  const db=withFlowCapabilities({transaction:async()=>{throw new Error('SQL transaction should not be touched')}} as unknown as SqlPersistence);
   await assert.rejects(
     ()=>new AppRuntime(db).saveMetadata('tenant','Bad;DROP',{apiName:'Bad;DROP'},false),
     /Invalid App metadata/
