@@ -56,12 +56,12 @@ test('Choice Set resources hydrate picklists with validated bounded options',()=
  const source={id:2,type:'Screen',label:'Ordering',
   config:{fields:[{apiName:'Meal',type:'Picklist',choiceSetResource:'MealChoices'}]}};
  const next=hydrateFlowScreenChoices(source,[{
-  name:'MealChoices',type:'Choice Set',value:'Burger\\nWrap\\nSalad'
+  name:'MealChoices',type:'Choice Set',value:'Burger\nWrap\nSalad'
  }]);
  assert.deepEqual((next.config.fields as Array<{choices:string[]}>)[0].choices,
   ['Burger','Wrap','Salad']);
  assert.equal((source.config.fields[0] as Record<string,unknown>).choices,undefined);
- assert.throws(()=>flowChoiceValues('Burger\\nBurger'),/unique/);
+ assert.throws(()=>flowChoiceValues('Burger\nBurger'),/unique/);
  assert.throws(()=>hydrateFlowScreenChoices(source,[]),/unavailable/);
 });
 
