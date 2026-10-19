@@ -33,7 +33,7 @@ test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
  assert.ok(result.errors.includes('Durable async HTTP Callout cannot return response variables'));
 });
 
-test('durable HTTP Callout encrypts queued payload and dispatches with a stable idempotency key',async()=>{
+test('durable HTTP Callout encrypts payload and never blindly retries uncertain provider outcome',async()=>{
  const previousKey=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
  process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=Buffer.alloc(32,7).toString('base64');
  const values:Array<unknown[]>=[];
@@ -90,14 +90,10 @@ test('durable HTTP Callout encrypts queued payload and dispatches with a stable 
   } as unknown as PoolClient);
   assert.equal(await service.dispatchOne(),true);
   assert.match(updateSql,/status=\$3/);
-  assert.equal(updateParameters[2],'retrying');
-  assert.equal(updateParameters[3],'temporary outage');
-  assert.equal(await service.dispatchOne(),true);
-  assert.equal((sent?.config as Record<string,unknown>).path,'v1/{!RecordId}');
-  assert.equal((sent?.variables as Record<string,unknown>).Payload,'private-data');
-  assert.equal(sent?.key,'order-request-1');
-  assert.match(updateSql,/status='completed'/);
-  assert.deepEqual(idempotencyKeys,['order-request-1','order-request-1']);
+  assert.match(updateSql,/status='failed'/);
+  assert.deepEqual(updateParameters,[tenantId,jobId]);
+  assert.equal(sent,undefined);
+  assert.deepEqual(idempotencyKeys,['order-request-1']);
  }finally{
   if(previousKey===undefined)delete process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
   else process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=previousKey;
