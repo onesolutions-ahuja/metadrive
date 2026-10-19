@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+import {transform} from 'esbuild';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {loadComponentCatalog,buildBundledComponent} from '../../../scripts/component-catalog.mjs';
@@ -66,4 +68,25 @@ test('Choice record mode fails closed when the configured label field is missing
   }));
   assert.match(html,/Select the record label field/);
   assert.doesNotMatch(html,/Fries/);
+});
+
+test('one input change invokes the configured backend action exactly once',async()=>{
+  const original=await readFile(new URL('../src/one/shared/OneInputs.jsx',import.meta.url),'utf8');
+  const source=original.replace(
+    "import {componentAppearance} from './componentAppearance.js';",
+    "const componentAppearance = () => ({});"
+  );
+  const compiled=await transform(source,{loader:'jsx',format:'cjs'});
+  const context={module:{exports:{} as any},React};
+  vm.runInNewContext(compiled.code,context);
+  const events:string[]=[];
+  const props={
+    changeEventHandledByOnChange:true,
+    onChange:()=>events.push('change'),
+    onAction:()=>events.push('action')
+  };
+  context.module.exports.fire(props,'change','s1');
+  assert.deepEqual(events,['change']);
+  context.module.exports.fire(props,'submit','s1');
+  assert.deepEqual(events,['change','change','action']);
 });
