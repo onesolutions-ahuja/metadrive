@@ -2,12 +2,25 @@ import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {request as secureRequest} from 'node:https';
+import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+
+type CalloutJob={
+ id:string;tenant_id:string;user_id:string;credential_id:string;method:string;
+ path_ciphertext:Buffer;headers_ciphertext:Buffer;body_ciphertext:Buffer|null;
+ idempotency_key_ciphertext:Buffer|null;max_attempts:number;timeout_ms:number;attempt_count:number
+};
+type CalloutValue={api_name:string;value_ciphertext:Buffer;data_type:string};
+type CalloutScalar=string|number|boolean|null;
+const isCalloutScalar=(value:unknown):value is CalloutScalar=>
+ value===null||typeof value==='string'||typeof value==='boolean'
+ ||typeof value==='number'&&Number.isFinite(value);
 
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
+ private dispatching=false;
  private key() {
   // The active key belongs to the application, never to a hosting provider.
   // Keep the legacy single-key setting readable for existing installations.
@@ -27,6 +40,20 @@ export class NamedCredentialService {
   if(!raw)return null;
   const key=Buffer.from(raw,'base64');
   return key.length===32?key:null;
+ }
+ private encryptValue(value:string) {
+  const key=this.key();
+  if(!key)throw new Error('Durable HTTP Callout encryption is not configured');
+  const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);
+  return Buffer.concat([iv,cipher.update(value,'utf8'),cipher.final(),cipher.getAuthTag()]);
+ }
+ private decryptValue(value:Buffer) {
+  const key=this.key();
+  if(!key||value.length<29)throw new Error('Queued HTTP Callout cannot be decrypted');
+  const decipher=createDecipheriv('aes-256-gcm',key,value.subarray(0,12));
+  decipher.setAuthTag(value.subarray(value.length-16));
+  return Buffer.concat([decipher.update(value.subarray(12,value.length-16)),
+   decipher.final()]).toString('utf8');
  }
  async readiness(tenantId:string,userId:string){
   return {canManage:await this.rbac.allowed(tenantId,userId,'NamedCredential','manage'),
@@ -91,6 +118,133 @@ export class NamedCredentialService {
    'DELETE FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 RETURNING id',[tenantId,id]);
   if(!result.rowCount)throw new Error('Credential not found');
  }
+ async enqueueCallout(client:PoolClient,tenantId:string,userId:string,runId:string,nodeId:number,
+   config:Record<string,unknown>,variables:Record<string,CalloutScalar>){
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
+  const credentialId=config.namedCredentialId;
+  const method=String(config.method??'GET').toUpperCase();
+  const path=config.path;
+  const headers=typeof config.headers==='string'?config.headers:'';
+  const body=typeof config.body==='string'&&config.body.trim()?config.body:null;
+  const maxAttempts=Number(config.maxAttempts??5);
+  const idempotencyKey=typeof config.idempotencyKey==='string'
+   ?config.idempotencyKey.trim().replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_match,name:string)=>{
+    if(!Object.hasOwn(variables,name))throw new Error('Unknown HTTP Callout idempotency resource');
+    return String(variables[name]??'');
+   }):'';
+  const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
+  if(typeof credentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(credentialId)
+    ||!['GET','POST','PUT','PATCH','DELETE'].includes(method)
+    ||typeof path!=='string'||path.startsWith('/')||path.includes('\\')||path.length>2048
+    ||headers.length>8192||body&&Buffer.byteLength(body)>32768
+    ||!Number.isSafeInteger(maxAttempts)||maxAttempts<1||maxAttempts>5
+    ||idempotencyKey.length>200)
+   throw new Error('Invalid durable HTTP Callout configuration');
+  await client.query('SAVEPOINT flow_http_callout_job');
+  try{
+   const credential=await client.query<{id:string}>(`
+    SELECT id FROM md_named_credentials
+    WHERE tenant_id=$1 AND id=$2 AND protocol='HTTPS' AND enabled=true
+   `,[tenantId,credentialId]);
+   if(!credential.rows[0])throw new Error('HTTPS credential unavailable');
+   const {rows}=await client.query<{id:string}>(`
+    INSERT INTO md_http_callout_jobs(tenant_id,run_id,node_id,user_id,credential_id,method,
+     path_ciphertext,headers_ciphertext,body_ciphertext,idempotency_key_ciphertext,
+     max_attempts,timeout_ms)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id
+   `,[tenantId,runId,nodeId,userId,credentialId,method,
+    this.encryptValue(path),this.encryptValue(headers),body===null?null:this.encryptValue(body),
+    idempotencyKey?this.encryptValue(idempotencyKey):null,maxAttempts,timeout]);
+   for(const [apiName,value] of Object.entries(variables)){
+    if(!/^[A-Za-z][A-Za-z0-9_.]*$/.test(apiName)||!isCalloutScalar(value))
+     throw new Error('Invalid durable HTTP Callout variable');
+    await client.query(`
+     INSERT INTO md_http_callout_job_values(tenant_id,job_id,api_name,value_ciphertext,data_type)
+     VALUES($1,$2,$3,$4,$5)
+    `,[tenantId,rows[0].id,apiName,this.encryptValue(value===null?'null':String(value)),
+     value===null?'null':typeof value]);
+   }
+   await client.query('RELEASE SAVEPOINT flow_http_callout_job');
+   return rows[0].id;
+  }catch(error){
+   await client.query('ROLLBACK TO SAVEPOINT flow_http_callout_job');
+   await client.query('RELEASE SAVEPOINT flow_http_callout_job');
+   throw error;
+  }
+ }
+ async dispatchOne(){
+  if(this.dispatching)return false;
+  this.dispatching=true;
+  try{
+   const job=await this.db.transaction(async client=>{
+    const {rows}=await client.query<CalloutJob>(`
+     WITH candidate AS (
+      SELECT id FROM md_http_callout_jobs
+      WHERE (status IN ('queued','retrying') AND next_attempt_at<=now())
+       OR (status='processing' AND claimed_at<now()-interval '5 minutes')
+      ORDER BY next_attempt_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1
+     )
+     UPDATE md_http_callout_jobs j
+     SET status='processing',attempt_count=j.attempt_count+1,claimed_at=now()
+     FROM candidate c WHERE j.id=c.id
+     RETURNING j.id,j.tenant_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
+     j.headers_ciphertext,j.body_ciphertext,j.idempotency_key_ciphertext,j.max_attempts,
+     j.timeout_ms,j.attempt_count
+    `);
+    return rows[0];
+   });
+   if(!job)return false;
+   try{
+    const {rows}=await this.db.query<CalloutValue>(`
+     SELECT api_name,value_ciphertext,data_type FROM md_http_callout_job_values
+     WHERE tenant_id=$1 AND job_id=$2
+    `,[job.tenant_id,job.id]);
+    const variables:Record<string,CalloutScalar>=Object.create(null) as Record<string,CalloutScalar>;
+    for(const row of rows){
+     let value:CalloutScalar;
+     const stored=this.decryptValue(row.value_ciphertext);
+     if(row.data_type==='null'){
+      if(stored!=='null')throw new Error('Invalid queued HTTP Callout null');
+      value=null;
+     }
+     else if(row.data_type==='boolean'){
+      if(stored!=='true'&&stored!=='false')throw new Error('Invalid queued HTTP Callout Boolean');
+      value=stored==='true';
+     }
+     else if(row.data_type==='number'){
+      value=Number(stored);
+      if(!Number.isFinite(value))throw new Error('Invalid queued HTTP Callout number');
+     }else if(row.data_type==='string')value=stored;
+     else throw new Error('Invalid queued HTTP Callout value type');
+     variables[row.api_name]=value;
+    }
+    await this.callout(job.tenant_id,job.user_id,{
+     namedCredentialId:job.credential_id,method:job.method,
+     path:this.decryptValue(job.path_ciphertext),headers:this.decryptValue(job.headers_ciphertext),
+     body:job.body_ciphertext?this.decryptValue(job.body_ciphertext):'',
+     timeoutMs:job.timeout_ms
+    },variables,job.idempotency_key_ciphertext
+      ?this.decryptValue(job.idempotency_key_ciphertext):job.id);
+    await this.db.query(`
+     UPDATE md_http_callout_jobs SET status='completed',completed_at=now(),claimed_at=NULL
+     WHERE tenant_id=$1 AND id=$2 AND status='processing'
+    `,[job.tenant_id,job.id]);
+   }catch(error){
+    const message=error instanceof Error?error.message:'Unknown HTTP Callout failure';
+    const failed=job.attempt_count>=job.max_attempts;
+    const delayMs=Math.min(3600000,30000*2**Math.max(0,job.attempt_count-1));
+    await this.db.query(`
+     UPDATE md_http_callout_jobs SET status=$3,last_error=$4,claimed_at=NULL,
+      next_attempt_at=CASE WHEN $3='retrying' THEN now()+($5::integer*interval '1 millisecond')
+       ELSE next_attempt_at END,
+      completed_at=CASE WHEN $3='failed' THEN now() ELSE NULL END
+     WHERE tenant_id=$1 AND id=$2 AND status='processing'
+    `,[job.tenant_id,job.id,failed?'failed':'retrying',message.slice(0,1000),delayMs]);
+   }
+   return true;
+  }finally{this.dispatching=false;}
+ }
  async update(tenantId:string,userId:string,id:string,body:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!/^[0-9a-f-]{36}$/i.test(id)||!body||typeof body!=='object'||Array.isArray(body))
@@ -141,7 +295,8 @@ export class NamedCredentialService {
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
   const method=String(config.method??'GET').toUpperCase();
   if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))throw new Error('Unsupported HTTP method');
-  if(config.deliveryMode==='DURABLE_ASYNC')throw new Error('Durable async HTTP Callout requires the SQL job dispatcher');
+  if(config.deliveryMode==='DURABLE_ASYNC')
+   throw new Error('Durable HTTP Callouts must be queued through the SQL dispatcher');
   if(typeof config.path!=='string'||config.path.startsWith('/')||config.path.includes('\\')||config.path.length>2048)
     throw new Error('Invalid relative callout path');
   const substitute=(source:string)=>source.replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_,key:string)=>{

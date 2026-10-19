@@ -86,35 +86,6 @@ export function renderSetupShell(ctx: any) {
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
-          <div className="notification-center" ref={notificationRef}>
-            <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
-              <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
-            </button>
-            {notificationsOpen && <section className="notification-panel" id="notification-panel" aria-label="Notifications">
-              <div className="notification-panel-heading"><strong>Notifications</strong><button type="button" className="text-action" onClick={() => void loadNotifications()}>Refresh</button></div>
-              {notificationsLoading ? <p className="empty-list">Loading notifications…</p> : <>
-                {approvalRequests.length > 0 && <section className="notification-approvals" aria-label="Approval requests">
-                  <h3>Approval Requests</h3>
-                  <ul className="notification-list">{approvalRequests.map((request) => <li key={request.id}>
-                    <strong>{request.objectLabel}: {request.recordName}</strong>
-                    <p>Submitted by {request.submittedByName}{request.comments ? ` · ${request.comments}` : ''}</p>
-                    <small>{new Date(request.createdAt).toLocaleString()}</small>
-                    <div className="toolbar-actions">
-                      <button type="button" className="btn btn-brand" disabled={approvalBusyId === request.id} onClick={() => void decideApproval(request, 'Approved')}>Approve</button>
-                      <button type="button" className="btn" disabled={approvalBusyId === request.id} onClick={() => void decideApproval(request, 'Rejected')}>Reject</button>
-                    </div>
-                  </li>)}</ul>
-                </section>}
-                {notifications.length
-                ? <ul className="notification-list">{notifications.map((notification) => <li key={notification.id} className={notification.readAt ? '' : 'unread'}>
-                  <strong>{notification.title}</strong><p>{notification.body}</p>
-                  <small>{new Date(notification.createdAt).toLocaleString()} · {notification.flowApiName}</small>
-                  {!notification.readAt && <button type="button" className="text-action" onClick={() => void markNotificationRead(notification)}>Mark as read</button>}
-                </li>)}</ul>
-                : approvalRequests.length ? null : <p className="empty-list">You’re all caught up.</p>}
-              </>}
-            </section>}
-          </div>
           <ProfilePasswordMenu onLogout={logout} onPasswordChanged={onLogout} />
         </div>
       </header>
@@ -146,7 +117,6 @@ export function renderSetupShell(ctx: any) {
                         className={((workspace === 'object-manager' && item === 'Object Manager')
                           || (workspace === 'page-builder' && item === 'Page Builder')
                           || (workspace === 'app-manager' && item === 'App Manager')
-                          || (workspace === 'component-library' && item === 'Component Library')
                           || (workspace === 'app-exchange' && item === 'AppExchange')
                           || (workspace === 'tenant-management' && item === 'Tenant Management')
                           || (workspace === 'named-credentials' && item === 'Named Credentials')
@@ -314,25 +284,12 @@ export function renderSetupShell(ctx: any) {
             onSaveTerritories={saveDashboardTerritories}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
-          {route.kind === 'setup' && workspace === 'approval-processes' && <PlatformWorkspaceSurface workspace="approval-processes" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="approval-workspace"><ApprovalProcessManager
-            processes={approvalProcesses}
-            objects={objects}
-            users={accessControlError ? [] : accessControl.users}
-            canManage={canManageApprovalProcesses}
-            onSave={saveApprovalProcess}
-            onDelete={deleteApprovalProcess}
-            onNotify={notify}
-          /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'named-credentials' && <PlatformWorkspaceSurface workspace="named-credentials" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
-            onRotate={rotateNamedCredential}
-            onTest={testNamedCredential}
-            onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" componentRuntime={protectedPageRuntime} permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange
@@ -345,11 +302,8 @@ export function renderSetupShell(ctx: any) {
             canManageCredentials={connectorRights.edit}
             canView={connectorRights.view}
             canManageSecrets={connectorRights.secrets}
-            canTest={connectorRights.test}
             canInstall={connectorRights.install}
-            canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
-            onGrantLicence={grantConnectorLicence}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={async(flowName:string,appKey:string)=>{
               await executeConnectorAppLifecycleFlow(flowName,appKey);
@@ -363,9 +317,6 @@ export function renderSetupShell(ctx: any) {
             }}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
-            onRotate={rotateNamedCredential}
-            onTest={testNamedCredential}
-            onOAuthAuthorize={authorizeNamedCredential}
             loadHistory={loadAppCommunicationHistory}
             onOpenFlow={selectFlow}
             onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}
@@ -436,7 +387,6 @@ export function renderSetupShell(ctx: any) {
               onRunTests={runSavedFlowTests}
               onSaveNamedCredential={saveNamedCredential}
               onDeleteNamedCredential={deleteNamedCredential}
-              onRotateNamedCredential={rotateNamedCredential}
               onSaveEmailAlert={saveEmailAlert}
               onDeleteEmailAlert={deleteEmailAlert}
               onSavePlatformEvent={savePlatformEvent}

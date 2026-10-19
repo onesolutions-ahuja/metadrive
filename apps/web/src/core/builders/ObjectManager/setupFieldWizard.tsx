@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Shared metadata-driven field creation wizard. View-only; actions remain in the object engine.
+import { useEffect, useState } from 'react';
 import type { RelatedLookupFilterMetadata } from '../../metadata/Definitions/metadata';
 import { Plus } from 'lucide-react';
 import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
@@ -15,7 +16,40 @@ type NewFieldLookupFilterDraft = {
 
 export default function FieldWizardModal({ context }: { context: any }) {
   const ctx = context;
+  const [rollupChildObject, setRollupChildObject] = useState('');
+  const [rollupRelationshipField, setRollupRelationshipField] = useState('');
+  const [rollupOperation, setRollupOperation] = useState<'COUNT' | 'SUM' | 'MIN' | 'MAX'>('COUNT');
+  const [rollupSourceField, setRollupSourceField] = useState('');
   const { X, addField, formulaEditorRef, insertFormulaText, newFieldAllowReparenting, newFieldApiName, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldConfigurationError, newFieldController, newFieldControllerApiName, newFieldControllerValues, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldFormulaValidation, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistOptions, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldStage, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, object, objects, relatedLookupFilterOperators, resetNewFieldDraft, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldReturnType, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setShowNewField, showNewField, validateNewFieldFormula } = ctx;
+  useEffect(() => {
+    if (!showNewField) {
+      setRollupChildObject('');
+      setRollupRelationshipField('');
+      setRollupOperation('COUNT');
+      setRollupSourceField('');
+    }
+  }, [showNewField]);
+  const rollupChildren = objects.filter((candidate: any) => candidate.fields.some((field: any) =>
+    field.relationship?.type === 'Master-Detail' && field.relationship.targetObject === object.apiName));
+  const selectedRollupChild = rollupChildren.find((candidate: any) => candidate.apiName === rollupChildObject);
+  const rollupRelationships = selectedRollupChild?.fields.filter((field: any) =>
+    field.relationship?.type === 'Master-Detail' && field.relationship.targetObject === object.apiName) ?? [];
+  const rollupSources = selectedRollupChild?.fields.filter((field: any) =>
+    ['Number', 'Currency', 'Percent'].some((type) => field.dataType.startsWith(type))) ?? [];
+  const rollupConfigurationError = newFieldType === 'Roll-Up Summary'
+    && (!selectedRollupChild || !rollupRelationships.some((field: any) => field.apiName === rollupRelationshipField)
+      || (rollupOperation !== 'COUNT' && !rollupSources.some((field: any) => field.apiName === rollupSourceField)))
+    ? 'Choose a child Master-Detail relationship and a numeric source field for this roll-up operation.'
+    : '';
+  const fieldConfigurationError = newFieldConfigurationError || rollupConfigurationError;
+  const rollupConfig = newFieldType === 'Roll-Up Summary' && selectedRollupChild && rollupRelationshipField
+    ? {
+      childObject: selectedRollupChild.apiName,
+      relationshipField: rollupRelationshipField,
+      operation: rollupOperation,
+      ...(rollupOperation === 'COUNT' ? {} : { sourceField: rollupSourceField })
+    } as const
+    : undefined;
   return <>
       {showNewField && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { resetNewFieldDraft(); setShowNewField(false); } }}>
@@ -28,7 +62,7 @@ export default function FieldWizardModal({ context }: { context: any }) {
             {newFieldStage === 0 && <div>
               <label className="form-label" htmlFor="new-field-type">Data Type</label>
               <select className="form-control" id="new-field-type" value={newFieldType} onChange={(event) => setNewFieldType(event.target.value)}>
-              {['Text', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Date', 'Date/Time', 'Checkbox', 'Email', 'Phone', 'URL', 'Geolocation', 'Picklist', 'Multi-Select Picklist', 'Formula', 'Lookup Relationship', 'Master-Detail Relationship', ...(object.apiName === 'User' ? ['Hierarchical Relationship'] : [])].map((type) => <option key={type}>{type}</option>)}
+              {['Text', 'Long Text Area', 'Rich Text Area', 'Number', 'Currency', 'Percent', 'Date', 'Date/Time', 'Time', 'Checkbox', 'Email', 'Phone', 'URL', 'Address', 'Geolocation', 'Formula', 'Roll-Up Summary', 'Picklist', 'Multi-Select Picklist', 'Lookup Relationship', 'Master-Detail Relationship', ...(object.apiName === 'User' ? ['Hierarchical Relationship'] : [])].map((type) => <option key={type}>{type}</option>)}
               </select>
               <p className="permission-help">External Lookup and Indirect Lookup require external objects, which are not supported for this object. Hierarchical Relationship is available for User.</p>
             </div>}
@@ -167,6 +201,39 @@ export default function FieldWizardModal({ context }: { context: any }) {
                 })}
               </>}
             </>}
+            {newFieldType === 'Roll-Up Summary' && <>
+              <label className="form-label">Child Object
+                <select className="form-control" value={rollupChildObject} onChange={(event) => {
+                  setRollupChildObject(event.target.value);
+                  setRollupRelationshipField('');
+                  setRollupSourceField('');
+                }}>
+                  <option value="">Select a child object</option>
+                  {rollupChildren.map((candidate: any) => <option key={candidate.apiName} value={candidate.apiName}>{candidate.label}</option>)}
+                </select>
+              </label>
+              <label className="form-label">Master-Detail Relationship
+                <select className="form-control" value={rollupRelationshipField} onChange={(event) => setRollupRelationshipField(event.target.value)}>
+                  <option value="">Select a relationship</option>
+                  {rollupRelationships.map((field: any) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+                </select>
+              </label>
+              <label className="form-label">Summary Operation
+                <select className="form-control" value={rollupOperation} onChange={(event) => {
+                  const operation = event.target.value as 'COUNT' | 'SUM' | 'MIN' | 'MAX';
+                  setRollupOperation(operation);
+                  if (operation === 'COUNT') setRollupSourceField('');
+                }}>
+                  {['COUNT', 'SUM', 'MIN', 'MAX'].map((operation) => <option key={operation}>{operation}</option>)}
+                </select>
+              </label>
+              {rollupOperation !== 'COUNT' && <label className="form-label">Summary Field
+                <select className="form-control" value={rollupSourceField} onChange={(event) => setRollupSourceField(event.target.value)}>
+                  <option value="">Select a numeric field</option>
+                  {rollupSources.map((field: any) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.dataType})</option>)}
+                </select>
+              </label>}
+            </>}
             {newFieldType === 'Formula' && <>
               <label className="form-label" htmlFor="new-field-return-type">Formula Return Type</label>
               <select className="form-control" id="new-field-return-type" value={newFieldReturnType} onChange={(event) => { setNewFieldReturnType(event.target.value); setNewFieldFormulaValidation({ status: 'idle', message: '' }); }}>{['Number', 'Currency', 'Percent', 'Text', 'Date', 'Checkbox'].map((type) => <option key={type}>{type}</option>)}</select>
@@ -219,7 +286,7 @@ export default function FieldWizardModal({ context }: { context: any }) {
             <input className="form-control" id="new-field-description" value={newFieldDescription} onChange={(event) => setNewFieldDescription(event.target.value)} placeholder="Optional field description" />
             <label className="form-label" htmlFor="new-field-help-text">Help Text</label>
             <textarea className="form-control" id="new-field-help-text" value={newFieldHelpText} onChange={(event) => setNewFieldHelpText(event.target.value)} placeholder="Optional guidance shown to users" maxLength={255} rows={2} />
-            {!['Formula', 'Geolocation', 'Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType) && (newFieldType === 'Checkbox'
+            {!['Formula', 'Roll-Up Summary', 'Address', 'Geolocation', 'Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType) && (newFieldType === 'Checkbox'
               ? <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={newFieldHasDefault} onChange={(event) => setNewFieldHasDefault(event.target.checked)} />Set a default value</label><label className="checkbox-row"><input type="checkbox" disabled={!newFieldHasDefault} checked={newFieldDefaultValue === 'true'} onChange={(event) => setNewFieldDefaultValue(String(event.target.checked))} />Default to checked</label></div>
               : ['Picklist', 'Multi-Select Picklist'].includes(newFieldType)
                 ? <label className="form-label">Default Value<select className="form-control" multiple={newFieldType === 'Multi-Select Picklist'} value={newFieldType === 'Multi-Select Picklist' ? newFieldDefaultValue.split(';').filter(Boolean) : newFieldDefaultValue} onChange={(event) => {
@@ -228,10 +295,10 @@ export default function FieldWizardModal({ context }: { context: any }) {
                   setNewFieldDefaultValue(value);
                   setNewFieldHasDefault(value !== '');
                 }}><option value="">— None —</option>{newFieldPicklistValues.split(/\r?\n/).map((value) => value.trim()).filter(Boolean).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                : <label className="form-label" htmlFor="new-field-default">Default Value<input className="form-control" id="new-field-default" type={['Number', 'Currency', 'Percent'].includes(newFieldType) ? 'number' : newFieldType === 'Date' ? 'date' : newFieldType === 'Date/Time' ? 'datetime-local' : newFieldType === 'Email' ? 'email' : newFieldType === 'URL' ? 'url' : 'text'} step={['Number', 'Currency', 'Percent'].includes(newFieldType) ? (newFieldScale ? 10 ** -newFieldScale : 1) : undefined} maxLength={newFieldType === 'Text' ? newFieldTextLength : undefined} value={newFieldDefaultValue} onChange={(event) => { setNewFieldDefaultValue(event.target.value); setNewFieldHasDefault(event.target.value !== ''); }} /></label>)}
-            {newFieldType !== 'Formula' && <div className="form-options">
+                :                 <label className="form-label" htmlFor="new-field-default">Default Value<input className="form-control" id="new-field-default" type={['Number', 'Currency', 'Percent'].includes(newFieldType) ? 'number' : newFieldType === 'Date' ? 'date' : newFieldType === 'Date/Time' ? 'datetime-local' : newFieldType === 'Time' ? 'time' : newFieldType === 'Email' ? 'email' : newFieldType === 'URL' ? 'url' : 'text'} step={['Number', 'Currency', 'Percent'].includes(newFieldType) ? (newFieldScale ? 10 ** -newFieldScale : 1) : newFieldType === 'Time' ? 1 : undefined} maxLength={newFieldType === 'Text' ? newFieldTextLength : undefined} value={newFieldDefaultValue} onChange={(event) => { setNewFieldDefaultValue(event.target.value); setNewFieldHasDefault(event.target.value !== ''); }} /></label>)}
+            {!['Formula', 'Roll-Up Summary'].includes(newFieldType) && <div className="form-options">
               <label className="checkbox-row"><input type="checkbox" checked={newFieldType === 'Master-Detail Relationship' || newFieldRequired} disabled={newFieldType === 'Master-Detail Relationship'} onChange={(event) => setNewFieldRequired(event.target.checked)} /> Required</label>
-              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Geolocation' || newFieldType === 'Multi-Select Picklist' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
+              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Rich Text Area' || newFieldType === 'Address' || newFieldType === 'Geolocation' || newFieldType === 'Multi-Select Picklist' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
               {['Text', 'Number', 'Email', 'Phone'].includes(newFieldType) && <label className="checkbox-row">
                 <input type="checkbox" checked={newFieldExternalId} onChange={(event) => setNewFieldExternalId(event.target.checked)} /> External ID
               </label>}
@@ -264,17 +331,18 @@ export default function FieldWizardModal({ context }: { context: any }) {
                 {newFieldPicklistOptions.length > 0 && <><dt>Values</dt><dd>{newFieldPicklistOptions.join(', ')}</dd></>}
                 {newFieldController && <><dt>Controlling Field</dt><dd>{newFieldController.label}</dd></>}
                 {newFieldRelationshipTarget && <><dt>Related Object</dt><dd>{newFieldRelationshipTarget}</dd></>}
+                {newFieldType === 'Roll-Up Summary' && <><dt>Summary</dt><dd>{rollupOperation} {rollupSourceField ? `of ${rollupSourceField}` : ''} from {rollupChildObject || 'child object'}</dd></>}
                 {newFieldHasDefault && <><dt>Default Value</dt><dd>{newFieldDefaultValue || '(blank)'}</dd></>}
                 <dt>Page Layouts</dt><dd>{(object.pageLayouts ?? []).filter((layout) => newFieldLayoutIds.includes(layout.id)).map((layout) => layout.label).join(', ') || 'None'}</dd>
               </dl>
             </div>}
-            {newFieldStage === 1 && newFieldConfigurationError && <p className="form-error" role="alert">{newFieldConfigurationError}</p>}
+            {newFieldStage === 1 && fieldConfigurationError && <p className="form-error" role="alert">{fieldConfigurationError}</p>}
             <div className="modal-actions">
               <button className="btn" onClick={() => { resetNewFieldDraft(); setShowNewField(false); }}>Cancel</button>
               {newFieldStage > 0 && <button className="btn" onClick={() => setNewFieldStage((stage) => (stage - 1) as 0 | 1 | 2 | 3)}>Back</button>}
               {newFieldStage < 3
-                ? <button className="btn btn-brand" onClick={() => setNewFieldStage((stage) => (stage + 1) as 0 | 1 | 2 | 3)} disabled={newFieldStage === 1 && Boolean(newFieldConfigurationError)}>Next</button>
-                : <button className="btn btn-brand" onClick={() => { void addField(); }} disabled={Boolean(newFieldConfigurationError)}>Save Field</button>}
+                ? <button className="btn btn-brand" onClick={() => setNewFieldStage((stage) => (stage + 1) as 0 | 1 | 2 | 3)} disabled={newFieldStage === 1 && Boolean(fieldConfigurationError)}>Next</button>
+                : <button className="btn btn-brand" onClick={() => { void addField(rollupConfig); }} disabled={Boolean(fieldConfigurationError)}>Save Field</button>}
             </div>
           </section>
         </div>

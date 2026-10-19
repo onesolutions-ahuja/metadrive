@@ -126,6 +126,7 @@ test('Records HTTP API returns the actual list rather than double-nested records
     query:async(sql:string)=>{
       if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
       if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
+      if(sql.includes('SELECT api_name,data_type,related_object'))return {rows:[]};
       if(sql.includes('WITH selected AS'))return {rows:[]};
       if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
       throw new Error('Unexpected SQL '+sql);
@@ -498,7 +499,7 @@ test('Object relationship dependency discovery reads tenant-scoped SQL with no i
  const db={query:async(sql:string,args:unknown[])=>{
    calls.push(args);
    if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o1',api_name:'Sale__c',label:'Sale',is_system:false}]};
-   if(sql.includes('SELECT id,object_api,api_name'))return {rows:[{id:'f1',object_api:'Sale__c',api_name:'CustomerId',label:'Customer',data_type:'reference',related_object:'Customer__c',required:false,max_length:null}]};
+   if(sql.includes('SELECT f.id,f.object_api,f.api_name'))return {rows:[{id:'f1',object_api:'Sale__c',api_name:'CustomerId',label:'Customer',data_type:'reference',related_object:'Customer__c',required:false,max_length:null}]};
    if(sql.includes('SELECT object_api,related_object'))return {rows:[{object_api:'Sale__c',related_object:'Customer__c'}]};
    if(sql.includes('SELECT api_name,related_object'))return {rows:[{api_name:'CustomerId',related_object:'Customer__c'}]};
    if(sql.includes('FROM md_object_layout_versions')||sql.includes('FROM md_object_page_layout')||sql.includes('FROM md_object_record_type'))return {rows:[]};
@@ -611,19 +612,30 @@ test('Tenant currency validation rejects duplicate ISO codes and invalid rates b
  }),/Invalid automation settings/);
 });
 
-test('Field deletion refuses removal while tenant records still reference its values',async()=>{
- let deletions=0;
- const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
+test('Field deletion retains field data in a recoverable recycle bin',async()=>{
+ let hardDeletes=0,softDeletes=0;
+ const db={
+ query:async(sql:string)=>{
+  if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'o',api_name:'Sale__c',label:'Sale',is_system:false}]};
+  if(sql.includes('FROM md_field_definitions f LEFT JOIN'))return {rows:[]};
+  if(sql.includes('FROM md_object_record_types')||sql.includes('FROM md_object_record_type_values'))return {rows:[]};
+  if(sql.includes('FROM md_object_'))return {rows:[]};
+  throw new Error('Unexpected metadata query '+sql);
+ },
+ transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
   query:async(sql:string,args:unknown[])=>{
-   assert.deepEqual(args.slice(0,3),['tenant','Sale__c','CustomerId']);
-   if(sql.includes('FOR UPDATE'))return {rows:[{id:'f'}]};
-   if(sql.includes('FROM md_record_values'))return {rows:[{value_text:'value'}]};
-   if(sql.includes('DELETE'))deletions++;
+   if(sql.includes('SELECT object_api,api_name,id'))return {rows:[]};
+   if(sql.includes('SELECT id FROM md_field_definitions'))return {rows:[{id:'f'}]};
+   if(sql.includes('md_field_dependencies'))return {rows:[]};
+   if(sql.includes('formula_expression'))return {rows:[]};
+   if(sql.includes('UPDATE md_field_definitions SET deleted_at=now()'))softDeletes++;
+   if(sql.startsWith('DELETE FROM md_field_definitions'))hardDeletes++;
    return {rows:[]};
   }
  })} as unknown as SqlPersistence;
- await assert.rejects(()=>new ObjectDefinitionService(db).deleteField('tenant','Sale__c','CustomerId'),/stored records/);
- assert.equal(deletions,0);
+ await new ObjectDefinitionService(db).deleteField('tenant','Sale__c','CustomerId');
+ assert.equal(softDeletes,1);
+ assert.equal(hardDeletes,0);
 });
 test('Field update rejects datatype changes instead of silently discarding metadata',async()=>{
  const db={query:async(sql:string)=>{
@@ -648,6 +660,17 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
  assert.equal(result.valid,false);
  assert.ok(result.errors.some(e=>e.includes('Unsupported SQL Flow element')));
  assert.ok(result.errors.some(e=>e.includes('No reachable End')));
+ const collectionDraft={
+  apiName:'TestFlow',flowType:'Autolaunched Flow',
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Create Records',config:{recordSource:'collection',object:'Account',collection:'accounts'}},
+   {id:3,type:'End',config:{}}
+  ],
+  connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]
+ };
+ const collectionResult=await runtime.validateDraft('tenant','user','TestFlow',collectionDraft);
+ assert.equal(collectionResult.valid,true,collectionResult.errors.join('; '));
 });
 test('SQL Flow validation fails closed without permission',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
@@ -757,4 +780,295 @@ test('SQL object creation rejects picklists with no selectable values before tra
   await assert.rejects(()=>new ObjectDefinitionService(db).create('tenant','Sale__c','Sale',[
     {apiName:'Status',label:'Status',dataType:'Picklist',picklistValues:[]}
   ]),/Invalid picklist values/);
+});
+test('SQL field creation persists numeric, relationship and builder field metadata',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('WITH RECURSIVE parent_chain'))return {rows:[],rowCount:0};
+    if(sql.includes('count(*)::integer AS total'))return {rows:[{total:0}],rowCount:1};
+    writes.push({sql,args});return {rows:[{id:'field'}],rowCount:1};
+  }};
+  const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
+  const definitions=new ObjectDefinitionService(db);
+  await definitions.addField('tenant','Invoice__c','Amount','Currency(16, 2)',undefined,'Amount',{
+    required:true,unique:true,externalId:true,caseSensitive:true,defaultValue:12.5,
+    helpText:'Invoice value',description:'Net value'
+  });
+  await definitions.addField('tenant','Invoice__c','AccountId','Master-Detail(Account)',undefined,'Account',{
+    relationship:{type:'Master-Detail',targetObject:'Account'}
+  });
+  await definitions.addField('tenant','Invoice__c','Tags','Multi-Select Picklist',undefined,'Tags',{
+    picklistValues:['Urgent','Review']
+  });
+  await definitions.addField('tenant','Invoice__c','Location','Geolocation');
+  await definitions.addField('tenant','Invoice__c','Serial','AutoNumber',undefined,'Serial',{
+    autoNumberFormat:'INV-{0000}'
+  });
+  await definitions.addField('tenant','Invoice__c','Calculated','Formula(Number)',undefined,'Calculated',{
+    formula:{expression:'@Invoice__c.Amount * 2',returnType:'Number'}
+  });
+  const amount=writes.find(item=>item.sql.includes('INSERT INTO md_field_definitions'));
+  assert.ok(amount);
+  assert.deepEqual(amount.args.slice(3,7),['currency',null,null,'Amount']);
+  assert.deepEqual(amount.args.slice(8,21),[
+    true,null,true,true,true,'12.5','Invoice value','Net value',16,2,null,null,null
+  ]);
+  const relationship=writes.filter(item=>item.sql.includes('INSERT INTO md_field_definitions'))[1];
+  assert.deepEqual(relationship.args.slice(3,6),['reference','Account',null]);
+  assert.equal(relationship.args[9],'Master-Detail');
+  assert.equal(relationship.args[8],true);
+  assert.equal(writes.filter(item=>item.sql.includes('INSERT INTO md_field_definitions'))[2].args[3],'multipicklist');
+  assert.equal(writes.filter(item=>item.sql.includes('INSERT INTO md_field_definitions'))[3].args[3],'geolocation');
+  const autoNumber=writes.filter(item=>item.sql.includes('INSERT INTO md_field_definitions'))[4];
+  assert.equal(autoNumber.args[3],'autonumber');
+  assert.equal(autoNumber.args[20],'INV-{0000}');
+  const formula=writes.filter(item=>item.sql.includes('INSERT INTO md_field_definitions'))[5];
+  assert.equal(formula.args[3],'formula');
+  assert.equal(formula.args[18],'@Invoice__c.Amount * 2');
+  assert.equal(formula.args[19],'Number');
+});
+test('dependent picklist metadata is persisted relationally and validates controller combinations',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    writes.push({sql,args});
+    if(sql.includes('SELECT data_type FROM md_field_definitions'))
+      return {rows:[{data_type:'boolean'}],rowCount:1};
+    if(sql.includes('SELECT value FROM md_field_picklist_values'))
+      return {rows:[],rowCount:0};
+    return {rows:[{id:'field'}],rowCount:1};
+  }};
+  const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
+  await new ObjectDefinitionService(db).addField('tenant','Lead__c','Status','Picklist',undefined,'Status',{
+    picklistValues:['New','Qualified'],controllerFieldApiName:'IsActive',
+    valueSettings:{true:['Qualified'],false:['New']}
+  });
+  assert.deepEqual(writes.find(item=>item.sql.includes('INSERT INTO md_field_dependencies'))?.args,
+    ['tenant','Lead__c','Status','IsActive']);
+  assert.equal(writes.filter(item=>item.sql.includes('INSERT INTO md_field_dependency_values')).length,2);
+});
+test('field updates replace dependent picklist mappings without losing tenant metadata',async()=>{
+  const writes:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    writes.push({sql,args});
+    if(sql.includes('SELECT data_type FROM md_field_definitions'))return {rows:[{data_type:'picklist'}],rowCount:1};
+    if(sql.includes('SELECT value FROM md_field_picklist_values'))return {rows:[{value:'Open'},{value:'Closed'}],rowCount:2};
+    if(sql.includes('controller.value_text AS controller_value'))return {rows:[],rowCount:0};
+    if(sql.includes('UPDATE md_field_definitions'))return {rows:[{id:'field'}],rowCount:1};
+    return {rows:[],rowCount:1};
+  }};
+  const db={
+    transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client),
+    query:async(sql:string)=>{
+      if(sql.includes('FROM md_object_definitions'))return {rows:[{
+        id:'object',api_name:'Lead__c',label:'Lead',is_system:false
+      }],rowCount:1};
+      if(sql.includes('FROM md_field_definitions f LEFT JOIN md_field_dependencies'))return {rows:[
+        {id:'field',object_api:'Lead__c',api_name:'Status',label:'Status',data_type:'picklist',
+          related_object:null,relationship_type:null,required:false,max_length:null,precision:null,scale:null,
+          is_unique:false,external_id:false,case_sensitive:false,default_value:null,help_text:null,
+          description:null,formula_expression:null,formula_return_type:null,auto_number_format:null,
+          picklist_restricted:true,controller_field_api_name:'Stage'},
+        {id:'controller',object_api:'Lead__c',api_name:'Stage',label:'Stage',data_type:'picklist',
+          related_object:null,relationship_type:null,required:false,max_length:null,precision:null,scale:null,
+          is_unique:false,external_id:false,case_sensitive:false,default_value:null,help_text:null,
+          description:null,formula_expression:null,formula_return_type:null,auto_number_format:null,
+          picklist_restricted:true,controller_field_api_name:null}
+      ],rowCount:2};
+      if(sql.includes('FROM md_field_picklist_values'))return {rows:[
+        {object_api:'Lead__c',field_api:'Status',value:'A'},
+        {object_api:'Lead__c',field_api:'Status',value:'B'},
+        {object_api:'Lead__c',field_api:'Stage',value:'Open'},
+        {object_api:'Lead__c',field_api:'Stage',value:'Closed'}
+      ],rowCount:4};
+      if(sql.includes('FROM md_field_dependency_values'))return {rows:[
+        {object_api:'Lead__c',field_api:'Status',controller_value:'Open',picklist_value:'A'}
+      ],rowCount:1};
+      if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
+      if(/FROM md_[a-z_]+ WHERE tenant_id=\$1/.test(sql))return {rows:[],rowCount:0};
+      throw new Error('Unexpected metadata query '+sql);
+    }
+  } as unknown as SqlPersistence;
+  const updated=await new ObjectDefinitionService(db).updateField('tenant','Lead__c','Status',{
+    apiName:'Status',label:'Status',dataType:'Picklist',required:false,unique:false,
+    picklistValues:['A','B'],picklistRestricted:true,controllerFieldApiName:'Stage',
+    valueSettings:{Open:['B'],Closed:[]}
+  });
+  assert.equal(updated.fields.find(field=>field.apiName==='Status')?.controllerFieldApiName,'Stage');
+  assert.ok(writes.some(call=>call.sql.includes('INSERT INTO md_field_dependency_values')
+    &&call.args[3]==='Open'&&call.args[4]==='B'));
+  assert.ok(writes.some(call=>call.sql.includes('DELETE FROM md_field_dependencies')));
+});
+test('dependent picklist values are enforced during record creation',async()=>{
+  const definitions=[
+    {api_name:'IsActive',data_type:'boolean',related_object:null,required:false,max_length:null,
+      precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+      auto_number_format:null,picklist_restricted:true,controller_field_api_name:null},
+    {api_name:'Status',data_type:'picklist',related_object:null,required:false,max_length:null,
+      precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+      auto_number_format:null,picklist_restricted:true,controller_field_api_name:'IsActive'}
+  ];
+  const insertValues:Array<{field:string;value:string|null}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
+    if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
+    if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
+    if(sql.includes('INSERT INTO md_record_values')){
+      insertValues.push({field:String(args[3]),value:args[4] as string|null});
+      return {rows:[],rowCount:1};
+    }
+    throw new Error('Unexpected transactional query '+sql);
+  }};
+  const db={
+    query:async(sql:string,args:unknown[])=>{
+      if(sql.includes('FROM md_field_definitions'))return {rows:definitions,rowCount:definitions.length};
+      if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'New'},{value:'Qualified'}],rowCount:1};
+      if(sql.includes('FROM md_field_dependency_values'))
+        return args[3]==='true'&&String(args[4]).includes('Qualified')
+          ?{rows:[{picklist_value:'Qualified'}],rowCount:1}:{rows:[],rowCount:0};
+      if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
+      throw new Error('Unexpected query '+sql);
+    },
+    transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
+  } as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records=new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac);
+  await assert.rejects(()=>records.create('tenant','user','Lead__c',{IsActive:true,Status:'New'}),
+    /Invalid dependent picklist value/);
+  assert.equal(await records.create('tenant','user','Lead__c',{IsActive:true,Status:'Qualified'}),'created');
+  assert.ok(insertValues.some(row=>row.field==='Status'&&row.value==='Qualified'));
+});
+test('numeric fields round to their configured scale before saving',async()=>{
+  const savedValues:string[]=[];
+  const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
+    if(sql.includes("data_type='autonumber'"))return {rows:[],rowCount:0};
+    if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
+    if(sql.includes('INSERT INTO md_record_values')){
+      savedValues.push(String(args[4]));
+      return {rows:[],rowCount:1};
+    }
+    throw new Error('Unexpected transactional query '+sql);
+  }};
+  const db={
+    query:async(sql:string)=>{
+      if(sql.includes('FROM md_field_definitions'))return {rows:[{
+        api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null,
+        precision:5,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+        auto_number_format:null
+      }],rowCount:1};
+      if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
+      throw new Error('Unexpected query '+sql);
+    },
+    transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
+  } as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records=new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac);
+  await records.create('tenant','user','Invoice__c',{Amount:1.235});
+  assert.equal(savedValues[0],'1.24');
+  await assert.rejects(()=>records.create('tenant','user','Invoice__c',{Amount:999.995}),
+    /Number exceeds field precision or scale/);
+});
+test('long text fields enforce Salesforce maximum length',async()=>{
+  const db={query:async(sql:string)=>{
+    if(sql.includes('FROM md_field_definitions'))return {rows:[{
+      api_name:'Details',data_type:'longtext',related_object:null,required:false,max_length:131072,
+      precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+      auto_number_format:null
+    }],rowCount:1};
+    throw new Error('Unexpected query '+sql);
+  }} as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records=new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac);
+  await assert.rejects(()=>records.create('tenant','user','Note__c',{Details:'x'.repeat(131073)}),
+    /Invalid text length/);
+});
+test('new long text fields default to Salesforce long text capacity',async()=>{
+  const calls:Array<{sql:string;args:unknown[]}>= [];
+  const client={query:async(sql:string,args:unknown[])=>{
+    calls.push({sql,args});return {rows:[{id:'field'}],rowCount:1};
+  }};
+  const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
+  await new ObjectDefinitionService(db).addField('tenant','Note__c','Details','Long Text Area',undefined,'Details');
+  assert.equal(calls.find(call=>call.sql.includes('INSERT INTO md_field_definitions'))?.args[5],131072);
+});
+test('phone fields accept formatted numbers and reject malformed input',async()=>{
+  const db={query:async(sql:string)=>sql.includes('FROM md_field_definitions')
+    ?{rows:[{api_name:'Phone',data_type:'phone',related_object:null,required:false,max_length:40,
+      precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+      auto_number_format:null}],rowCount:1}
+    :{rows:[],rowCount:0}} as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records=new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac);
+  await assert.rejects(()=>records.create('tenant','user','Contact__c',{Phone:'call me'}),
+    /Invalid phone field/);
+});
+test('auto-number fields substitute both sequence and year tokens',async()=>{
+  let saved:string|undefined;
+  const client={query:async(sql:string,args:unknown[])=>{
+    if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'created'}],rowCount:1};
+    if(sql.includes("data_type='autonumber'"))return {rows:[{
+      api_name:'Number',auto_number_format:'INV-{YYYY}-{0000}',is_unique:false,external_id:false,case_sensitive:false
+    }],rowCount:1};
+    if(sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
+    if(sql.includes('INSERT INTO md_auto_number_counters'))return {rows:[{sequence:'17'}],rowCount:1};
+    if(sql.includes('INSERT INTO md_record_values')){saved=String(args[4]);return {rows:[],rowCount:1};}
+    throw new Error('Unexpected transactional query '+sql);
+  }};
+  const db={
+    query:async(sql:string)=>sql.includes('FROM md_field_definitions')
+      ?{rows:[{api_name:'Number',data_type:'autonumber',related_object:null,required:false,max_length:null,
+        precision:null,scale:null,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+        auto_number_format:'INV-{YYYY}-{0000}'}],rowCount:1}
+      :{rows:[],rowCount:0},
+    transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
+  } as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  await new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac)
+    .create('tenant','user','Invoice__c',{});
+  assert.match(saved??'',new RegExp(`^INV-${new Date().getUTCFullYear()}-0017$`));
+});
+test('numeric filters compare numeric values rather than their text representation',async()=>{
+  const queries:string[]=[];
+  const db={query:async(sql:string)=>{
+    queries.push(sql);
+    if(sql.includes('FROM md_field_definitions'))return {rows:[{
+      api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null,
+      precision:12,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
+      auto_number_format:null
+    }],rowCount:1};
+    if(sql.includes('count(*)::text'))return {rows:[{total:'0'}],rowCount:1};
+    if(sql.includes('WITH selected AS'))return {rows:[],rowCount:0};
+    throw new Error('Unexpected query '+sql);
+  }} as unknown as SqlPersistence;
+  const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
+  await new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac)
+    .list('tenant','user','Invoice__c',10,0,{filterField:'Amount',filterValue:'1.20'});
+  assert.ok(queries.some(sql=>/fv\.value_text::numeric=\$\d+::numeric/.test(sql)));
+});
+test('Record list applies authorised sort, search and field filters before pagination',async()=>{
+  const sqlCalls:Array<{sql:string;args:unknown[]}>= [];
+  const db={query:async(sql:string,args:unknown[])=>{
+    sqlCalls.push({sql,args});
+    if(sql.includes('SELECT api_name,data_type,related_object'))return {rows:[
+      {api_name:'Name',data_type:'text',related_object:null,required:false,max_length:80},
+      {api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null}
+    ]};
+    if(sql.includes('count(*)::text'))return {rows:[{total:'1'}]};
+    if(sql.includes('WITH selected AS'))return {rows:[]};
+    throw new Error('Unexpected list query '+sql);
+  }} as unknown as SqlPersistence;
+  const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
+  const result=await new (await import('../../src/system-files/record-engine.js')).RecordEngine(db,rbac)
+    .list('tenant','user','Invoice__c',25,0,{
+      sortField:'Amount',sortDirection:'desc',search:'Acme',filterField:'Name',filterValue:'Acme Ltd'
+    });
+  assert.deepEqual(result,{records:[],total:1});
+  const list=sqlCalls.find(item=>item.sql.includes('WITH selected AS'));
+  assert.ok(list);
+  assert.match(list.sql,/sv\.value_text::numeric END DESC/);
+  assert.match(list.sql,/fv\.field_api=\$4/);
+  assert.match(list.sql,/strpos\(lower\(COALESCE\(qv\.value_text/);
+  assert.deepEqual(list.args.slice(-3),['Amount',25,0]);
+  assert.ok(list.args.includes('Acme Ltd'));
+  assert.ok(list.args.includes('Acme'));
 });

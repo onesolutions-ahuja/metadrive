@@ -7,6 +7,12 @@ export function formatRecordValue(value: unknown): string {
     if (!Array.isArray(value) && value !== null && 'latitude' in value && 'longitude' in value) {
       return `${String(value.latitude)}, ${String(value.longitude)}`;
     }
+    if (!Array.isArray(value) && 'street' in value && 'city' in value) {
+      return ['street', 'city', 'state', 'postalCode', 'country']
+        .map((key) => (value as Record<string, unknown>)[key])
+        .filter((part) => typeof part === 'string' && part.length > 0)
+        .join(', ') || '—';
+    }
     return JSON.stringify(value) ?? String(value);
   }
   return String(value);
@@ -62,4 +68,3 @@ export function parseCsvImport(text: string, object: ObjectMetadata): Array<Reco
     return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));
   });
 }
-

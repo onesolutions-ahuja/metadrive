@@ -47,34 +47,10 @@ export function createSetupFlowActions(ctx: any) {
     setNamedCredentials((current) => current.map((item) => item.id === result.credential.id ? result.credential : item));
     notify(enabled ? 'Connection enabled' : 'Connection disabled');
   };
-  const grantConnectorLicence = async (appKey: string) => {
-    await apiRequest(`/connector-apps/${encodeURIComponent(appKey)}/licence`, { method: 'POST', body: '{}' });
-    notify('Connector licence granted or renewed');
-  };
-
   const deleteNamedCredential = async (id: string) => {
     await apiRequest<void>(`/named-credentials/${encodeURIComponent(id)}`, { method: 'DELETE' });
     setNamedCredentials((current) => current.filter((item) => item.id !== id));
     notify('Named Credential deleted');
-  };
-
-  const authorizeNamedCredential = async (id: string): Promise<string> => {
-    const result = await apiRequest<{ authorizationUrl: string }>(
-      `/named-credentials/${encodeURIComponent(id)}/oauth/start`, { method: 'POST' }
-    );
-    return result.authorizationUrl;
-  };
-
-  const testNamedCredential = async (id: string): Promise<{ connected: boolean; status?: number; message: string }> => {
-    return apiRequest<{ connected: boolean; status?: number; message: string }>(
-      `/named-credentials/${encodeURIComponent(id)}/test`, { method: 'POST' }
-    );
-  };
-
-  const rotateNamedCredential = async (id: string) => {
-    const result = await apiRequest<{ credential: NamedCredentialMetadata }>(`/named-credentials/${encodeURIComponent(id)}/rotate`, { method: 'POST' });
-    setNamedCredentials((current) => current.map((item) => item.id === id ? result.credential : item));
-    notify('Named Credential encryption key rotated');
   };
 
   const saveEmailAlert = async (alert: {
@@ -650,5 +626,5 @@ export function createSetupFlowActions(ctx: any) {
   };
 
 
- return { saveFlow, saveNamedCredential, toggleNamedCredentialEnabled, grantConnectorLicence, deleteNamedCredential, authorizeNamedCredential, testNamedCredential, rotateNamedCredential, saveEmailAlert, deleteEmailAlert, savePlatformEvent, deletePlatformEvent, saveApprovalProcess, deleteApprovalProcess, validateFlow, openFlowDebug, parseFlowInputs, runFlowDebug, runSavedFlowTests, runFlow, submitFlowScreen, goBackFlowScreen, createFlow, cloneFlow, deactivateFlow, deleteFlow, selectFlow, restoreFlowVersion, exportFlow, importFlow };
+ return { saveFlow, saveNamedCredential, toggleNamedCredentialEnabled, deleteNamedCredential, saveEmailAlert, deleteEmailAlert, savePlatformEvent, deletePlatformEvent, saveApprovalProcess, deleteApprovalProcess, validateFlow, openFlowDebug, parseFlowInputs, runFlowDebug, runSavedFlowTests, runFlow, submitFlowScreen, goBackFlowScreen, createFlow, cloneFlow, deactivateFlow, deleteFlow, selectFlow, restoreFlowVersion, exportFlow, importFlow };
 }

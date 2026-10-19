@@ -52,9 +52,9 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 }
 
 export default function ConnectorAppWorkspace({
-  app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
-  canInstall, canLicenceAdmin, onGrantLicence, canManageFlows, encryptionReady, onBack,
-  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
+  app, credentials, flows, canManageCredentials, canView, canManageSecrets,
+  canInstall, canManageFlows, encryptionReady, onBack,
+  onSave, onDelete, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
 }: {
   app: ConnectorApp;
   credentials: NamedCredentialMetadata[];
@@ -62,18 +62,12 @@ export default function ConnectorAppWorkspace({
   canManageCredentials: boolean;
   canView: boolean;
   canManageSecrets: boolean;
-  canTest: boolean;
   canInstall: boolean;
-  canLicenceAdmin: boolean;
-  onGrantLicence: (appKey: string) => Promise<void>;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
   onSave: (value: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onRotate: (id: string) => Promise<void>;
-  onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
-  onOAuthAuthorize?: (id: string) => Promise<string>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
   onOpenFlow: (apiName: string) => void;
@@ -127,13 +121,6 @@ export default function ConnectorAppWorkspace({
     } catch { /* invalid optional metadata */ }
     return [];
   })();
-  const withAction = async (task: () => Promise<void>) => {
-    if (acting) return;
-    setActing(true); setError('');
-    try { await task(); } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to update connection');
-    } finally { setActing(false); }
-  };
   return <div className="app-exchange connector-open-page">
     <div className="exchange-topline"><button className="btn" onClick={onBack}><ArrowLeft size={14}/> AppExchange</button><strong>{app.Name}</strong></div>
     <section className="surface" style={{padding:18,marginBottom:16}}>
@@ -155,8 +142,8 @@ export default function ConnectorAppWorkspace({
         preset={{name:app.CredentialName__c,label:app.Name,baseUrl:app.DefaultBaseUrl__c || '',authType:app.AuthType__c || 'None',configuration:configFields(app.ConfigFields__c).values}}
         fieldLabels={configFields(app.ConfigFields__c).labels}
         credentials={matched} canManage={canManageCredentials && licensed}
-        canManageSecrets={canManageSecrets} canTest={canTest && licensed}
-        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest} onOAuthAuthorize={onOAuthAuthorize}/>
+        canManageSecrets={canManageSecrets}
+        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete}/>
     </>}
     {section === 'licence' && <section className="surface" style={{padding:18}}>
       <h2>App Licence</h2>
@@ -165,10 +152,6 @@ export default function ConnectorAppWorkspace({
       <p>Trial started: {app.TrialStartedAt__c ? new Date(app.TrialStartedAt__c).toLocaleString() : 'Not started'}</p>
       <p>Trial expires: {app.TrialExpiresAt__c ? new Date(app.TrialExpiresAt__c).toLocaleString() : '—'}</p>
       <p>Paid licence expires: {app.LicenceExpiresAt__c ? new Date(app.LicenceExpiresAt__c).toLocaleString() : 'Not configured'}</p>
-      {canLicenceAdmin && <button className="btn btn-brand" disabled={acting || !app.Installed__c}
-        onClick={() => void withAction(() => onGrantLicence(app.AppKey__c))}>
-        Activate / Renew paid licence ({app.LicenceTermDays__c || 30} days)
-      </button>}
       {!app.TrialUsed__c && <button className="btn btn-brand" disabled={acting || !canInstall}
         onClick={() => void perform('trial')}>{acting ? 'Activating…' : 'Start free trial'}</button>}
       {app.TrialUsed__c && !licensed && <div className="records-message">This tenant's free trial cannot be restarted. Contact your licence administrator.</div>}

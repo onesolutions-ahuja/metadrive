@@ -1,7 +1,7 @@
 // @ts-nocheck
 // On-demand reports, dashboards, subscriptions and page selection operations.
 import { useCallback } from 'react';
-import type { DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, DashboardSubscription, DashboardSubscriptionInput, DashboardSnapshot, ReportMetadata, ReportFolderInput, ReportRunMetadata, LightningPageMetadata } from '../../metadata/Definitions/metadata';
+import type { DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportMetadata, ReportFolderInput, ReportRunMetadata, LightningPageMetadata } from '../../metadata/Definitions/metadata';
 export function useSetupAnalyticsActions(ctx: any) {
  const { apiRequest, dashboards, navigateRoute, notify, objects, page, pages, reports, setDashboardFolders, setDashboardTerritories, setDashboards, setPage, setReportFolders, setReports, workspace } = ctx;
   const loadDashboardRecords = useCallback(async (dashboardApiName: string, objectApiName: string, runningUserId?: string) => {
@@ -52,63 +52,6 @@ export function useSetupAnalyticsActions(ctx: any) {
     ),
     []
   );
-  const loadDashboardSnapshots = useCallback(async (apiName: string) => {
-    const payload = await apiRequest<{ snapshots: DashboardSnapshot[] }>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots`
-    );
-    return payload.snapshots;
-  }, []);
-  const createDashboardSnapshot = useCallback(async (
-    apiName: string,
-    label: string,
-    filters: DashboardFilterMetadata[],
-    crossFilters: DashboardFilterMetadata[] = [],
-    customComponents: Array<{ componentId: string; html: string }> = [],
-    runningUserId?: string
-  ) => {
-    const payload = await apiRequest<{ snapshot: DashboardSnapshot }>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots`,
-      { method: 'POST', body: JSON.stringify({ label, filters, crossFilters, customComponents, ...(runningUserId ? { runningUserId } : {}) }) }
-    );
-    return payload.snapshot;
-  }, []);
-  const deleteDashboardSnapshot = useCallback(async (apiName: string, snapshotId: string) => {
-    await apiRequest<void>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}`,
-      { method: 'DELETE' }
-    );
-  }, []);
-  const loadDashboardSubscriptions = useCallback(async (apiName: string) => {
-    const payload = await apiRequest<{ subscriptions: DashboardSubscription[] }>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions`
-    );
-    return payload.subscriptions;
-  }, []);
-  const saveDashboardSubscription = useCallback(async (
-    apiName: string,
-    input: DashboardSubscriptionInput,
-    subscriptionId?: string
-  ) => {
-    const path = `/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions${subscriptionId ? `/${encodeURIComponent(subscriptionId)}` : ''}`;
-    const payload = await apiRequest<{ subscription: DashboardSubscription }>(path, {
-      method: subscriptionId ? 'PUT' : 'POST',
-      body: JSON.stringify(input)
-    });
-    return payload.subscription;
-  }, []);
-  const deleteDashboardSubscription = useCallback(async (apiName: string, subscriptionId: string) => {
-    await apiRequest<void>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}`,
-      { method: 'DELETE' }
-    );
-  }, []);
-  const runDashboardSubscription = useCallback(async (apiName: string, subscriptionId: string) => {
-    const payload = await apiRequest<{ subscription: DashboardSubscription }>(
-      `/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run`,
-      { method: 'POST', body: JSON.stringify({}) }
-    );
-    return payload.subscription;
-  }, []);
   const saveDashboard = async (dashboard: DashboardMetadata) => {
     const payload = await apiRequest<{ dashboard: DashboardMetadata }>(`/metadata/dashboards/${encodeURIComponent(dashboard.apiName)}`, {
       method: 'PUT',
@@ -199,5 +142,5 @@ export function useSetupAnalyticsActions(ctx: any) {
   };
 
 
- return { loadDashboardRecords, saveReport, saveReportFolder, deleteReport, runReport, previewReport, loadDashboardSnapshots, createDashboardSnapshot, deleteDashboardSnapshot, loadDashboardSubscriptions, saveDashboardSubscription, deleteDashboardSubscription, runDashboardSubscription, saveDashboard, saveDashboardFolder, deleteDashboardFolder, saveDashboardTerritories, deleteDashboard, selectDashboard, openDashboardViewer, exitDashboardViewer, selectPageForObject, openPageForObject };
+ return { loadDashboardRecords, saveReport, saveReportFolder, deleteReport, runReport, previewReport, saveDashboard, saveDashboardFolder, deleteDashboardFolder, saveDashboardTerritories, deleteDashboard, selectDashboard, openDashboardViewer, exitDashboardViewer, selectPageForObject, openPageForObject };
 }

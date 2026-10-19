@@ -271,7 +271,7 @@ export default function DashboardBuilder({
     setActiveSnapshotId('');
     setSnapshotError('');
     setSnapshots([]);
-    if (!current || current.status !== 'Deployed' || !dashboardIsSaved) {
+    if (typeof onLoadSnapshots !== 'function' || !current || current.status !== 'Deployed' || !dashboardIsSaved) {
       return () => { active = false; };
     }
     void onLoadSnapshots(current.apiName).then((items) => {
@@ -286,7 +286,7 @@ export default function DashboardBuilder({
     let active = true;
     setSubscriptions([]);
     setSubscriptionError('');
-    if (!current || current.status !== 'Deployed' || !dashboardIsSaved) {
+    if (typeof onLoadSubscriptions !== 'function' || !current || current.status !== 'Deployed' || !dashboardIsSaved) {
       return () => { active = false; };
     }
     void onLoadSubscriptions(current.apiName).then((items) => {
@@ -1587,17 +1587,6 @@ export default function DashboardBuilder({
           }}><Eye size={14} />{previewMode ? 'Edit' : 'Preview'}</button>}
         {!viewerMode && previewMode && current?.status === 'Deployed' && <button className="btn" onClick={() => onOpenViewer(current.apiName)}><Eye size={14} />Open Viewer</button>}
         {viewerMode && current && <button className="btn" onClick={() => onExitViewer(current.apiName)}>Back to Setup</button>}
-        {previewMode && current?.status === 'Deployed' && <button className="btn" onClick={() => setSnapshotsOpen((open) => !open)}>
-          <FileText size={14} />Snapshots ({snapshots.length})
-        </button>}
-        {previewMode && current?.status === 'Deployed' && <button className="btn" onClick={() => setSubscriptionsOpen((open) => !open)}>
-          <Bell size={14} />Subscriptions ({subscriptions.length})
-        </button>}
-        {previewMode && current?.status === 'Deployed' && <button className="btn" disabled={snapshotBusy || dirty}
-          title={dirty ? 'Save dashboard changes before capturing a snapshot.' : undefined} onClick={() => {
-          setSnapshotsOpen(true);
-          setSnapshotLabel(`${current.label} · ${new Date().toLocaleString()}`.slice(0, 80));
-        }}><Plus size={14} />Capture Snapshot</button>}
         {!viewerMode && <button className="btn" disabled={!current || !canCreate || busy} onClick={cloneDashboard}><Copy size={14} />Clone</button>}
         {!viewerMode && dashboardIsSaved && <button className="btn" disabled={!canEditCurrent || busy || !current || (current.status === 'Draft' && !current.components.length)} onClick={deployDashboard}>
           {current?.status === 'Deployed' ? <X size={14} /> : <Check size={14} />}{current?.status === 'Deployed' ? 'Unpublish' : 'Publish'}

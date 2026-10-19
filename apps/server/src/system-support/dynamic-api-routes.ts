@@ -5,9 +5,12 @@ import type {RecordEngine} from '../system-files/record-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 
 type Actor={tenant_id:string;user_id:string};
-type AuthenticatedRequest=Request&{actor?:Actor};
+type AuthenticatedRequest=Request<Record<string,string>>&{actor?:Actor};
 const wrap=(fn:(req:AuthenticatedRequest,res:Response)=>Promise<void>)=>
-  (req:Request,res:Response,next:NextFunction)=>{void fn(req as AuthenticatedRequest,res).catch(next);};
+  (req:Request,res:Response,next:NextFunction)=>{
+    // These routes use named parameters only; Express wildcard parameters are not registered here.
+    void fn(req as AuthenticatedRequest,res).catch(next);
+  };
 const api=/^[A-Za-z][A-Za-z0-9_]*$/;
 function authenticated(req:AuthenticatedRequest):Actor{
   if(!req.actor?.tenant_id||!req.actor.user_id)throw new Error('Authenticated tenant required');

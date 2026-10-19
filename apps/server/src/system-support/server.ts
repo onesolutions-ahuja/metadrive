@@ -8,6 +8,7 @@ import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
+import {ObjectManagerMetadataService} from '../system-files/object-manager-metadata.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
 import {permittedApps} from './rbac-navigation.js';
 import {RbacAdministration} from './rbac-administration.js';
@@ -22,6 +23,8 @@ import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
+import {FlowRecordTriggers} from '../system-files/flow-record-triggers.js';
+import {validateFlowFormula} from '../system-files/flow-formula-runtime.js';
 import { AppRuntime } from '../system-files/app-runtime.js';
 import { TenantProvisioning } from '../system-files/tenant-provisioning.js';
 import {PlatformTenantService} from '../system-files/platform-tenant-service.js';
@@ -29,9 +32,10 @@ import {rotateFirstLoginPassword} from './first-login-rotation.js';
 import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
 type Actor={tenant_id:string;user_id:string};
-type AuthenticatedRequest=Request & {actor?:Actor};
+type AuthenticatedRequest=Request<Record<string,string>> & {actor?:Actor};
 type Handler=(req:AuthenticatedRequest,res:Response)=>Promise<unknown>;
 const route=(handler:Handler)=>(req:Request,res:Response,next:NextFunction)=>{
+  // These routes use named parameters only; Express wildcard parameters are not registered here.
   Promise.resolve(handler(req as AuthenticatedRequest,res)).catch(next);
 };
 const tokenCookie='md_refresh';
@@ -78,10 +82,17 @@ export function createSystemServer(db:SqlPersistence) {
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const definitions=new ObjectDefinitionService(db);
+  const objectManagerMetadata=new ObjectManagerMetadataService(db,rbac);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
   const flows=new FlowRuntime(db,rbac,records,
-    (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
+    (tenantId,userId,config,variables,key,execution)=>execution
+      ?namedCredentials.enqueueCallout(execution.client,tenantId,userId,execution.runId,
+        execution.nodeId,config,variables).then(()=>({status:202,body:''}))
+      :namedCredentials.callout(tenantId,userId,config,variables,key));
+  const flowRecordTriggers=new FlowRecordTriggers(rbac,flows);
+  records.setRecordTriggerHandler((client,tenantId,userId,objectApi,operation,record,prior)=>
+    flowRecordTriggers.execute(client,tenantId,userId,objectApi,operation,record,prior));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
 
@@ -426,11 +437,64 @@ export function createSystemServer(db:SqlPersistence) {
       throw new Error('Invalid field update');
     res.json({object:await definitions.updateField(actor.tenant_id,req.params.apiName,req.params.fieldApi,proposal)});
   }));
+  app.post('/api/metadata/objects/:apiName/formulas/validate',route(async(req,res)=>{
+    const actor=req.actor!;
+    const objectApi=req.params.apiName;
+    if(typeof objectApi!=='string')throw new Error('Invalid object name');
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
+    await rbac.require(actor.tenant_id,actor.user_id,objectApi,'read');
+    const {expression,returnType}=req.body??{};
+    if(typeof expression!=='string'||!expression.trim()||expression.length>4000
+      ||!['Number','Currency','Percent','Text','Date','Checkbox'].includes(returnType))
+      throw new Error('Invalid formula definition');
+    validateFlowFormula(expression);
+    let depth=0;
+    const references:Array<{objectApi:string;fieldApi:string}>=[];
+    const withoutStrings=expression.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g,'');
+    const withoutReferences=withoutStrings.replace(/@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)/g,
+      (_match,objectName:string,fieldName:string)=>{
+        references.push({objectApi:objectName,fieldApi:fieldName});
+        return '0';
+      });
+    if(/[^A-Za-z0-9_\s().,+*/%&=<>!:.\\-]/.test(withoutReferences))
+      throw new Error('Formula contains unsupported syntax');
+    for(const token of withoutReferences.match(/[A-Za-z_][A-Za-z0-9_]*/g)??[])
+      if(!['IF','AND','OR','NOT','ISBLANK','ISNULL','BLANKVALUE','NULLVALUE','TEXT','VALUE',
+        'LEN','LOWER','UPPER','TRIM','LEFT','RIGHT','MID','FIND','CONTAINS','BEGINS',
+        'ABS','ROUND','MIN','MAX','GEOLOCATION','DISTANCE','TRUE','FALSE','NULL','PI'].includes(token.toUpperCase()))
+        throw new Error('Unsupported formula function or reference: '+token);
+    for(const char of withoutReferences){
+      if(char==='(')depth++;
+      if(char===')'&&--depth<0)throw new Error('Unbalanced formula parentheses');
+    }
+    if(depth!==0||withoutStrings.includes('@')&&references.length===0)
+      throw new Error('Invalid formula syntax');
+    for(const reference of references){
+      await rbac.require(actor.tenant_id,actor.user_id,reference.objectApi,'read');
+      await rbac.require(actor.tenant_id,actor.user_id,reference.objectApi+'.'+reference.fieldApi,'read');
+      const referencedObject=await definitions.get(actor.tenant_id,reference.objectApi);
+      if(!referencedObject.fields.some(field=>field.apiName===reference.fieldApi))
+        throw new Error('Formula references an unknown field: '+reference.fieldApi);
+    }
+    res.json({valid:true});
+  }));
   app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
+  }));
+  app.get('/api/metadata/objects/:apiName/deleted-fields',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json(await definitions.listDeletedFields(actor.tenant_id,req.params.apiName));
+  }));
+  app.post('/api/metadata/objects/:apiName/fields/:fieldApi/restore',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
+    res.json({object:await definitions.restoreField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
   }));
   app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
     const actor=req.actor!;
@@ -448,7 +512,9 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
-    res.json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
+    const object=await definitions.get(actor.tenant_id,req.params.apiName);
+    const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.json({object:{...object,...configuration}});
   }));
   app.get('/api/apps/:appId/home-page',route(async(req,res)=>{
     const actor=req.actor!;
@@ -470,15 +536,25 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
-    res.json({objects:await definitions.list(actor.tenant_id)});
+    const objects=await definitions.list(actor.tenant_id);
+    const configurations=await objectManagerMetadata.loadForObjects(actor.tenant_id,
+      objects.map(object=>object.apiName));
+    res.json({objects:objects.map(object=>({...object,...configurations.get(object.apiName)}))});
   }));
   app.post('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','create');
     const {apiName,label}=req.body??{};
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
-    const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[]);
-    res.status(201).json({object});
+    const payload=req.body??{};
+    const object=await definitions.create(actor.tenant_id,apiName,label,payload.fields??[],async client=>{
+      await objectManagerMetadata.persistWithin(client,actor.tenant_id,apiName,{
+        description:payload.description??'',helpText:payload.helpText??'',
+        settings:payload.settings??{},fieldSets:payload.fieldSets??[]
+      });
+    });
+    const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,apiName);
+    res.status(201).json({object:{...object,...configuration}});
   }));
   app.put('/api/metadata/objects/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -490,11 +566,18 @@ export function createSystemServer(db:SqlPersistence) {
     if(!draft||typeof draft!=='object'||Array.isArray(draft)||draft.apiName!==req.params.apiName)
       throw new Error('Invalid object draft');
     // Unsupported configuration must never appear successfully saved.
-    if(draft.validationRules?.length||draft.formulaFields?.length
-      ||draft.compactLayouts?.length||draft.fieldSets?.length||draft.description?.trim())
+    if(draft.validationRules?.length||draft.formulaFields?.length||draft.compactLayouts?.length)
       throw new Error('Invalid unsupported object configuration');
-    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,Number(revisionHeader.slice(1,-1)));
-    res.json({object});
+    const object=await definitions.replaceLayouts(actor.tenant_id,req.params.apiName,draft,
+      Number(revisionHeader.slice(1,-1)),async client=>{
+        await objectManagerMetadata.persistWithin(client,
+          actor.tenant_id,req.params.apiName,{
+          description:draft.description,helpText:draft.helpText,settings:draft.settings,
+          fieldSets:draft.fieldSets
+          });
+      });
+    const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.json({object:{...object,...configuration}});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
@@ -888,7 +971,30 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0) throw new Error('Invalid pagination');
-    res.json(await records.list(actor.tenant_id,actor.user_id,req.params.objectApi,limit,offset));
+    const queryString=(name:string):string|undefined=>{
+      const value=req.query[name];
+      if(value===undefined)return undefined;
+      if(typeof value!=='string')throw new Error('Invalid record list query');
+      return value;
+    };
+    const sortDirection=queryString('sortDirection')?.toLowerCase();
+    const filterField=queryString('filterField');
+    const filterValue=queryString('filterValue');
+    const filterOperator=queryString('filterOperator')??'Equals';
+    const search=queryString('search');
+    if(sortDirection!==undefined&&sortDirection!=='asc'&&sortDirection!=='desc')
+      throw new Error('Invalid sort direction');
+    if(!['Equals','Includes','Excludes'].includes(filterOperator))
+      throw new Error('Invalid record list filter operator');
+    if((filterField===undefined)!==(filterValue===undefined)
+      ||(search!==undefined&&search.length>256)||(filterValue!==undefined&&filterValue.length>2000))
+      throw new Error('Invalid record list query');
+    const objectApi=req.params.objectApi;
+    if(typeof objectApi!=='string')throw new Error('Invalid object name');
+    res.json(await records.list(actor.tenant_id,actor.user_id,objectApi,limit,offset,{
+      sortField:queryString('sortField'),sortDirection:sortDirection as 'asc'|'desc'|undefined,
+      search,filterField,filterValue,filterOperator:filterOperator as 'Equals'|'Includes'|'Excludes'
+    }));
   }));
   app.post('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
@@ -972,5 +1078,22 @@ export async function startSystemServer() {
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
-  return createSystemServer(db).listen(port,'0.0.0.0');
+  const definitions=new ObjectDefinitionService(db);
+  await definitions.purgeExpiredFields();
+  const purgeTimer=setInterval(()=>{
+    void definitions.purgeExpiredFields().catch(error=>{
+      console.error('Expired field cleanup failed:',error);
+    });
+  },60*60*1000);
+  purgeTimer.unref();
+  const calloutDispatcher=new NamedCredentialService(db,new RbacEngine(db));
+  const calloutTimer=setInterval(()=>{
+    void calloutDispatcher.dispatchOne().catch(error=>{
+      console.error('Durable HTTP Callout dispatch failed:',error);
+    });
+  },1000);
+  calloutTimer.unref();
+  const server=createSystemServer(db).listen(port,'0.0.0.0');
+  server.once('close',()=>{clearInterval(purgeTimer);clearInterval(calloutTimer);});
+  return server;
 }

@@ -3,9 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { resolveSqlComponentLibrary } from '../../components/Registry/bundledRegistryClient';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
-import type { MetadataPublicationResponse } from '../../metadata/Cache/verifiedMetadataCache';
 export function useSetupMetadata(ctx: any) {
-  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, readVerifiedMetadata, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
   // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
   const analyticsLoads = useRef(new Set<string>());
@@ -138,22 +137,9 @@ export function useSetupMetadata(ctx: any) {
             recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
               { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
           ]);
-          // A snapshot is display-only and is never accepted in place of
-          // authenticated identity or server-side permissions. Restore solely
-          // when the live session was verified but presentation endpoints failed.
-          const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
-          // Encrypted presentation fallback requires a fresh OneEngine publication digest.
-          const serverPublication = signedIn.id && signedIn.tenantId && (!firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length)
-            ? await apiRequest<MetadataPublicationResponse>('/metadata/offline-publication').catch(() => null) : null;
-          const offlineView = signedIn.id && signedIn.tenantId && serverPublication
-            ? await readVerifiedMetadata({userId:signedIn.id,tenantId:signedIn.tenantId},serverPublication.publication).catch(() => null) : null;
-          const displayObjects = firstObjects.objects.length ? firstObjects.objects : (offlineView?.objects ?? []) as ObjectMetadata[];
-          const displayPages = firstPages.pages.length ? firstPages.pages : (offlineView?.pages ?? []) as LightningPageMetadata[];
-          const displayApps = firstApps.apps.length ? firstApps.apps : (offlineView?.apps ?? []) as LightningAppMetadata[];
-          if (offlineView) {
-            setLibraryComponents(offlineView.components as LibraryComponentMetadata[]);
-            setToast('Showing last saved page layout. Cloud actions require a connection.');
-          }
+          const displayObjects = firstObjects.objects;
+          const displayPages = firstPages.pages;
+          const displayApps = firstApps.apps;
           setObjects(displayObjects);
           if(displayObjects.length)setObject(displayObjects.find(item=>item.apiName===object.apiName)??displayObjects[0]);
           setPages(displayPages);
@@ -235,16 +221,6 @@ export function useSetupMetadata(ctx: any) {
         setCanManageReportFolders(reportFolderPayload.canManageAll);
         setDashboardUserId(dashboardPayload.userId);
         setDashboardRunningUserIds(dashboardPayload.runningUserIds);
-        // Cache presentation metadata only after /auth/me confirms the live user and
-        // all authorised metadata endpoints return successfully. Do not cache
-        // credentials, permissions, business records or executable checkout state.
-        if (sessionPayload.user.id && sessionPayload.user.tenantId
-          && !failures.length && objectPayload.objects.length && pagePayload.pages.length) {
-          void apiRequest<MetadataPublicationResponse>('/metadata/offline-publication')
-            .then(({content,publication})=>saveVerifiedMetadata(
-              {userId:sessionPayload.user.id!,tenantId:sessionPayload.user.tenantId!},content,publication))
-            .catch(() => { /* Online rendering remains authoritative. */ });
-        }
         setCurrentProfileId(sessionPayload.user.profileId);
         setCanManageUserIdentities(sessionPayload.user.permissions.includes('security:manage'));
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')

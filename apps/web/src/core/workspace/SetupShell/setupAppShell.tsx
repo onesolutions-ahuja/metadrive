@@ -19,7 +19,6 @@ import { readVerifiedMetadata, saveVerifiedMetadata } from '../../metadata/Cache
 
 import * as React from 'react';
 import { renderSetupShell } from './setupShellPresentation';
-import { createSetupNotificationActions } from '../../automation/Notifications/setupNotificationActions';
 import { useSetupAnalyticsActions } from '../../builders/ReportBuilder/useSetupAnalyticsActions';
 import { createSetupObjectActions } from '../../builders/ObjectManager/setupObjectActions';
 import { createSetupFlowActions } from '../../builders/FlowBuilder/setupFlowActions';
@@ -28,14 +27,13 @@ const SetupObjectDialogs = React.lazy(() => import('../../builders/ObjectManager
 const FieldWizardModal = React.lazy(() => import('../../builders/ObjectManager/setupFieldWizard'));
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Check, ChevronLeft, ChevronRight, CircleHelp, Database, Monitor, History, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleHelp, Database, Monitor, History, Search, X } from 'lucide-react';
 const FlowBuilderWorkspace = React.lazy(() => import('../../builders/FlowBuilder/FlowBuilder'));
 const SetupFlowDialogs = React.lazy(() => import('../../builders/FlowBuilder/setupFlowDialogs'));
 const FlowLogs = React.lazy(() => import('../../automation/FlowLogs/FlowLogs'));
 const FlowInterviews = React.lazy(() => import('../../automation/FlowInterviews/FlowInterviews'));
 const ScheduledFlows = React.lazy(() => import('../../automation/ScheduledFlows/ScheduledFlows'));
 const DashboardBuilder = React.lazy(() => import('../../builders/DashboardBuilder/DashboardBuilder'));
-const ComponentLibrary = React.lazy(() => import('../../components/ComponentLibrary/ComponentLibrary'));
 
 
 
@@ -63,7 +61,6 @@ const TenantRecoveryPanel = React.lazy(() => import('../../platform/TenantRecove
 const TenantUsagePanel = React.lazy(() => import('../../platform/TenantUsagePanel/TenantUsagePanel'));
 const DeveloperAccountSettings = React.lazy(() => import('../../settings/DeveloperAccountSettings/DeveloperAccountSettings'));
 
-const ApprovalProcessManager = React.lazy(() => import('../../automation/ApprovalProcessManager/ApprovalProcessManager'));
 
 const EmbeddedDashboard = React.lazy(() => import('../../pages/EmbeddedDashboard/EmbeddedDashboard'));
 
@@ -158,14 +155,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [flowInterviewsLoading, setFlowInterviewsLoading] = useState(false);
   const [canManageFlows, setCanManageFlows] = useState(false);
   const [canManageApps, setCanManageApps] = useState(false); const [canReadMetadata,setCanReadMetadata]=useState(false); const [canReadSecurity,setCanReadSecurity]=useState(false);
-  const [notifications, setNotifications] = useState<CustomNotificationMetadata[]>([]);
-  const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const notificationRef = useRef<HTMLDivElement>(null);
-  useDismissOnOutside(notificationRef, notificationsOpen, () => setNotificationsOpen(false));
-  const [approvalRequests, setApprovalRequests] = useState<ApprovalRequestMetadata[]>([]);
-  const [approvalBusyId, setApprovalBusyId] = useState('');
   const [approvalProcesses, setApprovalProcesses] = useState<ApprovalProcessMetadata[]>([]);
   const [canManageApprovalProcesses, setCanManageApprovalProcesses] = useState(false);
   const [canManageUserIdentities, setCanManageUserIdentities] = useState(false);
@@ -244,6 +233,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [newFieldRelationshipTarget, setNewFieldRelationshipTarget] = useState('');
   const [newFieldRelationshipName, setNewFieldRelationshipName] = useState('');
   const [newFieldChildRelationshipName, setNewFieldChildRelationshipName] = useState('');
+  const [newFieldRollupChildObject, setNewFieldRollupChildObject] = useState('');
+  const [newFieldRollupRelationshipField, setNewFieldRollupRelationshipField] = useState('');
+  const [newFieldRollupOperation, setNewFieldRollupOperation] = useState<'COUNT' | 'SUM' | 'MIN' | 'MAX'>('COUNT');
+  const [newFieldRollupSourceField, setNewFieldRollupSourceField] = useState('');
   const [newFieldDeleteBehavior, setNewFieldDeleteBehavior] = useState<'Clear' | 'Restrict'>('Clear');
   const [newFieldAllowReparenting, setNewFieldAllowReparenting] = useState(false);
   const [newFieldLookupFilters, setNewFieldLookupFilters] = useState<NewFieldLookupFilterDraft[]>([]);
@@ -584,16 +577,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       : [...current, result.connection]);
     return result.connection;
   };
-  const testIntegrationConnection = async (id: string) => {
-    const result = await apiRequest<{ connection: IntegrationConnectionMetadata }>(
-      `/integration-connections/${encodeURIComponent(id)}/test`,
-      { method: 'POST' }
-    );
-    setIntegrationConnections((current) => current.map((item) =>
-      item.id === result.connection.id ? result.connection : item
-    ));
-    return result.connection;
-  };
   const commitFlow = (nextFlow: FlowDefinitionMetadata) => {
     if (JSON.stringify(flow) === JSON.stringify(nextFlow)) return;
     const editedFlow = flow.status === 'Active' && nextFlow.status === 'Active'
@@ -664,10 +647,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       openSetupWorkspace('named-credentials');
       return;
     }
-    if (item === 'Approval Processes') {
-      openSetupWorkspace('approval-processes');
-      return;
-    }
     if (item === 'Object Manager' || item === 'Objects' || objectSettings.includes(item)) {
       navigateRoute({
         kind: 'setup',
@@ -681,7 +660,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     else if (item === 'Connector Settings') openSetupWorkspace('named-credentials');
     else if (item === 'Setup Home') openSetupWorkspace('home');
     else if (item === 'App Manager') openSetupWorkspace('app-manager');
-    else if (item === 'Component Library') openSetupWorkspace('component-library');
     else if (item === 'AppExchange') openSetupWorkspace('app-exchange');
     else if (item === 'Flows') openSetupWorkspace('flow-builder');
     else if (item === 'Paused and Waiting Interviews') openSetupWorkspace('flow-interviews');
@@ -781,9 +759,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     setSelectedFlowId(incoming[0]?.from ?? remaining[0]?.id ?? 1);
   };
 
-  const { validateNewFieldFormula, insertFormulaText, resetNewFieldDraft, newFieldApiName, newFieldPicklistOptions, newFieldController, newFieldControllerValues, newFieldDefaultError, newFieldConfigurationError, addField, saveObject, refreshObject, deleteObject, saveField, deleteField, createObject, saveCustomTab } = createSetupObjectActions({ apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace });
+  const { validateNewFieldFormula, insertFormulaText, resetNewFieldDraft, newFieldApiName, newFieldPicklistOptions, newFieldController, newFieldControllerValues, newFieldDefaultError, newFieldConfigurationError, addField, saveObject, refreshObject, deleteObject, saveField, deleteField, createObject, saveCustomTab } = createSetupObjectActions({ apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldRollupChildObject, newFieldRollupOperation, newFieldRollupRelationshipField, newFieldRollupSourceField, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldRollupChildObject, setNewFieldRollupOperation, setNewFieldRollupRelationshipField, setNewFieldRollupSourceField, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace });
 
-  const { saveFlow, saveNamedCredential, toggleNamedCredentialEnabled, grantConnectorLicence, deleteNamedCredential, authorizeNamedCredential, testNamedCredential, rotateNamedCredential, saveEmailAlert, deleteEmailAlert, savePlatformEvent, deletePlatformEvent, saveApprovalProcess, deleteApprovalProcess, validateFlow, openFlowDebug, parseFlowInputs, runFlowDebug, runSavedFlowTests, runFlow, submitFlowScreen, goBackFlowScreen, createFlow, cloneFlow, deactivateFlow, deleteFlow, selectFlow, restoreFlowVersion, exportFlow, importFlow } = createSetupFlowActions({ apiRequest, apps, confirmDiscardFlowChanges, confirmFlowNavigation, flow, flowDebug, flowHistory, flowRun, flowSnapshots, flows, navigateRoute, notify, object, objects, platformEvents, setApprovalProcesses, setEmailAlerts, setFlow, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowRunnerSubmitting, setFlowValidation, setFlows, setNamedCredentials, setPlatformEvents, setSelectedFlowId, workspace });
+  const { saveFlow, saveNamedCredential, toggleNamedCredentialEnabled, deleteNamedCredential, saveEmailAlert, deleteEmailAlert, savePlatformEvent, deletePlatformEvent, saveApprovalProcess, deleteApprovalProcess, validateFlow, openFlowDebug, parseFlowInputs, runFlowDebug, runSavedFlowTests, runFlow, submitFlowScreen, goBackFlowScreen, createFlow, cloneFlow, deactivateFlow, deleteFlow, selectFlow, restoreFlowVersion, exportFlow, importFlow } = createSetupFlowActions({ apiRequest, apps, confirmDiscardFlowChanges, confirmFlowNavigation, flow, flowDebug, flowHistory, flowRun, flowSnapshots, flows, navigateRoute, notify, object, objects, platformEvents, setApprovalProcesses, setEmailAlerts, setFlow, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowRunnerSubmitting, setFlowValidation, setFlows, setNamedCredentials, setPlatformEvents, setSelectedFlowId, workspace });
 
   const savePage = async (nextPage: LightningPageMetadata) => {
     try {
@@ -858,40 +836,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       }
     }
   };
-  const saveLibraryComponent = async (
-    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & { publicationStatus: 'Draft' | 'Published' }, 
-    updating: boolean
-  ) => {
-    const path = updating ? `/component-library/${encodeURIComponent(component.apiName)}` : '/component-library';
-    const payload = await apiRequest<{ component: LibraryComponentMetadata }>(path, {
-      method: updating ? 'PUT' : 'POST',
-      body: JSON.stringify(component)
-    });
-    setLibraryComponents((current) => current.some((item) => item.apiName === payload.component.apiName)
-      ? current.map((item) => item.apiName === payload.component.apiName ? payload.component : item)
-      : [...current, payload.component]);
-    notify(updating ? 'Global component updated' : 'Global component registered');
-  };
-  const publishLibraryComponent = async (apiName: string) => {
-    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/publish`, {method:'POST',body:'{}'});
-    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
-    notify('Component published');
-  };
-  const rollbackLibraryComponent = async (apiName: string, version: number) => {
-    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/rollback`, {
-      method:'POST',body:JSON.stringify({version})
-    });
-    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
-    notify('Component restored as a new published version');
-  };
-  const deleteLibraryComponent = async (apiName: string) => {
-    await apiRequest<void>(`/component-library/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
-    setLibraryComponents((current) => current.filter((item) => item.apiName !== apiName));
-    notify('Global component deleted');
-  };
-  const { loadDashboardRecords, saveReport, saveReportFolder, deleteReport, runReport, previewReport, loadDashboardSnapshots, createDashboardSnapshot, deleteDashboardSnapshot, loadDashboardSubscriptions, saveDashboardSubscription, deleteDashboardSubscription, runDashboardSubscription, saveDashboard, saveDashboardFolder, deleteDashboardFolder, saveDashboardTerritories, deleteDashboard, selectDashboard, openDashboardViewer, exitDashboardViewer, selectPageForObject, openPageForObject } = useSetupAnalyticsActions({ apiRequest, dashboards, navigateRoute, notify, objects, page, pages, reports, setDashboardFolders, setDashboardTerritories, setDashboards, setPage, setReportFolders, setReports, workspace });
-
-  const { loadNotifications, toggleNotifications, markNotificationRead, decideApproval } = createSetupNotificationActions({ apiRequest, notifications, notificationsOpen, notify, setApprovalBusyId, setApprovalRequests, setNotifications, setNotificationsLoading, setNotificationsOpen, setNotificationsUnreadCount });
+  const { loadDashboardRecords, saveReport, saveReportFolder, deleteReport, runReport, previewReport, saveDashboard, saveDashboardFolder, deleteDashboardFolder, saveDashboardTerritories, deleteDashboard, selectDashboard, openDashboardViewer, exitDashboardViewer, selectPageForObject, openPageForObject } = useSetupAnalyticsActions({ apiRequest, dashboards, navigateRoute, notify, objects, page, pages, reports, setDashboardFolders, setDashboardTerritories, setDashboards, setPage, setReportFolders, setReports, workspace });
 
   // Standalone presentation is a page metadata capability, not an app identity.
   // Only an active, route-matched page can opt into the edge-to-edge shell.
@@ -903,7 +848,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     isStandalonePagePresentation(candidate)
   );
 
-  return renderSetupShell({ AppExchange, AppManager, ComponentLibrary, FieldWizardModal, FlowInterviews, FlowLogs, NamedCredentials, ScheduledFlows, SetupFlowDialogs, SetupObjectDialogs, AccountSessionSecurity, ApprovalProcessManager, AutomationSettingsWorkspace, Bell, Check, ChevronLeft, ChevronRight, CircleHelp, CompanySettings, ConnectionHealthIndicator, DashboardBuilder, Database, DeveloperAccountSettings, FlowBuilderWorkspace, GlobalRecordSearch, History, LightningAppRuntime, Monitor, NavigationLoadTime, ObjectManager, PageBuilder, Permissions, PlatformPageSlot, PlatformWorkspaceSurface, ProfilePasswordMenu, RecordObjectPicker, RecordWorkspace, ReportBuilder, Search, SetupHome, TenantDomains, TenantEmailRecoverySettings, TenantManagement, TenantMfaSettings, TenantRecoveryPanel, TenantSecurityAudit, TenantUsagePanel, TenantUserLockSettings, X, accessControl, accessControlError, activationAppIds, activeUtility, addField, addFlowElement, advancedMetadataLoaded, apiRequest, appUtilityRef, approvalBusyId, approvalProcesses, approvalRequests, apps, setApps, setPages, authorizeNamedCredential, canCreateDashboards, canManageApprovalProcesses, canManageApps, canReadMetadata, canReadSecurity, canManageDashboardTerritories, canManageDashboards, canManageFlows, canManageLibrary, canManageNamedCredentials, canManagePlatformTenants, canManageReportFolders, canManageUserIdentities, canRunFlows, canScheduleDashboards, cancelFlowInterview, changePage, cloneFlow, commitFlow, connectorProviders, connectorRights, createDashboardSnapshot, createFlow, createObject, currentApp, currentAppNavigation, currentFieldAccess, currentProfileId, currentRecordTypeAccess, customTabObject, customTabStyle, customTabStyles, dashboardFolders, dashboardRunningUserIds, dashboardTerritories, dashboardUserId, dashboards, deactivateFlow, decideApproval, defaultLightningPage, deleteApp, deleteApprovalProcess, deleteDashboard, deleteDashboardFolder, deleteDashboardSnapshot, deleteDashboardSubscription, deleteEmailAlert, deleteField, deleteFlow, deleteLibraryComponent, deleteNamedCredential, deleteObject, deletePlatformEvent, deleteReport, emailAlerts, executeConnectorAppLifecycleFlow, exitDashboardViewer, exportFlow, fetchFlowListPage, filteredSetupGroups, flow, flowDebug, flowHasUnsavedChanges, flowHistory, flowInterviews, flowInterviewsLoading, flowLogs, flowLogsLoading, flowRun, flowRunnerError, flowRunnerSubmitting, flowToolTab, flowValidation, flows, formulaEditorRef, goBackFlowScreen, grantConnectorLicence, importFlow, insertFormulaText, integrationConnections, isStandaloneMetadataPage, launchCustomTabWizard, libraryComponents, loadAppCommunicationHistory, loadConnectorMarketplaceApps, loadDashboardRecords, loadDashboardSnapshots, loadDashboardSubscriptions, loadFlowScreenRecords, loadNotifications, logout, markNotificationRead, metadataLoadError, metadataLoaded, namedCredentials, namedCredentialsEncryptionReady, navigateRoute, navigateSetupItem, newFieldAllowReparenting, newFieldApiName, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldConfigurationError, newFieldController, newFieldControllerApiName, newFieldControllerValues, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldFormulaValidation, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistOptions, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldStage, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notificationRef, notifications, notificationsLoading, notificationsOpen, notificationsUnreadCount, notify, object, objectSearch, objectSetting, objects, onLogout, openDashboardViewer, openFlowDebug, openPageForObject, openSetupWorkspace, page, pageCreationAppContext, pageRouteApiName, pages, platformEvents, previewReport, protectedPageRuntime, publishLibraryComponent, quickFind, readableRecordObjects, recentRoutes, recordSearch, redoFlow, refreshFlowInterviews, refreshObject, relatedLookupFilterOperators, removeFlowElement, reportFolders, reports, resetNewFieldDraft, restoreFlowVersion, rollbackLibraryComponent, rotateNamedCredential, route, routeAliasError, routeTiming, runDashboardSubscription, runFlow, runFlowDebug, runReport, runSavedFlowTests, runtimeFormFactor, saveAccessControl, saveApp, saveApprovalProcess, saveConnectorProvider, saveCustomTab, saveDashboard, saveDashboardFolder, saveDashboardSubscription, saveDashboardTerritories, saveEmailAlert, saveField, saveFlow, saveIntegrationConnection, saveLibraryComponent, saveNamedCredential, saveObject, savePage, savePageFromBuilder, savePlatformEvent, saveReport, saveReportFolder, selectDashboard, selectFlow, selectedFlowId, setActiveUtility, setCustomTabObject, setCustomTabStyle, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowToolTab, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldReturnType, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObjectSearch, setPage, setPageCreationAppContext, setQuickFind, setRecordSearch, setSelectedFlowId, setSetupSidebarCollapsed, setShowNewField, setShowNewObject, setShowCustomTabWizard, setStandalonePageMode, setupSidebarCollapsed, showCustomTabWizard, showNewField, showNewObject, standalonePageMode, submitFlowScreen, testIntegrationConnection, testNamedCredential, toast, toggleNamedCredentialEnabled, toggleNotifications, undoFlow, uneSolutionsLogoUrl, updateFlowConfig, updateFlowLabel, validateFlow, validateNewFieldFormula, workspace });
+  return renderSetupShell({AppExchange, AppManager, FieldWizardModal, FlowInterviews, FlowLogs, NamedCredentials, ScheduledFlows, SetupFlowDialogs, SetupObjectDialogs, AccountSessionSecurity, AutomationSettingsWorkspace, Check, ChevronLeft, ChevronRight, CircleHelp, CompanySettings, ConnectionHealthIndicator, DashboardBuilder, Database, DeveloperAccountSettings, FlowBuilderWorkspace, GlobalRecordSearch, History, LightningAppRuntime, Monitor, NavigationLoadTime, ObjectManager, PageBuilder, Permissions, PlatformPageSlot, PlatformWorkspaceSurface, ProfilePasswordMenu, RecordObjectPicker, RecordWorkspace, ReportBuilder, Search, SetupHome, TenantDomains, TenantEmailRecoverySettings, TenantManagement, TenantMfaSettings, TenantRecoveryPanel, TenantSecurityAudit, TenantUsagePanel, TenantUserLockSettings, X, accessControl, accessControlError, activationAppIds, activeUtility, addField, addFlowElement, advancedMetadataLoaded, apiRequest, appUtilityRef, approvalProcesses, apps, setApps, setPages, canCreateDashboards, canManageApprovalProcesses, canManageApps, canReadMetadata, canReadSecurity, canManageDashboardTerritories, canManageDashboards, canManageFlows, canManageLibrary, canManageNamedCredentials, canManagePlatformTenants, canManageReportFolders, canManageUserIdentities, canRunFlows, canScheduleDashboards, cancelFlowInterview, changePage, cloneFlow, commitFlow, connectorProviders, connectorRights, createFlow, createObject, currentApp, currentAppNavigation, currentFieldAccess, currentProfileId, currentRecordTypeAccess, customTabObject, customTabStyle, customTabStyles, dashboardFolders, dashboardRunningUserIds, dashboardTerritories, dashboardUserId, dashboards, deactivateFlow, defaultLightningPage, deleteApp, deleteApprovalProcess, deleteDashboard, deleteDashboardFolder, deleteEmailAlert, deleteField, deleteFlow, deleteNamedCredential, deleteObject, deletePlatformEvent, deleteReport, emailAlerts, executeConnectorAppLifecycleFlow, exitDashboardViewer, exportFlow, fetchFlowListPage, filteredSetupGroups, flow, flowDebug, flowHasUnsavedChanges, flowHistory, flowInterviews, flowInterviewsLoading, flowLogs, flowLogsLoading, flowRun, flowRunnerError, flowRunnerSubmitting, flowToolTab, flowValidation, flows, formulaEditorRef, goBackFlowScreen, importFlow, insertFormulaText, integrationConnections, isStandaloneMetadataPage, launchCustomTabWizard, libraryComponents, loadAppCommunicationHistory, loadConnectorMarketplaceApps, loadDashboardRecords, loadFlowScreenRecords, logout, metadataLoadError, metadataLoaded, namedCredentials, namedCredentialsEncryptionReady, navigateRoute, navigateSetupItem, newFieldAllowReparenting, newFieldApiName, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldConfigurationError, newFieldController, newFieldControllerApiName, newFieldControllerValues, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldFormulaValidation, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistOptions, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldStage, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objectSearch, objectSetting, objects, onLogout, openDashboardViewer, openFlowDebug, openPageForObject, openSetupWorkspace, page, pageCreationAppContext, pageRouteApiName, pages, platformEvents, previewReport, protectedPageRuntime, quickFind, readableRecordObjects, recentRoutes, recordSearch, redoFlow, refreshFlowInterviews, refreshObject, relatedLookupFilterOperators, removeFlowElement, reportFolders, reports, resetNewFieldDraft, restoreFlowVersion, route, routeAliasError, routeTiming, runFlow, runFlowDebug, runReport, runSavedFlowTests, runtimeFormFactor, saveAccessControl, saveApp, saveApprovalProcess, saveConnectorProvider, saveCustomTab, saveDashboard, saveDashboardFolder, saveDashboardTerritories, saveEmailAlert, saveField, saveFlow, saveIntegrationConnection, saveNamedCredential, saveObject, savePage, savePageFromBuilder, savePlatformEvent, saveReport, saveReportFolder, selectDashboard, selectFlow, selectedFlowId, setActiveUtility, setCustomTabObject, setCustomTabStyle, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowToolTab, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldReturnType, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObjectSearch, setPage, setPageCreationAppContext, setQuickFind, setRecordSearch, setSelectedFlowId, setSetupSidebarCollapsed, setShowNewField, setShowNewObject, setShowCustomTabWizard, setStandalonePageMode, setupSidebarCollapsed, showCustomTabWizard, showNewField, showNewObject, standalonePageMode, submitFlowScreen, toast, toggleNamedCredentialEnabled, undoFlow, uneSolutionsLogoUrl, updateFlowConfig, updateFlowLabel, validateFlow, validateNewFieldFormula, workspace});
 }
 return SetupApp;
 }

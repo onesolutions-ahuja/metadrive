@@ -7,9 +7,12 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {PlatformTenantService} from '../system-files/platform-tenant-service.js';
 
 type Actor={tenant_id:string;user_id:string};
-type Req=Request&{actor?:Actor};
+type Req=Request<Record<string,string>>&{actor?:Actor};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>
-  (req:Request,res:Response,next:NextFunction)=>{void fn(req as Req,res).catch(next);};
+  (req:Request,res:Response,next:NextFunction)=>{
+    // These routes use named parameters only; Express wildcard parameters are not registered here.
+    void fn(req as Req,res).catch(next);
+  };
 const slug=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const hostname=/^(?=.{4,253}$)[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 const metrics=['users','records','objects','flows'] as const;

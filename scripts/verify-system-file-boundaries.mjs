@@ -2,11 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 const root=path.resolve('apps/server/src/system-files');
 const files=fs.readdirSync(root,{withFileTypes:true});
-const expected=['sql-persistence.ts','object-definition.ts','authentication.ts','rbac-engine.ts','record-engine.ts','component-runtime.ts','page-runtime.ts','flow-runtime.ts','app-runtime.ts','tenant-provisioning.ts','schema.sql','README.md','session-metadata.ts','platform-tenant-service.ts','system-definition-service.ts'];
+const expected=['sql-persistence.ts','object-definition.ts','authentication.ts','rbac-engine.ts',
+ 'record-engine.ts','component-runtime.ts','page-runtime.ts','flow-runtime.ts','app-runtime.ts',
+ 'tenant-provisioning.ts','schema.sql','README.md','session-metadata.ts','platform-tenant-service.ts',
+ 'system-definition-service.ts','custom-metadata-service.ts','object-manager-metadata.ts',
+ 'flow-data-actions.ts','flow-decision-runtime.ts','flow-formula-runtime.ts','flow-record-query.ts',
+ 'flow-record-triggers.ts','flow-subflow-runtime.ts','flow-validation.ts'];
 const allowed=new Set(expected);
 const forbidden=files.filter(f=>!f.isFile() || !allowed.has(f.name));
 if(forbidden.length){
- console.error('System runtime contains misplaced test or script files:',forbidden.map(f=>f.name));
+ console.error('System runtime contains files outside the approved Core modules:',forbidden.map(f=>f.name));
  process.exitCode=1;
 }
 const tests=fs.readdirSync('apps/server/test/system').filter(f=>f.endsWith('.test.ts'));

@@ -18,7 +18,6 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
  const rights=developerAccess;
  const destinations:DeveloperDestination[]=[
   {label:'Object Manager',workspace:'object-manager',description:'Objects, fields and relationships',allowed:!!rights?.metadata},
-  {label:'Component Library',workspace:'component-library',description:'Reusable components and properties',allowed:!!rights?.metadata},
   {label:'App Builder',workspace:'app-manager',description:'Apps, menus and navigation',allowed:!!rights?.apps},
   {label:'Page Editor',workspace:'page-builder',description:'Page layouts and publishing',allowed:!!rights?.metadata},
   {label:'Flow Builder',workspace:'flow-builder',description:'Flows and Screen Flows',allowed:!!rights?.flows},
@@ -26,7 +25,6 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
   {label:'Flow Interviews',workspace:'flow-interviews',description:'In-progress Screen Flow interviews',allowed:!!rights?.flows},
   {label:'Flow Logs',workspace:'flow-logs',description:'Automation executions and errors',allowed:!!rights?.flows},
   {label:'Automation Settings',workspace:'automation-settings',description:'Automation configuration',allowed:!!rights?.flows},
-  {label:'Approval Processes',workspace:'approval-processes',description:'Approval automation',allowed:!!rights?.approvals},
   {label:'Dashboard Builder',workspace:'dashboard-builder',description:'Dashboards and visualisations',allowed:!!rights?.dashboards},
   {label:'Report Builder',workspace:'report-builder',description:'Reports and data analysis',allowed:!!rights?.reports},
   {label:'OneEngine Permissions',workspace:'rbac',description:'Developer and builder access policies',allowed:!!rights?.security}

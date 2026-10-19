@@ -99,7 +99,6 @@ type FlowBuilderProps = {
     authType: NamedCredentialMetadata['authType']; headerName?: string; username?: string; secret?: string;
   }) => Promise<void>;
   onDeleteNamedCredential: (id: string) => Promise<void>;
-  onRotateNamedCredential: (id: string) => Promise<void>;
   onSaveEmailAlert: (alert: {
     id?: string; name: string; label: string; objectApiName: string; namedCredentialId: string;
     fromEmail: string; recipients: string; subject: string; body: string;
@@ -112,7 +111,7 @@ export default function FlowBuilder({
   landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
   onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onRunTests, onNotify,
-  onSaveNamedCredential, onDeleteNamedCredential, onRotateNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
+  onSaveNamedCredential, onDeleteNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
 }: FlowBuilderProps) {
   const flowComponents = uniqueLibraryComponents(libraryComponents, 'flow').map(component => ({ ...component, label: libraryComponentLabel(component) }));
   const [elementSearch, setElementSearch] = useState('');
@@ -139,8 +138,8 @@ export default function FlowBuilder({
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
-    (type !== 'Screen' || flow.flowType === 'Screen Flow')
-    && (type !== 'Roll Back Records' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType));
+    ['End', 'Screen', 'Decision', 'Assignment', 'Create Records', 'HTTP Callout'].includes(type)
+    && (type !== 'Screen' || flow.flowType === 'Screen Flow');
   const [resourceLabel, setResourceLabel] = useState('');
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
@@ -469,6 +468,7 @@ export default function FlowBuilder({
         {flow.flowType === 'Record-Triggered Flow' && <>
           <label className="form-label">Trigger<select className="form-control" value={displayValue(flow.startConfig.trigger) || 'created-or-updated'} onChange={(event) => setStartConfig('trigger', event.target.value)}><option value="created">A record is created</option><option value="updated">A record is updated</option><option value="created-or-updated">A record is created or updated</option><option value="deleted">A record is deleted</option></select></label>
           <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig.runWhen) || 'after-save'} onChange={(event) => setStartConfig('runWhen', event.target.value)}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
+          <div className="info-callout">{flow.startConfig.runWhen === 'before-save' ? 'Before-save flows run assignments and decisions before the record is written. Use Assignment elements to set $Record fields; other action types are not supported in this phase.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. Record-trigger recursion from CRUD performed inside another Flow is not supported yet.'}</div>
           <label className="form-label">Trigger Order<input className="form-control" type="number" min={1} max={2000} step={1} value={displayValue(flow.startConfig.triggerOrder)} onChange={(event) => setStartConfig('triggerOrder', event.target.value === '' ? undefined : Number(event.target.value))} /></label>
           <p className="settings-panel-copy">Optional order from 1 to 2000. Lower numbers run first among active flows on the same object and save phase.</p>
           <label className="form-label">Entry Conditions</label>
@@ -491,6 +491,9 @@ export default function FlowBuilder({
   );
   const renderElementSettings = () => {
     if (!selected || selected.type === 'Start') return renderStartSettings();
+    if (!isElementAvailable(selected.type)) return <div className="info-callout" role="status">
+      This Flow element is not supported by the current runtime. Remove it or replace it with a supported element before activating the Flow.
+    </div>;
     if (selected.type === 'End') return <div className="info-callout">
       <p>End completes this execution path and returns Flow resources marked <strong>Available for output</strong> in the Manager tab.</p>
       <p>For checkout, create and assign the status and request ID resources before End, mark both Available for output, and map their exact API names in the till component's checkout status and request output properties. Return the incoming request ID unchanged. Optional message and change resources can be mapped in the same way.</p>
@@ -535,8 +538,8 @@ export default function FlowBuilder({
             {renderConditionLogic('Condition Requirements', outcome.conditionLogic ?? 'All', outcome.conditions.length, (logic) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditionLogic: logic } : item)))}
             {outcome.conditions.map((condition, conditionIndex) => <div className="flow-config-row" key={`outcome-${index}-condition-${conditionIndex}`}>
               <select className="form-control" aria-label="Outcome condition field" value={displayValue(condition.field)} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, field: event.target.value } : entry) } : item))}><option value="">Select field or resource</option>{decisionObject && <optgroup label="Record Fields">{!decisionObject.fields.some(field=>field.apiName==='Id')&&<option value="Id">Record ID</option>}{decisionObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}<optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup></select>
-              <select className="form-control" aria-label="Outcome condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, operator: event.target.value } : entry) } : item))}>{['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Less Than', 'Contains', 'Starts With'].map((operator) => <option key={operator}>{operator}</option>)}</select>
-              {condition.operator !== 'Is Null' && condition.operator !== 'Is Not Null' && <FlowReferenceInput
+              <select className="form-control" aria-label="Outcome condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, operator: event.target.value } : entry) } : item))}>{['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Greater Than or Equal To', 'Less Than', 'Less Than or Equal To', 'Contains', 'Starts With', 'Is Changed', 'Was Set'].map((operator) => <option key={operator}>{operator}</option>)}</select>
+              {!['Is Null', 'Is Not Null', 'Was Set'].includes(String(condition.operator)) && <FlowReferenceInput
                 ariaLabel="Outcome condition value" value={displayValue(condition.value)}
                 flow={flow} elementId={selected.id} objects={objects}
                 field={decisionObject?.fields.find(field=>field.apiName===condition.field)??(condition.field==='Id'?{apiName:'Id',label:'Record ID',dataType:'Id',required:true,unique:true}:undefined)} targetObjectApiName={decisionObject?.apiName}
@@ -642,40 +645,19 @@ export default function FlowBuilder({
         {selected.type === 'Create Records' && <>
           <label className="form-label">How to Set Record Values
             <select className="form-control" value={displayValue(selected.config.recordSource) || 'fields'}
-              onChange={(event) => onFlowChange({
+              onChange={() => onFlowChange({
                 ...flow, elements: flow.elements.map((element) => element.id === selected.id
                   ? { ...element, config: {
-                    ...element.config, recordSource: event.target.value,
-                    fieldValues: [], field: '', value: '',
-                    sourceCollection: '', outputCollection: ''
+                    ...element.config, recordSource: 'fields',
+                    fieldValues: [], field: '', value: ''
                   } } : element)
               })}>
               <option value="fields">Use separate field values (one record)</option>
-              <option value="collection">Use records in a Record Collection</option>
             </select>
           </label>
-          {displayValue(selected.config.recordSource) === 'collection' && <>
-            <label className="form-label">Record Collection to Create
-              <select className="form-control" value={displayValue(selected.config.sourceCollection)}
-                onChange={(event) => setConfig('sourceCollection', event.target.value)}>
-                <option value="">Select a collection</option>
-                {flow.resources.filter((resource) => resource.type === 'Record Collection'
-                  && resource.dataType === selected.config.object && resource.isCollection)
-                  .map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}
-              </select>
-            </label>
-            <label className="form-label">Store Created Records In (optional)
-              <select className="form-control" value={displayValue(selected.config.outputCollection)}
-                onChange={(event) => setConfig('outputCollection', event.target.value)}>
-                <option value="">Do not store returned records</option>
-                {flow.resources.filter((resource) => resource.type === 'Record Collection'
-                  && resource.dataType === selected.config.object && resource.isCollection
-                  && resource.name !== selected.config.sourceCollection)
-                  .map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}
-              </select>
-            </label>
-            <p className="settings-panel-copy">Creates up to 200 records from a collection of the selected object. Current-user record and field permissions, object rules, triggers, and rollback apply to every record.</p>
-          </>}
+          {displayValue(selected.config.recordSource) === 'collection' && <p className="info-callout" role="status">
+            Creating records from a collection is not supported by the current runtime. Select the single-record option to replace this configuration.
+          </p>}
         </>}
         {selected.type === 'Get Records' && <>
           <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit === 'all' || recordLimit === '1' ? recordLimit : 'limited'} onChange={(event) => {
@@ -1008,27 +990,38 @@ export default function FlowBuilder({
         <label className="form-label">Headers<textarea className="form-control" rows={3} value={displayValue(selected.config.headers)} onChange={(event) => setConfig('headers', event.target.value)} placeholder="Header-Name: value" /></label>
         <HttpCalloutFieldEditor label="Query Parameters" mode="query" value={displayValue(selected.config.queryParameters)} onChange={(value) => setConfig('queryParameters', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
         <HttpCalloutFieldEditor label="Request Body" mode="body" value={displayValue(selected.config.body)} onChange={(value) => setConfig('body', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
-        <label className="form-label">Timeout (milliseconds)<input className="form-control" type="number" min={1000} max={120000} value={displayValue(selected.config.timeoutMs)} onChange={(event) => setConfig('timeoutMs', event.target.value)} placeholder={selectedProvider ? String(selectedProvider.timeoutMs) : '15000'} /></label>
-        <label className="form-label">Maximum Retry Attempts<input className="form-control" type="number" min={1} max={5} step={1}
-          disabled={Boolean(selectedProvider)} value={displayValue(selected.config.maxAttempts)}
+        <label className="form-label">Timeout (milliseconds)<input className="form-control" type="number" min={1000} max={30000} value={displayValue(selected.config.timeoutMs)} onChange={(event) => setConfig('timeoutMs', event.target.value)} placeholder={selectedProvider ? String(selectedProvider.timeoutMs) : '15000'} /></label>
+        {displayValue(selected.config.deliveryMode) === 'DURABLE_ASYNC' && <label className="form-label">Maximum Retry Attempts<input className="form-control" type="number" min={1} max={5} step={1}
+          value={displayValue(selected.config.maxAttempts)}
           onChange={(event) => setConfig('maxAttempts', event.target.value)}
-          placeholder={selectedProvider ? String(selectedProvider.retryPolicy.maxAttempts) : '1'} /></label>
+          placeholder="5" /></label>}
         <label className="form-label">Delivery Mode<select className="form-control"
           value={displayValue(selected.config.deliveryMode) || 'SYNC'}
-          onChange={(event) => setConfig('deliveryMode', event.target.value)}>
+          onChange={(event) => {
+            setConfig('deliveryMode', event.target.value);
+            if (event.target.value === 'DURABLE_ASYNC') {
+              setConfig('responseMapping', '');
+              setConfig('responseVariable', '');
+              setConfig('statusVariable', '');
+            }
+          }}>
           <option value="SYNC">Synchronous HTTP Callout</option>
           <option value="DURABLE_ASYNC">Durable Async · SQL Outbox</option>
         </select></label>
-        <div className="info-callout">Durable Async persists an encrypted, tenant-scoped job and returns HTTP 202 to the Flow. It requires PostgreSQL and an idempotency key, and cannot be used inside a Flow rollback scope. Provider responses arrive in Communication Records rather than synchronous Flow response variables.</div>
-        <label className="form-label">Idempotency Key (optional)<input className="form-control"
-          maxLength={200} value={displayValue(selected.config.idempotencyKey)}
-          onChange={(event) => setConfig('idempotencyKey', event.target.value)}
-          placeholder="{!$Flow.InterviewGuid}" /></label>
-        <div className="info-callout">Retries for POST, PUT, PATCH and DELETE require a stable idempotency key. Use a provider that supports the Idempotency-Key header; otherwise a retry may duplicate a write. GET retries are safe without a key.</div>
-        <HttpCalloutFieldEditor label="Response Mapping" mode="response" value={displayValue(selected.config.responseMapping)} onChange={(value) => setConfig('responseMapping', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
-        <label className="form-label">Response Variable<select className="form-control" value={displayValue(selected.config.responseVariable)} onChange={(event) => setConfig('responseVariable', event.target.value)}><option value="">Do not store response</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
-        <label className="form-label">Status Code Variable<select className="form-control" value={displayValue(selected.config.statusVariable)} onChange={(event) => setConfig('statusVariable', event.target.value)}><option value="">Do not store status</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
-        <label className="form-label">On Error<select className="form-control" value={displayValue(selected.config.onError) || 'FAULT_PATH'} onChange={(event) => setConfig('onError', event.target.value)}><option value="FAULT_PATH">FAULT_PATH</option><option value="FAIL">FAIL</option><option value="CONTINUE">CONTINUE</option></select></label>
+        <div className="info-callout">Durable Async stores an encrypted, tenant-scoped job in PostgreSQL and returns HTTP 202 to the Flow. The server worker retries failed delivery up to the configured maximum using a stable Idempotency-Key. Async callouts do not provide response mappings or output variables; a terminal failure is retained with the job.</div>
+        {displayValue(selected.config.deliveryMode) === 'DURABLE_ASYNC' && <>
+          <label className="form-label">Idempotency Key (optional)<input className="form-control"
+            maxLength={200} value={displayValue(selected.config.idempotencyKey)}
+            onChange={(event) => setConfig('idempotencyKey', event.target.value)}
+            placeholder="{!$Flow.InterviewGuid}" /></label>
+          <div className="info-callout">Retries for POST, PUT, PATCH and DELETE reuse the same idempotency key. If omitted, the worker uses a stable key for this queued job.</div>
+        </>}
+        {displayValue(selected.config.deliveryMode) !== 'DURABLE_ASYNC' && <>
+          <HttpCalloutFieldEditor label="Response Mapping" mode="response" value={displayValue(selected.config.responseMapping)} onChange={(value) => setConfig('responseMapping', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
+          <label className="form-label">Response Variable<select className="form-control" value={displayValue(selected.config.responseVariable)} onChange={(event) => setConfig('responseVariable', event.target.value)}><option value="">Do not store response</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
+          <label className="form-label">Status Code Variable<select className="form-control" value={displayValue(selected.config.statusVariable)} onChange={(event) => setConfig('statusVariable', event.target.value)}><option value="">Do not store status</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
+        </>}
+        <label className="form-label">{displayValue(selected.config.deliveryMode) === 'DURABLE_ASYNC' ? 'On Queue Error' : 'On Error'}<select className="form-control" value={displayValue(selected.config.onError) || 'FAULT_PATH'} onChange={(event) => setConfig('onError', event.target.value)}><option value="FAULT_PATH">FAULT_PATH</option><option value="FAIL">FAIL</option><option value="CONTINUE">CONTINUE</option></select></label>
         <div className="info-callout">Select a tenant Named Credential or Integration Connection above. The Flow stores only the metadata reference; secrets, tokens, and authentication values remain protected in credential metadata and are never exposed as Flow variables.</div>
         <details className="flow-advanced-settings">
           <summary>Advanced credential binding</summary>
@@ -1307,7 +1300,7 @@ export default function FlowBuilder({
             {credentialAuthType !== 'None' && <label className="form-label">{credentialAuthType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={credentialSecret} onChange={(event) => setCredentialSecret(event.target.value)} placeholder={credentialId ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
             <button className="btn btn-brand" disabled={!credentialName.trim() || !credentialLabel.trim() || !credentialBaseUrl.trim()} onClick={() => void submitCredential()}>{credentialId ? 'Update Named Credential' : 'Save Named Credential'}</button>
             {credentialId && <button className="text-action" onClick={() => editCredential()}>Cancel edit</button>}
-            {namedCredentials.map((credential) => <div className="flow-resource-card" key={credential.id}><strong>{credential.label}</strong><small>{credential.protocol} · {credential.name} · {credential.authType} · key {credential.keyId}</small><small>{credential.baseUrl} · Secret {credential.hasSecret ? 'stored (masked)' : 'not required'}</small><div className="toolbar-actions"><button className="btn" onClick={() => editCredential(credential)}>Edit</button><button className="btn" onClick={() => void onRotateNamedCredential(credential.id).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to rotate credential key'))}>Rotate Key</button><button className="btn" onClick={() => void onDeleteNamedCredential(credential.id).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to delete credential'))}>Delete</button></div></div>)}
+            {namedCredentials.map((credential) => <div className="flow-resource-card" key={credential.id}><strong>{credential.label}</strong><small>{credential.protocol} · {credential.name} · {credential.authType} · key {credential.keyId}</small><small>{credential.baseUrl} · Secret {credential.hasSecret ? 'stored (masked)' : 'not required'}</small><div className="toolbar-actions"><button className="btn" onClick={() => editCredential(credential)}>Edit</button><button className="btn" onClick={() => void onDeleteNamedCredential(credential.id).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to delete credential'))}>Delete</button></div></div>)}
             {!namedCredentials.length && <p className="empty-list">No Named Credentials are configured.</p>}
           </div>
           <div className="toolbox-group"><h3>Email Alerts</h3>

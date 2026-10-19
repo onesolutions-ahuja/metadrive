@@ -2,6 +2,13 @@ import type { SqlPersistence } from './sql-persistence.js';
 import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 import type { RbacEngine } from './rbac-engine.js';
 import type { RecordEngine } from './record-engine.js';
+import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow-decision-runtime.js';
+import {FlowRecordQuery} from './flow-record-query.js';
+import {executeFlowDataAction} from './flow-data-actions.js';
+import {evaluateFlowFormula} from './flow-formula-runtime.js';
+import {validateFlowDraft} from './flow-validation.js';
+import {executeFlowSubflow} from './flow-subflow-runtime.js';
+import type {PoolClient} from 'pg';
 type NodeRow={id:string;api_name:string;node_type:string};
 type EdgeRow={source_api:string;target_api:string;outcome:string};
 type PropRow={node_id:string;api_name:string;value_text:string|null;data_type:string};
@@ -26,109 +33,18 @@ function scalarFrom(text:string|null,type:string):Scalar {
   if(type==='text'||type==='string')return text??'';
   throw new Error('Unsupported Flow property type');
 }
-/** Atomic, bounded SQL Flow executor. Unsupported or dangerous actions fail closed. */
 export class FlowRuntime {
+  private readonly recordQuery?:FlowRecordQuery;
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,
     private readonly records?:RecordEngine,
     private readonly httpCallout?:(tenantId:string,userId:string,config:Record<string,unknown>,
-      variables:Record<string,Scalar>,idempotencyKey:string)=>Promise<{status:number;body:string}>) {}
+      variables:Record<string,Scalar>,idempotencyKey:string,
+      execution?:{client:PoolClient;runId:string;nodeId:number})=>Promise<{status:number;body:string}>) {
+    if(rbac)this.recordQuery=new FlowRecordQuery(db,rbac);
+  }
   /** Builder drafts are checked against executable SQL Flow capabilities, never assumed executable. */
   async validateDraft(tenantId:string,userId:string,apiName:string,draft:unknown){
-    if(!this.rbac)throw new Error('Flow permissions not configured');
-    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
-    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
-    if(!draft||typeof draft!=='object'||Array.isArray(draft))throw new Error('Invalid Flow draft');
-    const data=draft as Record<string,unknown>;
-    const errors:string[]=[],warnings:string[]=[];
-    if(data.apiName!==apiName)errors.push('Flow API name must match the requested definition');
-    if(!['Autolaunched Flow','Screen Flow'].includes(String(data.flowType)))errors.push('This SQL runtime supports Autolaunched Flow and Screen Flow');
-    if(!Array.isArray(data.elements)||!Array.isArray(data.connectors)){
-      return {valid:false,errors:['Flow must contain elements and connectors'],warnings};
-    }
-    const nodes=data.elements as unknown[],links=data.connectors as unknown[];
-    if(nodes.length>250||links.length>500)errors.push('Flow graph exceeds allowed size');
-    const ids=new Set<number>(),types=new Map<number,string>();
-    for(const item of nodes){
-      if(!item||typeof item!=='object'||Array.isArray(item)){errors.push('Invalid Flow element');continue;}
-      const node=item as Record<string,unknown>;
-      if(typeof node.id!=='number'||!Number.isSafeInteger(node.id)||ids.has(node.id)){
-        errors.push('Flow element identifiers must be unique integers');continue;
-      }
-      ids.add(node.id);
-      const type=String(node.type??'');
-      types.set(node.id,type);
-      if(!['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','End',
-        ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type)){
-        errors.push('Unsupported SQL Flow element: '+type);
-      }
-      const config=node.config;
-      if(!config||typeof config!=='object'||Array.isArray(config)){
-        errors.push('Flow element needs a configuration object: '+node.id);
-        continue;
-      }
-      const properties=config as Record<string,unknown>;
-      if(type==='HTTP Callout'){
-        if(typeof properties.namedCredentialId!=='string'
-          ||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(properties.namedCredentialId))
-          errors.push('HTTP Callout requires a tenant HTTPS Named Credential');
-        if(properties.integrationConnectionId||properties.integrationConnectionResource
-          ||properties.namedCredentialResource)
-          errors.push('HTTP Callout dynamic provider bindings are not yet supported');
-        if(!['GET','POST','PUT','PATCH','DELETE'].includes(String(properties.method??'GET')))
-          errors.push('HTTP Callout method is not supported');
-        if(typeof properties.path!=='string'||properties.path.startsWith('/')
-          ||properties.path.includes('\\')||properties.path.length>2048)
-          errors.push('HTTP Callout needs a safe relative path');
-        if(properties.deliveryMode==='DURABLE_ASYNC')
-          errors.push('Durable async HTTP Callout requires an enabled SQL dispatcher');
-        if(properties.queryParameters)
-          errors.push('HTTP Callout structured query mapping is not supported');
-        if(!['FAULT_PATH','FAIL','CONTINUE'].includes(String(properties.onError??'FAIL')))
-          errors.push('HTTP Callout error policy is invalid');
-      }
-      if(type==='Screen'){
-        const fields=properties.fields;
-        if(!Array.isArray(fields)||fields.length>100)
-          errors.push('Screen must declare up to 100 fields');
-        else {
-          const names=new Set<string>();
-          for(const field of fields){
-            if(!field||typeof field!=='object'||Array.isArray(field)){
-              errors.push('Invalid Screen field');continue;
-            }
-            const name=(field as Record<string,unknown>).apiName;
-            if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)
-              ||names.has(name))errors.push('Screen fields require unique safe API names');
-            else names.add(name);
-          }
-        }
-      }
-    }
-    if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
-    if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
-    const outgoing=new Map<number,number[]>();
-    for(const link of links){
-      if(!link||typeof link!=='object'||Array.isArray(link)){errors.push('Invalid Flow connector');continue;}
-      const edge=link as Record<string,unknown>;
-      if(typeof edge.from!=='number'||typeof edge.to!=='number'||!ids.has(edge.from)||!ids.has(edge.to)){
-        errors.push('Flow connector references an unknown element');continue;
-      }
-      if(edge.kind!==undefined&&!['normal','fault'].includes(String(edge.kind)))errors.push('Unsupported SQL Flow connector type');
-      outgoing.set(edge.from,[...(outgoing.get(edge.from)??[]),edge.to]);
-    }
-    const start=[...types].find(([,type])=>type==='Start')?.[0];
-    if(start!==undefined){
-      const visited=new Set<number>(),stack=[start];
-      while(stack.length){
-        const id=stack.pop()!;
-        if(visited.has(id))continue;
-        visited.add(id);
-        stack.push(...(outgoing.get(id)??[]));
-      }
-      if(![...visited].some(id=>types.get(id)==='End'))errors.push('No reachable End element');
-      for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
-    }
-    return {valid:errors.length===0,errors,warnings};
+    return validateFlowDraft(this.rbac,tenantId,userId,apiName,draft);
   }
   /** Complete metadata Editor contract: one latest definition per API name. */
   async loadEditor(tenantId:string,apiName:string) {
@@ -395,11 +311,12 @@ export class FlowRuntime {
 
   /** Resume a Screen Flow from durable SQL state. The caller must own the interview. */
   async advanceInterview(tenantId:string,userId:string,runId:string,
-    request:{action?:unknown;outcome?:unknown;values?:unknown}) {
+    request:{action?:unknown;outcome?:unknown;values?:unknown},executor?:PoolClient,
+    callStack:string[]=[]){
     if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
     if(!/^[0-9a-f-]{36}$/i.test(runId)||!request||typeof request!=='object')
       throw new Error('Invalid Flow interview request');
-    return this.db.transaction(async client=>{
+    const advance=async(client:PoolClient)=>{
       const {rows}=await client.query<{
         flow_id:string;api_name:string;flow_type:string;started_by:string;status:string
       }>(`SELECT r.flow_id,f.api_name,f.flow_type,r.started_by,r.status FROM md_flow_runs r
@@ -407,8 +324,12 @@ export class FlowRuntime {
         WHERE r.tenant_id=$1 AND r.id=$2 FOR UPDATE OF r`,[tenantId,runId]);
       const active=rows[0];
       if(!active||active.status!=='pending'||active.started_by!==userId
-        ||!['Screen Flow','Autolaunched Flow'].includes(active.flow_type))
+        ||!['Screen Flow','Autolaunched Flow','Record-Triggered Flow'].includes(active.flow_type))
         throw new Error('Pending Flow interview not found');
+      const nested=callStack.at(-1)===active.api_name;
+      if(callStack.length>16||!nested&&callStack.includes(active.api_name))
+        throw new Error('Recursive or excessively nested Flow invocation');
+      const activeCallStack=nested?callStack:[...callStack,active.api_name];
       await this.rbac!.require(tenantId,userId,'Flow:'+active.api_name,'execute');
       const doc=await client.query<MetadataValueRow>(
         'SELECT property_path,value_kind,value_text FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
@@ -428,25 +349,133 @@ export class FlowRuntime {
         'INSERT INTO md_flow_interview_state(tenant_id,run_id,current_element) VALUES($1,$2,$3)',
         [tenantId,runId,start[0].id]);
       const state=persisted.rows[0]??{current_element:start[0].id,history_elements:[],step_count:0};
+      const persistedLoops=await client.query<{element_id:number;next_index:number}>(
+        'SELECT element_id,next_index FROM md_flow_interview_loop_state WHERE tenant_id=$1 AND run_id=$2',
+        [tenantId,runId]);
+      const loopIndexes=new Map(persistedLoops.rows.map(row=>[row.element_id,row.next_index]));
       const prior=await client.query<{api_name:string;value_text:string|null;data_type:string}>(
         'SELECT api_name,value_text,data_type FROM md_flow_run_inputs WHERE tenant_id=$1 AND run_id=$2',
         [tenantId,runId]);
       const stored=await client.query<{api_name:string;value_text:string|null;data_type:string}>(
         'SELECT api_name,value_text,data_type FROM md_flow_interview_values WHERE tenant_id=$1 AND run_id=$2',
         [tenantId,runId]);
-      const vars:Record<string,Scalar>=Object.create(null) as Record<string,Scalar>;
+      const vars:Record<string,unknown>=Object.create(null) as Record<string,unknown>;
       for(const row of [...prior.rows,...stored.rows])
         vars[row.api_name]=scalarFrom(row.value_text,row.data_type);
-      const evaluate=(value:unknown):Scalar=>{
+      const persistedRecords=await client.query<{
+        api_name:string;object_api:string;record_id:string|null;is_collection:boolean;sort_order:number
+      }>(`SELECT api_name,object_api,record_id,is_collection,sort_order
+        FROM md_flow_interview_records WHERE tenant_id=$1 AND run_id=$2 ORDER BY api_name,sort_order`,
+      [tenantId,runId]);
+      const recordGroups=new Map<string,{objectApi:string;collection:boolean;
+        rows:Array<{recordId:string|null;values:Record<string,Scalar>}>}>();
+      for(const row of persistedRecords.rows){
+        const group=recordGroups.get(row.api_name)??{
+          objectApi:row.object_api,collection:row.is_collection,rows:[]
+        };
+        if(group.objectApi!==row.object_api||group.collection!==row.is_collection)
+          throw new Error('Invalid persisted Flow record resource');
+        group.rows.push({recordId:row.record_id,values:Object.create(null) as Record<string,Scalar>});
+        recordGroups.set(row.api_name,group);
+      }
+      const persistedFields=await client.query<{
+        api_name:string;sort_order:number;field_api:string;value_text:string|null;data_type:string
+      }>(`SELECT api_name,sort_order,field_api,value_text,data_type
+        FROM md_flow_interview_record_fields WHERE tenant_id=$1 AND run_id=$2`,
+      [tenantId,runId]);
+      for(const field of persistedFields.rows){
+        const row=recordGroups.get(field.api_name)?.rows[field.sort_order];
+        if(!row)throw new Error('Invalid persisted Flow record field');
+        row.values[field.field_api]=scalarFrom(field.value_text,field.data_type);
+      }
+      for(const [name,group] of recordGroups){
+        const found=await Promise.all(group.rows.map(async row=>{
+          const record=row.recordId&&!['$Record','$Record__Prior'].includes(name)
+            ?await this.records!.get(tenantId,userId,group.objectApi,row.recordId):{};
+          if(row.recordId&&['$Record','$Record__Prior'].includes(name))row.values.Id=row.recordId;
+          return {...record,...row.values};
+        }));
+        vars[name]=group.collection?found:found[0]??null;
+      }
+      const resources=Array.isArray(graph.resources)
+        ?graph.resources as Array<{name:string;type:string;dataType:string;value?:unknown}>:[];
+      const formulaStack=new Set<string>();
+      const resolveResource=(reference:string):unknown=>{
+        const separator=reference.indexOf('.');
+        const name=separator<0?reference:reference.slice(0,separator);
+        const field=separator<0?undefined:reference.slice(separator+1);
+        if(!Object.hasOwn(vars,name)){
+          const resource=resources.find(item=>item.name===name);
+          if(!resource)throw new Error('Unknown Flow resource: '+name);
+          if(resource.type==='Formula'){
+            if(formulaStack.has(name))throw new Error('Circular Flow formula reference: '+name);
+            if(typeof resource.value!=='string')throw new Error('Flow formula resource has no expression: '+name);
+            formulaStack.add(name);
+            try{
+              const result=evaluateFlowFormula(resource.value,resolveResource);
+              if(['Number','Currency','Percent'].includes(resource.dataType)){
+                if(typeof result!=='number'||!Number.isFinite(result))
+                  throw new Error('Flow formula did not return a finite number: '+name);
+              }else if(['Boolean','Checkbox'].includes(resource.dataType)&&typeof result!=='boolean')
+                throw new Error('Flow formula did not return a Boolean: '+name);
+              else if(!['Boolean','Checkbox','Number','Currency','Percent'].includes(resource.dataType)
+                &&result!==null&&typeof result!=='string')
+                throw new Error('Flow formula did not return text: '+name);
+              return result;
+            }finally{formulaStack.delete(name);}
+          }
+          if(resource.type==='Constant'||resource.type==='Choice'){
+            const value=resource.value??null;
+            if(['Number','Currency','Percent'].includes(resource.dataType)){
+              const parsed=typeof value==='number'?value:Number(value);
+              if(!Number.isFinite(parsed))throw new Error('Invalid Flow constant: '+name);
+              vars[name]=parsed;
+            }else if(['Boolean','Checkbox'].includes(resource.dataType)){
+              if(typeof value==='boolean')vars[name]=value;
+              else if(value==='true'||value==='false')vars[name]=value==='true';
+              else throw new Error('Invalid Flow constant: '+name);
+            }else if(scalar(value))vars[name]=value;
+            else throw new Error('Invalid Flow constant: '+name);
+          }else if(resource.type==='Text Template'){
+            if(typeof resource.value!=='string')throw new Error('Flow text template has no text: '+name);
+            vars[name]=resource.value.replace(/\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}/g,
+              (_match,token:string)=>{
+                const value=resolveResource(token);
+                if(value!==null&&value!==undefined&&!scalar(value))
+                  throw new Error('Text template references a non-scalar resource');
+                return value===null||value===undefined?'':String(value);
+              });
+          }else throw new Error('Unknown Flow resource: '+name);
+        }
+        const value=vars[name];
+        if(field===undefined)return value;
+        if(!value||typeof value!=='object'||Array.isArray(value))
+          throw new Error('Flow field reference needs a single record');
+        if(!Object.hasOwn(value,field)){
+          if(name==='$Record__Prior')return null;
+          throw new Error('Unknown Flow record field: '+field);
+        }
+        return (value as Record<string,unknown>)[field];
+      };
+      const evaluate=(value:unknown):unknown=>{
         if(!scalar(value))throw new Error('Unsupported Flow expression value');
         if(typeof value!=='string')return value;
-        const name=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
-          ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
-        if(!name)return value;
-        if(!Object.hasOwn(vars,name))throw new Error('Unknown Flow resource');
-        return vars[name];
+        const reference=value.match(/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}$/)
+          ??value.match(/^@([A-Za-z_$][A-Za-z0-9_$.]*)$/);
+        return reference?resolveResource(reference[1]):value;
       };
       const set=(key:unknown,value:Scalar)=>{
+        if(typeof key==='string'){
+          const recordField=/^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(key);
+          if(recordField){
+            const record=vars.$Record;
+            if(active.flow_type!=='Record-Triggered Flow'||start[0].config.runWhen!=='before-save'
+              ||!record||typeof record!=='object'||Array.isArray(record))
+              throw new Error('Assignments to $Record fields require a before-save Record-Triggered Flow');
+            (record as Record<string,unknown>)[recordField[1]]=value;
+            return;
+          }
+        }
         if(typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
           throw new Error('Invalid Flow variable name');
         vars[key]=value;
@@ -508,13 +537,56 @@ export class FlowRuntime {
         if(!node)throw new Error('Invalid Flow graph target');
         let selected:string|undefined;
         if(node.type==='Screen'){
+          if(active.flow_type==='Record-Triggered Flow')
+            throw new Error('Record-Triggered Flows cannot pause at a Screen');
           // A Screen suspends execution without committing a business record.
           for(const [key,value] of Object.entries(vars)){
+            if(key.startsWith('$Flow.')||resources.some(resource=>resource.name===key
+              &&['Formula','Constant','Choice','Text Template'].includes(resource.type))
+              ||!scalar(value))continue;
             const encoded=scalarText(value);
             await client.query(`INSERT INTO md_flow_interview_values(tenant_id,run_id,api_name,value_text,data_type)
               VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,run_id,api_name)
               DO UPDATE SET value_text=EXCLUDED.value_text,data_type=EXCLUDED.data_type`,
               [tenantId,runId,key,encoded.text,encoded.type==='text'?'string':encoded.type]);
+          }
+          await client.query('DELETE FROM md_flow_interview_loop_state WHERE tenant_id=$1 AND run_id=$2',
+            [tenantId,runId]);
+          for(const [elementId,nextIndex] of loopIndexes)
+            await client.query(`INSERT INTO md_flow_interview_loop_state
+              (tenant_id,run_id,element_id,next_index) VALUES($1,$2,$3,$4)`,
+            [tenantId,runId,elementId,nextIndex]);
+          await client.query('DELETE FROM md_flow_interview_records WHERE tenant_id=$1 AND run_id=$2',
+            [tenantId,runId]);
+          for(const [name,value] of Object.entries(vars)){
+            const collection=Array.isArray(value);
+            if(!collection&&(!value||typeof value!=='object'||!Object.hasOwn(value,'Id')))continue;
+            const resource=resources.find(item=>item.name===name);
+            const objectApi=resource?.dataType;
+            if(!objectApi||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+              throw new Error('Flow record resource has no Object type: '+name);
+            const recordsToPersist=collection?value as Array<Record<string,unknown>>:[value as Record<string,unknown>];
+            const items=collection&&!recordsToPersist.length?[{}]:recordsToPersist;
+            for(const [sortOrder,item] of items.entries()){
+              const recordId=item.Id;
+              if(recordId!==null&&recordId!==undefined
+                &&(typeof recordId!=='string'||!/^[0-9a-f-]{36}$/i.test(recordId)))
+                throw new Error('Invalid Flow record resource');
+              await client.query(`INSERT INTO md_flow_interview_records
+                (tenant_id,run_id,api_name,object_api,sort_order,record_id,is_collection)
+                VALUES($1,$2,$3,$4,$5,$6,$7)`,
+              [tenantId,runId,name,objectApi,sortOrder,recordId??null,collection]);
+              for(const [field,value] of Object.entries(item)){
+                if(field==='Id')continue;
+                if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||!scalar(value))
+                  throw new Error('Invalid Flow record field value');
+                const encoded=scalarText(value);
+                await client.query(`INSERT INTO md_flow_interview_record_fields
+                  (tenant_id,run_id,api_name,sort_order,field_api,value_text,data_type)
+                  VALUES($1,$2,$3,$4,$5,$6,$7)`,
+                [tenantId,runId,name,sortOrder,field,encoded.text,encoded.type==='text'?'string':encoded.type]);
+              }
+            }
           }
           await client.query(`UPDATE md_flow_interview_state SET current_element=$3,
             history_elements=$4,step_count=$5,updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,
@@ -527,58 +599,110 @@ export class FlowRuntime {
         }
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
-          const resources=Array.isArray(graph.resources)?graph.resources as Array<{name:string;availableForOutput:boolean}>:[];
-          const outputs:Record<string,Scalar>={};
+          const resources=Array.isArray(graph.resources)
+            ?graph.resources as Array<{name:string;availableForOutput:boolean;type?:string}>:[];
+          const outputs:Record<string,unknown>={};
           for(const resource of resources)
-            if(resource.availableForOutput&&Object.hasOwn(vars,resource.name))outputs[resource.name]=vars[resource.name];
-          return {id:runId,status:'completed' as const,completed:true,outputs};
+            if(resource.availableForOutput){
+              if(Object.hasOwn(vars,resource.name))outputs[resource.name]=vars[resource.name];
+              else if(['Formula','Constant','Choice','Text Template'].includes(resource.type??''))
+                outputs[resource.name]=resolveResource(resource.name);
+            }
+          const completion={id:runId,status:'completed' as const,completed:true,outputs};
+          if(active.flow_type==='Record-Triggered Flow')return {...completion,record:vars.$Record};
+          return completion;
         }
         if(node.type==='Assignment'){
-          set(node.config.variable,evaluate(node.config.value??null));
+          const value=evaluate(node.config.value??null);
+          if(!scalar(value))throw new Error('Assignment value must be scalar');
+          set(node.config.variable,value);
         }else if(node.type==='Decision'){
           const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
           const matches=(o:Record<string,unknown>)=>{
             if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
-            const found=o.conditions.map(row=>{
-              const c=row as Record<string,unknown>,actual=evaluate(c.field),expected=evaluate(c.value??null);
-              if(c.operator==='Equals')return actual===expected;
-              if(c.operator==='Not Equals')return actual!==expected;
-              if(c.operator==='Greater Than')return typeof actual==='number'&&typeof expected==='number'&&actual>expected;
-              if(c.operator==='Less Than')return typeof actual==='number'&&typeof expected==='number'&&actual<expected;
-              throw new Error('Unsupported Decision operator');
-            });
-            if(o.conditionLogic==='Any')return found.some(Boolean);
-            if(o.conditionLogic&&o.conditionLogic!=='All')throw new Error('Unsupported Decision condition logic');
-            return found.every(Boolean);
+            return evaluateFlowDecisionOutcome(
+              o.conditions as Array<Record<string,unknown>>,
+              typeof o.conditionLogic==='string'?o.conditionLogic:undefined,
+              evaluate,
+              value=>{
+                if(typeof value!=='string')return value!==undefined;
+                const reference=value.match(/^\{!((?:\$Flow\.)?[A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
+                  ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
+                return reference?Object.hasOwn(vars,reference[1]):true;
+              });
           };
           const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
           selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
-        }else if(node.type==='Create Records'||node.type==='CreateRecord'){
-          if(!this.records)throw new Error('Flow record engine unavailable');
-          if(node.config.recordSource==='collection')throw new Error('Collection create is not supported');
-          const object=String(node.config.object??node.config.objectApi??'');
-          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(object))throw new Error('Invalid Flow Object');
-          const fields:Record<string,unknown>={};
-          for(const item of (Array.isArray(node.config.fieldValues)?node.config.fieldValues:[]) as Array<Record<string,unknown>>){
-            const field=String(item.field??item.apiName??'');
-            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))throw new Error('Invalid Flow Field');
-            fields[field]=evaluate(item.value??null);
+        }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
+          'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
+          if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save')
+            throw new Error('Before-save Record-Triggered Flows cannot execute data actions');
+          if(!this.records||!this.recordQuery)throw new Error('Flow record engine unavailable');
+          let action;
+          const savepoint='flow_action_'+node.id;
+          await client.query('SAVEPOINT '+savepoint);
+          try {
+            action=await executeFlowDataAction({tenantId,userId,client,node,records:this.records,
+              recordQuery:this.recordQuery,vars,loops:loopIndexes,evaluate,set});
+            await client.query('RELEASE SAVEPOINT '+savepoint);
+          }catch(error){
+            await client.query('ROLLBACK TO SAVEPOINT '+savepoint);
+            await client.query('RELEASE SAVEPOINT '+savepoint);
+            const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+            if(!fault)throw error;
+            vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
+            vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
+            current=fault.to;
+            history=[];
+            continue;
           }
-          const id=await this.records.createInTransaction(client,tenantId,userId,object,fields);
-          if(typeof node.config.resultVariable==='string'&&node.config.resultVariable)
-            set(node.config.resultVariable,id);
-          history=[]; // Back must not replay side effects.
+          if(action.clearHistory)history=[];
+          selected=action.selected;
+        }else if(node.type==='Subflow'){
+          const savepoint='flow_subflow_'+node.id;
+          await client.query('SAVEPOINT '+savepoint);
+          try{
+            await executeFlowSubflow({client,tenantId,userId,config:node.config,
+              rbac:this.rbac!,callStack:activeCallStack,evaluate,
+              set:(name,value)=>set(name,value),
+              advance:async(childRunId,childCallStack)=>{
+                const result=await this.advanceInterview(tenantId,userId,childRunId,{},client,childCallStack);
+                return 'status' in result?result:{status:'waiting'};
+              }});
+            await client.query('RELEASE SAVEPOINT '+savepoint);
+          }catch(error){
+            await client.query('ROLLBACK TO SAVEPOINT '+savepoint);
+            await client.query('RELEASE SAVEPOINT '+savepoint);
+            const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+            if(!fault)throw error;
+            vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
+            vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
+            current=fault.to;
+            history=[];
+            continue;
+          }
+          history=[];
         }else if(node.type==='HTTP Callout'){
           if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
           const stableKey=runId+'-'+node.id;
+          const asynchronous=node.config.deliveryMode==='DURABLE_ASYNC';
           try {
-            const response=await this.httpCallout(tenantId,userId,node.config,vars,stableKey);
-            if(node.config.statusVariable)set(node.config.statusVariable,response.status);
-            if(node.config.responseVariable)set(node.config.responseVariable,response.body);
+            const scalarVars=Object.fromEntries(Object.entries(vars).filter(
+              (entry):entry is [string,Scalar]=>scalar(entry[1])));
+            const response=await this.httpCallout(tenantId,userId,node.config,scalarVars,stableKey,
+              asynchronous?{client,runId,nodeId:current}:undefined);
+            if(!asynchronous){
+              if(node.config.statusVariable)set(node.config.statusVariable,response.status);
+              if(node.config.responseVariable)set(node.config.responseVariable,response.body);
+            }
           }catch(error){
             if(node.config.onError==='FAULT_PATH'){
               const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
-              if(fault){current=fault.to;history=[];continue;}
+              if(fault){
+                vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
+                vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
+                current=fault.to;history=[];continue;
+              }
             }
             if(node.config.onError!=='CONTINUE')throw error;
           }
@@ -594,7 +718,16 @@ export class FlowRuntime {
         current=next.to;
       }
       throw new Error('Screen Flow exceeded maximum steps');
-    });
+    };
+    try{return executor?await advance(executor):await this.db.transaction(advance);}
+    catch(error){
+      if(executor)throw error;
+      const message=error instanceof Error?error.message:'Unknown Flow failure';
+      await this.db.query(
+        "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
+        [tenantId,runId,message.slice(0,200)]);
+      throw error;
+    }
   }
 
   /** Server-side read-only debugger: never writes SQL, executes a callout or creates a record. */
@@ -676,13 +809,16 @@ export class FlowRuntime {
         const conditions=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
         const match=(option:Record<string,unknown>)=>{
           if(!Array.isArray(option.conditions)||!option.conditions.length)return false;
-          const decisions=option.conditions.map(condition=>{
-            const rule=condition as Record<string,unknown>,a=resolve(rule.field),b=resolve(rule.value??null);
-            if(rule.operator==='Equals')return a===b;
-            if(rule.operator==='Not Equals')return a!==b;
-            throw new Error('Unsupported Decision comparison');
-          });
-          return option.conditionLogic==='Any'?decisions.some(Boolean):decisions.every(Boolean);
+          return evaluateFlowDecisionOutcome(
+            option.conditions as Array<Record<string,unknown>>,
+            typeof option.conditionLogic==='string'?option.conditionLogic:undefined,
+            resolve,
+            value=>{
+              if(typeof value!=='string')return value!==undefined;
+              const reference=value.match(/^\{!([A-Za-z][A-Za-z0-9_]*)\}$/)?.[1]
+                ??value.match(/^@([A-Za-z][A-Za-z0-9_]*)$/)?.[1];
+              return reference?Object.hasOwn(vars,reference):true;
+            });
         };
         const matched=conditions.find(option=>option.name!=='Default'&&match(option));
         outcome=String(matched?.label??matched?.name??'Default');
@@ -768,12 +904,7 @@ export class FlowRuntime {
               const left=resolve(property(node,'actual'));
               const right=resolve(property(node,'expected'));
               const operator=property(node,'operator')?.value_text??'equals';
-              let matches=false;
-              if(operator==='equals')matches=left===right;
-              else if(operator==='notEquals')matches=left!==right;
-              else if(operator==='greater')matches=typeof left==='number'&&typeof right==='number'&&left>right;
-              else if(operator==='less')matches=typeof left==='number'&&typeof right==='number'&&left<right;
-              else throw new Error('Unsupported Flow comparison');
+              const matches=evaluateFlowDecisionComparison(left,right,operator);
               result=matches?'true':'false';
               break;
             }

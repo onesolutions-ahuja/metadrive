@@ -11,7 +11,6 @@ export const objectSettings = [
   'Compact Layouts',
   'Field Sets',
   'Object Limits',
-  'Change History',
   'Record Types',
   'Related Lookup Filters',
   'Search Layouts',
@@ -27,7 +26,6 @@ const settingRouteNames: Record<string, string> = {
   'Compact Layouts': 'CompactLayouts',
   'Field Sets': 'FieldSets',
   'Object Limits': 'ObjectLimits',
-  'Change History': 'ChangeHistory',
   'Record Types': 'RecordTypes',
   'Related Lookup Filters': 'RelatedLookupFilters',
   'Search Layouts': 'SearchLayouts',
@@ -71,7 +69,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
     }
     if (segments[0] === 'setup') {
       const workspace = decodeURIComponent(segments[1] ?? 'home') as WorkspaceId | 'connector-settings';
-      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'named-credentials', 'company-settings', 'tenant-management', 'rbac'];
+      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'app-manager', 'app-exchange', 'named-credentials', 'company-settings', 'tenant-management', 'rbac'];
       if (workspace === 'connector-settings') return { kind: 'setup', workspace: 'named-credentials' };
       if (!validWorkspaces.includes(workspace)) return { kind: 'setup', workspace: 'home' };
       if (workspace === 'object-manager') {

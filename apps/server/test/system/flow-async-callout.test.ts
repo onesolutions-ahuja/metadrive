@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import type {PoolClient} from 'pg';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
+import {FlowRuntime} from '../../src/system-files/flow-runtime.js';
+import {NamedCredentialService} from '../../src/system-support/named-credential-service.js';
+
+const tenantId='00000000-0000-4000-8000-000000000001';
+const userId='00000000-0000-4000-8000-000000000002';
+const runId='00000000-0000-4000-8000-000000000003';
+const credentialId='00000000-0000-4000-8000-000000000004';
+const jobId='00000000-0000-4000-8000-000000000005';
+const rbac={require:async()=>{}} as unknown as RbacEngine;
+
+test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
+ const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const draft={apiName:'AsyncFlow',flowType:'Autolaunched Flow',
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'HTTP Callout',config:{
+    namedCredentialId:credentialId,method:'POST',path:'v1/events',
+    deliveryMode:'DURABLE_ASYNC'
+   }},
+   {id:3,type:'End',config:{}}
+  ],
+  connectors:[{from:1,to:2},{from:2,to:3}]};
+ assert.equal((await runtime.validateDraft(tenantId,userId,'AsyncFlow',draft)).valid,true);
+ const invalid={...draft,elements:draft.elements.map(element=>element.id===2
+  ?{...element,config:{...element.config,responseVariable:'Response'}}:element)};
+ const result=await runtime.validateDraft(tenantId,userId,'AsyncFlow',invalid);
+ assert.equal(result.valid,false);
+ assert.ok(result.errors.includes('Durable async HTTP Callout cannot return response variables'));
+});
+
+test('durable HTTP Callout encrypts queued payload and dispatches with a stable idempotency key',async()=>{
+ const previousKey=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
+ process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=Buffer.alloc(32,7).toString('base64');
+ const values:Array<unknown[]>=[];
+ const jobParameters:unknown[][]=[];
+ let updateSql='';
+ let updateParameters:unknown[]=[];
+ let claims=0;
+ const idempotencyKeys:string[]=[];
+ const client={
+  query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<{id:string}>}>=>{
+   if(sql.includes('FROM md_named_credentials'))return {rows:[{id:credentialId}]};
+   if(sql.includes('INSERT INTO md_http_callout_jobs')){
+    jobParameters.push(params);return {rows:[{id:jobId}]};
+   }
+   if(sql.includes('INSERT INTO md_http_callout_job_values'))values.push(params);
+   return {rows:[]};
+  }
+ } as unknown as PoolClient;
+ const db={
+  transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run(client),
+  query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
+   if(sql.includes('SELECT api_name,value_ciphertext'))return {rows:values.map(value=>({
+    api_name:value[2],value_ciphertext:value[3],data_type:value[4]
+   }))};
+   if(sql.includes('UPDATE md_http_callout_jobs')){
+    updateSql=sql;updateParameters=params;
+   }
+   return {rows:[]};
+  }
+ } as unknown as SqlPersistence;
+ const service=new NamedCredentialService(db,rbac);
+ let sent:Record<string,unknown>|undefined;
+ service.callout=async(_tenant,_user,config,variables,key)=>{
+  idempotencyKeys.push(key);
+  if(idempotencyKeys.length===1)throw new Error('temporary outage');
+  sent={config,variables,key};return {status:204,body:''};
+ };
+ try{
+  await service.enqueueCallout(client,tenantId,userId,runId,9,{
+   namedCredentialId:credentialId,method:'POST',path:'v1/{!RecordId}',
+   headers:'X-Request: {!RequestId}',body:'{"secret":"{!Payload}"}',
+   idempotencyKey:'order-{!RequestId}',maxAttempts:3
+  },{RecordId:'42',RequestId:'request-1',Payload:'private-data'});
+  assert.equal(jobParameters[0][6] instanceof Buffer,true);
+  assert.equal(jobParameters[0][8] instanceof Buffer,true);
+  assert.equal(values[0][3] instanceof Buffer,true);
+  db.transaction=async<T>(run:(client:PoolClient)=>Promise<T>)=>run({
+   query:async()=>({rows:[{
+    id:jobId,tenant_id:tenantId,user_id:userId,credential_id:credentialId,method:'POST',
+    path_ciphertext:jobParameters[0][6],headers_ciphertext:jobParameters[0][7],
+    body_ciphertext:jobParameters[0][8],idempotency_key_ciphertext:jobParameters[0][9],
+    max_attempts:3,timeout_ms:15000,attempt_count:++claims
+   }]})
+  } as unknown as PoolClient);
+  assert.equal(await service.dispatchOne(),true);
+  assert.match(updateSql,/status=\$3/);
+  assert.equal(updateParameters[2],'retrying');
+  assert.equal(updateParameters[3],'temporary outage');
+  assert.equal(await service.dispatchOne(),true);
+  assert.equal((sent?.config as Record<string,unknown>).path,'v1/{!RecordId}');
+  assert.equal((sent?.variables as Record<string,unknown>).Payload,'private-data');
+  assert.equal(sent?.key,'order-request-1');
+  assert.match(updateSql,/status='completed'/);
+  assert.deepEqual(idempotencyKeys,['order-request-1','order-request-1']);
+ }finally{
+  if(previousKey===undefined)delete process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
+  else process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=previousKey;
+ }
+});

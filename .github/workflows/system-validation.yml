@@ -35,6 +35,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Require zero unmatched SQL API paths
+        run: npm run audit:sql-routes
       - run: npm run check
       - run: node apps/server/scripts/sql-smoke.mjs
         env:

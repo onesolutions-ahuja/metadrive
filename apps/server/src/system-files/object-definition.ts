@@ -1,18 +1,182 @@
+import type {PoolClient} from 'pg';
 import type {SqlPersistence} from './sql-persistence.js';
+import {validateFlowFormula} from './flow-formula-runtime.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
-type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
+type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;help_text:string|null;description:string|null;formula_expression:string|null;formula_return_type:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;relationship_name?:string|null;child_relationship_name?:string|null;delete_behavior?:string|null;allow_reparenting?:boolean;deleted_at?:Date|null};
 const sqlFieldTypes:Record<string,string>={
   text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',
   datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference',
   email:'email',phone:'phone',url:'url',picklist:'picklist',
   textarea:'textarea','textarea(long)':'longtext',longtextarea:'longtext',
-  currency:'currency',percent:'percent'
+  currency:'currency',percent:'percent',  'multi-selectpicklist':'multipicklist','roll-upsummary':'rollup',
+  geolocation:'geolocation',address:'address','richtextarea':'richtext',time:'time',
+  'auto number':'autonumber',autonumber:'autonumber'
+};
+type ParsedField={
+  apiName:string;label:string;dataType:string;relatedObject:string|null;relationshipType:string|null;
+  relationshipName:string|null;childRelationshipName:string|null;deleteBehavior:string|null;allowReparenting:boolean;
+  required:boolean;maxLength:number|null;precision:number|null;scale:number|null;
+  unique:boolean;externalId:boolean;caseSensitive:boolean;defaultValue:string|null;
+  helpText:string|null;description:string|null;formulaExpression:string|null;
+  formulaReturnType:string|null;autoNumberFormat:string|null;
+  rollup:{childObject:string;relationshipField:string;operation:'COUNT'|'SUM'|'MIN'|'MAX';sourceField:string|null}|null;
+  picklistValues:string[];restricted:boolean;controllerFieldApiName:string|null;
+  valueSettings:Record<string,string[]>;
+};
+const parseFieldDefinition=(field:Record<string,unknown>,objectApi?:string):ParsedField=>{
+  const name=field.apiName;
+  const dataType=typeof field.dataType==='string'?field.dataType:'';
+  const compact=dataType.toLowerCase().replace(/\s+/g,'');
+  const compactPreservingCase=dataType.replace(/\s+/g,'');
+  const numeric=/^(number|currency|percent)\(([0-9]+),([0-9]+)\)$/.exec(compact);
+  const text=/^text\(([0-9]+)\)$/.exec(compact);
+  const relationship=/^(lookup|master-detail)\(([A-Za-z][A-Za-z0-9_]*)\)$/i.exec(compactPreservingCase);
+  const formula=/^formula\((text|number|currency|percent|date|datetime|checkbox)\)$/.exec(compact);
+  const type=numeric?numeric[1]:text?'text':relationship?'reference':formula?'formula':sqlFieldTypes[compact];
+  const maxLength=text?Number(text[1]):type==='textarea'?255:
+    ['longtext','richtext'].includes(type)?131072:type==='phone'?40:null;
+  const precision=numeric?Number(numeric[2]):null;
+  const scale=numeric?Number(numeric[3]):null;
+  if(typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!type)
+    throw new Error('Invalid field definition');
+  if(maxLength!==null&&(!Number.isSafeInteger(maxLength)||maxLength<1||maxLength>1000000))
+    throw new Error('Invalid text field length');
+  if(precision!==null&&(!Number.isSafeInteger(precision)||precision<1||precision>18
+    ||scale===null||!Number.isSafeInteger(scale)||scale<0||scale>precision))
+    throw new Error('Invalid numeric precision or scale');
+  if(type==='richtext'&&(field.unique===true||field.externalId===true))
+    throw new Error('Rich Text Area fields cannot be unique or external IDs');
+  if(type==='rollup'&&(field.unique===true||field.externalId===true||field.required===true
+    ||(field.defaultValue!==undefined&&field.defaultValue!==null)))
+    throw new Error('Roll-Up Summary fields cannot be required, unique, external IDs or have defaults');
+  const relation=field.relationship&&typeof field.relationship==='object'&&!Array.isArray(field.relationship)
+    ?field.relationship as Record<string,unknown>:undefined;
+  const rawRelatedObject=relationship?.[2]??relation?.targetObject??field.relatedObject;
+  if(type==='reference'&&(typeof rawRelatedObject!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(rawRelatedObject)))
+    throw new Error('Invalid relationship target');
+  const relatedObject=typeof rawRelatedObject==='string'?rawRelatedObject:null;
+  const relationshipType=relationship?.[1].toLowerCase()==='master-detail'?'Master-Detail'
+    :type==='reference'&&typeof relation?.type==='string'?relation.type
+      :type==='reference'?'Lookup':null;
+  if(relationshipType!==null&&!['Lookup','Master-Detail','Hierarchical'].includes(relationshipType))
+    throw new Error('Invalid relationship type');
+  const relationshipName: string|null=relationshipType===null?null:
+    typeof relation?.relationshipName==='string'?relation.relationshipName:
+      relation?.relationshipName===undefined?name.replace(/Id$/,''):null;
+  const childRelationshipName: string|null=relationshipType===null?null:
+    typeof relation?.childRelationshipName==='string'?relation.childRelationshipName:
+      relation?.childRelationshipName===undefined?`${(objectApi??'Record').replace(/__c$/,'')}Records`:null;
+  const deleteBehavior: string|null=relationshipType==='Lookup'
+    ?relation?.deleteBehavior===undefined?'Clear':
+      typeof relation.deleteBehavior==='string'?relation.deleteBehavior:null
+    :relationshipType==='Master-Detail'?'Cascade':null;
+  const allowReparenting=relationshipType==='Master-Detail'?relation?.allowReparenting===true:false;
+  const relationshipNamePattern=/^[A-Za-z][A-Za-z0-9_]*$/;
+  if(relationshipType!==null&&
+    (typeof relationshipName!=='string'||relationshipName.length>80||!relationshipNamePattern.test(relationshipName)
+      ||typeof childRelationshipName!=='string'||childRelationshipName.length>80||!relationshipNamePattern.test(childRelationshipName)))
+    throw new Error('Invalid relationship name');
+  if(relationshipType==='Lookup'&&!['Clear','Restrict'].includes(String(deleteBehavior)))
+    throw new Error('Invalid relationship delete behavior');
+  if(relationshipType==='Master-Detail'&&relation?.allowReparenting!==undefined
+    &&typeof relation.allowReparenting!=='boolean')
+    throw new Error('Invalid relationship reparenting setting');
+  const formulaMetadata=field.formula&&typeof field.formula==='object'&&!Array.isArray(field.formula)
+    ?field.formula as Record<string,unknown>:undefined;
+  const formulaExpression=formulaMetadata?.expression;
+  if(type==='formula'&&(typeof formulaExpression!=='string'||!formulaExpression.trim()||formulaExpression.length>4000))
+    throw new Error('Formula expression is required');
+  if(type==='formula')validateFlowFormula(String(formulaExpression));
+  let rollup:ParsedField['rollup']=null;
+  if(type==='rollup'){
+    const config=field.rollup&&typeof field.rollup==='object'&&!Array.isArray(field.rollup)
+      ?field.rollup as Record<string,unknown>:null;
+    if(!config||typeof config.childObject!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(config.childObject)
+      ||typeof config.relationshipField!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(config.relationshipField)
+      ||!['COUNT','SUM','MIN','MAX'].includes(String(config.operation))
+      ||(config.operation==='COUNT'?config.sourceField!==undefined&&config.sourceField!==null
+        :typeof config.sourceField!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(config.sourceField)))
+      throw new Error('Invalid roll-up summary definition');
+    rollup={childObject:config.childObject,relationshipField:config.relationshipField,
+      operation:config.operation as 'COUNT'|'SUM'|'MIN'|'MAX',
+      sourceField:typeof config.sourceField==='string'?config.sourceField:null};
+  }
+  const formulaReturnType=formula?.[1]
+    ?formula[1][0].toUpperCase()+formula[1].slice(1)
+    :type==='formula'&&typeof formulaMetadata?.returnType==='string'?formulaMetadata.returnType:null;
+  const picklistValues=['picklist','multipicklist'].includes(type)?parsePicklistValues(field.picklistValues):[];
+  const controllerFieldApiName=field.controllerFieldApiName;
+  const valueSettings=field.valueSettings;
+  if(controllerFieldApiName!==undefined&&controllerFieldApiName!==null&&
+    (typeof controllerFieldApiName!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(controllerFieldApiName)))
+    throw new Error('Invalid dependent picklist controller');
+  const parsedValueSettings=parsePicklistValueSettings(valueSettings);
+  if((controllerFieldApiName===undefined||controllerFieldApiName===null)!==
+    (valueSettings===undefined||valueSettings===null))
+    throw new Error('Dependent picklist controller and value settings are required together');
+  if(controllerFieldApiName&&(type!=='picklist'||parsedValueSettings===null))
+    throw new Error('Dependent picklists require a single-select picklist field');
+  const rawDefault=field.defaultValue;
+  if(rawDefault!==undefined&&rawDefault!==null&&!['string','number','boolean'].includes(typeof rawDefault))
+    throw new Error('Invalid field default value');
+  if(type==='time'&&rawDefault!==undefined&&rawDefault!==null
+    &&(typeof rawDefault!=='string'||!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?$/.test(rawDefault)))
+    throw new Error('Invalid time field default');
+  const autoNumberFormat=field.autoNumberFormat;
+  if(type==='autonumber'&&autoNumberFormat!==undefined&&
+    (typeof autoNumberFormat!=='string'||autoNumberFormat.length>80||!/\{0+\}/.test(autoNumberFormat)))
+    throw new Error('Invalid auto-number format');
+  if(typeof field.helpText==='string'&&field.helpText.length>255)
+    throw new Error('Invalid field help text');
+  if(typeof field.description==='string'&&field.description.length>1000)
+    throw new Error('Invalid field description');
+  return {
+    apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,
+    dataType:type,relatedObject:type==='reference'?relatedObject:null,relationshipType,
+    relationshipName,childRelationshipName,deleteBehavior,allowReparenting,
+    required:relationshipType==='Master-Detail'||field.required===true,maxLength,precision,scale,
+    unique:field.unique===true,externalId:field.externalId===true,
+    caseSensitive:field.caseSensitive===true,defaultValue:rawDefault===undefined||rawDefault===null?null:String(rawDefault),
+    helpText:typeof field.helpText==='string'&&field.helpText.trim()?field.helpText.trim():null,
+    description:typeof field.description==='string'&&field.description.trim()?field.description.trim():null,
+    formulaExpression:type==='formula'?(formulaExpression as string).trim():null,
+    formulaReturnType,autoNumberFormat:typeof autoNumberFormat==='string'?autoNumberFormat:null,rollup,
+    picklistValues,restricted:field.picklistRestricted!==false,
+    controllerFieldApiName:typeof controllerFieldApiName==='string'?controllerFieldApiName:null,
+    valueSettings:parsedValueSettings??{}
+  };
 };
 const parsePicklistValues=(input:unknown):string[]=>{
   if(!Array.isArray(input)||input.length===0||input.length>200
     ||input.some(item=>typeof item!=='string'||!item.trim()||item.length>512)
     ||new Set(input).size!==input.length)throw new Error('Invalid picklist values');
   return input as string[];
+};
+const parsePicklistValueSettings=(input:unknown):Record<string,string[]>|null=>{
+  if(input===undefined||input===null)return null;
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.getPrototypeOf(input)!==Object.prototype)
+    throw new Error('Invalid dependent picklist values');
+  const entries=Object.entries(input);
+  if(entries.length===0||entries.length>200)throw new Error('Invalid dependent picklist values');
+  const result:Record<string,string[]>={};
+  for(const [controllerValue,values] of entries){
+    if(!controllerValue||controllerValue.length>512||!Array.isArray(values)||values.length>200||
+      values.some(value=>typeof value!=='string'||!value.trim()||value.length>512)||
+      new Set(values).size!==values.length)
+      throw new Error('Invalid dependent picklist values');
+    result[controllerValue]=values as string[];
+  }
+  return result;
+};
+const normalizeValueSettings=(input:unknown)=>{
+  if(!input||typeof input!=='object'||Array.isArray(input))return null;
+  return Object.entries(input).sort(([left],[right])=>left.localeCompare(right))
+    .map(([key,values])=>[key,Array.isArray(values)?[...values].sort():values]);
+};
+const decodeFieldDefault=(type:string,value:string):string|number|boolean=>{
+  if(['number','currency','percent'].includes(type))return Number(value);
+  if(type==='boolean')return value==='true';
+  return value;
 };
 export class ObjectDefinitionService {
   constructor(private readonly db:SqlPersistence) {}
@@ -24,46 +188,61 @@ export class ObjectDefinitionService {
     return rows[0];
   }
   // Atomic tenant-scoped creation: no partially created Objects when a field is invalid.
-  async create(tenantId:string,apiName:string,label:string,fields:unknown=[]) {
+  async create(tenantId:string,apiName:string,label:string,fields:unknown=[],
+    persistSupplemental?:(client:PoolClient)=>Promise<void>) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!label.trim())throw new Error('Invalid object definition');
     if(!Array.isArray(fields))throw new Error('Invalid object fields');
-    const types=sqlFieldTypes;
     const normalized=fields.map((raw:unknown)=>{
       if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid field definition');
-      const field=raw as Record<string,unknown>;
-      const name=field.apiName;
-      const dataType=typeof field.dataType==='string'?field.dataType:'';
-      const key=dataType.toLowerCase().replace(/\s+/g,'');
-      const match=/^text\(([0-9]+)\)$/.exec(key);
-      const type=match?'text':types[key];
-      const maxLength=match?Number(match[1]):null;
-      if(maxLength!==null && (!Number.isSafeInteger(maxLength)||maxLength<1||maxLength>1000000))
-        throw new Error('Invalid text field length');
-      if(typeof name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!type)throw new Error('Invalid field definition');
-      const relationship=field.relationship as Record<string,unknown>|undefined;
-      const target=relationship?.targetObject??field.relatedObject;
-      if(type==='reference' && (typeof target!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(target)))
-        throw new Error('Invalid relationship target');
-      if(field.unique===true||field.formula||field.defaultValue!==undefined||field.valueSettings)
-        throw new Error('Unsupported field options cannot be saved');
-      const picklistValues=type==='picklist'?parsePicklistValues(field.picklistValues):[];
-      const restricted=field.picklistRestricted!==false;
-      return {apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true,maxLength,picklistValues,restricted};
+      return parseFieldDefinition(raw as Record<string,unknown>,apiName);
     });
     if(new Set(normalized.map(x=>x.apiName.toLowerCase())).size!==normalized.length)
       throw new Error('Duplicate field API name');
+    if(normalized.some(field=>field.relationshipType==='Hierarchical'
+      &&(apiName!=='User'||field.relatedObject!=='User')))
+      throw new Error('Hierarchical relationships are supported only as User self-lookups');
     await this.db.transaction(async client=>{
       const inserted=await client.query(
         'INSERT INTO md_object_definitions (tenant_id,api_name,label,is_system) VALUES ($1,$2,$3,false) ON CONFLICT (tenant_id,api_name) DO NOTHING RETURNING id',
         [tenantId,apiName,label]);
       if(!inserted.rowCount)throw new Error('Object already exists');
       for(const field of normalized){
-        await client.query(
-          'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label,picklist_restricted) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-          [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label,field.restricted]);
+        if(field.rollup)throw new Error('Roll-Up Summary fields must be added after both related objects exist');
+        if(field.controllerFieldApiName){
+          const controller=normalized.find(item=>item.apiName===field.controllerFieldApiName);
+          if(field.controllerFieldApiName===field.apiName||!controller||!['picklist','boolean'].includes(controller.dataType))
+            throw new Error('Invalid dependent picklist controller');
+          if(Object.keys(field.valueSettings).some(value=>controller.dataType==='boolean'
+            ?!['true','false'].includes(value):!controller.picklistValues.includes(value)))
+            throw new Error('Invalid dependent picklist controller value');
+          if(Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
+            throw new Error('Invalid dependent picklist value');
+        }
+        await client.query(`INSERT INTO md_field_definitions
+          (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label,picklist_restricted,
+           relationship_type,is_unique,external_id,case_sensitive,default_value,help_text,description,
+           precision,scale,formula_expression,formula_return_type,auto_number_format,
+           rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,
+           relationship_name,child_relationship_name,delete_behavior,allow_reparenting)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
+          [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,
+            field.label,field.restricted,field.relationshipType,field.unique||field.externalId,field.externalId,
+            field.caseSensitive,field.defaultValue,field.helpText,field.description,field.precision,field.scale,
+            field.formulaExpression,field.formulaReturnType,field.autoNumberFormat,
+            null,null,null,null,
+            field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
         for(const [order,value] of field.picklistValues.entries())
           await client.query('INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
             [tenantId,apiName,field.apiName,value,order]);
+      }
+      for(const field of normalized)if(field.controllerFieldApiName){
+        await client.query(`INSERT INTO md_field_dependencies
+          (tenant_id,object_api,field_api,controller_field_api)
+          VALUES($1,$2,$3,$4)`,[tenantId,apiName,field.apiName,field.controllerFieldApiName]);
+        for(const [controllerValue,values] of Object.entries(field.valueSettings))
+          for(const value of values)await client.query(`INSERT INTO md_field_dependency_values
+            (tenant_id,object_api,field_api,controller_value,picklist_value)
+            VALUES($1,$2,$3,$4,$5)`,[tenantId,apiName,field.apiName,controllerValue,value]);
       }
       // Create the first Page Layout together with its object and fields.
       await client.query('INSERT INTO md_object_page_layouts (tenant_id,object_api,layout_id,label,sort_order) VALUES ($1,$2,$3,$4,0)',
@@ -80,33 +259,94 @@ export class ObjectDefinitionService {
       await client.query(`INSERT INTO md_object_record_types
         (tenant_id,object_api,record_type_id,developer_name,label,active,is_default,sort_order)
         VALUES ($1,$2,'master','Master','Master',true,true,0)`,[tenantId,apiName]);
+      if(persistSupplemental)await persistSupplemental(client);
     });
     return this.get(tenantId,apiName);
   }
-  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:{picklistValues?:unknown;picklistRestricted?:unknown}) {
-    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
-    const normalized=dataType.toLowerCase().replace(/\s+/g,'');
-    const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
-    const types=sqlFieldTypes;
-    const type=lengthMatch?'text':types[normalized];
-    const maxLength=lengthMatch?Number(lengthMatch[1]):null;
-    if(!type)throw new Error('Invalid field data type');
-    if(maxLength!==null&&(!Number.isSafeInteger(maxLength)||maxLength<1||maxLength>1000000))
-      throw new Error('Invalid text field length');
-    if(type==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))
-      throw new Error('Invalid relationship target');
-    const values=type==='picklist'?parsePicklistValues(settings?.picklistValues):[];
+  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:Record<string,unknown>) {
+    const field=parseFieldDefinition({...(settings??{}),apiName:fieldApi,dataType,relatedObject:settings?.relationship??relatedObject,label:label??settings?.label},objectApi);
+    if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
+      throw new Error('Hierarchical relationships are supported only as User self-lookups');
     const result=await this.db.transaction(async client=>{
+      if(field.rollup){
+        const relationship=await client.query<{data_type:string;related_object:string;relationship_type:string}>(
+          `SELECT data_type,related_object,relationship_type FROM md_field_definitions
+           WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+          [tenantId,field.rollup.childObject,field.rollup.relationshipField]);
+        const relation=relationship.rows[0];
+        if(!relation||relation.data_type!=='reference'||relation.relationship_type!=='Master-Detail'
+          ||relation.related_object!==objectApi)
+          throw new Error('Roll-Up Summary requires an active Master-Detail field to this object');
+        if(field.rollup.operation!=='COUNT'){
+          const source=await client.query<{data_type:string}>(
+            `SELECT data_type FROM md_field_definitions
+             WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+            [tenantId,field.rollup.childObject,field.rollup.sourceField]);
+          if(!source.rows[0]||!['number','currency','percent'].includes(source.rows[0].data_type))
+            throw new Error('Roll-Up Summary source field must be numeric');
+        }
+      }
+      if(field.relationshipType==='Master-Detail'){
+        const cycle=await client.query(`WITH RECURSIVE parent_chain(object_api,path) AS (
+          SELECT $3::text,ARRAY[$3::text]
+          UNION ALL
+          SELECT f.related_object,parent_chain.path||f.related_object
+          FROM parent_chain
+          JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=parent_chain.object_api
+            AND f.relationship_type='Master-Detail' AND f.deleted_at IS NULL
+          WHERE f.related_object IS NOT NULL AND NOT f.related_object=ANY(parent_chain.path)
+        ) SELECT 1 FROM parent_chain WHERE object_api=$2 LIMIT 1`,
+        [tenantId,objectApi,field.relatedObject]);
+        if(cycle.rowCount)throw new Error('Master-Detail relationships cannot create a cycle');
+        const parents=await client.query(`SELECT count(*)::integer AS total FROM md_field_definitions
+          WHERE tenant_id=$1 AND object_api=$2 AND relationship_type='Master-Detail' AND deleted_at IS NULL`,
+        [tenantId,objectApi]);
+        if(Number(parents.rows[0]?.total??0)>=2)
+          throw new Error('An object cannot have more than two Master-Detail relationships');
+      }
+      if(field.controllerFieldApiName){
+        const controller=await client.query<{data_type:string}>(`SELECT data_type FROM md_field_definitions
+          WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+        [tenantId,objectApi,field.controllerFieldApiName]);
+        if(!controller.rows[0]||!['picklist','boolean'].includes(controller.rows[0].data_type))
+          throw new Error('Invalid dependent picklist controller');
+        const options=controller.rows[0].data_type==='boolean'
+          ?['true','false']:(await client.query<{value:string}>(`SELECT value FROM md_field_picklist_values
+            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+          [tenantId,objectApi,field.controllerFieldApiName])).rows.map(row=>row.value);
+        if(Object.keys(field.valueSettings).some(value=>!options.includes(value))||
+          Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
+          throw new Error('Invalid dependent picklist values');
+      }
       const inserted=await client.query(`
-        INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label,picklist_restricted)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        INSERT INTO md_field_definitions
+          (tenant_id,object_api,api_name,data_type,related_object,max_length,label,picklist_restricted,
+           required,relationship_type,is_unique,external_id,case_sensitive,default_value,help_text,description,
+           precision,scale,formula_expression,formula_return_type,auto_number_format,
+           rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,
+           relationship_name,child_relationship_name,delete_behavior,allow_reparenting)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
         ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
-      `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength,
-         label?.trim()||fieldApi,settings?.picklistRestricted!==false]);
+      `,[tenantId,objectApi,field.apiName,field.dataType,field.relatedObject,field.maxLength,field.label,
+         field.restricted,field.required,field.relationshipType,field.unique||field.externalId,field.externalId,
+         field.caseSensitive,field.defaultValue,field.helpText,field.description,field.precision,field.scale,
+         field.formulaExpression,field.formulaReturnType,field.autoNumberFormat,
+         field.rollup?.childObject??null,field.rollup?.relationshipField??null,field.rollup?.operation??null,
+         field.rollup?.sourceField??null,
+         field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
       if(!inserted.rowCount)throw new Error('Field already exists');
-      for(const [order,value] of values.entries())await client.query(
+      for(const [order,value] of field.picklistValues.entries())await client.query(
         'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
         [tenantId,objectApi,fieldApi,value,order]);
+      if(field.controllerFieldApiName){
+        await client.query(`INSERT INTO md_field_dependencies
+          (tenant_id,object_api,field_api,controller_field_api)
+          VALUES($1,$2,$3,$4)`,[tenantId,objectApi,fieldApi,field.controllerFieldApiName]);
+        for(const [controllerValue,values] of Object.entries(field.valueSettings))
+          for(const value of values)await client.query(`INSERT INTO md_field_dependency_values
+            (tenant_id,object_api,field_api,controller_value,picklist_value)
+            VALUES($1,$2,$3,$4,$5)`,[tenantId,objectApi,fieldApi,controllerValue,value]);
+      }
       return inserted;
     });
     return result;
@@ -116,38 +356,233 @@ export class ObjectDefinitionService {
     if(typeof proposal.label!=='string'||!proposal.label.trim()||proposal.label.length>160
       || (proposal.apiName!==undefined&&proposal.apiName!==fieldApi))
       throw new Error('Invalid field update');
+    const label=proposal.label.trim();
     const original=await this.get(tenantId,objectApi);
     const current=original.fields.find(x=>x.apiName===fieldApi);
     if(!current)throw new Error('Field not found');
     if(proposal.dataType!==undefined&&proposal.dataType!==current.dataType)
       throw new Error('Field datatype migration requires a versioned migration');
-    const mutable=new Set(['id','apiName','label','dataType','required','unique','relationship']);
+    const mutable=new Set(['id','apiName','label','dataType','required','unique','externalId','caseSensitive',
+      'defaultValue','helpText','description','relationship','formula','picklistValues','picklistRestricted',
+      'controllerFieldApiName','valueSettings']);
+    const completeField=proposal.dataType!==undefined;
+    const proposedController=Object.hasOwn(proposal,'controllerFieldApiName')
+      ?proposal.controllerFieldApiName:completeField?null:current.controllerFieldApiName??null;
+    if(proposedController!==null&&typeof proposedController!=='string')
+      throw new Error('Invalid dependent picklist controller');
+    const proposedSettings=Object.hasOwn(proposal,'valueSettings')
+      ?proposal.valueSettings:proposedController?current.valueSettings??{}:undefined;
+    const requestedRelationship=proposal.relationship&&typeof proposal.relationship==='object'
+      ?proposal.relationship as Record<string,unknown>:undefined;
     if(Object.keys(proposal).some(key=>!mutable.has(key))||
-      (proposal.required!==undefined&&proposal.required!==current.required)||
-      (proposal.unique!==undefined&&proposal.unique!==current.unique)||
-      (proposal.relationship!==undefined&&JSON.stringify(proposal.relationship)!==JSON.stringify(current.relationship)))
+      (proposal.relationship!==undefined&&(
+        requestedRelationship?.targetObject!==current.relationship?.targetObject||
+        requestedRelationship?.type!==current.relationship?.type))||
+      (proposal.formula!==undefined&&JSON.stringify(proposal.formula)!==JSON.stringify(current.formula)))
       throw new Error('Unsupported field update requires a metadata migration');
-    const changed=await this.db.query(
-      'UPDATE md_field_definitions SET label=$4 WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id',
-      [tenantId,objectApi,fieldApi,proposal.label.trim()]);
-    if(!changed.rowCount)throw new Error('Field not found');
+    for(const key of ['required','unique','externalId','caseSensitive'])
+      if(proposal[key]!==undefined&&typeof proposal[key]!=='boolean')
+        throw new Error('Invalid field update');
+    if(proposal.helpText!==undefined&&(typeof proposal.helpText!=='string'||proposal.helpText.length>255))
+      throw new Error('Invalid field help text');
+    if(proposal.description!==undefined&&(typeof proposal.description!=='string'||proposal.description.length>1000))
+      throw new Error('Invalid field description');
+    if(proposal.defaultValue!==undefined&&proposal.defaultValue!==null
+      &&!['string','number','boolean'].includes(typeof proposal.defaultValue))
+      throw new Error('Invalid field default value');
+    if(proposal.picklistRestricted!==undefined&&typeof proposal.picklistRestricted!=='boolean')
+      throw new Error('Invalid picklist restriction');
+    const field=parseFieldDefinition({
+      ...proposal,apiName:fieldApi,dataType:current.dataType,label,
+      picklistValues:proposal.picklistValues??current.picklistValues,
+      picklistRestricted:proposal.picklistRestricted??current.picklistRestricted,
+      controllerFieldApiName:proposedController??undefined,
+      valueSettings:proposedController?proposedSettings:undefined,
+      relationship:proposal.relationship??current.relationship,
+      formula:proposal.formula??current.formula,
+      defaultValue:proposal.defaultValue===undefined?current.defaultValue:proposal.defaultValue
+    },objectApi);
+    if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
+      throw new Error('Hierarchical relationships are supported only as User self-lookups');
+    const picklistValuesChanged=['picklist','multipicklist'].includes(current.dataType.toLowerCase().replace(/[\s-]/g,''))
+      &&JSON.stringify(field.picklistValues)!==JSON.stringify(current.picklistValues??[]);
+    const dependencyChanged=field.controllerFieldApiName!== (current.controllerFieldApiName??null)
+      ||Boolean(field.controllerFieldApiName&&JSON.stringify(normalizeValueSettings(field.valueSettings))!==
+        JSON.stringify(normalizeValueSettings(current.valueSettings)));
+    const required=proposal.required===undefined?current.required:proposal.required===true;
+    const unique=proposal.unique===undefined?current.unique:proposal.unique===true;
+    const externalId=proposal.externalId===undefined?current.externalId:proposal.externalId===true;
+    const caseSensitive=proposal.caseSensitive===undefined?current.caseSensitive:proposal.caseSensitive===true;
+    await this.db.transaction(async client=>{
+      if(required&&!current.required){
+        const missing=await client.query(`SELECT 1 FROM md_records r
+          WHERE r.tenant_id=$1 AND r.object_api=$2 AND NOT EXISTS(
+            SELECT 1 FROM md_record_values v WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.field_api=$3)
+          LIMIT 1`,[tenantId,objectApi,fieldApi]);
+        if(missing.rowCount)throw new Error('Required field cannot be enabled while records have no value');
+      }
+      if(field.controllerFieldApiName){
+        const controller=await client.query<{data_type:string}>(`SELECT data_type FROM md_field_definitions
+          WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
+        [tenantId,objectApi,field.controllerFieldApiName]);
+        if(field.controllerFieldApiName===fieldApi||!controller.rows[0]
+          ||!['picklist','boolean'].includes(controller.rows[0].data_type))
+          throw new Error('Invalid dependent picklist controller');
+        const controllerValues=controller.rows[0].data_type==='boolean'
+          ?['true','false']:(await client.query<{value:string}>(`SELECT value FROM md_field_picklist_values
+            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+          [tenantId,objectApi,field.controllerFieldApiName])).rows.map(row=>row.value);
+        if(Object.keys(field.valueSettings).some(value=>!controllerValues.includes(value))
+          ||Object.values(field.valueSettings).some(values=>values.some(value=>!field.picklistValues.includes(value))))
+          throw new Error('Invalid dependent picklist values');
+        if(dependencyChanged){
+          const existing=await client.query<{controller_value:string|null;dependent_value:string|null}>(`
+            SELECT controller.value_text AS controller_value,dependent.value_text AS dependent_value
+            FROM md_records r
+            JOIN md_record_values dependent ON dependent.tenant_id=r.tenant_id AND dependent.record_id=r.id
+              AND dependent.field_api=$3
+            LEFT JOIN md_record_values controller ON controller.tenant_id=r.tenant_id
+              AND controller.record_id=r.id AND controller.field_api=$4
+            WHERE r.tenant_id=$1 AND r.object_api=$2
+          `,[tenantId,objectApi,fieldApi,field.controllerFieldApiName]);
+          if(existing.rows.some(row=>row.dependent_value!==null
+            &&!field.valueSettings[row.controller_value??'']?.includes(row.dependent_value)))
+            throw new Error('Dependent picklist update conflicts with existing record values');
+        }
+      }
+      if(picklistValuesChanged){
+        const removed=(current.picklistValues??[]).filter(value=>!field.picklistValues.includes(value));
+        if(removed.length){
+          const inUse=await client.query(`SELECT 1 FROM md_record_values
+            WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 AND value_text=ANY($4::text[]) LIMIT 1`,
+          [tenantId,objectApi,fieldApi,removed]);
+          if(inUse.rowCount)throw new Error('Picklist values cannot be removed while records use them');
+        }
+      }
+      const changed=await client.query(`UPDATE md_field_definitions SET
+        label=$4,required=$5,is_unique=$6 OR $7,external_id=$7,case_sensitive=$8,
+        default_value=$9,help_text=$10,description=$11,picklist_restricted=$12,
+        relationship_name=$13,child_relationship_name=$14,delete_behavior=$15,allow_reparenting=$16
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id`,
+      [tenantId,objectApi,fieldApi,label,required,unique,externalId,caseSensitive,
+        proposal.defaultValue===undefined?current.defaultValue:proposal.defaultValue===null?null:String(proposal.defaultValue),
+        proposal.helpText===undefined?current.helpText:proposal.helpText||null,
+        proposal.description===undefined?current.description:proposal.description||null,field.restricted,
+        field.relationshipName,field.childRelationshipName,field.deleteBehavior,field.allowReparenting]);
+      if(!changed.rowCount)throw new Error('Field not found');
+      if(picklistValuesChanged){
+        await client.query('DELETE FROM md_field_picklist_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
+          [tenantId,objectApi,fieldApi]);
+        for(const [order,value] of field.picklistValues.entries())await client.query(
+          'INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5)',
+          [tenantId,objectApi,fieldApi,value,order]);
+      }
+      if(dependencyChanged){
+        await client.query('DELETE FROM md_field_dependencies WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
+          [tenantId,objectApi,fieldApi]);
+        if(field.controllerFieldApiName){
+          await client.query(`INSERT INTO md_field_dependencies
+            (tenant_id,object_api,field_api,controller_field_api) VALUES($1,$2,$3,$4)`,
+          [tenantId,objectApi,fieldApi,field.controllerFieldApiName]);
+          for(const [controllerValue,values] of Object.entries(field.valueSettings))
+            for(const value of values)await client.query(`INSERT INTO md_field_dependency_values
+              (tenant_id,object_api,field_api,controller_value,picklist_value)
+              VALUES($1,$2,$3,$4,$5)`,[tenantId,objectApi,fieldApi,controllerValue,value]);
+        }
+      }
+      await client.query(`UPDATE md_record_values SET is_unique=$4 OR $5,case_sensitive=$6
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+      [tenantId,objectApi,fieldApi,unique,externalId,caseSensitive]);
+    });
     return this.get(tenantId,objectApi);
   }
-  /** Refuse destructive removal if any tenant record contains a value in this field. */
+  private async purgeExpiredDeletedFields(client:PoolClient,tenantId:string){
+    const expired=await client.query<{object_api:string;api_name:string;id:string}>(`
+      SELECT object_api,api_name,id FROM md_field_definitions
+      WHERE tenant_id=$1 AND deleted_at<=now()-interval '15 days'
+      ORDER BY object_api,api_name FOR UPDATE
+    `,[tenantId]);
+    for(const field of expired.rows){
+      await client.query(`DELETE FROM md_record_history
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+      [tenantId,field.object_api,field.api_name]);
+      await client.query(`DELETE FROM md_record_values
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+      [tenantId,field.object_api,field.api_name]);
+      await client.query(`DELETE FROM md_object_page_layout_fields
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+      [tenantId,field.object_api,field.api_name]);
+      await client.query(`DELETE FROM md_object_record_type_values
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3`,
+      [tenantId,field.object_api,field.api_name]);
+      await client.query(`DELETE FROM md_page_component_properties
+        WHERE tenant_id=$1 AND field_id=$2`,
+      [tenantId,field.id]);
+      await client.query(`DELETE FROM md_field_definitions
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at<=now()-interval '15 days'`,
+      [tenantId,field.object_api,field.api_name]);
+    }
+    return expired.rows.length;
+  }
+  async purgeExpiredFields(){
+    const {rows:tenants}=await this.db.query<{tenant_id:string}>(`
+      SELECT DISTINCT tenant_id FROM md_field_definitions
+      WHERE deleted_at<=now()-interval '15 days'
+    `);
+    let purged=0;
+    for(const {tenant_id:tenantId} of tenants){
+      purged+=await this.db.transaction(client=>this.purgeExpiredDeletedFields(client,tenantId));
+    }
+    return purged;
+  }
+  async listDeletedFields(tenantId:string,objectApi:string){
+    await this.get(tenantId,objectApi);
+    return this.db.transaction(async client=>{
+      await this.purgeExpiredDeletedFields(client,tenantId);
+      const {rows}=await client.query<{api_name:string;label:string|null;data_type:string;deleted_at:Date;expires_at:Date}>(`
+        SELECT api_name,label,data_type,deleted_at,deleted_at+interval '15 days' AS expires_at
+        FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2
+          AND deleted_at>now()-interval '15 days'
+        ORDER BY deleted_at DESC,api_name
+      `,[tenantId,objectApi]);
+      return {fields:rows.map(field=>({
+        apiName:field.api_name,label:field.label??field.api_name,dataType:field.data_type,
+        deletedAt:field.deleted_at,expiresAt:field.expires_at
+      }))};
+    });
+  }
+  async restoreField(tenantId:string,objectApi:string,fieldApi:string){
+    await this.db.transaction(async client=>{
+      await this.purgeExpiredDeletedFields(client,tenantId);
+      const restored=await client.query(`UPDATE md_field_definitions SET deleted_at=NULL
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
+          AND deleted_at>now()-interval '15 days' RETURNING id`,
+      [tenantId,objectApi,fieldApi]);
+      if(!restored.rowCount)throw new Error('Field not found or recovery period expired');
+    });
+    return this.get(tenantId,objectApi);
+  }
   async deleteField(tenantId:string,objectApi:string,fieldApi:string){
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     await this.db.transaction(async client=>{
+      await this.purgeExpiredDeletedFields(client,tenantId);
       const {rows}=await client.query<{id:string}>(`
         SELECT id FROM md_field_definitions
-        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL FOR UPDATE
       `,[tenantId,objectApi,fieldApi]);
       if(!rows[0])throw new Error('Field not found');
-      const usage=await client.query(`
-        SELECT 1 FROM md_record_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 LIMIT 1
+      const controllerUse=await client.query(`
+        SELECT 1 FROM md_field_dependencies WHERE tenant_id=$1 AND object_api=$2
+          AND controller_field_api=$3 LIMIT 1
       `,[tenantId,objectApi,fieldApi]);
-      if(usage.rows.length)throw new Error('Field has stored records; removal requires reviewed migration');
-      await client.query(
-        'DELETE FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      if(controllerUse.rowCount)throw new Error('Field is used as a controlling field');
+      const formulaUse=await client.query(`
+        SELECT 1 FROM md_field_definitions WHERE tenant_id=$1 AND deleted_at IS NULL
+          AND formula_expression LIKE '%'||'@'||$2||'.'||$3||'%' LIMIT 1
+      `,[tenantId,objectApi,fieldApi]);
+      if(formulaUse.rowCount)throw new Error('Field is referenced by an active formula');
+      await client.query(`UPDATE md_field_definitions SET deleted_at=now()
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
         [tenantId,objectApi,fieldApi]);
     });
     return this.get(tenantId,objectApi);
@@ -156,14 +591,14 @@ export class ObjectDefinitionService {
   async dependencies(tenantId:string,apiName:string) {
     await this.get(tenantId,apiName);
     const {rows}=await this.db.query<{object_api:string;related_object:string}>(
-      'SELECT object_api,related_object FROM md_field_definitions WHERE tenant_id=$1 AND (object_api=$2 OR related_object=$2) AND related_object IS NOT NULL ORDER BY object_api,related_object',
+      'SELECT object_api,related_object FROM md_field_definitions WHERE tenant_id=$1 AND deleted_at IS NULL AND (object_api=$2 OR related_object=$2) AND related_object IS NOT NULL ORDER BY object_api,related_object',
       [tenantId,apiName]);
     return {dependencies:[...new Set(rows.map(row=>row.object_api===apiName?row.related_object:row.object_api))].filter((name):name is string=>Boolean(name)).sort()};
   }
   async fieldDependencies(tenantId:string,apiName:string) {
     const object=await this.get(tenantId,apiName);
     const {rows}=await this.db.query<{api_name:string;related_object:string|null}>(
-      'SELECT api_name,related_object FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 ORDER BY api_name',
+      'SELECT api_name,related_object FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL ORDER BY api_name',
       [tenantId,apiName]);
     return {fields:object.fields.map(field=>({
       fieldApiName:field.apiName,
@@ -180,17 +615,30 @@ export class ObjectDefinitionService {
     const {rows:objects}=await this.db.query<SqlObject>(
       'SELECT id,api_name,label,is_system FROM md_object_definitions WHERE tenant_id=$1 ORDER BY api_name',[tenantId]);
     const {rows:fields}=await this.db.query<SqlField>(
-      'SELECT id,object_api,api_name,label,data_type,related_object,required,max_length,picklist_restricted FROM md_field_definitions WHERE tenant_id=$1 ORDER BY object_api,api_name',[tenantId]);
+      `SELECT f.id,f.object_api,f.api_name,f.label,f.data_type,f.related_object,f.relationship_type,f.required,f.max_length,
+        f.precision,f.scale,f.is_unique,f.external_id,f.case_sensitive,f.default_value,f.help_text,f.description,
+        f.formula_expression,f.formula_return_type,f.auto_number_format,
+        f.rollup_child_object,f.rollup_relationship_field,f.rollup_operation,f.rollup_source_field,
+        f.picklist_restricted,
+        d.controller_field_api AS controller_field_api_name,f.relationship_name,f.child_relationship_name,
+        f.delete_behavior,f.allow_reparenting
+       FROM md_field_definitions f LEFT JOIN md_field_dependencies d
+        ON d.tenant_id=f.tenant_id AND d.object_api=f.object_api AND d.field_api=f.api_name
+       WHERE f.tenant_id=$1 AND f.deleted_at IS NULL ORDER BY f.object_api,f.api_name`,[tenantId]);
     const byObject=new Map<string,SqlField[]>();
     for(const field of fields) {
       const list=byObject.get(field.object_api)??[];
       list.push(field);byObject.set(field.object_api,list);
     }
     const typeLabel:Record<string,string>={
-      text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup',email:'Email',phone:'Phone',url:'URL',picklist:'Picklist',textarea:'Text Area',longtext:'Long Text Area',currency:'Currency',percent:'Percent'
+      text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',time:'Time',
+      reference:'Lookup',email:'Email',phone:'Phone',url:'URL',picklist:'Picklist',
+      multipicklist:'Multi-Select Picklist',textarea:'Text Area',longtext:'Long Text Area',
+      richtext:'Rich Text Area',currency:'Currency',percent:'Percent',formula:'Formula',
+      geolocation:'Geolocation',address:'Address',rollup:'Roll-Up Summary',autonumber:'AutoNumber'
     };
     const layouts=await this.loadLayoutMetadata(tenantId);
-    const {rows:picklistOptions}=fields.some(field=>field.data_type==='picklist')
+    const {rows:picklistOptions}=fields.some(field=>['picklist','multipicklist'].includes(field.data_type))
       ?await this.db.query<{object_api:string;field_api:string;value:string}>(`
         SELECT object_api,field_api,value FROM md_field_picklist_values
         WHERE tenant_id=$1 ORDER BY object_api,field_api,sort_order`,[tenantId])
@@ -202,6 +650,18 @@ export class ObjectDefinitionService {
       const values=optionsByField.get(key)??[];
       values.push(option.value);
       optionsByField.set(key,values);
+    }
+    const {rows:dependencyValues}=fields.some(field=>field.controller_field_api_name)
+      ?await this.db.query<{object_api:string;field_api:string;controller_value:string;picklist_value:string}>(
+        `SELECT object_api,field_api,controller_value,picklist_value FROM md_field_dependency_values
+         WHERE tenant_id=$1 ORDER BY object_api,field_api,controller_value,picklist_value`,[tenantId])
+      :{rows:[]};
+    const valuesByDependentField=new Map<string,Record<string,string[]>>();
+    for(const row of dependencyValues){
+      const key=picklistKey(row.object_api,row.field_api);
+      const settings=valuesByDependentField.get(key)??{};
+      (settings[row.controller_value]??=[]).push(row.picklist_value);
+      valuesByDependentField.set(key,settings);
     }
     const [types,values]=await Promise.all([
       this.db.query<{object_api:string;record_type_id:string;label:string;developer_name:string;description:string;active:boolean;is_default:boolean}>(
@@ -231,11 +691,32 @@ export class ObjectDefinitionService {
       recordTypes:typeByObject.get(obj.api_name)??[],
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
         id:f.id,apiName:f.api_name,label:f.label??f.api_name,
-        dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
-        ...(f.data_type==='picklist'?{picklistValues:optionsByField.get(picklistKey(f.object_api,f.api_name))??[],picklistRestricted:f.picklist_restricted!==false}:{}),
+        dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:
+          ['number','currency','percent'].includes(f.data_type)&&f.precision!==null
+            ?`${typeLabel[f.data_type]}(${f.precision}, ${f.scale??0})`
+            :(typeLabel[f.data_type]??f.data_type),
+        required:f.required,        unique:f.is_unique===true,
+        externalId:f.external_id===true,
+        caseSensitive:f.case_sensitive===true,
+        ...(f.description?{description:f.description}:{}),
+        ...(f.help_text?{helpText:f.help_text}:{}),
+        ...(f.default_value!==null&&f.default_value!==undefined?{defaultValue:decodeFieldDefault(f.data_type,f.default_value)}:{}),
+        ...(f.formula_expression!==null?{formula:{expression:f.formula_expression,returnType:f.formula_return_type??'Text'}}:{}),
+        ...(f.data_type==='rollup'?{rollup:{
+          childObject:f.rollup_child_object,relationshipField:f.rollup_relationship_field,
+          operation:f.rollup_operation,sourceField:f.rollup_source_field
+        }}:{}),
+        ...(f.auto_number_format?{autoNumberFormat:f.auto_number_format}:{}),
+        ...(['picklist','multipicklist'].includes(f.data_type)?{picklistValues:optionsByField.get(picklistKey(f.object_api,f.api_name))??[],picklistRestricted:f.picklist_restricted!==false}:{}),
+        ...(f.controller_field_api_name?{
+          controllerFieldApiName:f.controller_field_api_name,
+          valueSettings:valuesByDependentField.get(picklistKey(f.object_api,f.api_name))??{}
+        }:{}),
         ...(f.related_object?{relationship:{
-          type:'Lookup' as const,targetObject:f.related_object,
-          relationshipName:f.api_name,childRelationshipName:f.object_api
+          type:(f.relationship_type??'Lookup') as 'Lookup'|'Master-Detail'|'Hierarchical',targetObject:f.related_object,
+          relationshipName:f.relationship_name??f.api_name,childRelationshipName:f.child_relationship_name??f.object_api,
+          ...(f.delete_behavior?{deleteBehavior:f.delete_behavior as 'Clear'|'Restrict'}:{}),
+          allowReparenting:f.allow_reparenting===true
         }}:{})
       }))
     }));
@@ -295,7 +776,8 @@ export class ObjectDefinitionService {
   }
 
   /** Atomic layout replacement with optimistic concurrency and strict referential validation. */
-  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number){
+  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number,
+    persistSupplemental?:(client:PoolClient)=>Promise<void>){
     if(!payload||typeof payload!=='object'||Array.isArray(payload)
       ||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
       throw new Error('Invalid page layout request');
@@ -307,7 +789,7 @@ export class ObjectDefinitionService {
     const list=(v:unknown,max=200):v is string[]=>Array.isArray(v)&&v.length<=max
       &&v.every(item=>string(item))&&new Set(v).size===v.length;
     const {rows:definedFields}=await this.db.query<{api_name:string}>(
-      'SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
+      'SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL',[tenantId,objectApi]);
     const fieldNames=new Set(definedFields.map(row=>row.api_name));
     type SectionInput={id:string;label:string;columns:1|2;fieldApiNames:string[]};
     type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean};
@@ -403,6 +885,7 @@ export class ObjectDefinitionService {
       const version=await client.query<{revision:number}>(
         'SELECT revision FROM md_object_layout_versions WHERE tenant_id=$1 AND object_api=$2 FOR UPDATE',[tenantId,objectApi]);
       if(version.rows[0].revision!==expectedRevision)throw new Error('Page layout revision conflict');
+      if(persistSupplemental)await persistSupplemental(client);
       if(typeof input.label==='string'){
         if(!input.label.trim()||input.label.length>200)throw new Error('Invalid object label');
         await client.query('UPDATE md_object_definitions SET label=$3 WHERE tenant_id=$1 AND api_name=$2',

@@ -4,22 +4,22 @@ import type { ObjectMetadata, FieldMetadata, RelatedLookupFilterMetadata } from 
 export function createSetupObjectActions(ctx: any) {
  const { apiRequest, customTabObject, customTabStyle, formulaEditorRef, launchCustomTabWizard, navigateRoute, newFieldAllowReparenting, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldControllerApiName, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notify, object, objects, route, setCustomTabObject, setCustomTabStyle, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObject, setObjectSetting, setObjects, setShowCustomTabWizard, setShowNewField, setShowNewObject, workspace } = ctx;
   const validateNewFieldFormula = async (): Promise<boolean> => {
-    if (!object || !newFieldFormula.trim()) {
-      setNewFieldFormulaValidation({ status: 'invalid', message: 'Enter a formula expression first.' });
-      return false;
-    }
-    setNewFieldFormulaValidation({ status: 'checking', message: 'Checking formula…' });
+    setNewFieldFormulaValidation({ status: 'checking', message: '' });
     try {
-      await apiRequest<{ valid: true }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate`, {
-        method: 'POST',
-        body: JSON.stringify({ expression: newFieldFormula.trim(), returnType: newFieldReturnType })
-      });
-      setNewFieldFormulaValidation({ status: 'valid', message: 'Formula syntax and field references are valid.' });
+      const result = await apiRequest<{ valid: boolean }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate`,
+        { method: 'POST', body: JSON.stringify({ expression: newFieldFormula, returnType: newFieldReturnType }) }
+      );
+      if (!result.valid) {
+        setNewFieldFormulaValidation({ status: 'invalid', message: 'Formula validation failed.' });
+        return false;
+      }
+      setNewFieldFormulaValidation({ status: 'valid', message: 'Formula is valid.' });
       return true;
     } catch (error) {
       setNewFieldFormulaValidation({
         status: 'invalid',
-        message: error instanceof Error ? error.message : 'Unable to validate formula'
+        message: error instanceof Error ? error.message : 'Formula validation failed.'
       });
       return false;
     }
@@ -58,6 +58,10 @@ export function createSetupObjectActions(ctx: any) {
     setNewFieldRelationshipTarget('');
     setNewFieldRelationshipName('');
     setNewFieldChildRelationshipName('');
+    setNewFieldRollupChildObject('');
+    setNewFieldRollupRelationshipField('');
+    setNewFieldRollupOperation('COUNT');
+    setNewFieldRollupSourceField('');
     setNewFieldDeleteBehavior('Clear');
     setNewFieldAllowReparenting(false);
     setNewFieldLookupFilters([]);
@@ -108,6 +112,8 @@ export function createSetupObjectActions(ctx: any) {
     if (newFieldType === 'Date/Time' && newFieldDefaultValue
       && (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)?$/.test(newFieldDefaultValue)
         || !Number.isFinite(Date.parse(newFieldDefaultValue)))) return 'Enter a valid date and time default.';
+    if (newFieldType === 'Time' && newFieldDefaultValue
+      && !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?$/.test(newFieldDefaultValue)) return 'Enter a valid time default.';
     return '';
   })();
   const newFieldConfigurationError = !newFieldLabel.trim()
@@ -150,7 +156,7 @@ export function createSetupObjectActions(ctx: any) {
                               ? 'Complete each lookup filter or remove it before continuing.'
                               : newFieldDefaultError;
 
-  const addField = async () => {
+  const addField = async (rollupConfig?: FieldMetadata['rollup']) => {
     const label = newFieldLabel.trim();
     if (!label) return;
     const apiName = newFieldApiName;
@@ -161,6 +167,7 @@ export function createSetupObjectActions(ctx: any) {
     const relationshipName = label.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
     const dataType = newFieldType === 'Formula'
       ? `Formula(${newFieldReturnType})`
+      : newFieldType === 'Roll-Up Summary' ? 'Roll-Up Summary'
       : relationshipType
         ? `${relationshipType === 'Hierarchical' ? 'Lookup' : relationshipType}(${relationshipTarget})`
         : newFieldType === 'Text' ? `Text(${newFieldTextLength})`
@@ -170,15 +177,18 @@ export function createSetupObjectActions(ctx: any) {
       apiName,
       label,
       dataType,
-      required: newFieldType === 'Master-Detail Relationship' || (newFieldType !== 'Formula' && newFieldRequired),
-      unique: newFieldType !== 'Formula' && newFieldType !== 'Long Text Area' && newFieldType !== 'Geolocation' && !relationshipType && newFieldUnique,
-      ...(newFieldExternalId ? { externalId: true } : {}),
+      required: newFieldType === 'Master-Detail Relationship'
+        || (!['Formula', 'Roll-Up Summary'].includes(newFieldType) && newFieldRequired),
+      unique: !['Formula', 'Roll-Up Summary', 'Long Text Area', 'Rich Text Area', 'Geolocation', 'Address'].includes(newFieldType)
+        && !relationshipType && newFieldUnique,
+      ...(newFieldExternalId && newFieldType !== 'Roll-Up Summary' ? { externalId: true } : {}),
       ...(newFieldUnique && ['Text', 'Email', 'Phone'].includes(newFieldType)
         ? { caseSensitive: newFieldCaseSensitive }
         : {}),
       ...(newFieldDescription.trim() ? { description: newFieldDescription.trim() } : {}),
       ...(newFieldHelpText.trim() ? { helpText: newFieldHelpText.trim() } : {}),
       ...(newFieldType === 'Formula' ? { formula: { expression: newFieldFormula.trim(), returnType: newFieldReturnType } } : {}),
+      ...(newFieldType === 'Roll-Up Summary' && rollupConfig ? { rollup: rollupConfig } : {}),
       ...(['Picklist', 'Multi-Select Picklist'].includes(newFieldType) ? {
         picklistValues: newFieldPicklistOptions,
         picklistRestricted: newFieldPicklistRestricted,
@@ -187,7 +197,7 @@ export function createSetupObjectActions(ctx: any) {
           valueSettings: newFieldValueSettings
         } : {})
       } : {}),
-      ...(newFieldHasDefault ? {
+      ...(newFieldHasDefault && newFieldType !== 'Roll-Up Summary' ? {
         defaultValue: newFieldType === 'Checkbox'
           ? newFieldDefaultValue === 'true'
           : ['Number', 'Currency', 'Percent'].includes(newFieldType)
@@ -323,7 +333,16 @@ export function createSetupObjectActions(ctx: any) {
           apiName, label, pluralLabel, kind: 'Custom Object',
           description: newObjectDescription.trim(),
           settings: newObjectSettings,
-          fields: [{ apiName: 'Name', label: newObjectRecordNameLabel.trim() || `${label} Name`, dataType: newObjectSettings.recordNameType === 'Auto Number' ? 'AutoNumber' : 'Text(80)', required: true, unique: false }]
+          fields: [{
+            apiName: 'Name',
+            label: newObjectRecordNameLabel.trim() || `${label} Name`,
+            dataType: newObjectSettings.recordNameType === 'Auto Number' ? 'AutoNumber' : 'Text(80)',
+            required: true,
+            unique: false,
+            ...(newObjectSettings.recordNameType === 'Auto Number'
+              ? { autoNumberFormat: newObjectSettings.recordNameFormat.trim() }
+              : {})
+          }]
         })
       });
       setObjects((current) => [...current, payload.object]);

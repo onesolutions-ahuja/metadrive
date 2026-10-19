@@ -262,41 +262,17 @@ function ObjectManager({
   const [filterRelatedObject, setFilterRelatedObject] = useState('');
   const [editingField, setEditingField] = useState<FieldMetadata | null>(null);
   const [showDependencies, setShowDependencies] = useState(false);
+  const [deletedFields, setDeletedFields] = useState<Array<{
+    apiName: string; label: string; dataType: string; deletedAt: string; expiresAt: string;
+  }>>([]);
+  const [deletedFieldsOpen, setDeletedFieldsOpen] = useState(false);
+  const [deletedFieldsLoading, setDeletedFieldsLoading] = useState(false);
   const [activationScope, setActivationScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [activationAppId, setActivationAppId] = useState('');
   const [activationProfileId, setActivationProfileId] = useState('');
   const [activationFormFactors, setActivationFormFactors] = useState<Array<'Desktop' | 'Phone'>>(['Desktop']);
   const [showDeleteObjectConfirmation, setShowDeleteObjectConfirmation] = useState(false);
   const [showDeleteFieldConfirmation, setShowDeleteFieldConfirmation] = useState(false);
-  const [metadataChanges, setMetadataChanges] = useState<Array<{
-    objectApiName: string; revision: number; action: string; actorUserId: string; at: string;
-    beforeRevision: number | null; afterRevision: number | null;
-  }>>([]);
-  const [metadataHistoryError, setMetadataHistoryError] = useState('');
-  const [selectedSnapshot, setSelectedSnapshot] = useState<{ revision: number; before?: ObjectMetadata; after?: ObjectMetadata } | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  useEffect(() => {
-    if (selectedSetting !== 'Change History') return;
-    let active = true;
-    setHistoryLoading(true);
-    setSelectedSnapshot(null);
-    setMetadataHistoryError('');
-    void apiRequest<{ history: typeof metadataChanges }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/history?limit=100`)
-      .then((response) => { if (active) setMetadataChanges(response.history); })
-      .catch((error: unknown) => { if (active) setMetadataHistoryError(error instanceof Error ? error.message : 'History unavailable'); })
-      .finally(() => { if (active) setHistoryLoading(false); });
-    return () => { active = false; };
-  }, [selectedSetting, object.apiName, object.revision]);
-  const openMetadataSnapshot = async (revision: number) => {
-    try {
-      const response = await apiRequest<{ change: { revision: number; before?: ObjectMetadata; after?: ObjectMetadata } }>(
-        `/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}`
-      );
-      setSelectedSnapshot(response.change);
-    } catch (error) {
-      setMetadataHistoryError(error instanceof Error ? error.message : 'Unable to read revision');
-    }
-  };
   const validateDraft = async () => {
     try {
       const result = await apiRequest<{ valid: boolean; errors: string[] }>(
@@ -310,6 +286,8 @@ function ObjectManager({
   };
   useEffect(() => {
     setDraft(object);
+    setDeletedFields([]);
+    setDeletedFieldsOpen(false);
     setRecordTypePicklistDrafts(Object.fromEntries((object.recordTypes ?? []).flatMap((recordType) =>
       object.fields.filter((field) => field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist').map((field) => [
         `${recordType.id}.${field.apiName}`,
@@ -335,6 +313,32 @@ function ObjectManager({
   const visibleObjects = objects.filter((item) => (viewMode === 'All Objects'
     || (viewMode === 'Custom Objects' ? item.kind === 'Custom Object' : item.kind === 'Standard Object'))
     && `${item.label} ${item.apiName}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
+  const loadDeletedFields = async () => {
+    setDeletedFieldsLoading(true);
+    try {
+      const result = await apiRequest<{ fields: typeof deletedFields }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/deleted-fields`
+      );
+      setDeletedFields(result.fields);
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Deleted fields could not be loaded');
+    } finally {
+      setDeletedFieldsLoading(false);
+    }
+  };
+  const restoreDeletedField = async (apiName: string) => {
+    try {
+      await apiRequest<{ object: ObjectMetadata }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}/restore`,
+        { method: 'POST' }
+      );
+      await onRefreshObject(object.apiName);
+      await loadDeletedFields();
+      onNotify(`${apiName} restored`);
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Field could not be restored');
+    }
+  };
   const fields = draft.fields
     .filter((field) => `${field.label} ${field.apiName} ${field.dataType}`.toLowerCase().includes(fieldSearch.toLowerCase()))
     .sort((left, right) => left.label.localeCompare(right.label));
@@ -765,6 +769,25 @@ function ObjectManager({
   const renderFields = () => (
     <>
       <div className="section-toolbar"><div><h2>Fields & Relationships</h2><p>Typed fields, formulas, and object relationships for {draft.label} records.</p></div><div className="toolbar-actions"><button className="btn" onClick={() => void toggleFieldDependencies()}><SlidersHorizontal size={14} />Metadata Dependencies</button><button className="btn btn-brand" onClick={onNewField}><Plus size={15} />New</button></div></div>
+      <section className="surface metadata-card">
+        <div className="metadata-card-header">
+          <div><h3>Deleted Fields</h3><p className="permission-help">Deleted fields can be restored for 15 days.</p></div>
+          <button className="btn" type="button" onClick={() => {
+            const opening = !deletedFieldsOpen;
+            setDeletedFieldsOpen(opening);
+            if (opening) void loadDeletedFields();
+          }}>{deletedFieldsOpen ? 'Hide' : 'View Deleted Fields'}</button>
+        </div>
+        {deletedFieldsOpen && (deletedFieldsLoading ? <div className="empty-state">Loading deleted fields…</div>
+          : deletedFields.length ? <div className="table-scroll"><table className="slds-table">
+            <thead><tr><th>Field Label</th><th>Field Name</th><th>Data Type</th><th>Recovery Expires</th><th></th></tr></thead>
+            <tbody>{deletedFields.map((field) => <tr key={field.apiName}>
+              <td>{field.label}</td><td className="api-name">{field.apiName}</td><td>{field.dataType}</td>
+              <td>{new Date(field.expiresAt).toLocaleString()}</td>
+              <td><button className="btn" type="button" onClick={() => void restoreDeletedField(field.apiName)}>Restore</button></td>
+            </tr>)}</tbody>
+          </table></div> : <div className="empty-state">No fields are available to restore.</div>)}
+      </section>
       {showDependencies && <section className="surface metadata-card"><div className="metadata-card-header"><h3>Metadata Dependencies</h3><button className="row-menu" aria-label="Close metadata dependencies" onClick={() => setShowDependencies(false)}><X size={14} /></button></div>
         {fieldDependenciesLoading ? <div className="empty-state">Checking saved metadata dependencies…</div>
           : <>{persistedObjectDependencies.length > 0 && <div className="table-scroll"><table className="slds-table"><thead><tr><th>Object</th><th>Deletion Blocker</th></tr></thead><tbody>{persistedObjectDependencies.map((dependency) => <tr key={dependency}><td className="api-name">{draft.apiName}</td><td>{dependency}</td></tr>)}</tbody></table></div>}
@@ -1167,7 +1190,7 @@ function ObjectManager({
     const supportsOwnership = draft.fields.some((field) =>
       field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
     const standard = [
-      ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Bulk Update', 'Mass Delete']),
+      ...(draft.apiName === 'User' ? [] : ['New']),
       ...(supportsOwnership ? ['Change Owner'] : []),
       'Printable View',
     ];
@@ -1177,33 +1200,9 @@ function ObjectManager({
       {standard.map((label) => <label className="metadata-row" key={label}><span>{label}</span><input type="checkbox" checked={selected.includes(label)} onChange={() => updateDraft({ listViewButtons: toggleField(selected, label) })} /></label>)}
     </section>;
   };
-  const renderHistory = () => <section className="surface object-setting-surface">
-    <div className="section-toolbar"><div><h2>Metadata Change History</h2>
-      <p>Last 300 tenant metadata changes are retained; revisions are read-only snapshots.</p>
-    </div><span>Current revision {object.revision ?? 0}</span></div>
-    {historyLoading && <p role="status">Loading history...</p>}
-    {metadataHistoryError && <p role="alert" className="form-error">{metadataHistoryError}</p>}
-    {!historyLoading && metadataChanges.length === 0 && <p>No saved metadata changes.</p>}
-    <div className="metadata-history-list">
-      {metadataChanges.map((change) => <div className="metadata-row" key={change.revision}>
-        <span><strong>Revision {change.revision}: {change.action.replaceAll('_', ' ')}</strong>
-        <small>{new Date(change.at).toLocaleString()} · User {change.actorUserId}</small></span>
-        <button className="btn" type="button" onClick={() => void openMetadataSnapshot(change.revision)}>
-          View snapshot
-        </button>
-      </div>)}
-    </div>
-    {selectedSnapshot && <div className="metadata-card">
-      <h3>Revision {selectedSnapshot.revision} snapshot</h3>
-      <p>Read-only. Use normal Object Manager saves for validated changes.</p>
-      <pre style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
-        {JSON.stringify(selectedSnapshot.after ?? selectedSnapshot.before ?? {}, null, 2)}
-      </pre>
-    </div>}
-  </section>;
   const renderSetting = () => {
     if (selectedSetting === 'Schema Builder') return <SchemaBuilder objects={objects} selectedObjectApiName={object.apiName} onOpenObject={onObjectSelect} onCreateObject={onCreateObject} onNewField={onNewField} />;
-    if (selectedSetting === 'Change History') return renderHistory();
+    if (selectedSetting === 'Change History') return null;
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
@@ -1278,7 +1277,7 @@ function ObjectManager({
           <PlatformPageSlot slotKey="field-object-36"><label className="form-label">Help Text<textarea className="form-control" value={editingField.helpText ?? ''} onChange={(event) => setEditingField({ ...editingField, helpText: event.target.value })} maxLength={255} rows={2} /></label></PlatformPageSlot>
           <div className="form-options">
             <label className="checkbox-row"><input type="checkbox" checked={editingField.required} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label>
-            <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Multi-Select Picklist'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
+            <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Rich Text Area', 'Multi-Select Picklist'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
               onChange={(event) => {
                 const next = { ...editingField, unique: event.target.checked };
                 if (!event.target.checked) delete next.caseSensitive;
@@ -1301,10 +1300,10 @@ function ObjectManager({
                   setEditingField(next);
                 } else setEditingField({ ...editingField, defaultValue: value });
               }}><option value="">— None —</option>{(editingField.picklistValues ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label></PlatformPageSlot>
-              : <PlatformPageSlot slotKey="field-object-38"><label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : ['Date/Time', 'DateTime'].includes(editingField.dataType) ? 'datetime-local' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'}
+              : <PlatformPageSlot slotKey="field-object-38"><label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : ['Date/Time', 'DateTime'].includes(editingField.dataType) ? 'datetime-local' : editingField.dataType === 'Time' ? 'time' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'}
                 min={editingNumericMaximum === undefined ? undefined : -editingNumericMaximum}
                 max={editingNumericMaximum}
-                step={editingNumericFormat ? (Number(editingNumericFormat[2]) ? 10 ** -Number(editingNumericFormat[2]) : 1) : undefined}
+                step={editingNumericFormat ? (Number(editingNumericFormat[2]) ? 10 ** -Number(editingNumericFormat[2]) : 1) : editingField.dataType === 'Time' ? 1 : undefined}
                 maxLength={editingTextMaximum ? Number(editingTextMaximum) : editingField.dataType === 'Text' ? 255 : undefined}
                 value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label></PlatformPageSlot>)}
           {(editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist') && <>

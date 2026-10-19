@@ -5,7 +5,6 @@ import {
   Database,
   FileText,
   LayoutTemplate,
-  Puzzle,
   Store,
   ShieldCheck,
   Workflow,
@@ -22,8 +21,6 @@ export type WorkspaceId =
   | 'scheduled-flows'
   | 'flow-logs'
   | 'automation-settings'
-  | 'approval-processes'
-  | 'component-library'
   | 'app-manager'
   | 'app-exchange'
   | 'named-credentials'
@@ -49,6 +46,12 @@ export type FieldMetadata = {
   trackHistory?: boolean;
   defaultValue?: string | number | boolean;
   formula?: { expression: string; returnType: string };
+  rollup?: {
+    childObject: string;
+    relationshipField: string;
+    operation: 'COUNT' | 'SUM' | 'MIN' | 'MAX';
+    sourceField?: string;
+  };
   relationship?: {
     type: 'Lookup' | 'Master-Detail' | 'Hierarchical';
     targetObject: string;
@@ -142,6 +145,7 @@ export type ObjectSettingsMetadata = {
   allowActivities: boolean;
   trackFieldHistory: boolean;
   allowInChatter: boolean;
+  allowSearch?: boolean;
   deploymentStatus: 'In Development' | 'Deployed';
   recordNameType: 'Text' | 'Auto Number';
   recordNameFormat: string;
@@ -154,6 +158,7 @@ export type ObjectMetadata = {
   pluralLabel: string;
   kind: 'Standard Object' | 'Custom Object';
   description: string;
+  helpText?: string;
   fields: FieldMetadata[];
   revision?: number;
   pageLayouts?: PageLayoutMetadata[];
@@ -170,7 +175,7 @@ export type ObjectMetadata = {
   };
   relatedLookupFilters?: RelatedLookupFilterMetadata[];
   relatedLookupFilterLogic?: Record<string, 'All' | 'Any'>;
-  listViewFilter?: { fieldApiName: string; value: string };
+  listViewFilter?: { fieldApiName: string; value: string; operator?: 'Equals' | 'Includes' | 'Excludes' };
   listViewButtons?: string[];
   actions?: ObjectActionMetadata[];
   customTab?: { style: 'Blue' | 'Green' | 'Orange' | 'Purple' | 'Red' | 'Teal' | 'Yellow' };
@@ -965,8 +970,6 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'report-builder', label: 'Reports', icon: FileText },
   { id: 'flow-builder', label: 'Flows', icon: Workflow },
   { id: 'automation-settings', label: 'Process Automation Settings', icon: Workflow },
-  { id: 'component-library', label: 'Component Library', icon: Puzzle },
-  { id: 'approval-processes', label: 'Approval Processes', icon: Workflow },
   { id: 'app-manager', label: 'App Manager', icon: LayoutTemplate },
   { id: 'app-exchange', label: 'AppExchange', icon: Store },
   { id: 'named-credentials', label: 'Named Credentials', icon: Database },
@@ -978,9 +981,9 @@ export const workspaces: WorkspaceMetadata[] = [
 export const setupNavigation = [
   { group: 'Platform Administration', items: ['Tenant Management'] },
   { group: 'Company Settings', items: ['Company Settings'] },
-  { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Page Builder', 'App Manager', 'Component Library', 'AppExchange'] },
+  { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Page Builder', 'App Manager', 'AppExchange'] },
   { group: 'Integrations', items: ['Named Credentials', 'Named Devices'] },
-  { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Approval Processes', 'Process Automation Settings'] },
+  { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Process Automation Settings'] },
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
   { group: 'Security', items: ['Users', 'Roles', 'Public Groups', 'Profiles', 'Permission Sets', 'Permission Set Groups', 'Sharing Settings', 'Sharing Rules'] }
 ];
@@ -1140,21 +1143,8 @@ export const flowElementMetadata = [
   { type: 'Screen', group: 'Interaction', icon: '▣' },
   { type: 'Decision', group: 'Logic', icon: '◇' },
   { type: 'Assignment', group: 'Logic', icon: '⇄' },
-  { type: 'Loop', group: 'Logic', icon: '↻' },
-  { type: 'Collection Filter', group: 'Logic', icon: '⌕' },
-  { type: 'Collection Sort', group: 'Logic', icon: '↕' },
-  { type: 'Wait', group: 'Logic', icon: '◷' },
-  { type: 'Transform', group: 'Data', icon: '⇥' },
-  { type: 'Get Records', group: 'Data', icon: '⌕' },
   { type: 'Create Records', group: 'Data', icon: '+' },
-  { type: 'Update Records', group: 'Data', icon: '↻' },
-  { type: 'Delete Records', group: 'Data', icon: '−' },
-  { type: 'Roll Back Records', group: 'Data', icon: '↶' },
-  { type: 'Publish Platform Event', group: 'Interaction', icon: '⇧' },
-  { type: 'Action', group: 'Interaction', icon: '⚡' },
-  { type: 'HTTP Callout', group: 'Interaction', icon: '⇧' },
-  { type: 'Subflow', group: 'Interaction', icon: '↪' },
-  { type: 'Orchestration Stage', group: 'Interaction', icon: '☷' }
+  { type: 'HTTP Callout', group: 'Interaction', icon: '⇧' }
 ];
 
 export const recordMetadata = [
@@ -1167,21 +1157,19 @@ export const recordMetadata = [
 
 export const defaultFlow: FlowDefinitionMetadata = {
   apiName: 'Renewal_Risk_Evaluation',
-  label: 'Renewal Risk Evaluation',
-  flowType: 'Record-Triggered Flow',
+  label: 'New Autolaunched Flow',
+  flowType: 'Autolaunched Flow',
   status: 'Draft',
   versionNumber: 1,
   activeVersion: null,
-  triggerObject: 'Renewal__c',
-  startConfig: { trigger: 'created-or-updated', runWhen: 'after-save', entryConditions: [] },
+  triggerObject: null,
+  startConfig: {},
   elements: [
-    { id: 1, type: 'Start', label: 'Record-Triggered Flow', config: { trigger: 'created-or-updated', runWhen: 'after-save' } },
-    { id: 2, type: 'Decision', label: 'Renewal at risk?', config: { outcomes: [{ name: 'At_Risk', label: 'At Risk' }, { name: 'Default', label: 'Default Outcome' }] } },
-    { id: 3, type: 'Update Records', label: 'Update Renewal Status', config: { object: 'Renewal__c', field: 'Status__c', value: 'At Risk' } }
+    { id: 1, type: 'Start', label: 'Start', config: {} },
+    { id: 2, type: 'End', label: 'End', config: {} }
   ],
   connectors: [
-    { id: 'connector-1', from: 1, to: 2, label: '', kind: 'normal' },
-    { id: 'connector-2', from: 2, to: 3, label: 'At Risk', kind: 'normal' }
+    { id: 'connector-1', from: 1, to: 2, label: '', kind: 'normal' }
   ],
   resources: [
     { name: 'recordId', label: 'Record ID', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false }

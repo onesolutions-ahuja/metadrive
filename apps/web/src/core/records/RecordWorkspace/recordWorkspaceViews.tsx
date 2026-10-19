@@ -486,7 +486,8 @@ function RecordWorkspace({
             ...(debouncedSearch ? { search: debouncedSearch } : {}),
             ...(object?.listViewFilter ? {
               filterField: object.listViewFilter.fieldApiName,
-              filterValue: object.listViewFilter.value
+              filterValue: object.listViewFilter.value,
+              ...(object.listViewFilter.operator ? { filterOperator: object.listViewFilter.operator } : {})
             } : {})
           });
           const payload = await apiRequest<{ records: RecordData[]; total: number }>(
@@ -688,7 +689,7 @@ function RecordWorkspace({
     && (!selectedLayout || selectedLayout.actions.includes('New'));
   const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
   const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
-  const canMassDelete = canDelete && object?.listViewButtons?.includes('Mass Delete') === true;
+  const canMassDelete = false;
   const bulkEditableFields = (object?.fields ?? []).filter((field) =>
     fieldAccess[`${object?.apiName}.${field.apiName}`]?.edit === true
     && !field.relationship && !field.formula
@@ -696,12 +697,11 @@ function RecordWorkspace({
       'LastModifiedDate', 'SystemModstamp', 'IsDeleted'].includes(field.apiName)
     && /^(?:Text(?:\(|$)|Text Area|Long Text Area|Email|Phone|URL|Picklist|Number(?:\(|$)|Currency(?:\(|$)|Percent(?:\(|$)|Checkbox|Boolean|Date(?:\/Time)?$|DateTime$)/i.test(field.dataType)
   );
-  const canBulkUpdate = canEdit && object?.listViewButtons?.includes('Bulk Update') === true && bulkEditableFields.length > 0;
+  const canBulkUpdate = false;
   const bulkSelectedField = bulkEditableFields.find((field) => field.apiName === bulkFieldApiName);
   const ownerField = object?.fields.find((field) => field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
   const canChangeOwner = Boolean(ownerField && canEdit && fieldAccess[`${object?.apiName}.OwnerId`]?.edit && object?.listViewButtons?.includes('Change Owner'));
-  const canImport = object?.apiName !== 'User' && object?.listViewButtons?.includes('Import') === true
-    && object?.actions?.some((action) => action.label === 'New' && action.enabled) !== false;
+  const canImport = false;
   const openCreateForm = () => {
     setEditingId(null);
     setEditingTimestamp('');
@@ -1072,7 +1072,8 @@ function RecordWorkspace({
           ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
           ...(debouncedSearch ? { search: debouncedSearch } : {}),
           ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
-            filterValue: object.listViewFilter.value } : {})
+            filterValue: object.listViewFilter.value,
+            ...(object.listViewFilter.operator ? { filterOperator: object.listViewFilter.operator } : {}) } : {})
         });
         const page = await apiRequest<{ records: RecordData[]; total: number }>(
           '/records/' + encodeURIComponent(object.apiName) + '?' + params.toString());

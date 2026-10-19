@@ -373,6 +373,31 @@ export function RecordFormDialog({
         {helpText}
       </fieldset>;
     }
+    if (field.dataType === 'Address') {
+      const address = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+        ? rawValue as Record<string, unknown> : {};
+      const components = [
+        ['street', 'Street'], ['city', 'City'], ['state', 'State/Province'],
+        ['postalCode', 'Postal Code'], ['country', 'Country']
+      ] as const;
+      return <fieldset className="form-label" key={field.apiName}>
+        <legend>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</legend>
+        {components.map(([apiName, label]) => <label className="form-label" key={apiName}>
+          {label}
+          <input className="form-control" type="text" maxLength={{
+            street: 255, city: 40, state: 80, postalCode: 20, country: 80
+          }[apiName]} aria-label={`${displayFieldLabel(field)} ${label}`}
+            required={field.required && apiName === 'street'}
+            disabled={common.disabled} value={typeof address[apiName] === 'string' ? address[apiName] as string : ''}
+            onChange={(event) => {
+              const next = { ...address, [apiName]: event.target.value || null };
+              onChange(field.apiName, Object.values(next).every((item) => item === null || item === '')
+                ? null : next);
+            }} />
+        </label>)}
+        {helpText}
+      </fieldset>;
+    }
     if (field.relationship) {
       const options = lookupRecords[field.relationship.targetObject] ?? [];
       const targetObject = objects.find((item) => item.apiName === field.relationship?.targetObject);
@@ -459,11 +484,12 @@ export function RecordFormDialog({
       </fieldset>;
     }
     if (dataType.includes('text area') || dataType.includes('long text')) return <label className="form-label record-form-wide" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
-      <textarea className="form-control" {...common} maxLength={dataType === 'long text area' ? 131072 : undefined} value={value} onChange={(event) => onChange(field.apiName, event.target.value)} />
+      <textarea className="form-control" {...common} maxLength={['long text area', 'rich text area'].includes(dataType) ? 131072 : undefined} value={value} onChange={(event) => onChange(field.apiName, event.target.value)} />
       {helpText}
     </label>;
     const type = dataType === 'date' ? 'date'
       : dataType.includes('datetime') ? 'datetime-local'
+        : dataType === 'time' ? 'time'
         : dataType === 'email' ? 'email'
           : dataType === 'url' ? 'url'
             : dataType === 'phone' ? 'tel'
@@ -478,7 +504,7 @@ export function RecordFormDialog({
       <input className="form-control" {...common} type={type}
         min={numericMaximum === undefined ? undefined : -numericMaximum}
         max={numericMaximum}
-        step={numericFormat ? (Number(numericFormat[2]) ? 10 ** -Number(numericFormat[2]) : 1) : type === 'number' ? 'any' : undefined}
+        step={numericFormat ? (Number(numericFormat[2]) ? 10 ** -Number(numericFormat[2]) : 1) : type === 'number' ? 'any' : type === 'time' ? 1 : undefined}
         maxLength={textMaximum ? Number(textMaximum) : field.dataType === 'Text' ? 255 : undefined}
         value={value}
         onChange={(event) => onChange(field.apiName, type === 'number' ? (event.target.value === '' ? '' : Number(event.target.value)) : event.target.value)} />
@@ -590,5 +616,3 @@ export function RecordFormDialog({
     })()}
   </div>;
 }
-
-

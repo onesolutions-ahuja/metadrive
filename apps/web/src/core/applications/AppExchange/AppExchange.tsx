@@ -10,19 +10,13 @@ type Props = {
   canManageCredentials: boolean;
   canView: boolean;
   canManageSecrets: boolean;
-  canTest: boolean;
   canInstall: boolean;
-  canLicenceAdmin: boolean;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   loadApps: () => Promise<ConnectorApp[]>;
   executeLifecycleFlow: (flowName: string, appKey: string) => Promise<void>;
   onSave: (value: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onRotate: (id: string) => Promise<void>;
-  onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
-  onOAuthAuthorize?: (id: string) => Promise<string>;
-  onGrantLicence: (appKey: string) => Promise<void>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
   onOpenFlow: (apiName: string) => void;
@@ -78,11 +72,10 @@ export default function AppExchange(props: Props) {
 
   if (opened) return <ConnectorAppWorkspace app={opened}
     credentials={props.credentials} flows={props.flows} canManageCredentials={props.canManageCredentials}
-    canView={props.canView} canManageSecrets={props.canManageSecrets} canTest={props.canTest}
-    canInstall={props.canInstall} canLicenceAdmin={props.canLicenceAdmin}
-    onGrantLicence={async (key) => { await props.onGrantLicence(key); await refresh(); }}
+    canView={props.canView} canManageSecrets={props.canManageSecrets}
+    canInstall={props.canInstall}
     canManageFlows={props.canManageFlows} encryptionReady={props.encryptionReady}
-    onSave={props.onSave} onDelete={props.onDelete} onRotate={props.onRotate} onTest={props.onTest} onOAuthAuthorize={props.onOAuthAuthorize}
+    onSave={props.onSave} onDelete={props.onDelete}
     loadHistory={props.loadHistory} onOpenRecord={props.onOpenRecord} onOpenFlow={props.onOpenFlow}
     onLifecycle={(app, operation) => action(app, operation)}
     onBack={() => {setOpenedKey(null);void refresh().catch(()=>{});}}/>;
