@@ -9,14 +9,14 @@
 | PRs #677 and #680 | GitHub merged pull-request metadata, 2026-10-19 | Merged |
 | Current main commit | `c803bae3f5b1da3252247d8d1212bf14a1d83922` | Verified |
 | Pages Release | Actions run [39198882267](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198882267): verify + publish success, `npm run check` passed | Passed |
-| Earlier SQL System Validation | Actions run [39198767686](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198767686) on older SHA `62721fbe0`: TypeScript errors referencing dashboard-sharing fields | Historical failure; **not** proof current main fails |
+| Newer SQL System Validation | Actions run [39200748291](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39200748291) on SHA `a9883781b` | Passed; older failure superseded for tested commit |\n| Earlier SQL System Validation | Actions run [39198767686](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198767686) on older SHA `62721fbe0`: TypeScript errors referencing dashboard-sharing fields | Historical failure; **not** proof current main fails |
 | Aiven | Project `ahujavishalkumar-a080`, service `oneengine`, DB `metadrive_sql_20261012` | Running |
 | Tenant-scoped record-type FK | `pg_constraint.convalidated` for `md_records_record_type_tenant_object_fk` | true |
 | Migration ledger | `md_system_migrations` | 40 rows, latest applied 2026-10-19 04:19:55 UTC |
 | Product anomalies | `md_records` filtered to `object_api='Product'` | 10/10 missing `owner_id` and `record_type_id` |
 | Product record types | `md_object_record_types` | One active default `Master` (`master`) for affected tenant |
 | Product ownership provenance | `md_record_history` join on missing-owner Products | 0 entries; ownership cannot be established from this history |
-| Available tenancy | `md_users` aggregate | 1 tenant and 1 user; insufficient for two-tenant restricted-role test |
+| Actual RLS state | `pg_class.relrowsecurity` for `md_records`, `md_record_values`, `md_users`, `md_system_definitions` | false on all four; explicit security architecture approval required |\n| Available tenancy | `md_users` aggregate | 1 tenant and 1 user; insufficient for two-tenant restricted-role test |
 | Production deployment | Railway service `metadrive`, deployment `e1442f1a-dab3-4317-a553-c40d70866748` | SUCCESS |
 | Railway configuration | Production environment | **One unapplied staged service change**; do not apply without reviewing intent |
 | HTTP reliability, recent 24h | Railway `http_error_rate` | 3,301 requests, 7 server errors (0.212%), 129 client errors |
@@ -43,7 +43,7 @@ Test explicit allow and deny cases for: cross-tenant Object CRUD and joins; Reco
 - Run Client Credentials and Authorization Code OAuth against authorised live test providers including refresh/revoke/denied scopes; redact tokens.
 - Test credential encryption, controlled key rotation and rollback using disposable encrypted **test** credentials; validate no plaintext leakage.
 - Verify offline metadata publication, content negotiation, HTTP methods, response schemas, and negative security responses end-to-end.
-- Re-run the **SQL System Validation workflow on current main** or a later commit and require a green run. Historical failing runs precede the source fix; a successful Pages Release `npm run check` is not a substitute for SQL smoke and browser tests.
+- SQL System Validation **passed** for SHA `a9883781b` in run 39200748291. Verify its exact tested revision and test coverage for the final candidate; a successful Pages Release `npm run check` alone is not a substitute for SQL smoke and browser tests.
 - Check Core startup with optional apps uninstalled, per-tenant installation/licensing/activation, Flow deactivation, seed idempotency, SQL backups, and data preservation.
 - Execute non-destructive concurrent-load testing and verify PostgreSQL connections under stated service limits. Railway observational request metrics do not establish pool headroom or stress capacity.
 - Review the unapplied Railway production staged change before accepting or discarding it; do not deploy an unknown patch.
@@ -52,7 +52,7 @@ Test explicit allow and deny cases for: cross-tenant Object CRUD and joins; Reco
 
 **SQL + JSONB:** `SystemDefinitionService` stores stable tenant/kind/API identifiers, revisions and enabled state in relational columns with validated definition properties in JSONB. This is aligned with the policy's intended split *for that service*, not proof the entire platform is compliant. Review all definitions, field query patterns, indexes and update/version behaviour before closing ARCH-01.
 
-**RLS:** Application-layer isolation remains the tracked implementation. Whether PostgreSQL RLS is mandatory requires an explicit architecture/security owner decision. If not adopted, record compensating controls: mandatory tenant predicates in all SQL paths, centralized RBAC enforcement, SQL test guards, tenant-scoped caches/jobs, audit of privileged access and cross-tenant negative tests. Do not silently mark ARCH-02 complete.
+**RLS:** Application-layer isolation remains the tracked implementation. Live verification confirms RLS is disabled on `md_records`, `md_record_values`, `md_users` and `md_system_definitions`. Whether PostgreSQL RLS is mandatory requires an explicit architecture/security owner decision. If not adopted, record compensating controls: mandatory tenant predicates in all SQL paths, centralized RBAC enforcement, SQL test guards, tenant-scoped caches/jobs, audit of privileged access and cross-tenant negative tests. Do not silently mark ARCH-02 complete.
 
 ## Release decision
 
