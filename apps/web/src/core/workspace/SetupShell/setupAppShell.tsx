@@ -378,7 +378,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
 
   const flowHasUnsavedChanges = () => {
-    if (route.kind !== 'setup' || route.workspace !== 'flow-builder') return false;
+    // The Flow landing page is a catalogue, not an edited draft. Guard only an open Flow.
+    if (route.kind !== 'setup' || route.workspace !== 'flow-builder' || !route.resourceApiName) return false;
     const savedSnapshot = flowSnapshots.current.get(flow.apiName);
     return savedSnapshot === undefined || savedSnapshot !== JSON.stringify(flow);
   };
