@@ -62,3 +62,38 @@ test('scheduled dispatcher rejects nonexistent local daylight-saving times',asyn
  await assert.rejects(dispatcher.enqueueDue(new Date('2026-03-08T10:00:00.000Z')),
   /local time does not exist/);
 });
+
+test('dispatcher pages through more than 500 tenant schedules without skipping later tenants',async()=>{
+ const metadata:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue({builder:{elements:[{id:1,type:'Start',config:{
+  object:'Account',startDate:'2026-10-31',startTime:'09:30',
+  timeZone:'UTC',frequency:'Daily'
+ }}]}},'',metadata);
+ const flows=Array.from({length:501},(_,i)=>({
+  id:'00000000-0000-4000-8000-'+String(i+1).padStart(12,'0'),
+  tenant_id:tenant,api_name:'Flow_'+String(i+1).padStart(4,'0'),
+  version:1,flow_service_user_id:actor,app_api_name:null
+ }));
+ let cursorReads=0,queued=0;
+ const db={query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
+  if(sql.includes('FROM md_flow_definitions f')){
+   const last=cursorReads*200;
+   if(cursorReads>0)assert.equal(params[3],flows[last-1].id,
+    'Keyset cursor must identify last schedule from preceding batch');
+   cursorReads++;
+   return {rows:flows.slice(last,last+200)};
+  }
+  if(sql.includes('FROM md_flow_editor_values'))return {rows:metadata.map(row=>({
+   property_path:row.path,value_kind:row.kind,value_text:row.text
+  }))};
+  if(sql.includes('INSERT INTO md_durable_jobs')){
+   queued++;return {rows:[{id:'job-id'}]};
+  }
+  throw new Error('Unexpected dispatcher query: '+sql);
+ }} as unknown as SqlPersistence;
+ const processed=await new ScheduledFlowDispatcher(db).enqueueDue(
+  new Date('2026-11-01T09:35:00Z'));
+ assert.equal(processed,501);
+ assert.equal(queued,501);
+ assert.equal(cursorReads,3);
+});
