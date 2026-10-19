@@ -385,5 +385,20 @@ try{
   "DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action='execute'",
   [tenantId,set.rows[0].id,denyResource]);
 
+ // A newer published Flow must not silently replace the version bound to an older queued job.
+ let registeredHandler;
+ registerFlowJobHandler({register:(_kind,handler)=>{registeredHandler=handler;}},
+  db,new RbacEngine(db),supportedFlows);
+ const {rows:maxVersions}=await db.query(
+  'SELECT max(version)::integer AS version FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
+  [tenantId,checkout.apiName]);
+ const nextVersion=maxVersions[0].version+1;
+ const {rows:nextFlows}=await db.query(`
+  INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+  VALUES($1,$2,'New incompatible version','Autolaunched Flow',$3,true) RETURNING id`,
+  [tenantId,checkout.apiName,nextVersion]);
+ assert.ok(nextFlows[0]);
+ await assert.rejects(()=>registeredHandler(authJob),/Published Flow version changed/);
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
