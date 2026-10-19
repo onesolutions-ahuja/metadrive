@@ -256,5 +256,30 @@ try{
  assert.equal(audits[0].actor_id,userId);
  assert.equal((await durable.claim('ci-recovery-worker',1)).length,0);
 
+ // Explicit retry must keep the same provider idempotency scope.
+ const retryId=await durable.enqueue(tenantId,'ci.retry',{actorUserId:userId,idempotencyKey:'ci-retry'});
+ const retryFirst=(await durable.claim('ci-retry-worker',1))[0];
+ assert.equal(retryFirst.id,retryId);
+ const initialScope=retryFirst.execution_scope;
+ assert.ok(initialScope);
+ await durable.fail(tenantId,retryId,'ci-retry-worker','JOB_EXECUTION_FAILED');
+ await durable.operatorDecision(tenantId,retryId,userId,'retry');
+ const retrySecond=(await durable.claim('ci-retry-worker-2',1))[0];
+ assert.equal(retrySecond.id,retryId);
+ assert.equal(retrySecond.execution_scope,initialScope,'manual retry must reuse idempotency scope');
+ await durable.complete(tenantId,retryId,'ci-retry-worker-2');
+ const recurringId=await durable.enqueue(tenantId,'ci.recurring',{
+  actorUserId:userId,idempotencyKey:'ci-recurring',recurrenceSeconds:60
+ });
+ const occurrence=(await durable.claim('ci-recurring-worker',1))[0];
+ assert.equal(occurrence.id,recurringId);
+ await durable.complete(tenantId,recurringId,'ci-recurring-worker');
+ const {rows:nextOccurrence}=await db.query(
+  'SELECT status,execution_scope FROM md_durable_jobs WHERE tenant_id=$1 AND id=$2',
+  [tenantId,recurringId]);
+ assert.equal(nextOccurrence[0].status,'queued');
+ assert.notEqual(nextOccurrence[0].execution_scope,occurrence.execution_scope,
+  'completed recurring occurrence must rotate its idempotency scope');
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
