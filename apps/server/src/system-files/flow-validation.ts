@@ -106,7 +106,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   if(beforeSave&&!(capabilities?capability?.beforeSaveAllowed:
     ['Start','Assignment','Decision','Custom Error','End','Get Records','Loop',
       'Collection Filter','Collection Sort','Transform'].includes(type)))
-   errors.push('Before-save Flows support only read-only data elements, Assignment and Decision');
+   errors.push('Before-save Record-Triggered Flows support only read-only data elements, Assignment and Decision');
   if(type==='Wait'&&beforeSave)
    errors.push('Wait elements are not supported in before-save Record-Triggered Flows');
   const config=node.config;
