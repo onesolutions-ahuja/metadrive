@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS md_outbound_execution_receipts (
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
  execution_key text NOT NULL CHECK(length(execution_key) BETWEEN 1 AND 256),
  credential_id uuid NOT NULL,
+ FOREIGN KEY(tenant_id,credential_id) REFERENCES md_named_credentials(tenant_id,id),
  request_method text NOT NULL CHECK(request_method IN ('POST','PUT','PATCH','DELETE')),
  state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','completed','uncertain')),
  response_status integer,
