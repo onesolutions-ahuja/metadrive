@@ -4,6 +4,7 @@ import {
   fire,
   list,
   normalizeChoice,
+  recordChoiceOptions,
 } from "../shared/OneInputs.jsx";
 
 export default function OneChoice(props) {
@@ -19,8 +20,14 @@ export default function OneChoice(props) {
     set,
     label,
     wrap,
-    options,
+    options: staticOptions,
   } = useOneInputs(p);
+  const options = recordChoiceOptions(p) ?? staticOptions;
+  const [selectionError, setSelectionError] = React.useState("");
+  const maxSelections = Number.isSafeInteger(Number(p.maxSelections)) &&
+    Number(p.maxSelections) > 0 ? Number(p.maxSelections) : 0;
+  const minSelections = Number.isSafeInteger(Number(p.minSelections)) &&
+    Number(p.minSelections) > 0 ? Number(p.minSelections) : 0;
   const mode = p.mode || "select",
     chosen = Array.isArray(current)
       ? current.map(String)
@@ -30,8 +37,13 @@ export default function OneChoice(props) {
   const toggle = (v) => {
     if (mode === "checkbox" || Array.isArray(chosen)) {
       const values = Array.isArray(chosen) ? chosen : [];
+      if (!values.includes(v) && maxSelections && values.length >= maxSelections) {
+        setSelectionError("Select no more than " + maxSelections + " options.");
+        return;
+      }
+      setSelectionError("");
       set(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
-    } else set(v);
+    } else { setSelectionError(""); set(v); }
   };
   if (mode === "multiple")
     return wrap(
@@ -42,9 +54,15 @@ export default function OneChoice(props) {
         id={p.inputId}
         aria-describedby={p.helpId}
         value={Array.isArray(chosen) ? chosen : []}
-        onChange={(e) =>
-          set(Array.from(e.target.selectedOptions, (x) => x.value))
-        }
+        onChange={(e) => {
+          const next = Array.from(e.target.selectedOptions, (x) => x.value);
+          if (maxSelections && next.length > maxSelections) {
+            setSelectionError("Select no more than " + maxSelections + " options.");
+            return;
+          }
+          setSelectionError("");
+          set(next);
+        }}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -74,6 +92,15 @@ export default function OneChoice(props) {
   return (
     <fieldset {...root} style={{ ...root.style, border: 0, padding: 0 }}>
       <legend>{label}</legend>
+      {p.optionSource === "records" && !p.optionLabelFieldApiName &&
+        <p role="alert">Select the record label field for this choice.</p>}
+      {(minSelections > 0 || maxSelections > 0) &&
+        <small className="one-muted">
+          {minSelections ? "Select at least " + minSelections : ""}
+          {minSelections && maxSelections ? " and " : ""}
+          {maxSelections ? "no more than " + maxSelections : ""} options
+        </small>}
+      {selectionError && <small role="alert">{selectionError}</small>}
       <div className="one-row">
         {options.map((o) => (
           <label
