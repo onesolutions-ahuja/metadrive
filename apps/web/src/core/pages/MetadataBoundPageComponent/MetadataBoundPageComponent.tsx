@@ -231,6 +231,7 @@ export default function MetadataBoundPageComponent({
     });
   }, [sessionId, disableActions]);
   return <div>
+    {!objectApiName && <div className="records-message" role="alert">Select a bound object to load records for this component.</div>}
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...resolvedProperties, ...componentLayoutProps(properties, formFactor),
