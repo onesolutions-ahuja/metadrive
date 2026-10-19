@@ -323,17 +323,25 @@ export class NamedCredentialService {
      else throw new Error('Invalid queued HTTP Callout value type');
      variables[row.api_name]=value;
     }
-    await this.callout(job.tenant_id,job.user_id,{
+    const response=await this.callout(job.tenant_id,job.user_id,{
      namedCredentialId:job.credential_id,method:job.method,
      path:this.decryptValue(job.path_ciphertext),headers:this.decryptValue(job.headers_ciphertext),
      body:job.body_ciphertext?this.decryptValue(job.body_ciphertext):'',
      timeoutMs:job.timeout_ms
     },variables,job.idempotency_key_ciphertext
       ?this.decryptValue(job.idempotency_key_ciphertext):job.id);
-    await this.db.query(`
-     UPDATE md_http_callout_jobs SET status='completed',completed_at=now(),claimed_at=NULL
-     WHERE tenant_id=$1 AND id=$2 AND status='processing'
-    `,[job.tenant_id,job.id]);
+    // Commit terminal state and provider acknowledgement atomically.
+    await this.db.transaction(async client=>{
+     const {rowCount}=await client.query(`
+      UPDATE md_http_callout_jobs SET status='completed',completed_at=now(),claimed_at=NULL
+      WHERE tenant_id=$1 AND id=$2 AND status='processing'
+     `,[job.tenant_id,job.id]);
+     if(!rowCount)throw new Error('HTTP Callout claim no longer active');
+     await client.query(`
+      INSERT INTO md_http_callout_receipts(tenant_id,job_id,attempt,response_status)
+      VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,job_id,attempt) DO NOTHING
+     `,[job.tenant_id,job.id,job.attempt_count,response.status]);
+    });
    }catch(error){
     // Any thrown error may have occurred after a remote side effect.
     await this.db.query(`
