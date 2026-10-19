@@ -66,7 +66,7 @@ export function prepareFlowHttpRequest(config:Record<string,unknown>,vars:FlowHt
   throw new Error('HTTP Callout body too large');
  return {path:url.pathname.slice(1)+url.search,body:mappedBody};
 }
-export function mapFlowHttpResponse(value:unknown,body:string,vars:FlowHttpVariables):Record<string,FlowHttpScalar> {
+export function mapFlowHttpResponse(value:unknown,body:string,allowedOutputs:readonly string[]):Record<string,FlowHttpScalar> {
  if(typeof value!=='string'||!value.trim())return {};
  if(value.length>8192)throw new Error('HTTP response mapping too large');
  let mapping:unknown,payload:unknown;
@@ -76,7 +76,7 @@ export function mapFlowHttpResponse(value:unknown,body:string,vars:FlowHttpVaria
  const output:Record<string,FlowHttpScalar>=Object.create(null);
  for(const [name,path] of Object.entries(mapping)){
   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)
-    ||!Object.hasOwn(vars,name)||typeof path!=='string'||path.length>256
+    ||!allowedOutputs.includes(name)||typeof path!=='string'||path.length>256
     ||!/^([A-Za-z][A-Za-z0-9_]*|\[\d+\])(\.[A-Za-z][A-Za-z0-9_]*|\[\d+\])*$/.test(path))
    throw new Error('Invalid HTTP response output resource');
   let current:unknown=payload;
