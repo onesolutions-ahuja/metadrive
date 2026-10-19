@@ -250,7 +250,13 @@ export function createSystemServer(db:SqlPersistence) {
        FROM md_durable_job_history
        WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100`,
       [actor.tenant_id,req.params.id]);
-    res.json({job:rows[0],history,executions});
+    const {rows:receipts}=await db.query(
+      `SELECT id,execution_key,credential_id,request_method,attempt_number,flow_run_id,
+              flow_node_id,state,response_status,provider_receipt,created_at,updated_at
+       FROM md_outbound_execution_receipts
+       WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100`,
+      [actor.tenant_id,req.params.id]);
+    res.json({job:rows[0],history,executions,receipts});
   }));
   app.post('/api/system/jobs/:id/decision',route(async(req,res)=>{
     const actor=req.actor!;
