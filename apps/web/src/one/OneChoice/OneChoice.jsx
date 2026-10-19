@@ -34,6 +34,22 @@ export default function OneChoice(props) {
       : current == null
         ? ""
         : String(current);
+  // Record-backed selection is a UI state change, not an authoritative price or
+  // stock decision. Flows must re-read and validate selected IDs before checkout.
+  const select = (value) => {
+    set(value);
+    if (p.optionSource === "records" && p.actionFlows?.selectionChanged &&
+        typeof p.onAction === "function") {
+      const ids = Array.isArray(value) ? [...new Set(value.map(String))] :
+        value === "" || value === null || value === undefined ? [] : [String(value)];
+      const allowed = new Set(options.map(option => option.value));
+      const validated = ids.filter(id => allowed.has(id)).slice(0, 200);
+      p.onAction({
+        event: "selectionChanged",
+        value: {selectedIds: validated, records: validated.map(Id => ({Id}))},
+      });
+    }
+  };
   const toggle = (v) => {
     if (mode === "checkbox" || Array.isArray(chosen)) {
       const values = Array.isArray(chosen) ? chosen : [];
@@ -42,8 +58,8 @@ export default function OneChoice(props) {
         return;
       }
       setSelectionError("");
-      set(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
-    } else { setSelectionError(""); set(v); }
+      select(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
+    } else { setSelectionError(""); select(v); }
   };
   if (mode === "multiple")
     return wrap(
@@ -61,7 +77,7 @@ export default function OneChoice(props) {
             return;
           }
           setSelectionError("");
-          set(next);
+          select(next);
         }}
       >
         {options.map((o) => (
@@ -79,7 +95,7 @@ export default function OneChoice(props) {
         id={p.inputId}
         aria-describedby={p.helpId}
         value={typeof chosen === "string" ? chosen : ""}
-        onChange={(e) => set(e.target.value)}
+        onChange={(e) => select(e.target.value)}
       >
         <option value="">Select</option>
         {options.map((o) => (
