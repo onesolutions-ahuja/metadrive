@@ -1565,3 +1565,45 @@ CREATE TABLE IF NOT EXISTS md_custom_setting_values (
     (data_type='datetime' AND value_text IS NULL AND value_number IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_datetime IS NOT NULL)
   )
 );
+
+-- Shared Core Flow capabilities are relational SQL metadata, not runtime JSON.
+CREATE TABLE IF NOT EXISTS md_flow_capability_flow_types (
+ flow_type text PRIMARY KEY,
+ description text NOT NULL,
+ sort_order integer NOT NULL,
+ create_enabled boolean NOT NULL DEFAULT false,
+ validate_enabled boolean NOT NULL DEFAULT false,
+ debug_enabled boolean NOT NULL DEFAULT false,
+ enabled boolean NOT NULL DEFAULT true,
+ registry_version integer NOT NULL DEFAULT 1 CHECK(registry_version>0)
+);
+CREATE TABLE IF NOT EXISTS md_flow_capability_elements (
+ element_type text PRIMARY KEY,
+ display_group text NOT NULL,
+ display_icon text NOT NULL,
+ sort_order integer NOT NULL,
+ builder_enabled boolean NOT NULL DEFAULT false,
+ before_save_allowed boolean NOT NULL DEFAULT false,
+ config_schema_key text NOT NULL,
+ validator_key text NOT NULL,
+ runtime_handler_key text NOT NULL,
+ debug_behavior text NOT NULL CHECK(debug_behavior IN ('execute','simulate','unsupported')),
+ app_api_name text,
+ enabled boolean NOT NULL DEFAULT true,
+ registry_version integer NOT NULL DEFAULT 1 CHECK(registry_version>0)
+);
+CREATE TABLE IF NOT EXISTS md_flow_capability_element_flows (
+ element_type text NOT NULL REFERENCES md_flow_capability_elements(element_type),
+ flow_type text NOT NULL REFERENCES md_flow_capability_flow_types(flow_type),
+ builder_allowed boolean NOT NULL DEFAULT false,
+ PRIMARY KEY(element_type,flow_type)
+);
+CREATE TABLE IF NOT EXISTS md_flow_capability_properties (
+ element_type text NOT NULL REFERENCES md_flow_capability_elements(element_type),
+ property_name text NOT NULL,
+ value_type text NOT NULL CHECK(value_type IN ('text','number','boolean','resource','list','object')),
+ required boolean NOT NULL DEFAULT false,
+ sort_order integer NOT NULL DEFAULT 0,
+ PRIMARY KEY(element_type,property_name)
+);
+
