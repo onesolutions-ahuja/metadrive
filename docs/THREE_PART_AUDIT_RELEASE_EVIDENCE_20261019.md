@@ -9,14 +9,16 @@
 | PRs #677 and #680 | GitHub merged pull-request metadata, 2026-10-19 | Merged |
 | Current main commit | `c803bae3f5b1da3252247d8d1212bf14a1d83922` | Verified |
 | Pages Release | Actions run [39198882267](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198882267): verify + publish success, `npm run check` passed | Passed |
-| Newer SQL System Validation | Actions run [39200748291](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39200748291) on SHA `a9883781b` | Passed; older failure superseded for tested commit |\n| Earlier SQL System Validation | Actions run [39198767686](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198767686) on older SHA `62721fbe0`: TypeScript errors referencing dashboard-sharing fields | Historical failure; **not** proof current main fails |
+| Newer SQL System Validation | Actions run [39200748291](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39200748291) on SHA `a9883781b` | Passed; older failure superseded for tested commit |
+| Earlier SQL System Validation | Actions run [39198767686](https://github.com/onesolutions-ahuja/metadrive/actions/runs/39198767686) on older SHA `62721fbe0`: TypeScript errors referencing dashboard-sharing fields | Historical failure; **not** proof current main fails |
 | Aiven | Project `ahujavishalkumar-a080`, service `oneengine`, DB `metadrive_sql_20261012` | Running |
 | Tenant-scoped record-type FK | `pg_constraint.convalidated` for `md_records_record_type_tenant_object_fk` | true |
 | Migration ledger | `md_system_migrations` | 40 rows, latest applied 2026-10-19 04:19:55 UTC |
 | Product anomalies | `md_records` filtered to `object_api='Product'` | 10/10 missing `owner_id` and `record_type_id` |
 | Product record types | `md_object_record_types` | One active default `Master` (`master`) for affected tenant |
 | Product ownership provenance | `md_record_history` join on missing-owner Products | 0 entries; ownership cannot be established from this history |
-| Actual RLS state | `pg_class.relrowsecurity` for `md_records`, `md_record_values`, `md_users`, `md_system_definitions` | false on all four; explicit security architecture approval required |\n| Available tenancy | `md_users` aggregate | 1 tenant and 1 user; insufficient for two-tenant restricted-role test |
+| Actual RLS state | `pg_class.relrowsecurity` for `md_records`, `md_record_values`, `md_users`, `md_system_definitions` | false on all four; explicit security architecture approval required |
+| Available tenancy | `md_users` aggregate | 1 tenant and 1 user; insufficient for two-tenant restricted-role test |
 | Production deployment | Railway service `metadrive`, deployment `e1442f1a-dab3-4317-a553-c40d70866748` | SUCCESS |
 | Railway configuration | Production environment | **One unapplied staged service change**; do not apply without reviewing intent |
 | HTTP reliability, recent 24h | Railway `http_error_rate` | 3,301 requests, 7 server errors (0.212%), 129 client errors |
@@ -80,3 +82,15 @@ WHERE r.object_api='Product' AND r.owner_id IS NULL;
 SELECT COUNT(*) AS migration_count, MAX(applied_at) AS latest_applied
 FROM md_system_migrations;
 ```
+
+
+## Verified connection budget and configuration (2026-10-19)
+
+- PostgreSQL `max_connections=15`, `superuser_reserved_connections=3`; **12 is not an assured application allocation** because monitoring, migrations, and administration also consume connections.
+- The shared SQL engine defaults to **5 connections per process**, with `METADRIVE_DB_POOL_MAX` as an optional override; each independent worker/replica can create its own pool.
+- Railway production currently deploys one replica in IAD, but a second independent worker/process or horizontal scale-up requires a recalculated capacity budget. This is a configuration review, **not** a concurrency-load certification.
+- The unapplied Railway service patch modifies source branch/upstream configuration (including clearing `source.upstreamUrl`); leave unapplied pending release-owner review.
+- Current application DB has **zero** Named Credential records, therefore there are no existing provider configurations that can be exercised safely for live OAuth/rotation.
+- Automated contract tests include `credential-rotation.test.ts` and `oauth-authorization-contract.test.ts`; they use test doubles and do not establish live-provider interoperability.
+
+**Safeguard:** Do not create extra production tenants or test users merely to pass security tests, and do not perform credential rotations against unknown production secrets. Use an isolated test environment with owner-approved fixtures.
