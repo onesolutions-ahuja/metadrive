@@ -281,5 +281,49 @@ try{
  assert.notEqual(nextOccurrence[0].execution_scope,occurrence.execution_scope,
   'completed recurring occurrence must rotate its idempotency scope');
 
+ // Provider unknown outcomes need a persisted reservation and evidence-backed operator release.
+ const {rows:credentialRows}=await db.query(`
+  INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type)
+  VALUES($1,'CI_RECONCILE','CI reconcile','HTTPS','https://example.com','None') RETURNING id`,[tenantId]);
+ const credentialId=credentialRows[0].id;
+ const providerJobId=await durable.enqueue(tenantId,'ci.provider',{
+  actorUserId:userId,idempotencyKey:'ci-provider'});
+ const providerClaim=(await durable.claim('ci-provider-worker',1))[0];
+ assert.equal(providerClaim.id,providerJobId);
+ await durable.fail(tenantId,providerJobId,'ci-provider-worker','JOB_EXECUTION_FAILED');
+ const providerKey=providerClaim.execution_scope+'-9';
+ const {rows:providerReceipts}=await db.query(`
+  INSERT INTO md_outbound_execution_receipts
+   (tenant_id,execution_key,credential_id,request_method,job_id,attempt_number,flow_node_id)
+  VALUES($1,$2,$3,'POST',$4,1,'9') RETURNING id`,
+  [tenantId,providerKey,credentialId,providerJobId]);
+ const receiptId=providerReceipts[0].id;
+ const {rows:duplicateReceipts}=await db.query(`
+  INSERT INTO md_outbound_execution_receipts
+   (tenant_id,execution_key,credential_id,request_method,job_id)
+  VALUES($1,$2,$3,'POST',$4)
+  ON CONFLICT(tenant_id,execution_key) DO NOTHING RETURNING id`,
+  [tenantId,providerKey,credentialId,providerJobId]);
+ assert.equal(duplicateReceipts.length,0,'uncertain provider operation must not automatically replay');
+ await assert.rejects(
+  ()=>durable.providerDecision(tenantB,receiptId,userId,'confirmed_not_sent','evidence-1234'),
+  /Reconciliation receipt not found/);
+ await assert.rejects(
+  ()=>durable.providerDecision(tenantId,receiptId,userId,'confirmed_not_sent',''),
+  /evidence required/);
+ await durable.providerDecision(tenantId,receiptId,userId,'confirmed_not_sent','provider-ticket-1234');
+ const {rows:clearance}=await db.query(
+  'SELECT state FROM md_outbound_execution_receipts WHERE tenant_id=$1 AND id=$2',
+  [tenantId,receiptId]);
+ assert.equal(clearance[0].state,'cleared');
+ const {rows:providerAudits}=await db.query(
+  'SELECT decision,evidence_reference FROM md_outbound_receipt_audit WHERE tenant_id=$1 AND receipt_id=$2',
+  [tenantId,receiptId]);
+ assert.deepEqual(providerAudits.map(x=>x.decision),['confirmed_not_sent']);
+ assert.equal(providerAudits[0].evidence_reference,'provider-ticket-1234');
+ await assert.rejects(
+  ()=>durable.providerDecision(tenantId,receiptId,userId,'confirmed_not_sent','provider-ticket-1234'),
+  /Reconciliation receipt not found/);
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
