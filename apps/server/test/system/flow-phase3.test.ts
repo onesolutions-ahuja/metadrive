@@ -49,7 +49,7 @@ test('Assignment supports text, numeric and collection operations without mutati
 });
 
 test('Visual formula picker now includes runtime-supported IMAGE and time functions',()=>{
- const catalog=readFileSync(new URL('../../../../web/src/core/builders/FlowBuilder/flowEditorCatalog.ts',import.meta.url),'utf8');
+ const catalog=readFileSync(new URL('../../../web/src/core/builders/FlowBuilder/flowEditorCatalog.ts',import.meta.url),'utf8');
  for(const name of ['IMAGE','IFERROR','ISCLONE','CURRENCYRATE','TZOFFSET','ISOWEEK','ISOYEAR'])
   assert.ok(catalog.includes("'"+name+"'"),name+' absent from no-code formula picker');
  validateFlowFormula('IMAGE("https://example.com/image.png","Description")');
