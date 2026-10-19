@@ -412,7 +412,22 @@ export class NamedCredentialService {
   if(body)header['Content-Type']='application/json';
   const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
   const address=resolved[0];
-  const result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
+  // Reserve the key before sending any state-changing request. A pending key
+  // surviving a crash means an unknown provider outcome, not permission to resend.
+  let reservationId:string|undefined;
+  if(method!=='GET'){
+   if(typeof idempotencyKey!=='string'||!/^[A-Za-z0-9_.:-]{1,256}$/.test(idempotencyKey))
+    throw new Error('Invalid outbound execution key');
+   const {rows:reserved}=await this.db.query<{id:string}>(`
+    INSERT INTO md_outbound_execution_receipts
+      (tenant_id,execution_key,credential_id,request_method)
+    VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,execution_key) DO NOTHING RETURNING id
+   `,[tenantId,idempotencyKey,config.namedCredentialId,method]);
+   if(!reserved[0])throw new Error('Outbound execution requires reconciliation before retry');
+   reservationId=reserved[0].id;
+  }
+  try {
+  const result=await new Promise<{status:number;body:string;providerReceipt?:string}>((resolve,reject)=>{
    const call=secureRequest(destination,{method,headers:header,timeout,
     agent:false,lookup:(_host,_options,cb)=>cb(null,address.address,address.family)},res=>{
       const status=res.statusCode??0;
@@ -422,7 +437,11 @@ export class NamedCredentialService {
        if(length>65536){call.destroy(new Error('HTTP response exceeded limit'));return;}
        chunks.push(chunk);
       });
-      res.on('end',()=>resolve({status,body:Buffer.concat(chunks).toString('utf8')}));
+      res.on('end',()=>{
+       const raw=res.headers['x-request-id'];
+       const requestId=typeof raw==='string'&&/^[A-Za-z0-9_.:-]{1,256}$/.test(raw)?raw:undefined;
+       resolve({status,body:Buffer.concat(chunks).toString('utf8'),providerReceipt:requestId});
+      });
    });
    call.on('timeout',()=>call.destroy(new Error('HTTP Callout timeout')));
    call.on('error',reject);
@@ -430,7 +449,21 @@ export class NamedCredentialService {
    call.end();
   });
   if(result.status<200||result.status>=300)throw new Error('HTTP Callout failed with status '+result.status);
+  if(reservationId)await this.db.query(`
+   UPDATE md_outbound_execution_receipts
+   SET state='completed',response_status=$3,provider_receipt=$4,updated_at=now()
+   WHERE tenant_id=$1 AND id=$2 AND state='pending'
+  `,[tenantId,reservationId,result.status,result.providerReceipt??null]);
   return {status:result.status,body:result.body.slice(0,4096)};
+  }catch(error){
+   if(reservationId){
+    try{await this.db.query(`
+     UPDATE md_outbound_execution_receipts SET state='uncertain',updated_at=now()
+     WHERE tenant_id=$1 AND id=$2 AND state='pending'
+    `,[tenantId,reservationId]);}catch{/* Pending is equally non-replayable. */}
+   }
+   throw error;
+  }
  }
 
 }
