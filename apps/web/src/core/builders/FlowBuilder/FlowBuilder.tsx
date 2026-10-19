@@ -1052,7 +1052,7 @@ export default function FlowBuilder({
       <div className="settings-panel-copy">Create exactly two normal connectors labeled Approved and Rejected. Work items appear in the approvers' existing inbox, and Pending Work shows paused stages. Canceling the interview also cancels unfinished approval requests.</div>
     </>;
     if (selected.type === 'Action') return <>
-      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option disabled>Outbound Message (not yet available)</option><option>Submit for Approval</option></select></label>
+      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
       {flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && displayValue(selected.config.actionType) === 'Generate Verification' ? <>
         <label className="form-label">Verification Method<select className="form-control" value={displayValue(selected.config.method) || 'TENANT_POLICY'} onChange={(event)=>setConfig('method',event.target.value)}>
           <option value="TENANT_POLICY">Tenant policy</option><option value="OTP">Email OTP</option><option value="LINK">Reset link</option></select></label>
@@ -1090,10 +1090,50 @@ export default function FlowBuilder({
         <label className="form-label">Message<textarea className="form-control" rows={4} maxLength={2000} value={displayValue(selected.config.messageBody)} onChange={(event) => setConfig('messageBody', event.target.value)} placeholder="Hello {!$User.Name}" /></label>
         <div className="info-callout">Delivers a persistent notification to each active user in this tenant. The running user needs the Send Custom Notifications permission; recipients can view and mark their own notifications as read.</div>
       </> : displayValue(selected.config.actionType) === 'Outbound Message' ? <>
-        <label className="form-label">HTTPS Named Credential<select className="form-control" value={displayValue(selected.config.namedCredentialId)} onChange={(event) => setConfig('namedCredentialId', event.target.value)}><option value="">Select an HTTPS credential</option>{namedCredentials.filter((credential) => credential.protocol === 'HTTPS').map((credential) => <option key={credential.id} value={credential.id}>{credential.label} · {credential.baseUrl}</option>)}</select></label>
-        <label className="form-label">Relative Endpoint Path<input className="form-control" value={displayValue(selected.config.path)} onChange={(event) => setConfig('path', event.target.value)} placeholder="v1/messages" /></label>
-        <label className="form-label">JSON Message Body<textarea className="form-control" rows={5} value={displayValue(selected.config.messageBody)} onChange={(event) => setConfig('messageBody', event.target.value)} placeholder={'{"recordId":"{!$Record.Id}","name":"{!$Record.Name}"}'} /></label>
-        <div className="info-callout">Sends a POST request through the selected tenant HTTPS Named Credential. The running user needs the Execute HTTP Callouts permission; the endpoint must return a 2xx status.</div>
+        <div className="info-callout">Deliver SMS, WhatsApp or other messages through an activated provider operation or tenant HTTPS Named Credential. Messages are queued in the encrypted SQL outbox; provider activation, HTTPS credentials and execution permissions are required. Configure destination, sender and any consent fields using the provider's expected request mapping.</div>
+        <label className="form-label">Integration Connection
+          <select className="form-control" aria-label="Outbound Message provider" value={displayValue(selected.config.integrationConnectionId)}
+            onChange={(event) => {setConfig('integrationConnectionId',event.target.value);setConfig('operation','');setConfig('namedCredentialId','');setConfig('path','');}}>
+            <option value="">Use a tenant HTTPS Named Credential</option>
+            {integrationConnections.filter(connection=>connection.status==='ACTIVE').map(connection=>
+              <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+          </select>
+        </label>
+        {displayValue(selected.config.integrationConnectionId) ? <>
+          <label className="form-label">Provider Operation
+            <select className="form-control" aria-label="Outbound Message operation" value={displayValue(selected.config.operation)}
+              onChange={(event)=>{
+                const connection=integrationConnections.find(item=>item.id===displayValue(selected.config.integrationConnectionId));
+                const provider=connectorProviders.find(item=>item.connectorKey===connection?.connectorKey);
+                const operation=provider?.operations[event.target.value];
+                setConfig('operation',event.target.value);
+                if(operation){setConfig('method',operation.method);setConfig('path',operation.path);}
+              }}>
+              <option value="">Select a POST messaging operation</option>
+              {Object.entries(connectorProviders.find(provider=>provider.connectorKey===
+                integrationConnections.find(connection=>connection.id===displayValue(selected.config.integrationConnectionId))?.connectorKey)?.operations??{})
+                .filter(([,operation])=>operation.method==='POST')
+                .map(([name])=><option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+        </> : <>
+          <label className="form-label">HTTPS Named Credential
+            <select className="form-control" value={displayValue(selected.config.namedCredentialId)}
+              onChange={(event)=>setConfig('namedCredentialId',event.target.value)}>
+              <option value="">Select a credential</option>
+              {namedCredentials.filter(c=>c.protocol==='HTTPS').map(c=>
+                <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </label>
+          <label className="form-label">Relative POST Endpoint
+            <input className="form-control" value={displayValue(selected.config.path)}
+              onChange={(event)=>setConfig('path',event.target.value)} placeholder="v1/messages" />
+          </label>
+        </>}
+        <HttpCalloutFieldEditor label="Message Request Fields" mode="body"
+          value={displayValue(selected.config.body)} onChange={(value)=>setConfig('body',value)}
+          resources={flow.resources} fields={selectedObject?.fields??[]} />
+        <p className="settings-panel-copy">The published Flow sends the mapped JSON to the provider using durable delivery. Use a Decision element to enforce verified contact and opt-in rules before this action. Protected password-recovery messaging remains separate.</p>
       </> : displayValue(selected.config.actionType) === 'Submit for Approval' ? <>
         <label className="form-label">Approval Process<select className="form-control" value={displayValue(selected.config.approvalProcessApiName)} onChange={(event) => {
           const process = approvalProcesses.find((item) => item.apiName === event.target.value);

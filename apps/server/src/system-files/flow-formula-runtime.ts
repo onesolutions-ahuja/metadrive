@@ -221,7 +221,7 @@ const supportedFunctions=new Set(['IF','IFERROR','AND','OR','NOT','XOR','ISBLANK
   'CASE','DATE','DATEVALUE','DATETIMEVALUE','TODAY','NOW','DAY','MONTH','YEAR','HOUR',
   'MINUTE','SECOND','WEEKDAY','ISOWEEK','ISOYEAR','ADDMONTHS','TIMEVALUE','TIMENOW','PI','SIN','COS','TAN',
   'ASIN','ACOS','ATAN','ATAN2','SINH','COSH','TANH','DEGREES','RADIANS','TZOFFSET',
-  'GEOLOCATION','DISTANCE']);
+  'GEOLOCATION','DISTANCE','VLOOKUP']);
 const text=(value:unknown):string=>value===null||value===undefined?''
   :isFormulaImageResult(value)?value.url:String(value);
 const truth=(value:unknown):boolean=>value===true||value===1||value==='true';
@@ -402,6 +402,27 @@ function evaluate(node:Expression,resolve:FormulaResolver,context:FormulaEvaluat
       if(rate===undefined)throw new Error('CURRENCYRATE is unavailable for currency '+currency);
       if(!Number.isFinite(rate)||rate<=0)throw new Error('Invalid configured currency rate: '+currency);
       return rate;
+    }
+    case 'VLOOKUP':arity(4);{
+      const needle=argument(0),source=argument(1);
+      const lookupField=text(argument(2)),resultField=text(argument(3));
+      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(lookupField)
+        ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(resultField)
+        ||!Array.isArray(source)||source.length>200)
+       throw new Error('VLOOKUP requires a bounded record collection and valid field names');
+      for(const item of source){
+       if(!item||typeof item!=='object'||Array.isArray(item))
+        throw new Error('VLOOKUP collection contains an invalid record');
+       if(Object.hasOwn(item,lookupField)&&
+          (item as Record<string,unknown>)[lookupField]===needle){
+        const result=(item as Record<string,unknown>)[resultField]??null;
+        if(result!==null&&typeof result!=='string'&&typeof result!=='number'
+          &&typeof result!=='boolean')
+         throw new Error('VLOOKUP result is not scalar');
+        return result;
+       }
+      }
+      return null;
     }
     case 'ISPICKVAL':arity(2);return text(argument(0))===text(argument(1));
     case 'INCLUDES':arity(2);{
@@ -760,6 +781,10 @@ export function inferFlowFormulaType(expression:string,resolve:FormulaTypeResolv
       case 'SUBSTITUTE':arity(3,4);requireText(0);requireText(1);requireText(2);if(args.length===4)requireNumber(3);return 'Text';
       case 'CONCATENATE':arity(1,20);return 'Text';
       case 'EXACT':case 'CONTAINS':case 'BEGINS':arity(2);requireText(0);requireText(1);return 'Checkbox';
+      case 'VLOOKUP':arity(4);requireText(2);requireText(3);
+        // The column type is defined by the referenced Object metadata at execution.
+        // Keep formula inference conservative for dynamically typed record collections.
+        return 'Text';
       case 'ISPICKVAL':arity(2);requireType(0,['Picklist']);requireText(1);return 'Checkbox';
       case 'INCLUDES':arity(2);requireType(0,['MultiPicklist']);requireText(1);return 'Checkbox';
       case 'REPT':arity(2);requireText(0);requireNumber(1);return 'Text';

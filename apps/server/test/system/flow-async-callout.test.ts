@@ -171,3 +171,29 @@ test('successful durable callout persists provider acknowledgement in same SQL t
  assert.deepEqual(receipt.params,[tenantId,jobId,1,202]);
  assert.ok(written.some(x=>x.sql.includes("SET status='completed'")));
 });
+
+test('deactivated integration connection blocks a previously enqueued provider message',async()=>{
+ let delivered=false,failed=false;
+ const client={query:async(sql:string)=>{
+  if(sql.includes('WITH candidate'))return {rows:[{
+   id:jobId,tenant_id:tenantId,run_id:runId,user_id:userId,credential_id:credentialId,
+   connection_api:'SmsConnection',operation_api:'SendSMS',
+   operation_path_ciphertext:Buffer.alloc(33),
+   method:'POST',attempt_count:1,max_attempts:1
+  }]};
+  return {rows:[],rowCount:1};
+ }} as unknown as PoolClient;
+ const db={transaction:async<T>(fn:(client:PoolClient)=>Promise<T>)=>fn(client),
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{api_name:'AsyncFlow'}]};
+   if(sql.includes('kind=\'integration-connections\''))return {rows:[]};
+   if(sql.includes("SET status='failed'"))failed=true;
+   return {rows:[],rowCount:1};
+  }
+ } as unknown as SqlPersistence;
+ const service=new NamedCredentialService(db,rbac);
+ service.callout=async()=>{delivered=true;return {status:200,body:''};};
+ assert.equal(await service.dispatchOne(),true);
+ assert.equal(delivered,false);
+ assert.equal(failed,true);
+});

@@ -929,6 +929,9 @@ CREATE TABLE IF NOT EXISTS md_http_callout_jobs (
  node_id integer NOT NULL,
  user_id uuid NOT NULL,
  credential_id uuid NOT NULL,
+ connection_api text,
+ operation_api text,
+ operation_path_ciphertext bytea,
  method text NOT NULL CHECK(method IN ('GET','POST','PUT','PATCH','DELETE')),
  path_ciphertext bytea NOT NULL,
  headers_ciphertext bytea NOT NULL,
@@ -946,7 +949,10 @@ CREATE TABLE IF NOT EXISTS md_http_callout_jobs (
  completed_at timestamptz,
  UNIQUE(tenant_id,id),
  FOREIGN KEY(tenant_id,run_id) REFERENCES md_flow_runs(tenant_id,id) ON DELETE CASCADE,
- FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id)
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id),
+ CONSTRAINT md_http_callout_provider_pair CHECK ((connection_api IS NULL AND operation_api IS NULL AND operation_path_ciphertext IS NULL)
+   OR (connection_api ~ '^[A-Za-z][A-Za-z0-9_]*$' AND operation_api ~ '^[A-Za-z][A-Za-z0-9_]*$'
+   AND operation_path_ciphertext IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS md_http_callout_jobs_ready
  ON md_http_callout_jobs(status,next_attempt_at,created_at);

@@ -12,7 +12,7 @@ const expected=['sql-persistence.ts','object-definition.ts','authentication.ts',
  'flow-interview-persistence.ts','flow-wait-runtime.ts','flow-action-runtime.ts',
  'flow-subscription-runtime.ts','flow-scalar-runtime.ts','flow-error-runtime.ts',
  'flow-execution-context.ts','flow-assignment-runtime.ts',
- 'flow-screen-choice-runtime.ts',
+ 'flow-screen-choice-runtime.ts','flow-http-mapping.ts','flow-integration-connection.ts',
  'auto-number-format.ts','platform-event-runtime.ts','record-file-service.ts','rich-text.ts',
  'field-type-migration.ts','encrypted-field.ts','object-metadata-history.ts'];
 const allowed=new Set(expected);
