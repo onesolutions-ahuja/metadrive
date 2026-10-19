@@ -216,5 +216,45 @@ try{
   new Date(initial.LastModifiedDate).toISOString());
  const changedRecord=await records.get(tenantId,userId,'AuditItem__c',recordId);
  assert.equal(changedRecord.Name,'Edited');
+ // Real PostgreSQL recovery and tenant isolation tests for the shared job substrate.
+ const {DurableJobService}=await import(new URL('durable-job-service.js',support).href);
+ const durable=new DurableJobService(db);
+ const concurrencyId=await durable.enqueue(tenantId,'ci.concurrent',{actorUserId:userId,idempotencyKey:'ci-once'});
+ assert.equal(await durable.enqueue(tenantId,'ci.concurrent',{actorUserId:userId,idempotencyKey:'ci-once'}),concurrencyId);
+ const [workerA,workerB]=await Promise.all([durable.claim('ci-worker-a',1),durable.claim('ci-worker-b',1)]);
+ assert.equal(workerA.length+workerB.length,1,'two workers must not claim the same job');
+ const winner=workerA.length?workerA[0]&&'ci-worker-a':'ci-worker-b';
+ await durable.complete(tenantId,concurrencyId,winner);
+ assert.equal((await durable.inspect(tenantId,concurrencyId)).status,'completed');
+ const {rows:completeHistory}=await db.query(
+  'SELECT event_type FROM md_durable_job_history WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at,id',
+  [tenantId,concurrencyId]);
+ assert.ok(completeHistory.some(x=>x.event_type==='claimed'));
+ assert.ok(completeHistory.some(x=>x.event_type==='completed'));
+
+ const crashedId=await durable.enqueue(tenantId,'ci.external',{actorUserId:userId,idempotencyKey:'ci-crashed'});
+ const crashed=await durable.claim('ci-crashed-worker',1);
+ assert.equal(crashed[0].id,crashedId);
+ await db.query("UPDATE md_durable_jobs SET lease_until=now()-interval '1 second' WHERE tenant_id=$1 AND id=$2",
+  [tenantId,crashedId]);
+ await durable.claim('ci-recovery-worker',1);
+ const afterCrash=await durable.inspect(tenantId,crashedId);
+ assert.equal(afterCrash.status,'failed','unknown provider outcome must be quarantined');
+ assert.equal(afterCrash.error_code,'FLOW_RECONCILIATION_REQUIRED');
+ assert.equal((await durable.claim('ci-other-worker',1)).length,0,'quarantined execution must not replay');
+ await assert.rejects(()=>durable.operatorDecision(tenantId,crashedId,userId,'unsafe'),/Invalid job decision/);
+ const unrelatedTenant=await db.query('INSERT INTO md_tenants(slug,name) VALUES($1,$2) RETURNING id',
+  ['ci-durable-tenant-b','CI isolated tenant B']);
+ const tenantB=unrelatedTenant.rows[0].id;
+ await assert.rejects(()=>durable.operatorDecision(tenantB,crashedId,userId,'retry'),/Failed job not found/);
+ await durable.operatorDecision(tenantId,crashedId,userId,'acknowledge');
+ assert.equal((await durable.inspect(tenantId,crashedId)).status,'cancelled');
+ const {rows:audits}=await db.query(
+  'SELECT decision,actor_id FROM md_durable_job_audit WHERE tenant_id=$1 AND job_id=$2',
+  [tenantId,crashedId]);
+ assert.deepEqual(audits.map(x=>x.decision),['acknowledge']);
+ assert.equal(audits[0].actor_id,userId);
+ assert.equal((await durable.claim('ci-recovery-worker',1)).length,0);
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
