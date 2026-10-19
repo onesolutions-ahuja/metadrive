@@ -268,11 +268,14 @@ export class NamedCredentialService {
   this.dispatching=true;
   try{
    const job=await this.db.transaction(async client=>{
+    // Unknown remote outcome: quarantine abandoned calls, never send them twice.
+    await client.query(`UPDATE md_http_callout_jobs
+      SET status='failed',claimed_at=NULL,last_error='RECONCILIATION_REQUIRED',completed_at=now()
+      WHERE status='processing' AND claimed_at<now()-interval '5 minutes'`);
     const {rows}=await client.query<CalloutJob>(`
      WITH candidate AS (
       SELECT id FROM md_http_callout_jobs
-      WHERE (status IN ('queued','retrying') AND next_attempt_at<=now())
-       OR (status='processing' AND claimed_at<now()-interval '5 minutes')
+      WHERE status='queued' AND next_attempt_at<=now()
       ORDER BY next_attempt_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1
      )
      UPDATE md_http_callout_jobs j
@@ -321,16 +324,12 @@ export class NamedCredentialService {
      WHERE tenant_id=$1 AND id=$2 AND status='processing'
     `,[job.tenant_id,job.id]);
    }catch(error){
-    const message=error instanceof Error?error.message:'Unknown HTTP Callout failure';
-    const failed=job.attempt_count>=job.max_attempts;
-    const delayMs=Math.min(3600000,30000*2**Math.max(0,job.attempt_count-1));
+    // Any thrown error may have occurred after a remote side effect.
     await this.db.query(`
-     UPDATE md_http_callout_jobs SET status=$3,last_error=$4,claimed_at=NULL,
-      next_attempt_at=CASE WHEN $3='retrying' THEN now()+($5::integer*interval '1 millisecond')
-       ELSE next_attempt_at END,
-      completed_at=CASE WHEN $3='failed' THEN now() ELSE NULL END
+     UPDATE md_http_callout_jobs SET status='failed',
+      last_error='RECONCILIATION_REQUIRED',claimed_at=NULL,completed_at=now()
      WHERE tenant_id=$1 AND id=$2 AND status='processing'
-    `,[job.tenant_id,job.id,failed?'failed':'retrying',message.slice(0,1000),delayMs]);
+    `,[job.tenant_id,job.id]);
    }
    return true;
   }finally{this.dispatching=false;}
