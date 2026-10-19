@@ -423,7 +423,12 @@ export class NamedCredentialService {
     INSERT INTO md_outbound_execution_receipts
       (tenant_id,execution_key,credential_id,request_method,job_id,attempt_number,flow_run_id,flow_node_id)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-    ON CONFLICT(tenant_id,execution_key) DO NOTHING RETURNING id
+    ON CONFLICT(tenant_id,execution_key) DO UPDATE SET
+      state='pending',attempt_number=EXCLUDED.attempt_number,
+      flow_run_id=EXCLUDED.flow_run_id,flow_node_id=EXCLUDED.flow_node_id,
+      response_status=NULL,provider_receipt=NULL,updated_at=now()
+    WHERE md_outbound_execution_receipts.state='cleared'
+    RETURNING id
    `,[tenantId,idempotencyKey,config.namedCredentialId,method,context?.jobId??null,
       context?.attempt??null,context?.flowRunId??null,context?.flowNodeId??null]);
    if(!reserved[0])throw new Error('Outbound execution requires reconciliation before retry');
