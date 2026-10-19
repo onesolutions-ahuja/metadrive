@@ -432,7 +432,7 @@ export class FlowRuntime {
       return id;
     });
   }
-  async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={}) {
+  async execute(tenantId:string,flowApi:string,userId:string,inputs:Record<string,unknown>={},executionScope?:string) {
     if(!this.rbac)throw new Error('Flow permissions not configured');
     await this.rbac.require(tenantId,userId,'Flow:'+flowApi,'execute');
     const definition=await this.loadActive(tenantId,flowApi);
@@ -443,13 +443,13 @@ export class FlowRuntime {
     const id=await this.start(tenantId,flowApi,userId,inputs);
     // Authored Screen/Autolaunched Flows both use the one normalized action engine.
     // SQL-only definitions from before the Builder migration retain their legacy adapter.
-    return rows[0]?.has_editor?this.advanceInterview(tenantId,userId,id,{})
+    return rows[0]?.has_editor?this.advanceInterview(tenantId,userId,id,{},executionScope)
       :this.run(tenantId,id,userId);
   }
 
   /** Resume a Screen Flow from durable SQL state. The caller must own the interview. */
   async advanceInterview(tenantId:string,userId:string,runId:string,
-    request:{action?:unknown;outcome?:unknown;values?:unknown}) {
+    request:{action?:unknown;outcome?:unknown;values?:unknown},executionScope?:string) {
     if(!this.rbac||!this.records)throw new Error('Flow executor not configured');
     if(!/^[0-9a-f-]{36}$/i.test(runId)||!request||typeof request!=='object')
       throw new Error('Invalid Flow interview request');
@@ -644,7 +644,7 @@ export class FlowRuntime {
           history=[]; // Back must never replay an update.
         }else if(node.type==='HTTP Callout'){
           if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
-          const stableKey=runId+'-'+node.id;
+          const stableKey=(executionScope??runId)+'-'+node.id;
           try {
             const response=await this.httpCallout(tenantId,userId,node.config,vars,stableKey);
             if(node.config.statusVariable)set(node.config.statusVariable,response.status);
