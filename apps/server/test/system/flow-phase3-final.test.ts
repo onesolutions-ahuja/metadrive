@@ -38,6 +38,12 @@ test('HTTP response maps only declared output resources and bounds response valu
   ['messageId']),/output resource/);
  assert.throws(()=>mapFlowHttpResponse('{"messageId":"response"}',
   '{"response":{"secret":"not scalar"}}',['messageId']),/bounded scalar/);
+ assert.throws(()=>mapFlowHttpResponse('{"statusCode":"response.id"}',
+  '{"response":{"id":"not a number"}}',[{name:'statusCode',dataType:'Number'}]),
+  /type mismatch/);
+ assert.deepEqual({...mapFlowHttpResponse('{"statusCode":"response.code"}',
+  '{"response":{"code":202}}',[{name:'statusCode',dataType:'Number'}])},
+  {statusCode:202});
 });
 
 test('Integration provider resolves tenant credential, active operation and RBAC',async()=>{
