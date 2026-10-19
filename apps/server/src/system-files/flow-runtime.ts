@@ -723,8 +723,8 @@ export class FlowRuntime {
     catch(error){
       if(executor)throw error;
       const message=error instanceof Error?error.message:'Unknown Flow failure';
-      // Validation of user-editable Screen values rolls back the current step
-      // without terminating the pending interview.
+      // Invalid Screen submissions are retriable client corrections. The
+      // transaction has rolled back: keep the interview pending and editable.
       if(/^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
         throw error;
       await this.db.query(
