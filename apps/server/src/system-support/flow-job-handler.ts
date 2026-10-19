@@ -41,7 +41,7 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
   if(!await authorize(job))throw new Error('Job authorization changed');
   const current=await flows.loadActive(job.tenant_id,job.resource_id!);
   if(current.version!==job.resource_version)throw new Error('Published Flow version changed');
-  await flows.execute(job.tenant_id,job.resource_id!,job.actor_user_id!,{},job.execution_scope??job.id);
+  await flows.execute(job.tenant_id,job.resource_id!,job.actor_user_id!,{},job.execution_scope??job.id,{jobId:job.id,attempt:job.attempt});
  });
  return authorize;
 }
