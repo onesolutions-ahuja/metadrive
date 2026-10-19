@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 9,
+  "version": 10,
   "scope": "platform-core",
   "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
   "cssFile": "one/OneItemGrid/OneItemGrid.css",
@@ -109,6 +109,34 @@
       "kind": "TEXT",
       "defaultValue": "",
       "displayOrder": 450
+    },
+    {
+      "propertyKey": "itemSelectMode",
+      "label": "When an item is selected",
+      "kind": "SELECT",
+      "displayOrder": 470,
+      "defaultValue": "cart",
+      "choices": [
+        {
+          "key": "cart",
+          "label": "Add to shared basket (legacy)"
+        },
+        {
+          "key": "action",
+          "label": "Execute configured itemSelect Flow"
+        },
+        {
+          "key": "filter",
+          "label": "Select item and notify sibling components"
+        }
+      ]
+    },
+    {
+      "propertyKey": "itemSelectionFilterKey",
+      "label": "Selection key for other page components",
+      "kind": "TEXT",
+      "displayOrder": 480,
+      "defaultValue": "selectedItem"
     }
   ]
 }
