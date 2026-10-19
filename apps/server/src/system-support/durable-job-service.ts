@@ -29,7 +29,7 @@ export class DurableJobService {
  }
 
  /** SKIP LOCKED allows many workers without duplicate successful leases. */
- async claim(workerId:string,limit=10,leaseSeconds=60) {
+ async claim(workerId:string,limit=1,leaseSeconds=60) {
   if(!workerId||workerId.length>128)throw new Error('Invalid worker');
   if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid batch');
   if(!Number.isInteger(leaseSeconds)||leaseSeconds<10||leaseSeconds>3600)throw new Error('Invalid lease');
@@ -54,6 +54,18 @@ export class DurableJobService {
      WHERE status='leased' AND lease_until<now()`);
    return rows;
   });
+ }
+
+ /** Extend only an actively owned, unexpired lease. Failed renewals are not implicit retries. */
+ async renewLease(tenantId:string,id:string,workerId:string,leaseSeconds=60){
+  if(!Number.isInteger(leaseSeconds)||leaseSeconds<10||leaseSeconds>3600)
+   throw new Error('Invalid lease');
+  const {rowCount}=await this.db.query(`
+   UPDATE md_durable_jobs SET
+    lease_until=now()+($4::integer * interval '1 second'),updated_at=now()
+   WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
+  `,[tenantId,id,workerId,leaseSeconds]);
+  if(!rowCount)throw new Error('Job lease missing or expired');
  }
 
  async complete(tenantId:string,id:string,workerId:string) {
