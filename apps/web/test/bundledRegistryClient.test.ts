@@ -27,3 +27,18 @@ test('SQL-enabled reviewed components hydrate from a lightweight catalog, not ex
     assert.deepEqual(requested,['/component-library/catalog-index.json']);
   }finally {globalThis.fetch=previous;}
 });
+
+test('all shipped One components have a reviewed catalog entry and lazy asset source',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const manifest=JSON.parse(await readFile(new URL('../src/one/manifest.json',import.meta.url),'utf8')) as {components:string[]};
+  const apiNames=manifest.components.map(path=>path.split('/')[0]);
+  assert.equal(new Set(apiNames).size,apiNames.length);
+  for(const path of manifest.components){
+    const descriptor=JSON.parse(await readFile(new URL('../src/one/'+path,import.meta.url),'utf8')) as {
+      apiName:string;jsxFile:string;surfaces:string[];
+    };
+    assert.equal(descriptor.apiName,path.split('/')[0]);
+    assert.ok(descriptor.surfaces?.includes('page'),descriptor.apiName+' missing page surface');
+    assert.ok((await readFile(new URL('../src/'+descriptor.jsxFile,import.meta.url),'utf8')).length>0);
+  }
+});
