@@ -28,7 +28,7 @@ test('worker dispatches only registered jobs, completing successful work',async(
  } as unknown as DurableJobService;
  const worker=new DurableJobWorker(service,async()=>true,'worker-a');
  worker.register('flow.execute',async()=>{calls.push('execute');});
- assert.deepEqual(await worker.runOnce(),{claimed:2,completed:1,failed:1});
+ assert.deepEqual(await worker.runOnce(2),{claimed:2,completed:1,failed:1});
  assert.deepEqual(calls,['execute','complete','fail']);
 });
 
