@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS md_outbound_execution_receipts (
  provider_receipt text CHECK(provider_receipt IS NULL OR length(provider_receipt)<=256),
  created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(),
- UNIQUE(tenant_id,execution_key)
+ UNIQUE(tenant_id,execution_key),
+ UNIQUE(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS md_outbound_execution_receipts_tenant_state
  ON md_outbound_execution_receipts(tenant_id,state,created_at);
