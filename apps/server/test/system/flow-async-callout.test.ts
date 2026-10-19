@@ -11,7 +11,7 @@ const userId='00000000-0000-4000-8000-000000000002';
 const runId='00000000-0000-4000-8000-000000000003';
 const credentialId='00000000-0000-4000-8000-000000000004';
 const jobId='00000000-0000-4000-8000-000000000005';
-const rbac={require:async()=>{}} as unknown as RbacEngine;
+const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
 
 test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
  const runtime=new FlowRuntime({} as SqlPersistence,rbac);
@@ -55,7 +55,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
  const db={
   transaction:async<T>(run:(client:PoolClient)=>Promise<T>)=>run(client),
   query:async(sql:string,params:unknown[]=[]):Promise<{rows:Array<Record<string,unknown>>}>=>{
-   if(sql.includes('FROM md_flow_runs r'))return {rows:[{ready:true}]};
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{api_name:'AsyncFlow'}]};
    if(sql.includes('SELECT api_name,value_ciphertext'))return {rows:values.map(value=>({
     api_name:value[2],value_ciphertext:value[3],data_type:value[4]
    }))};
@@ -157,7 +157,7 @@ test('successful durable callout persists provider acknowledgement in same SQL t
  const db={
   transaction:async<T>(fn:(client:PoolClient)=>Promise<T>)=>fn(client),
   query:async(sql:string)=>{
-   if(sql.includes('FROM md_flow_runs r'))return {rows:[{valid:true}]};
+   if(sql.includes('FROM md_flow_runs r'))return {rows:[{api_name:'AsyncFlow'}]};
    return {rows:[],rowCount:1};
   }
  } as unknown as SqlPersistence;
