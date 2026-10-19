@@ -307,11 +307,30 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
           onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
           <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option><option value="SetFilter">Filter sibling components</option>
         </select></label>
-        {actionType==='SetFilter' ? <label className="form-label">Shared filter key
-          <input className="form-control" value={String(binding.filterKey ?? 'category')}
-            onChange={(e) => setBinding({...binding,filterKey:e.target.value})}
-            placeholder="category" pattern="[A-Za-z][A-Za-z0-9_]*" />
-        </label> : actionType==='Flow' ? <>
+        {actionType==='SetFilter' ? <div className="metadata-filter-binding">
+          <label className="form-label">Shared filter key
+            <input className="form-control" value={String(binding.filterKey ?? 'category')}
+              onChange={(e) => setBinding({...binding,filterKey:e.target.value})}
+              placeholder="category" pattern="[A-Za-z][A-Za-z0-9_]*" />
+          </label>
+          <label className="form-label">Value from clicked record
+            <select className="form-control" value={String(binding.filterValueFieldApiName??'')}
+              onChange={event=>setBinding({...binding,filterValueFieldApiName:event.target.value})}>
+              <option value="">Automatic (Value / Id / Label)</option>
+              <option value="Id">Record ID</option>
+              {fields.filter(field=>field.apiName!=='Id').map(field=>
+                <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select>
+          </label>
+          <label className="form-label">Label from clicked record
+            <select className="form-control" value={String(binding.filterLabelFieldApiName??'')}
+              onChange={event=>setBinding({...binding,filterLabelFieldApiName:event.target.value})}>
+              <option value="">Automatic (Label / Name / Value)</option>
+              {fields.map(field=>
+                <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select>
+          </label>
+        </div> : actionType==='Flow' ? <>
           <label className="form-label">Flow
             <select className="form-control" value={selectedFlow?.apiName??String(binding.flowApiName??'')}
               onChange={(e) => {const flow=flows.find(f=>f.apiName===e.target.value&&f.status==='Active');setBinding({ ...binding, flowApiName: flow?.id?metadataReference(flow.id):e.target.value });}}>
