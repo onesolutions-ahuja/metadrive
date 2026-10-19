@@ -185,8 +185,8 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     try{resolveFlowLocalDateTime(properties.startDate,properties.startTime,properties.timeZone);}
     catch{errors.push('Schedule-Triggered Flow local start date and time are invalid');}
    }
-   if(!['Once','Daily','Weekly'].includes(String(properties.frequency)))
-   errors.push('Schedule-Triggered Flow frequency must be Once, Daily or Weekly');
+   if(!['Once','Daily','Weekly','Monthly'].includes(String(properties.frequency)))
+   errors.push('Schedule-Triggered Flow frequency must be Once, Daily, Weekly or Monthly');
    validConditionList(properties.entryConditions,false,'Schedule-Triggered Flow entry conditions',
    /^[A-Za-z][A-Za-z0-9_]*$/);
   }
