@@ -340,7 +340,9 @@ export function renderSetupShell(ctx: any) {
             />
           )}
           {route.kind === 'setup' && workspace === 'flow-logs' && (
-            <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
+            <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow}
+              hasMore={Boolean(ctx.flowLogCursor)} loadingMore={Boolean(ctx.flowLogsLoadingMore)}
+              onLoadMore={ctx.loadMoreFlowHistory} />
           )}
           {route.kind === 'setup' && workspace === 'automation-settings' && <PlatformWorkspaceSurface workspace="automation-settings" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="automation-policy"><AutomationSettingsWorkspace canManage={canManageFlows} /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
