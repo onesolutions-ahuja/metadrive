@@ -26,14 +26,25 @@ function daysBetween(from:string,to:string) {
  const [fy,fm,fd]=from.split('-').map(Number),[ty,tm,td]=to.split('-').map(Number);
  return Math.round((Date.UTC(ty,tm-1,td)-Date.UTC(fy,fm-1,fd))/86400000);
 }
-function latestOccurrence(schedule:Schedule,now:Date):Date|null {
+export function latestOccurrence(schedule:Schedule,now:Date):Date|null {
  if(!identifier.test(schedule.object)||! /^\d{4}-\d{2}-\d{2}$/.test(schedule.startDate)
    ||! /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(schedule.startTime)
-   ||!['Once','Daily','Weekly'].includes(schedule.frequency))
+   ||!['Once','Daily','Weekly','Monthly'].includes(schedule.frequency))
   throw new Error('Invalid active Schedule-Triggered Flow configuration: '+schedule.apiName);
+ const localToday=localDate(now,schedule.timeZone);
  const candidates=schedule.frequency==='Once'?[schedule.startDate]:
-  Array.from({length:schedule.frequency==='Daily'?2:8},(_,index)=>addCalendarDays(
-   localDate(now,schedule.timeZone),-index));
+  schedule.frequency==='Monthly'
+   ?Array.from({length:3},(_,index)=>{
+     // Anchor on the configured calendar day; clamp short months, never drift.
+     const [year,month]=localToday.split('-').map(Number);
+     const monthStart=new Date(Date.UTC(year,month-1-index,1));
+     const y=monthStart.getUTCFullYear(),m=monthStart.getUTCMonth();
+     const anchorDay=Number(schedule.startDate.slice(8,10));
+     const lastDay=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+     return new Date(Date.UTC(y,m,Math.min(anchorDay,lastDay))).toISOString().slice(0,10);
+    })
+   :Array.from({length:schedule.frequency==='Daily'?2:8},(_,index)=>addCalendarDays(
+      localToday,-index));
  for(const date of candidates){
   if(date<schedule.startDate)continue;
   if(schedule.frequency==='Weekly'&&daysBetween(schedule.startDate,date)%7!==0)continue;
@@ -46,7 +57,7 @@ function latestOccurrence(schedule:Schedule,now:Date):Date|null {
   }
   const age=now.getTime()-occurrence.getTime();
   const maxAge=schedule.frequency==='Once'?36*60*60*1000:
-   (schedule.frequency==='Daily'?36:8*24)*60*60*1000;
+   (schedule.frequency==='Daily'?36:schedule.frequency==='Weekly'?8*24:35*24)*60*60*1000;
   if(age>=0&&age<=maxAge)return occurrence;
  }
  return null;
