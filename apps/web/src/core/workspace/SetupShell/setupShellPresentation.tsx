@@ -122,7 +122,7 @@ export function renderSetupShell(ctx: any) {
                           || (workspace === 'named-credentials' && item === 'Named Credentials')
                                                     || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
-                          || (workspace === 'flow-logs' && item === 'Failed Flow Logs')) ? 'tree-item selected' : 'tree-item'}
+                          || (workspace === 'flow-logs' && item === 'Flow History')) ? 'tree-item selected' : 'tree-item'}
                         aria-label={item === "Tenant Management" && !canManagePlatformTenants ? "Open My Tenant Management" : `Open ${item}`}
                         title={item}
                         data-short-label={item.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')}
@@ -340,7 +340,9 @@ export function renderSetupShell(ctx: any) {
             />
           )}
           {route.kind === 'setup' && workspace === 'flow-logs' && (
-            <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
+            <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow}
+              hasMore={Boolean(ctx.flowLogCursor)} loadingMore={Boolean(ctx.flowLogsLoadingMore)}
+              onLoadMore={ctx.loadMoreFlowHistory} />
           )}
           {route.kind === 'setup' && workspace === 'automation-settings' && <PlatformWorkspaceSurface workspace="automation-settings" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="automation-policy"><AutomationSettingsWorkspace canManage={canManageFlows} /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'flow-builder' && (

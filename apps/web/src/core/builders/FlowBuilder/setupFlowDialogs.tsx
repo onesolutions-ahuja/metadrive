@@ -42,7 +42,7 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
               <div>
                 <h2 id="flow-debug-title">{flowDebug.mode === 'debug' ? 'Debug' : 'Run'} {flowDebug.flow.label}</h2>
                 <p>{flowDebug.mode === 'debug'
-                  ? 'Debug runs the saved version in an isolated tenant copy. Email and HTTP side effects are simulated.'
+                  ? 'Debug runs the saved version read-only. SQL writes, email, HTTP calls and child Flow execution are simulated.'
                   : 'Provide inputs for the saved version. Side effects occur as configured by the flow.'}</p>
               </div>
               <button className="btn btn-icon" type="button" aria-label="Close debug" onClick={() => setFlowDebug(null)}><X size={16} /></button>
@@ -50,7 +50,7 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
             <form onSubmit={(event) => { event.preventDefault(); void runFlowDebug(); }}>
               <div className="modal-body">
                 {flowDebug.mode === 'debug' && flowDebug.flow.flowType === 'Record-Triggered Flow' && <>
-                  <div className="info-callout">Simulate a record-triggered Flow. This test uses a disposable data snapshot; it never saves record changes or delivers messages. Use actual field API names in the JSON, and provide prior values when testing an update or deletion.</div>
+                  <div className="info-callout">Simulate a record-triggered Flow. This test uses the record values you provide; it never saves record changes or delivers messages. Use actual field API names in the JSON, and provide prior values when testing an update or deletion.</div>
                   <label className="form-label">Trigger Event
                     <select className="form-control" value={flowDebug.inputs.$Event ?? 'created'} onChange={(event) => setFlowDebug((current) => current ? { ...current, inputs: { ...current.inputs, $Event: event.target.value } } : current)}>
                       <option value="created">Created</option><option value="updated">Updated</option><option value="deleted">Deleted</option>
@@ -107,6 +107,8 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
                     <h3>Debug results</h3>
                     <p>{flowDebug.error
                       ? 'Execution failed; the trace shows the path reached before the error.'
+                      : flowDebug.result.status === 'failed'
+                        ? 'Debug stopped with an error: ' + String(flowDebug.result.reason ?? 'Unknown Flow error')
                       : flowDebug.result.status === 'skipped'
                         ? `Trigger skipped: ${String(flowDebug.result.reason ?? 'entry conditions did not match')}`
                         : flowDebug.result.status === 'waiting'
@@ -135,7 +137,14 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
                       <section>
                         <h4>Element trace</h4>
                         <ol>{flowDebug.result.debugTrace.map((entry, index) => (
-                          <li key={index}><pre>{JSON.stringify(entry, null, 2)}</pre></li>
+                          <li key={index}>
+                            <strong>Step {String(entry.step ?? index + 1)} · {String(entry.type)}</strong>
+                            <span> · {String(entry.status)} · {String(entry.durationMs ?? 0)} ms</span>
+                            {entry.details && <p>{String(entry.details)}</p>}
+                            <details><summary>Resource snapshot (redacted and bounded)</summary>
+                              <pre>{JSON.stringify(entry.variables ?? {}, null, 2)}</pre>
+                            </details>
+                          </li>
                         ))}</ol>
                       </section>
                     )}
