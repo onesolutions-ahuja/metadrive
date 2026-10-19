@@ -290,8 +290,8 @@ export class NamedCredentialService {
    if(!job)return false;
    try{
     // Validate current tenant, actor and published Flow before any remote side effect.
-    const {rows:eligible}=await this.db.query(`
-      SELECT 1 FROM md_flow_runs r
+    const {rows:eligible}=await this.db.query<{api_name:string}>(`
+      SELECT f.api_name FROM md_flow_runs r
       JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
       JOIN md_users u ON u.tenant_id=r.tenant_id AND u.id=r.started_by
       JOIN md_tenants t ON t.id=r.tenant_id
@@ -299,7 +299,10 @@ export class NamedCredentialService {
         AND f.active=true AND f.archived=false
         AND u.enabled=true AND t.status='ACTIVE'`,
       [job.tenant_id,job.run_id,job.user_id]);
-    if(!eligible.length)throw new Error('Queued HTTP Callout eligibility changed');
+    if(!eligible.length ||
+       !await this.rbac.allowed(job.tenant_id,job.user_id,
+        'Flow:'+eligible[0].api_name,'execute'))
+      throw new Error('Queued HTTP Callout eligibility changed');
     const {rows}=await this.db.query<CalloutValue>(`
      SELECT api_name,value_ciphertext,data_type FROM md_http_callout_job_values
      WHERE tenant_id=$1 AND job_id=$2
