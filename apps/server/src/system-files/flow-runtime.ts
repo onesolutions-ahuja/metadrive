@@ -835,8 +835,9 @@ export class FlowRuntime {
           selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
         }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
           'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
-          if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save')
-            throw new Error('Before-save Record-Triggered Flows cannot execute data actions');
+          if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save'
+            &&!['Get Records','Loop','Collection Filter','Collection Sort','Transform'].includes(node.type))
+            throw new Error('Before-save Record-Triggered Flows allow only read-only data actions');
           if(!this.records||!this.recordQuery)throw new Error('Flow record engine unavailable');
           let action;
           const savepoint='flow_action_'+node.id;
