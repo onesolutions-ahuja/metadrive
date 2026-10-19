@@ -70,7 +70,16 @@ export default function HttpCalloutFieldEditor({ label, mode, value, onChange, r
     </div> : <>
       {advanced && <input className="form-control" aria-label={`Search ${label} fields`} placeholder="Search available record fields and resources" value={search} onChange={(event) => setSearch(event.target.value)} />}
       {rows.map((row, index) => <div className="flow-config-row" key={index}>
-        <input className="form-control" aria-label={`${label} field path`} placeholder="Key" value={row.path} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, path: event.target.value } : item))} />
+        {mode==='response' ? <select className="form-control" aria-label={label+' target variable'}
+          value={row.path} onChange={event=>update(rows.map((item,i)=>i===index?{...item,path:event.target.value}:item))}>
+          <option value="">Choose Flow variable</option>
+          {row.path&&!resources.some(resource=>resource.name===row.path&&resource.type==='Variable')
+            &&<option value={row.path} disabled>Missing: {row.path}</option>}
+          {resources.filter(resource=>resource.type==='Variable'&&!resource.isCollection)
+            .map(resource=><option key={resource.name} value={resource.name}>{resource.label} ({resource.name})</option>)}
+        </select> : <input className="form-control" aria-label={`${label} field path`}
+          placeholder="Key" value={row.path}
+          onChange={event=>update(rows.map((item,i)=>i===index?{...item,path:event.target.value}:item))} />}
         {advanced && mode !== 'response' && <select className="form-control" aria-label={`${label} value type`} value={row.type} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, type: event.target.value as Row['type'], value: event.target.value === 'Boolean' ? 'false' : item.value } : item))}>
           {['Text', 'Number', 'Boolean', 'Null', 'Resource'].map((type) => <option key={type}>{type}</option>)}
         </select>}
@@ -81,7 +90,7 @@ export default function HttpCalloutFieldEditor({ label, mode, value, onChange, r
         </select> : row.type === 'Boolean' && mode !== 'response' ? <select className="form-control" aria-label={`${label} value`} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))}><option value="false">False</option><option value="true">True</option></select> : row.type === 'Null' && mode !== 'response' ? <span>Null</span> : <input className="form-control" aria-label={`${label} value`} placeholder={mode === 'response' ? 'Response field path, e.g. messages[0].id' : 'Value'} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} />}
         <button className="row-menu" type="button" aria-label="Remove field" onClick={() => update(rows.filter((_, i) => i !== index))}>×</button>
       </div>)}
-      <button className="text-action" type="button" onClick={() => update([...rows, { path: `field_${rows.length + 1}`, value: '', type: 'Text' }])}>+ Add Field</button>
+      <button className="text-action" type="button" onClick={() => update([...rows, { path: mode==='response' ? resources.find(r=>r.type==='Variable'&&!r.isCollection&&!rows.some(row=>row.path===r.name))?.name??'' : `field_${rows.length + 1}`, value: '', type: 'Text' }])}>+ Add Field</button>
     </>}
   </div>;
 }

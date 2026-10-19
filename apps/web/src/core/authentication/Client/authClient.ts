@@ -153,8 +153,15 @@ export async function executeConnectorAppLifecycleFlow(apiName: string, appKey: 
     method: 'POST', body: JSON.stringify({AppKey:appKey})
   });
 }
-export async function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
-  const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
+export async function loadFlowScreenRecords(
+  objectApiName:string,filter?:{field:string;value:string;related:boolean}
+):Promise<Record<string,unknown>[]> {
+  const params=filter?new URLSearchParams({
+    filterField:filter.field,filterValue:filter.value,limit:'200'
+  }):null;
+  const path='/records/'+encodeURIComponent(objectApiName)
+    +(params?'?'+params.toString():'');
+  const result=await apiRequest<{records:Record<string,unknown>[]}>(path);
   return result.records;
 }
 

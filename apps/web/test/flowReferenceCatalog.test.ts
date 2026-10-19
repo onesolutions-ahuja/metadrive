@@ -28,3 +28,20 @@ test('record-triggered Flow references expose both current and prior trigger fie
   const screenChoices=flowReferenceChoices(flow('Screen Flow'),2,[account]);
   assert.ok(!screenChoices.some(choice=>choice.reference==='{!$Record__Prior.Name}'));
 });
+
+test('Create Records exposes new record Id in the following Create Records step',()=>{
+  const draft=flow('Autolaunched Flow');
+  draft.elements=[
+    {id:1,type:'Start',label:'Start',config:{}},
+    {id:3,type:'Create Records',label:'Create Sale',config:{object:'Sale',recordSource:'fields'}},
+    {id:4,type:'Create Records',label:'Create SaleLine',config:{object:'SaleLine',recordSource:'fields'}}
+  ];
+  draft.connectors=[
+    {id:'a',from:1,to:3,label:'Default',kind:'normal'},
+    {id:'b',from:3,to:4,label:'Default',kind:'normal'}
+  ];
+  const sale={...account,apiName:'Sale',label:'Sale',pluralLabel:'Sales'};
+  const choices=flowReferenceChoices(draft,4,[sale,account]);
+  assert.ok(choices.some(choice=>choice.reference==='{!record3.Id}'
+    &&choice.targetObject==='Sale'));
+});

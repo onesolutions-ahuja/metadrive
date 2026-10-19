@@ -9,7 +9,8 @@ import {buildChatterView} from '../src/core/records/RecordWorkspace/chatterRecor
 import {presentPageRecords} from '../src/core/records/RecordWorkspace/recordPresentationAdapters';
 import type {ObjectMetadata,FlowDefinitionMetadata} from '../src/core/metadata/Definitions/metadata';
 import {pageLayoutForRecord} from '../src/core/records/RecordWorkspace/recordMetadataUtils';
-import {declaredFlowOutputs,resolveFlowOutputBindings} from '../src/core/automation/FlowScreen/flowInputBindings';
+import {declaredFlowOutputs,resolveFlowOutputBindings,encodeInputSource,decodeInputSource} from '../src/core/automation/FlowScreen/flowInputBindings';
+import {pageComponentRecordQuery,filterPageComponentRecords,bindPageStateProperties} from '../src/core/pages/PageRuntime/pageComponentBindings';
 
 const object={id:'object-id',apiName:'RenamedObject',fields:[{id:'field-id',apiName:'RenamedPrice'}]} as ObjectMetadata;
 const flow={id:'flow-id',apiName:'RenamedFlow'} as FlowDefinitionMetadata;
@@ -27,6 +28,28 @@ test('unknown references remain invalid and cannot fall back to a different obje
  const props={objectApiName:metadataReference('deleted'),priceFieldApiName:metadataReference('field-id')};
  assert.deepEqual(resolveMetadataProperties(props,[object],[flow]),props);
  assert.equal(resolveMetadataProperties({objectApiName:'RenamedObject',priceFieldApiName:'Legacy'},[object],[]).priceFieldApiName,'Legacy');
+});
+test('dynamic related-record filter isolates current parent and blocks missing page state',()=>{
+ const fields=[{apiName:'Cart',label:'Cart',dataType:'Lookup(Cart)',
+  relationship:{targetObject:'Cart',type:'Lookup',relationshipName:'Cart',childRelationshipName:'CartLines'}}] as any;
+ const definitions=[{field:'Cart',operator:'Equals',value:{source:'PageState',key:'CurrentCartId'}}];
+ const missing=pageComponentRecordQuery(definitions,fields,{pageState:{}});
+ assert.equal(missing.blocked,true);
+ assert.deepEqual(filterPageComponentRecords([{Cart:'a'}],definitions,fields,{pageState:{}}),[]);
+ const context={pageState:{CurrentCartId:'cart-1'}};
+ assert.deepEqual(pageComponentRecordQuery(definitions,fields,context),
+   {blocked:false,filter:{field:'Cart',value:'cart-1',related:true}});
+ assert.deepEqual(filterPageComponentRecords(
+   [{Cart:'cart-1',Id:'line-1'},{Cart:'cart-2',Id:'line-2'}],definitions,fields,context),
+   [{Cart:'cart-1',Id:'line-1'}]);
+});
+test('Flow outputs can supply state filters, display values and downstream Flow inputs',()=>{
+ assert.equal(encodeInputSource('Page State','CurrentCartId',[]),'$state.CurrentCartId');
+ assert.equal(decodeInputSource('$state.CurrentCartId').detail,'CurrentCartId');
+ assert.throws(()=>encodeInputSource('Page State','bad.key',[]));
+ assert.deepEqual(bindPageStateProperties({value:0,label:'Total',
+  stateBindings:{value:'CartTotal',label:'Missing'}},{CartTotal:1200}),
+  {value:1200,label:'Total',stateBindings:{value:'CartTotal',label:'Missing'}});
 });
 test('Flow page output mappings expose only declared active-version outputs and validate page-state keys',()=>{
  const activeFlow={
@@ -67,6 +90,43 @@ test('conversation presentation cannot expose another channel or grant send/assi
   grants:[{channelAccountId:'allowed',canRead:true,canSend:false,canAssign:false}]},mappings) as any;
  assert.deepEqual(result.messages.map((m:any)=>m.id),['a']);
  assert.equal(result.conversations[0].canSend,false);assert.equal(result.conversations[0].canAssign,false);
+});
+
+test('Table quantity button fires configured Flow event with exactly the clicked row',async()=>{
+  const source=await readFile(new URL('../src/one/OneTable/OneTable.jsx',import.meta.url),'utf8');
+  const built=await transform(source+'\nexport {Table};',{loader:'jsx',format:'cjs'});
+  const events:any[]=[];
+  const shared={
+    css:()=>({}),records:(p:any)=>p.records??[],view:(v:any)=>String(v??''),
+    title:(row:any)=>String(row.Name??row.Id),
+    fire:(p:any,event:string,row:any)=>p.onAction({event,value:row}),
+    columns:(p:any)=>p.columns.map((key:string)=>({key,label:key}))
+  };
+  const React={createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+    useState:(initial:any)=>[initial,()=>{}]};
+  const sandbox:any={module:{exports:{}},React,require:()=>shared};
+  vm.runInNewContext(built.code,sandbox);
+  const a={Id:'line-1',Name:'Apple',Quantity:2};
+  const b={Id:'line-2',Name:'Orange',Quantity:1};
+  const tree=sandbox.module.exports.Table({p:{columns:['Quantity'],
+    rowActions:[{event:'increase',label:'+',field:'Quantity',title:'Increase'}],
+    onAction:(event:any)=>events.push(event)},rows:[a,b]});
+  const buttons:any[]=[];
+  const walk=(node:any):void=>{
+    if(Array.isArray(node)){node.forEach(walk);return;}
+    if(!node||typeof node!=='object')return;
+    if(node.type==='button'&&String(node.props?.['aria-label']??'').startsWith('Increase'))buttons.push(node);
+    (node.children??[]).forEach(walk);
+  };
+  walk(tree);
+  assert.equal(buttons.length,2);
+  let stopped=false;
+  buttons[1].props.onClick({stopPropagation:()=>{stopped=true}});
+  assert.equal(stopped,true);
+  assert.equal(events.length,1);
+  assert.equal(events[0].event,'increase');
+  assert.equal(events[0].value.Id,'line-2');
+  assert.equal(events[0].value.Quantity,1);
 });
 
 async function cartModule(React:unknown,window:unknown={}) {

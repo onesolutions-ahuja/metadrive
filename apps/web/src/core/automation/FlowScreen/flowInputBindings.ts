@@ -1,6 +1,6 @@
 import type { FieldMetadata, FlowDefinitionMetadata, FlowResourceMetadata } from '../../metadata/Definitions/metadata';
 
-export type InputSourceKind = 'Unmapped' | 'Literal' | 'Event' | 'Event Field' | 'Record Field' | 'Session' | 'Legacy';
+export type InputSourceKind = 'Unmapped' | 'Literal' | 'Event' | 'Event Field' | 'Record Field' | 'Page State' | 'Session' | 'Legacy';
 export type InputSource = { kind: InputSourceKind; detail: string; value: unknown };
 const identifier = /^[A-Za-z][A-Za-z0-9_]*$/;
 const eventPath = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$/;
@@ -49,6 +49,12 @@ export function decodeInputSource(value: unknown, hasMapping = true): InputSourc
       ? { kind: 'Event Field', detail: path, value }
       : { kind: 'Legacy', detail: '', value };
   }
+  if (typeof value === 'string' && value.startsWith('$state.')) {
+    const key=value.slice(7);
+    return identifier.test(key)&&key.length<=64
+      ?{kind:'Page State',detail:key,value}
+      :{kind:'Legacy',detail:'',value};
+  }
   if (typeof value === 'string' && value.startsWith('$record.')) {
     const field = value.slice(8);
     return identifier.test(field)
@@ -67,6 +73,10 @@ export function encodeInputSource(
 ): unknown {
   if (kind === 'Unmapped') return undefined;
   if (kind === 'Session') return '$session';
+  if (kind === 'Page State') {
+    if(!identifier.test(detail)||detail.length>64)throw new Error('Choose a valid page state key.');
+    return '$state.'+detail;
+  }
   if (kind === 'Event') return '$event';
   if (kind === 'Event Field') {
     if (!isSafeEventPath(detail)) throw new Error('Choose a valid event property (for example item.id).');
@@ -80,7 +90,7 @@ export function encodeInputSource(
   }
   // The existing runtime treats special $ prefixes as expressions; do not
   // let a text literal masquerade as an event, record or session reference.
-  if (detail.startsWith('$event') || detail.startsWith('$record') || detail === '$session') {
+  if (detail.startsWith('$event') || detail.startsWith('$record') || detail.startsWith('$state') || detail === '$session') {
     throw new Error('This literal is reserved for a metadata reference.');
   }
   const type = dataType.toLowerCase().trim();

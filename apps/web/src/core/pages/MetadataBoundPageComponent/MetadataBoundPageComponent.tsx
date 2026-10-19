@@ -3,7 +3,7 @@ import * as React from 'react';
 import {useState,useEffect,useRef} from 'react';
 // Load the browser API client only during the mounted effect, not on SSR import.
 import {presentPageRecords,type ChannelGrant} from '../../records/RecordWorkspace/recordPresentationAdapters';
-import {filterPageComponentRecords} from '../PageRuntime/pageComponentBindings';
+import {filterPageComponentRecords,pageComponentRecordQuery,bindPageStateProperties} from '../PageRuntime/pageComponentBindings';
 import {resolveMentionProperties} from '../../../one/OneSmartFieldInput/smartFieldMentions';
 import { explicitMentionRecordId, useRelationshipMentionContext } from '../../records/RecordFormDialog/useRelationshipMentionContext';
 import {resolvePageActionRoute} from '../PageRuntime/pageActionRouting';
@@ -50,6 +50,20 @@ export default function MetadataBoundPageComponent({
       return crypto.randomUUID();
     }
   });
+  const [pageState,setPageState]=useState<Record<string,unknown>>({});
+  useEffect(()=>{
+    const receive=(event:Event)=>{
+      const data=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
+      if(data?.pageSessionKey!==pageSessionKey
+        ||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(data.key))return;
+      setPageState(previous=>({...previous,[data.key]:data.value}));
+    };
+    window.addEventListener('metadrive:page-local-state',receive);
+    return ()=>window.removeEventListener('metadrive:page-local-state',receive);
+  },[pageSessionKey]);
+  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
+  const recordQuery=pageComponentRecordQuery(properties.filters,fields,{pageState,recordId,sessionId});
+  const recordQueryKey=JSON.stringify(recordQuery);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -92,6 +106,9 @@ export default function MetadataBoundPageComponent({
           window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
             detail:{pageSessionKey,key:item.key,value:item.value}
           }));
+        window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated',{
+          detail:{pageSessionKey,sessionId}
+        }));
       }catch(error){
         setActionError(error instanceof Error?error.message:'Unable to apply Flow outputs');
       }
@@ -125,20 +142,20 @@ export default function MetadataBoundPageComponent({
     let active = true;
     setRecords([]);
     setDataError('');
-    if (!objectApiName) {
+    if (!objectApiName || recordQuery.blocked) {
       setDataLoading(false);
       return () => { active = false; };
     }
     setDataLoading(true);
     // Existing shared Object API enforces tenant, field and record permissions.
-    void import('../../authentication/Client/authClient').then(({loadFlowScreenRecords})=>loadFlowScreenRecords(objectApiName))
+    void import('../../authentication/Client/authClient').then(({loadFlowScreenRecords})=>loadFlowScreenRecords(objectApiName,recordQuery.filter))
       .then((rows) => { if (active) setRecords(rows); })
       .catch((reason: unknown) => {
         if (active) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
       })
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName, revision]);
+  }, [objectApiName, recordQueryKey, revision]);
   useEffect(() => {
     setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
     const accessPath=String(properties.channelAccessPath??'');
@@ -150,11 +167,10 @@ export default function MetadataBoundPageComponent({
       .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     return () => {active = false;};
   }, [properties.channelAccessPath, properties.recordPresenterApiName, revision]);
-  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
-  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields,{pageState,recordId,sessionId});
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
-  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
+  const resolvedProperties = bindPageStateProperties(resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName),pageState);
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
   const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
@@ -168,6 +184,10 @@ export default function MetadataBoundPageComponent({
     ? rawActions as Record<string, unknown> : {};
   const resolveInput = (source: unknown, eventPayload: Record<string, unknown>): unknown => {
     if (source === '$session') return sessionId;
+    if (typeof source === 'string' && source.startsWith('$state.')) {
+      const key=source.slice(7);
+      return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) ? pageState[key] : undefined;
+    }
     if (source === '$event') return eventPayload;
     if (typeof source === 'string' && source.startsWith('$event.')) {
       return source.slice(7).split('.').reduce<unknown>((current, key) =>
@@ -228,10 +248,8 @@ export default function MetadataBoundPageComponent({
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
       const requestId=crypto.randomUUID();
-      if(Object.keys(outputMappings).length){
-        if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
-        pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
-      }
+      if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
+      pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
       onLaunchFlow(flowApiName, inputs,{requestId});
       return { interviewStarted: true };
     }
@@ -291,7 +309,7 @@ export default function MetadataBoundPageComponent({
         categoryFieldApiName:configuredCategoryField||inferredCategoryField||''
       } : {}),
       ...(typeof properties.searchKey === 'string' && properties.searchKey ? {searchQuery:selectedCategories[properties.searchKey] ?? ''} : {}),
-      label: component.label, properties: resolvedProperties, objects, reports, flows: availableFlows,
+      label: component.label, properties: resolvedProperties, pageState, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loadCompanySettings: () => apiRequest('/metadata/currencies'),

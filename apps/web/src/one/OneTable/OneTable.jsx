@@ -14,6 +14,26 @@ function Table({ p, rows }) {
     [local, setLocal] = React.useState("");
   const cols = columns(p, rows),
     size = Math.max(1, Math.min(200, Number(p.pageSize) || 25));
+  // Row actions are metadata-defined; the row payload comes from shared Object data.
+  const actions = Array.isArray(p.rowActions)
+    ? p.rowActions.filter(a => a && typeof a === "object"
+        && /^[A-Za-z][A-Za-z0-9_]*$/.test(a.event)
+        && typeof a.label === "string" && a.label.length <= 32)
+    : [];
+  const positioned = key => actions.filter(a => a.field === key);
+  const trailing = actions.filter(a => !a.field || !cols.some(c => c.key === a.field));
+  const actionButton = (action, row) => (
+    <button type="button" className="one-btn one-btn--ghost"
+      key={action.event}
+      aria-label={(action.title || action.label) + " " + title(row)}
+      title={action.title || action.label}
+      disabled={p.disabled === true || p.previewOnly === true || p.preview === true
+        || !(row.Id ?? row.id)}
+      onClick={event => {
+        event.stopPropagation();
+        fire(p, action.event, row);
+      }}>{action.label}</button>
+  );
   const sorted = sort
     ? [...rows].sort(
         (a, b) =>
@@ -57,6 +77,7 @@ function Table({ p, rows }) {
           <thead>
             <tr>
               {selectable && <th scope="col">Select</th>}
+              {trailing.length > 0 && <th scope="col">Actions</th>}
               {cols.map((c) => (
                 <th key={c.key} scope="col">
                   <button
@@ -102,8 +123,21 @@ function Table({ p, rows }) {
                         />
                       </td>
                     )}
+                    {trailing.length > 0 && <td><div className="one-row">
+                      {trailing.map(action => actionButton(action, row))}
+                    </div></td>}
                     {cols.map((c) => (
-                      <td key={c.key}>{view(row[c.key])}</td>
+                      <td key={c.key}>
+                        {positioned(c.key).length
+                          ? <div className="one-row">
+                              {positioned(c.key).filter(a => a.label === "−" || a.label === "-")
+                                .map(action => actionButton(action,row))}
+                              <span>{view(row[c.key])}</span>
+                              {positioned(c.key).filter(a => a.label !== "−" && a.label !== "-")
+                                .map(action => actionButton(action,row))}
+                            </div>
+                          : view(row[c.key])}
+                      </td>
                     ))}
                   </tr>
                 );

@@ -102,3 +102,21 @@ export function mapFlowHttpResponse(value:unknown,body:string,
  }
  return output;
 }
+
+/** Reuse a caller-supplied attempt key rather than generating a new key on each retry. */
+export function resolveFlowHttpCalloutKey(
+  configured:unknown,defaultKey:string,resolve:(expression:string)=>unknown
+):string {
+  if(configured===undefined||configured===null||configured==='')return defaultKey;
+  if(typeof configured!=='string'||configured.length>400)
+    throw new Error('HTTP Callout idempotency key is invalid');
+  const key=configured.replace(/\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}/g,(_token,name:string)=>{
+    const value=resolve('{!'+name+'}');
+    if(value===null||!['string','number','boolean'].includes(typeof value))
+      throw new Error('HTTP Callout idempotency resource must be scalar');
+    return String(value);
+  });
+  if(!key||key.length>200||!/^[A-Za-z0-9._:-]+$/.test(key))
+    throw new Error('HTTP Callout idempotency key must be a short token');
+  return key;
+}

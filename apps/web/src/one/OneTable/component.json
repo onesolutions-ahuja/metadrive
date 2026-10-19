@@ -2,13 +2,13 @@
   "apiName": "OneTable",
   "label": "One-Table",
   "category": "Data",
-  "description": "Universal Table component; metadata-configured presentation, data and events.",
+  "description": "Universal Table component with configurable record columns and row-scoped Flow action buttons.",
   "surfaces": [
     "page",
     "dashboard",
     "flow"
   ],
-  "version": 2,
+  "version": 3,
   "scope": "platform-core",
   "jsxFile": "one/OneTable/OneTable.jsx",
   "cssFile": "one/OneTable/OneTable.css",
