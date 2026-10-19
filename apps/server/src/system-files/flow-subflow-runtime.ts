@@ -11,7 +11,7 @@ const apiName=/^[A-Za-z][A-Za-z0-9_]*$/;
 const scalar=(value:unknown):value is Scalar=>value===null||typeof value==='string'
  ||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value);
 
-export function subflowScalarTypeMatches(resource:Resource,value:unknown):boolean {
+export function subflowScalarTypeMatches(resource:Resource,value:unknown):value is Scalar {
  if(!scalar(value))return false;
  if(value===null)return true;
  const type=String(resource.dataType??'Text');
