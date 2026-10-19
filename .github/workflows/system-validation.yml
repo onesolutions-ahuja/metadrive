@@ -38,6 +38,10 @@ jobs:
       - name: Require zero unmatched SQL API paths
         run: npm run audit:sql-routes
       - run: npm run check
+      - name: Existing SQL schema migration upgrade regression
+        run: node apps/server/scripts/legacy-migration-upgrade-smoke.mjs
+        env:
+          METADRIVE_SQL_TEST_DATABASE_URL: postgresql://postgres:test-only-password@localhost:5432/metadrive_test
       - run: node apps/server/scripts/sql-smoke.mjs
         env:
           METADRIVE_SQL_TEST_DATABASE_URL: postgresql://postgres:test-only-password@localhost:5432/metadrive_test
