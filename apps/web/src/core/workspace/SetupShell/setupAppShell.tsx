@@ -683,7 +683,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     else if (item === 'Flows') openSetupWorkspace('flow-builder');
     else if (item === 'Paused and Waiting Interviews') openSetupWorkspace('flow-interviews');
     else if (item === 'Scheduled Flows') openSetupWorkspace('scheduled-flows');
-    else if (item === 'Failed Flow Logs') openSetupWorkspace('flow-logs');
+    else if (item === 'Flow History') openSetupWorkspace('flow-logs');
     else if (item === 'Process Automation Settings') openSetupWorkspace('automation-settings');
     else if (item === 'Reports') openSetupWorkspace('report-builder');
     else if (item === 'Dashboards') openSetupWorkspace('dashboard-builder');
