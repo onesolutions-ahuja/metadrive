@@ -217,3 +217,42 @@ test('ItemGrid sibling-selection mode notifies generic page peers without adding
     recordId:'prod-7',label:'Chicken',sourceObjectApiName:'Product'
   });
 });
+
+test('generic overlay opens only for matching selected record events on the same page session',async()=>{
+  const {components}=await loadComponentCatalog();
+  const overlay=components.find(component=>component.apiName==='OneOverlay');
+  assert.ok(overlay);
+  const built=await buildBundledComponent(overlay);
+  const handlers=new Map<string,(event:any)=>void>();
+  const openEvents:boolean[]=[];
+  let hook=0;
+  const ReactFake={
+    Fragment:'fragment',
+    Children:{toArray:(v:any)=>v===null||v===undefined?[]:Array.isArray(v)?v:[v]},
+    createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+    useState:(initial:any)=>{hook+=1;return [initial,(v:any)=>{
+      if(hook>=0)openEvents.push(Boolean(v));
+    }];},
+    useEffect:(effect:any)=>{effect();}
+  };
+  const sandbox={React:ReactFake,module:{exports:{} as any},
+    window:{
+      addEventListener:(type:string,handler:any)=>handlers.set(type,handler),
+      removeEventListener:()=>{}
+    }
+  };
+  vm.runInNewContext(built.compiledJs,sandbox);
+  const rendered=sandbox.module.exports.default({
+    openOnSelectionKey:'selectedProduct',pageSessionKey:'page-1',title:'Product details'
+  });
+  assert.ok(rendered);
+  const onSelect=handlers.get('metadrive:page-filter-selected');
+  assert.ok(onSelect);
+  onSelect({detail:{pageSessionKey:'another-page',filterKey:'selectedProduct',value:'item-1'}});
+  onSelect({detail:{pageSessionKey:'page-1',filterKey:'other',value:'item-1'}});
+  assert.equal(openEvents.length,0);
+  onSelect({detail:{pageSessionKey:'page-1',filterKey:'selectedProduct',value:'item-1'}});
+  assert.deepEqual(openEvents,[true]);
+  onSelect({detail:{pageSessionKey:'page-1',filterKey:'selectedProduct',value:''}});
+  assert.deepEqual(openEvents,[true,false]);
+});
