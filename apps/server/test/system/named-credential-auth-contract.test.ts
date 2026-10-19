@@ -11,7 +11,7 @@ test('unsupported OAuth credentials cannot be saved as executable Named Credenti
  const service=new NamedCredentialService(db,rbac);
  const request={name:'demo',label:'Demo',protocol:'HTTPS',baseUrl:'https://example.com',
   headerName:'X-API-Key',authType:'OAuth Client Credentials'};
- for(const authType of ['OAuth Authorization Code']){
+ for(const authType of ['Unconfigured OAuth Grant']){
   await assert.rejects(service.create('tenant','user',{...request,authType}),/Invalid credential/);
   await assert.rejects(service.update('tenant','user','123e4567-e89b-42d3-a456-426614174000',{...request,authType}),/Invalid credential/);
  }
