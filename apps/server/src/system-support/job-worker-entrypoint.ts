@@ -31,7 +31,7 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
   process.once('SIGINT',terminate);
   try {
    while(running){
-    try { await worker.runOnce(10); }
+    try { await worker.runOnce(1); }
     catch(error){console.error('Durable job poll failed',error);}
     if(running)await new Promise<void>(resolve=>setTimeout(resolve,interval));
    }
