@@ -179,6 +179,27 @@ try{
  assert.ok(flowEditor.includes('How Many Records to Store')&&flowEditor.includes('Filter Records'),
    'Get Records browser configuration is incomplete');
 
+ // Phase 4: graph editing is an actual browser workflow, not merely toolbar decoration.
+ await page.getByRole('button',{name:/Review graph/}).click();
+ await page.getByRole('region',{name:'Flow graph review'}).waitFor();
+ const beforeGraphNodes=await page.locator('.flow-graph-node').count();
+ assert.ok(beforeGraphNodes>=3,'A new Flow must show connected graph nodes');
+ const assignment=page.locator('.flow-element-option').filter({hasText:'Assignment'});
+ await assignment.dragTo(page.locator('.flow-edge-insert').first());
+ assert.equal(await page.locator('.flow-graph-node').count(),beforeGraphNodes+1,
+   'Dragging an element onto a branch did not split the connector');
+ await page.getByRole('button',{name:'Duplicate selected element'}).click();
+ assert.equal(await page.locator('.flow-graph-node').count(),beforeGraphNodes+2,
+   'Duplicating a selected graph element did not create a connected copy');
+ await page.getByRole('button',{name:'Undo',exact:true}).click();
+ assert.equal(await page.locator('.flow-graph-node').count(),beforeGraphNodes+1,
+   'Undo did not restore prior graph metadata');
+ await page.getByRole('button',{name:'Redo',exact:true}).click();
+ assert.equal(await page.locator('.flow-graph-node').count(),beforeGraphNodes+2,
+   'Redo did not reapply graph metadata');
+ const pathTargets=await page.locator('.flow-edge-insert').count();
+ assert.ok(pathTargets>=3,'Connectors must expose accessible insertion targets');
+
  const pageStatus=await page.evaluate(async ({token})=>{
   const payload={apiName:'BrowserPage',label:'Browser Page',targetObject:'',
    pageType:'Home Page',layoutMode:'free-canvas',canvasWidth:1280,canvasHeight:900,

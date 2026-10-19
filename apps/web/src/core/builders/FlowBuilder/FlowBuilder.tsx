@@ -2,6 +2,7 @@ import { uniqueLibraryComponents, libraryComponentLabel } from '../../components
 import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './flowGraphLayout';
 import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
+import {canBypassFlowElement,duplicateFlowGraphElement,flowGraphDiagnostics,retargetFlowGraphConnector} from './flowGraphOperations.mjs';
 import { formulaFunctions, formulaOperators } from './flowEditorCatalog';
 import { precedingFlowSteps } from './flowReferenceCatalog';
 import { flowCreateOptions, flowElementAvailable, type FlowCapabilityCatalog } from './flowCapabilityCatalog';
@@ -192,6 +193,9 @@ export default function FlowBuilder({
   const [platformEventDescription, setPlatformEventDescription] = useState('');
   const [platformEventFields, setPlatformEventFields] = useState<PlatformEventMetadata['fields']>([]);
   const [zoom, setZoom] = useState(1);
+  const [showGraphReview, setShowGraphReview] = useState(false);
+  const [activeGraphPath, setActiveGraphPath] = useState('');
+  const [dropActive, setDropActive] = useState(false);
   const [dragPreview, setDragPreview] = useState<{ id: number; x: number; y: number } | null>(null);
   const dragRef = useRef<{
     id: number; startClientX: number; startClientY: number;
@@ -202,6 +206,45 @@ export default function FlowBuilder({
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
   const insertionPaths = flow.connectors.filter((connector) => connector.from === selectedId);
+  const graphProblems=flowGraphDiagnostics(flow);
+  const selectedConnector=flow.connectors.find(connector=>connector.id===activeGraphPath);
+  const selectGraphPath=(connector:FlowDefinitionMetadata['connectors'][number])=>{
+    onSelect(connector.from);
+    setInsertionConnectorId(connector.id);
+    setActiveGraphPath(connector.id);
+    onToolTab('Elements');
+  };
+  const duplicateSelected=()=>{
+    if(!selected||selected.type==='Start'||selected.type==='End')return;
+    const branch=flow.connectors.filter(connector=>connector.from===selected.id);
+    const connectorId=branch.find(connector=>connector.id===insertionConnectorId)?.id;
+    try{
+      if(branch.length>1&&!connectorId){
+        onToolTab('Elements');
+        onNotify('Select a connector path before duplicating a branching element.');
+        return;
+      }
+      const nextId=Math.max(0,...flow.elements.map(element=>element.id))+1;
+      const next=duplicateFlowGraphElement(flow,selected.id,connectorId,nextId,
+        'connector-'+crypto.randomUUID());
+      onFlowChange(next);
+      onSelect(nextId);
+    }catch(error){onNotify(error instanceof Error?error.message:'Unable to duplicate element');}
+  };
+  const dropElement=(event:React.DragEvent,fromId:number,connectorId?:string)=>{
+    event.preventDefault();event.stopPropagation();setDropActive(false);
+    const type=event.dataTransfer.getData('application/x-metadrive-flow-type');
+    if(!type||!isElementAvailable(type)||!flowElementMetadata.some(item=>item.type===type)){
+      onNotify('Select an available Flow element from the toolbox.');return;
+    }
+    const outgoing=flow.connectors.filter(edge=>edge.from===fromId);
+    if(outgoing.length>1&&!connectorId){
+      onSelect(fromId);onToolTab('Elements');
+      onNotify('Select the specific outcome, fault or scheduled path first.');return;
+    }
+    onAdd(type,fromId,connectorId);
+  };
+
   const selectedObject = objects.find((object) => object.apiName === flow.triggerObject);
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
@@ -245,6 +288,33 @@ export default function FlowBuilder({
     const verticalFit = (canvas.clientHeight - 48) / graphHeight;
     setZoom(Math.max(0.35, Math.min(1.5, horizontalFit, verticalFit)));
   };
+  useEffect(()=>{
+    if(landing)return;
+    const handle=(event:KeyboardEvent)=>{
+      const el=event.target as HTMLElement|null;
+      const editing=el?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(el?.tagName??'');
+      const shortcut=(event.ctrlKey||event.metaKey)&&!event.altKey;
+      if(shortcut&&event.key.toLowerCase()==='s'){
+        event.preventDefault();onSave();return;
+      }
+      if(editing)return;
+      if(shortcut&&event.key.toLowerCase()==='z'){
+        event.preventDefault();
+        if(event.shiftKey){if(canRedo)onRedo();}else if(canUndo)onUndo();
+      }else if(shortcut&&event.key.toLowerCase()==='y'){
+        event.preventDefault();if(canRedo)onRedo();
+      }else if(shortcut&&event.key.toLowerCase()==='d'){
+        event.preventDefault();duplicateSelected();
+      }else if(event.key==='Delete'||event.key==='Backspace'){
+        if(selected&&canBypassFlowElement(flow,selected.id)){
+          event.preventDefault();onRemove(selected.id);
+        }
+      }
+    };
+    window.addEventListener('keydown',handle);
+    return ()=>window.removeEventListener('keydown',handle);
+  },[landing,canUndo,canRedo,onUndo,onRedo,onSave,flow,selected,insertionConnectorId,onRemove]);
+
   const setConfig = (key: string, value: unknown) => {
     if (selected) onUpdateConfig(selected.id, key, value);
   };
@@ -297,6 +367,14 @@ export default function FlowBuilder({
     setPlatformEventApiName(name);
   };
   const updateConnector = (id: string, update: Partial<FlowDefinitionMetadata['connectors'][number]>) => {
+    if(update.to!==undefined){
+      try{
+        const next=retargetFlowGraphConnector(flow,id,update.to);
+        onFlowChange({...next,connectors:next.connectors.map(item=>
+          item.id===id?{...item,...update}:item)});
+      }catch(error){onNotify(error instanceof Error?error.message:'Unable to connect Flow path');}
+      return;
+    }
     onFlowChange({ ...flow, connectors: flow.connectors.map((connector) => connector.id === id ? { ...connector, ...update } : connector) });
   };
   const setConnectorKind = (id: string, kind: FlowDefinitionMetadata['connectors'][number]['kind']) => {
@@ -1377,7 +1455,11 @@ export default function FlowBuilder({
           </label>}
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type));
-            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => {
+            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" draggable
+              aria-label={`Drag or add ${element.type}`}
+              onDragStart={(event)=>{event.dataTransfer.effectAllowed='copy';
+                event.dataTransfer.setData('application/x-metadrive-flow-type',element.type);}}
+              onClick={() => {
               const selectedPath = insertionPaths.some((connector) => connector.id === insertionConnectorId)
                 ? insertionConnectorId : undefined;
               if (insertionPaths.length > 1 && !selectedPath) {
@@ -1540,6 +1622,14 @@ export default function FlowBuilder({
             <button type="button" className="btn btn-small" onClick={switchCanvasMode}
               aria-pressed={freeformLayout}>{freeformLayout ? 'Switch to Auto-Layout' : 'Switch to Freeform'}</button>
             {freeformLayout && <button type="button" className="btn btn-small" onClick={resetFreeformLayout}>Reset Positions</button>}
+            <button type="button" className="btn btn-small" aria-expanded={showGraphReview}
+              onClick={()=>setShowGraphReview(value=>!value)}>
+              Review graph{graphProblems.length?' ('+graphProblems.length+')':''}
+            </button>
+            {selected?.type!=='Start'&&selected?.type!=='End'&&<button type="button"
+              className="btn btn-small" aria-label="Duplicate selected element" onClick={duplicateSelected}>
+              <Copy size={13}/>Duplicate
+            </button>}
             {flow.status === 'Draft' && <button type="button" className="btn btn-small" onClick={() => {
               const repaired = completeFlowEndPaths(flow, `connector-${crypto.randomUUID()}`);
               if (JSON.stringify(repaired) === JSON.stringify(flow)) {
@@ -1552,8 +1642,28 @@ export default function FlowBuilder({
             <button className="btn btn-small" onClick={onValidate}><Activity size={13} />Errors and Warnings</button>
           </div>
         </div>
+        {showGraphReview&&<div className="flow-graph-review" role="region"
+          aria-label="Flow graph review">
+          <strong>{graphProblems.length?graphProblems.length+' graph issue(s)':'No disconnected or unfinished paths found'}</strong>
+          {graphProblems.map((problem,index)=><button type="button" className="text-action"
+            key={index} onClick={()=>{if(problem.nodeId!==undefined)onSelect(problem.nodeId);}}>
+            {problem.description}
+          </button>)}
+          <small>This is a draft graph check. Use Check for server-side validation before activation.</small>
+        </div>}
         {validation && <div className={`flow-validation ${validation.valid ? 'valid' : 'invalid'}`} role="status"><strong>{validation.valid ? 'Flow check passed' : `${validation.errors.length} error(s) found`}</strong>{validation.errors.map((error) => <div key={error}>{error}</div>)}{validation.warnings.map((warning) => <div key={warning}>Warning: {warning}</div>)}</div>}
-        <div className="flow-canvas" ref={canvasRef}><div className="flow-graph" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})` }}>
+        <div className={`flow-canvas ${dropActive?'flow-drop-active':''}`}
+          ref={canvasRef}
+          onDragOver={(event)=>{
+            if(event.dataTransfer.types.includes('application/x-metadrive-flow-type')){
+              event.preventDefault();event.dataTransfer.dropEffect='copy';setDropActive(true);
+            }
+          }}
+          onDragLeave={(event)=>{if(!event.currentTarget.contains(event.relatedTarget as Node))
+            setDropActive(false);}}
+          onDrop={(event)=>dropElement(event,selectedId,
+            insertionPaths.find(edge=>edge.id===insertionConnectorId)?.id)}>
+          <div className="flow-graph" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})` }}>
           <svg className="flow-graph-connectors" width={graphWidth} height={graphHeight} aria-hidden="true">
             <defs><marker id="flow-graph-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8e8e8e" /></marker></defs>
             {flow.connectors.map((connector) => {
@@ -1567,12 +1677,28 @@ export default function FlowBuilder({
               const bend = Math.max(35, Math.abs(endY - startY) / 2);
               const labelX = (startX + endX) / 2;
               const labelY = (startY + endY) / 2 - 6;
-              return <g key={connector.id} className={`flow-graph-edge ${connector.kind} ${selectedId === connector.from ? 'is-selected' : ''}`}>
+              return <g key={connector.id} className={`flow-graph-edge ${connector.kind} ${activeGraphPath===connector.id?'is-selected':selectedId === connector.from ? 'is-selected' : ''}`}>
                 <path d={`M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`} markerEnd="url(#flow-graph-arrow)" />
                 {(connector.label || connector.kind !== 'normal') && <text x={labelX} y={labelY}>{connector.label || connector.kind}</text>}
               </g>;
             })}
           </svg>
+          {flow.connectors.map(connector=>{
+            const from=graphPositions.get(connector.from),to=graphPositions.get(connector.to);
+            if(!from||!to)return null;
+            const x=(from.x+to.x)/2+graphNodeWidth/2;
+            const y=(from.y+74+to.y)/2-7;
+            return <button type="button" key={connector.id}
+              className={`flow-edge-insert ${activeGraphPath===connector.id?'active':''}`}
+              style={{left:x,top:y}}
+              aria-label={`Choose insertion path ${connector.label||connector.kind} from ${flow.elements.find(item=>item.id===connector.from)?.label??connector.from}`}
+              title="Choose this branch path; drag an element here or select one in the toolbox"
+              onClick={()=>selectGraphPath(connector)}
+              onDragOver={event=>event.preventDefault()}
+              onDrop={event=>dropElement(event,connector.from,connector.id)}>
+              <Plus size={13}/>
+            </button>;
+          })}
           {flow.elements.map((element) => {
             const position = graphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
             return <Fragment key={element.id}><button className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`}
@@ -1580,6 +1706,8 @@ export default function FlowBuilder({
                 cursor: freeformLayout ? 'grab' : undefined, touchAction: freeformLayout ? 'none' : undefined }}
               title={freeformLayout ? 'Drag to reposition. Use arrow keys to adjust; Shift + arrow moves 20px.' : undefined}
               onClick={() => onSelect(element.id)}
+              onDragOver={(event)=>event.preventDefault()}
+              onDrop={(event)=>dropElement(event,element.id)}
               onPointerDown={(event) => {
                 if (!freeformLayout || event.button !== 0) return;
                 dragRef.current = {
@@ -1627,9 +1755,9 @@ export default function FlowBuilder({
                   <Plus size={16} />
                 </button>
                 <button type="button" className="icon-button" aria-label={`Remove ${element.label}`}
-                  title={flow.connectors.some((connector) => connector.from === element.id)
-                    ? 'Disconnect child paths before removing this element' : 'Remove this element'}
-                  disabled={element.type === 'Start' || flow.connectors.some((connector) => connector.from === element.id)}
+                  title={canBypassFlowElement(flow,element.id)
+                    ? 'Remove and reconnect the continuation path' : 'Cannot safely remove branching or terminal elements'}
+                  disabled={!canBypassFlowElement(flow,element.id)}
                   onClick={() => onRemove(element.id)}><span aria-hidden="true">−</span></button>
               </div>}
             </Fragment>;
@@ -1639,7 +1767,8 @@ export default function FlowBuilder({
       </section>
       <FlowPropertiesResizeHandle width={propertiesWidth} setWidth={setPropertiesWidth} clamp={clampPropertiesWidth} />
       <aside className="flow-settings">
-        <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && selected.type !== 'Start' && !flow.connectors.some((connector) => connector.from === selected.id) && onRemove(selected.id)} aria-label="Delete element" disabled={!selected || selected.type === 'Start' || flow.connectors.some((connector) => connector.from === selected.id)}><X size={16} /></button></div>
+        <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && canBypassFlowElement(flow,selected.id) && onRemove(selected.id)}
+          aria-label="Delete element" disabled={!selected || !canBypassFlowElement(flow,selected.id)}><X size={16} /></button></div>
         <div className="settings-element-type"><span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === selected?.type)?.icon ?? '◉'}</span><div><small>{selected?.type}</small><strong>{selected?.label}</strong></div></div>
         {selected?.type === 'Start' && <label className="form-label flow-editor-field">Flow Type<select className="form-control" value={flow.flowType} onChange={(event) => updateFlowType(event.target.value as FlowDefinitionMetadata['flowType'])}>{flowTypeOptions.map((option) => <option key={option.type}>{option.type}</option>)}</select></label>}
         <label className="form-label flow-editor-field">Label<input className="form-control" value={selected?.label ?? ''} onChange={(event) => selected && onUpdateLabel(selected.id, event.target.value)} /></label>
@@ -1675,6 +1804,6 @@ export default function FlowBuilder({
         <button className="btn btn-brand btn-full" onClick={onSave}>Save Flow</button>
       </aside>
     </div>
-    <div className="flow-bottom-bar"><span>Flow Builder</span><span>{flow.status} · Version {flow.versionNumber}</span><button className="text-action" onClick={() => onNotify('Select a node to configure it. Use Ctrl+Z / Ctrl+Shift+Z for history.')}><CircleHelp size={12} />Keyboard shortcuts</button></div>
+    <div className="flow-bottom-bar"><span>Flow Builder</span><span>{flow.status} · Version {flow.versionNumber}</span><button className="text-action" onClick={() => onNotify('Click a connector + to insert on a branch, or drag an element from the toolbox onto a path. Ctrl/Cmd+D duplicates, Delete removes safe nodes, Ctrl/Cmd+Z/Y undo/redo, Ctrl/Cmd+S saves.')}><CircleHelp size={12} />Keyboard shortcuts</button></div>
   </div>;
 }
