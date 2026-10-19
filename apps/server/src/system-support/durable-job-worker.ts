@@ -2,7 +2,7 @@ import type {DurableJobService} from './durable-job-service.js';
 
 export type ClaimedJob={
  id:string;tenant_id:string;job_type:string;actor_user_id:string|null;
- app_api_name:string|null;resource_id:string|null;resource_version:number|null;attempt:number;
+ app_api_name:string|null;resource_id:string|null;resource_version:number|null;attempt:number;execution_scope?:string;
 };
 export type JobHandler=(job:ClaimedJob)=>Promise<void>;
 export type JobAuthorizer=(job:ClaimedJob)=>Promise<boolean>;
