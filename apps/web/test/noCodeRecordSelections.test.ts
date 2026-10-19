@@ -90,3 +90,42 @@ test('one input change invokes the configured backend action exactly once',async
   context.module.exports.fire(props,'submit','s1');
   assert.deepEqual(events,['change','change','action']);
 });
+
+test('record-backed selection publishes only bounded record identities for server Flow validation',async()=>{
+  const {components}=await loadComponentCatalog();
+  const choice=components.find(component=>component.apiName==='OneChoice');
+  assert.ok(choice);
+  const built=await buildBundledComponent(choice);
+  const actions:any[]=[];
+  const ReactFake={
+    createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+    useState:(initial:any)=>[initial,()=>{}]
+  };
+  const sandbox={React:ReactFake,module:{exports:{} as any},Intl};
+  vm.runInNewContext(built.compiledJs,sandbox);
+  const rendered=sandbox.module.exports.default({
+    label:'Choose item',mode:'checkbox',optionSource:'records',
+    optionLabelFieldApiName:'Name',optionValueFieldApiName:'Id',
+    records:[{Id:'item1',Name:'Fries',InternalNote:'Never send to Flow'}],
+    actionFlows:{selectionChanged:{actionType:'Flow'}},
+    changeEventHandledByOnChange:true,
+    onChange:()=>{},
+    onAction:(action:any)=>actions.push(action)
+  });
+  const find=(value:any):any=>{
+    if(!value || typeof value!=='object')return undefined;
+    if(value.type==='input'&&value.props?.type==='checkbox')return value;
+    for(const child of value.children??[]){
+      const match=find(child);if(match)return match;
+    }
+    return undefined;
+  };
+  const input=find(rendered);
+  assert.ok(input);
+  input.props.onChange();
+  const payload=actions.find(action=>action.event==='selectionChanged')?.value;
+  assert.deepEqual(JSON.parse(JSON.stringify(payload)),{
+    selectedIds:['item1'],records:[{Id:'item1'}]
+  });
+  assert.equal(actions.filter(action=>action.event==='selectionChanged').length,1);
+});
