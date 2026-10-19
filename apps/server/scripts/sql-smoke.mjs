@@ -332,5 +332,58 @@ try{
   ()=>durable.providerDecision(tenantId,receiptId,userId,'confirmed_not_sent','provider-ticket-1234'),
   /Reconciliation receipt not found/);
 
+ // Dispatch is re-authorized against current tenant, actor, licence, app and Flow metadata.
+ const {registerFlowJobHandler}=await import(new URL('flow-job-handler.js',support).href);
+ const jobAuthorizer=registerFlowJobHandler({register:()=>{}},db,new RbacEngine(db),supportedFlows);
+ const published=await db.query(
+  'SELECT version FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND active=true ORDER BY version DESC LIMIT 1',
+  [tenantId,checkout.apiName]);
+ const authJob={
+  id:providerJobId,tenant_id:tenantId,job_type:'flow.execute',
+  actor_user_id:userId,app_api_name:null,resource_id:checkout.apiName,
+  resource_version:published.rows[0].version,attempt:1
+ };
+ assert.equal(await jobAuthorizer(authJob),true);
+ await db.query("UPDATE md_tenants SET status='SUSPENDED' WHERE id=$1",[tenantId]);
+ assert.equal(await jobAuthorizer(authJob),false,'Suspended tenant must not execute queued Flow');
+ await db.query("UPDATE md_tenants SET status='ACTIVE' WHERE id=$1",[tenantId]);
+ await db.query('UPDATE md_users SET enabled=false WHERE tenant_id=$1 AND id=$2',[tenantId,userId]);
+ assert.equal(await jobAuthorizer(authJob),false,'Disabled execution user must be rejected');
+ await db.query('UPDATE md_users SET enabled=true WHERE tenant_id=$1 AND id=$2',[tenantId,userId]);
+ await db.query("UPDATE md_users SET locked_until=now()+interval '1 hour' WHERE tenant_id=$1 AND id=$2",[tenantId,userId]);
+ assert.equal(await jobAuthorizer(authJob),false,'Locked execution user must be rejected');
+ await db.query('UPDATE md_users SET locked_until=NULL WHERE tenant_id=$1 AND id=$2',[tenantId,userId]);
+ const {rows:flowRows}=await db.query(
+  'UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND version=$3 RETURNING id',
+  [tenantId,checkout.apiName,authJob.resource_version]);
+ assert.ok(flowRows[0]);
+ assert.equal(await jobAuthorizer(authJob),false,'Disabled published Flow must not execute');
+ await db.query('UPDATE md_flow_definitions SET active=true WHERE tenant_id=$1 AND id=$2',[tenantId,flowRows[0].id]);
+ const {rows:jobAppRows}=await db.query(
+  "INSERT INTO md_apps(api_name,label,enabled) VALUES('CiDurableApp','CI durable app',true) RETURNING id");
+ const jobAppId=jobAppRows[0].id;
+ await db.query('INSERT INTO md_app_installations(tenant_id,app_id) VALUES($1,$2)',[tenantId,jobAppId]);
+ await db.query('INSERT INTO md_app_entitlements(tenant_id,app_id,active) VALUES($1,$2,true)',[tenantId,jobAppId]);
+ const appJob={...authJob,app_api_name:'CiDurableApp'};
+ assert.equal(await jobAuthorizer(appJob),true);
+ await db.query('UPDATE md_app_entitlements SET expires_at=now()-interval \'1 second\' WHERE tenant_id=$1 AND app_id=$2',
+  [tenantId,jobAppId]);
+ assert.equal(await jobAuthorizer(appJob),false,'Expired licence must disable jobs');
+ await db.query('UPDATE md_app_entitlements SET expires_at=NULL,active=false WHERE tenant_id=$1 AND app_id=$2',
+  [tenantId,jobAppId]);
+ assert.equal(await jobAuthorizer(appJob),false,'Deactivated app entitlement must disable jobs');
+ await db.query('UPDATE md_app_entitlements SET active=true WHERE tenant_id=$1 AND app_id=$2',[tenantId,jobAppId]);
+ await db.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2',[tenantId,jobAppId]);
+ assert.equal(await jobAuthorizer(appJob),false,'Uninstalled app must not execute jobs');
+ const denyResource='Flow:'+checkout.apiName;
+ await db.query(`INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+   VALUES($1,$2,$3,'execute','deny')
+   ON CONFLICT(tenant_id,permission_set_id,resource,action) DO UPDATE SET effect='deny'`,
+  [tenantId,set.rows[0].id,denyResource]);
+ assert.equal(await jobAuthorizer(authJob),false,'RBAC revocation must take effect at dispatch');
+ await db.query(
+  "DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2 AND resource=$3 AND action='execute'",
+  [tenantId,set.rows[0].id,denyResource]);
+
  console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
 }finally{await db.close();}
