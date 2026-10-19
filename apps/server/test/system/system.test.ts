@@ -853,7 +853,7 @@ test('Flow interview cancellation preserves tenant scope and durable run row',as
  const id='c439f882-7316-4cf1-86fb-81d95b135c97';
  const value=await new FlowRuntime(db,rbac).cancelInterview('tenant','user',id);
  assert.equal(value.cancelled,true);
- assert.equal(checks.length,4);
+ assert.equal(checks.length,5);
  assert.ok(checks.every(args=>JSON.stringify(args)===JSON.stringify(['tenant',id])));
 });
 test('Flow interview cancellation rejects unauthorised or malformed requests',async()=>{
