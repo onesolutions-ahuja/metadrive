@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS md_component_definitions (id uuid PRIMARY KEY DEFAULT
 CREATE TABLE IF NOT EXISTS md_page_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, title text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,api_name), UNIQUE(tenant_id,id));
 CREATE TABLE IF NOT EXISTS md_page_components (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), page_id uuid NOT NULL, component_api text NOT NULL, FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id), FOREIGN KEY(tenant_id,component_api) REFERENCES md_component_definitions(tenant_id,api_name), slot text NOT NULL, sort_order integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS md_flow_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, label text, flow_type text NOT NULL DEFAULT 'Autolaunched Flow', version integer NOT NULL, active boolean NOT NULL DEFAULT false, UNIQUE(tenant_id,api_name,version), UNIQUE(tenant_id,id));
-CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL CHECK(status IN ('pending','waiting','completed','failed','cancelled')), wait_kind text NOT NULL DEFAULT 'wait' CHECK(wait_kind IN ('wait','scheduled-path')), UNIQUE(tenant_id,id), started_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,error_code text,wait_until timestamptz);
+CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL CHECK(status IN ('pending','waiting','completed','failed','cancelled')), wait_kind text NOT NULL DEFAULT 'wait' CHECK(wait_kind IN ('wait','scheduled-path','orchestration')), UNIQUE(tenant_id,id), started_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,error_code text,wait_until timestamptz);
 CREATE TABLE IF NOT EXISTS md_apps (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), api_name text NOT NULL UNIQUE, label text NOT NULL, enabled boolean NOT NULL DEFAULT true);
 CREATE TABLE IF NOT EXISTS md_app_installations (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_id uuid NOT NULL REFERENCES md_apps(id), PRIMARY KEY(tenant_id,app_id));
 
@@ -279,6 +279,24 @@ CREATE TABLE IF NOT EXISTS md_approval_requests (
  FOREIGN KEY(tenant_id,decided_by) REFERENCES md_users(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS md_approval_requests_inbox ON md_approval_requests(tenant_id,approver_id,status,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS md_flow_approval_stages (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ run_id uuid NOT NULL,
+ element_id integer NOT NULL CHECK(element_id > 0),
+ group_id uuid NOT NULL,
+ rule text NOT NULL CHECK(rule IN ('ANY','ALL')),
+ status text NOT NULL DEFAULT 'waiting'
+  CHECK(status IN ('waiting','Approved','Rejected','cancelled')),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ finished_at timestamptz,
+ PRIMARY KEY(tenant_id,run_id,element_id),
+ UNIQUE(tenant_id,group_id),
+ FOREIGN KEY(tenant_id,run_id) REFERENCES md_flow_runs(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_flow_approval_stages_pending
+ ON md_flow_approval_stages(tenant_id,run_id,status) WHERE status='waiting';
+
 
 ALTER TABLE md_records ADD COLUMN IF NOT EXISTS owner_id uuid;
 ALTER TABLE md_records ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
