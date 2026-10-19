@@ -317,6 +317,12 @@ export type FlowExecutionLogMetadata = {
   failedAt: string;
   error: string;
   userId: string | null;
+  status?: 'pending' | 'waiting' | 'completed' | 'failed' | 'cancelled';
+  flowType?: string;
+  versionNumber?: number;
+  startedAt?: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
 };
 
 export type FlowInterviewMetadata = {
