@@ -130,3 +130,90 @@ test('record-backed selection publishes only bounded record identities for serve
   });
   assert.equal(actions.filter(action=>action.event==='selectionChanged').length,1);
 });
+
+test('ItemGrid metadata action selection does not automatically add to the shopping cart',async()=>{
+  const {components}=await loadComponentCatalog();
+  const grid=components.find(component=>component.apiName==='OneItemGrid');
+  assert.ok(grid);
+  const built=await buildBundledComponent(grid);
+  const actions:any[]=[];
+  const customEvents:any[]=[];
+  const ReactFake={
+    createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+    useState:(initial:any)=>[initial,()=>{}],useEffect:()=>{}
+  };
+  const sandbox={
+    React:ReactFake,module:{exports:{} as any},Intl,
+    CustomEvent:class {detail:any;constructor(_type:string,init:any){this.detail=init.detail;}},
+    window:{dispatchEvent:(event:any)=>customEvents.push(event)}
+  };
+  vm.runInNewContext(built.compiledJs,sandbox);
+  const root=sandbox.module.exports.default({
+    objectApiName:'Product',pageSessionKey:'test-session',cartTargetKey:'cart',
+    itemSelectMode:'action',actionFlows:{itemSelect:{actionType:'SetFilter'}},
+    currencyCode:'GBP',titleFieldApiName:'Name',priceFieldApiName:'Price',
+    records:[{Id:'meal-1',Name:'Meal',Price:20}],
+    onAction:(action:any)=>actions.push(action)
+  });
+  const nested=root.children[0];
+  const gridTree=nested.type(nested.props);
+  const walk=(node:any):any=>{
+    if(!node||typeof node!=='object')return undefined;
+    if(node.type==='button'&&node.props?.['aria-label']==='Select Meal')return node;
+    for(const item of node.children??[]){
+      if(Array.isArray(item)){for(const child of item){const found=walk(child);if(found)return found;}}
+      else {const found=walk(item);if(found)return found;}
+    }
+    return undefined;
+  };
+  const card=walk(gridTree);
+  assert.ok(card);
+  card.props.onClick();
+  assert.equal(actions.length,1);
+  assert.equal(actions[0].event,'itemSelect');
+  assert.equal(actions[0].value.Id,'meal-1');
+  assert.equal(customEvents.length,0);
+});
+
+test('ItemGrid sibling-selection mode notifies generic page peers without adding to cart',async()=>{
+  const {components}=await loadComponentCatalog();
+  const grid=components.find(component=>component.apiName==='OneItemGrid');
+  assert.ok(grid);
+  const built=await buildBundledComponent(grid);
+  const events:any[]=[];
+  const ReactFake={
+    createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+    useState:(initial:any)=>[initial,()=>{}],useEffect:()=>{}
+  };
+  const sandbox={
+    React:ReactFake,module:{exports:{} as any},Intl,
+    CustomEvent:class {type:string;detail:any;constructor(type:string,init:any){this.type=type;this.detail=init.detail;}},
+    window:{dispatchEvent:(event:any)=>events.push(event)}
+  };
+  vm.runInNewContext(built.compiledJs,sandbox);
+  const root=sandbox.module.exports.default({
+    objectApiName:'Product',pageSessionKey:'session-2',cartTargetKey:'cart',
+    itemSelectMode:'filter',itemSelectionFilterKey:'selectedProduct',
+    currencyCode:'GBP',titleFieldApiName:'Name',priceFieldApiName:'Price',
+    records:[{Id:'prod-7',Name:'Chicken',Price:5}]
+  });
+  const nested=root.children[0];
+  const gridTree=nested.type(nested.props);
+  const walk=(node:any):any=>{
+    if(!node||typeof node!=='object')return undefined;
+    if(node.type==='button'&&node.props?.['aria-label']==='Select Chicken')return node;
+    for(const child of node.children??[]){
+      if(Array.isArray(child)){for(const c of child){const found=walk(c);if(found)return found;}}
+      else {const found=walk(child);if(found)return found;}
+    }
+    return undefined;
+  };
+  const card=walk(gridTree);
+  assert.ok(card);
+  card.props.onClick();
+  assert.equal(events.length,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(events[0].detail)),{
+    pageSessionKey:'session-2',filterKey:'selectedProduct',value:'prod-7',
+    recordId:'prod-7',label:'Chicken',sourceObjectApiName:'Product'
+  });
+});
