@@ -34,6 +34,7 @@ import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
+import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
@@ -1412,6 +1413,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
+  registerDurableJobAdminRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});

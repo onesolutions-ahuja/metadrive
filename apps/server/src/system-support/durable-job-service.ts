@@ -47,16 +47,11 @@ export class DurableJobService {
      FROM due WHERE j.id=due.id AND j.attempt<j.max_attempts
      RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.resource_version,j.attempt
    `,[limit,workerId,leaseSeconds]);
-   // Expired leases have an unknown outcome; never automatically replay side-effectful Flows.
+   // Every abandoned lease is outcome-ambiguous. Fail closed for all registered
+   // job types; only an authorised operator may approve a subsequent retry.
    await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
-     lease_until=NULL,updated_at=now(),error_code='FLOW_RECONCILIATION_REQUIRED'
-     WHERE job_type='flow.execute' AND status='leased' AND lease_until<now()`);
-   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
-     lease_until=NULL,updated_at=now(),error_code='LEASE_EXHAUSTED'
-     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt>=max_attempts`);
-   await client.query(`UPDATE md_durable_jobs SET status='queued',lease_owner=NULL,
-     lease_until=NULL,scheduled_at=now(),updated_at=now()
-     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt<max_attempts`);
+     lease_until=NULL,updated_at=now(),error_code='JOB_RECONCILIATION_REQUIRED'
+     WHERE status='leased' AND lease_until<now()`);
    return rows;
   });
  }
@@ -79,7 +74,7 @@ export class DurableJobService {
    throw new Error('Invalid retry delay');
   const {rowCount}=await this.db.query(`
    UPDATE md_durable_jobs SET
-    status=CASE WHEN attempt>=max_attempts OR $4='FLOW_RECONCILIATION_REQUIRED' THEN 'failed' ELSE 'queued' END,
+    status='failed',
     scheduled_at=now()+($5::integer * interval '1 second'),lease_owner=NULL,lease_until=NULL,
     error_code=$4,updated_at=now()
    WHERE tenant_id=$1 AND id=$2 AND status='leased' AND lease_owner=$3 AND lease_until>now()
@@ -95,17 +90,25 @@ export class DurableJobService {
   return rows[0];
  }
  /** Explicit cancel of terminal failed work, preserving historical job state until reviewed. */
- async cancelFailed(tenantId:string,id:string){
-  const {rowCount}=await this.db.query(`
-   UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
-   WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
-  if(!rowCount)throw new Error('Failed job not found');
+ async cancelFailed(tenantId:string,id:string,actorId?:string){
+  const cancel=async(query:(sql:string,params:unknown[])=>Promise<{rowCount:number|null}>)=>{
+   const {rowCount}=await query(`
+    UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
+    WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
+   if(!rowCount)throw new Error('Failed job not found');
+   if(actorId)await query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,actorId,'durable_job.cancel',JSON.stringify({jobId:id})]);
+  };
+  if(actorId)await this.db.transaction(client=>cancel((sql,params)=>client.query(sql,params)));
+  else await cancel((sql,params)=>this.db.query(sql,params));
  }
 
- /** Record an operator decision without silently replaying ambiguous side effects. */
+  /** Record an operator decision without silently replaying ambiguous side effects. */
  async reconcileFailed(tenantId:string,id:string,actorId:string,decision:'acknowledge'|'retry'){
   if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
-  const {rowCount}=await this.db.query(`
+  await this.db.transaction(async client=>{
+   const {rowCount}=await client.query(`
     UPDATE md_durable_jobs SET
       status=CASE WHEN $4='retry' THEN 'queued' ELSE 'cancelled' END,
       attempt=CASE WHEN $4='retry' THEN 0 ELSE attempt END,
@@ -115,8 +118,12 @@ export class DurableJobService {
       updated_at=now()
     WHERE tenant_id=$1 AND id=$2 AND status='failed'
       AND EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3 AND enabled=true)
-  `,[tenantId,id,actorId,decision]);
-  if(!rowCount)throw new Error('Failed job not found');
+   `,[tenantId,id,actorId,decision]);
+   if(!rowCount)throw new Error('Failed job not found');
+   await client.query(
+    'INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+    [tenantId,actorId,'durable_job.reconcile',JSON.stringify({jobId:id,decision})]);
+  });
  }
 
  async cancelApp(tenantId:string,appApiName:string) {

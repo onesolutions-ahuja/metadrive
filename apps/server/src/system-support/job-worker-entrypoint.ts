@@ -33,6 +33,10 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
    while(running){
     try { await worker.runOnce(10); }
     catch(error){console.error('Durable job poll failed',error);}
+    // The independent worker also runs shared encrypted HTTP Callout delivery.
+    // Claims use tenant-scoped SQL row locks; uncertain outcomes stay quarantined.
+    try { await credentials.dispatchOne(); }
+    catch(error){console.error('Durable HTTP Callout poll failed',error);}
     if(running)await new Promise<void>(resolve=>setTimeout(resolve,interval));
    }
   } finally {

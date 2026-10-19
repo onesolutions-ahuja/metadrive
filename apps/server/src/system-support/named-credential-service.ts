@@ -9,7 +9,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 
 type CalloutJob={
- id:string;tenant_id:string;user_id:string;credential_id:string;method:string;
+ id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
  path_ciphertext:Buffer;headers_ciphertext:Buffer;body_ciphertext:Buffer|null;
  idempotency_key_ciphertext:Buffer|null;max_attempts:number;timeout_ms:number;attempt_count:number
 };
@@ -268,17 +268,20 @@ export class NamedCredentialService {
   this.dispatching=true;
   try{
    const job=await this.db.transaction(async client=>{
+    // Unknown remote outcome: quarantine abandoned calls, never send them twice.
+    await client.query(`UPDATE md_http_callout_jobs
+      SET status='failed',claimed_at=NULL,last_error='RECONCILIATION_REQUIRED',completed_at=now()
+      WHERE status='processing' AND claimed_at<now()-interval '5 minutes'`);
     const {rows}=await client.query<CalloutJob>(`
      WITH candidate AS (
       SELECT id FROM md_http_callout_jobs
-      WHERE (status IN ('queued','retrying') AND next_attempt_at<=now())
-       OR (status='processing' AND claimed_at<now()-interval '5 minutes')
+      WHERE status='queued' AND next_attempt_at<=now()
       ORDER BY next_attempt_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1
      )
      UPDATE md_http_callout_jobs j
      SET status='processing',attempt_count=j.attempt_count+1,claimed_at=now()
      FROM candidate c WHERE j.id=c.id
-     RETURNING j.id,j.tenant_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
+     RETURNING j.id,j.tenant_id,j.run_id,j.user_id,j.credential_id,j.method,j.path_ciphertext,
      j.headers_ciphertext,j.body_ciphertext,j.idempotency_key_ciphertext,j.max_attempts,
      j.timeout_ms,j.attempt_count
     `);
@@ -286,6 +289,17 @@ export class NamedCredentialService {
    });
    if(!job)return false;
    try{
+    // Validate current tenant, actor and published Flow before any remote side effect.
+    const {rows:eligible}=await this.db.query(`
+      SELECT 1 FROM md_flow_runs r
+      JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+      JOIN md_users u ON u.tenant_id=r.tenant_id AND u.id=r.started_by
+      JOIN md_tenants t ON t.id=r.tenant_id
+      WHERE r.tenant_id=$1 AND r.id=$2 AND r.started_by=$3
+        AND f.active=true AND f.archived=false
+        AND u.enabled=true AND t.status='ACTIVE'`,
+      [job.tenant_id,job.run_id,job.user_id]);
+    if(!eligible.length)throw new Error('Queued HTTP Callout eligibility changed');
     const {rows}=await this.db.query<CalloutValue>(`
      SELECT api_name,value_ciphertext,data_type FROM md_http_callout_job_values
      WHERE tenant_id=$1 AND job_id=$2
@@ -309,28 +323,32 @@ export class NamedCredentialService {
      else throw new Error('Invalid queued HTTP Callout value type');
      variables[row.api_name]=value;
     }
-    await this.callout(job.tenant_id,job.user_id,{
+    const response=await this.callout(job.tenant_id,job.user_id,{
      namedCredentialId:job.credential_id,method:job.method,
      path:this.decryptValue(job.path_ciphertext),headers:this.decryptValue(job.headers_ciphertext),
      body:job.body_ciphertext?this.decryptValue(job.body_ciphertext):'',
      timeoutMs:job.timeout_ms
     },variables,job.idempotency_key_ciphertext
       ?this.decryptValue(job.idempotency_key_ciphertext):job.id);
+    // Commit terminal state and provider acknowledgement atomically.
+    await this.db.transaction(async client=>{
+     const {rowCount}=await client.query(`
+      UPDATE md_http_callout_jobs SET status='completed',completed_at=now(),claimed_at=NULL
+      WHERE tenant_id=$1 AND id=$2 AND status='processing'
+     `,[job.tenant_id,job.id]);
+     if(!rowCount)throw new Error('HTTP Callout claim no longer active');
+     await client.query(`
+      INSERT INTO md_http_callout_receipts(tenant_id,job_id,attempt,response_status)
+      VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,job_id,attempt) DO NOTHING
+     `,[job.tenant_id,job.id,job.attempt_count,response.status]);
+    });
+   }catch(error){
+    // Any thrown error may have occurred after a remote side effect.
     await this.db.query(`
-     UPDATE md_http_callout_jobs SET status='completed',completed_at=now(),claimed_at=NULL
+     UPDATE md_http_callout_jobs SET status='failed',
+      last_error='RECONCILIATION_REQUIRED',claimed_at=NULL,completed_at=now()
      WHERE tenant_id=$1 AND id=$2 AND status='processing'
     `,[job.tenant_id,job.id]);
-   }catch(error){
-    const message=error instanceof Error?error.message:'Unknown HTTP Callout failure';
-    const failed=job.attempt_count>=job.max_attempts;
-    const delayMs=Math.min(3600000,30000*2**Math.max(0,job.attempt_count-1));
-    await this.db.query(`
-     UPDATE md_http_callout_jobs SET status=$3,last_error=$4,claimed_at=NULL,
-      next_attempt_at=CASE WHEN $3='retrying' THEN now()+($5::integer*interval '1 millisecond')
-       ELSE next_attempt_at END,
-      completed_at=CASE WHEN $3='failed' THEN now() ELSE NULL END
-     WHERE tenant_id=$1 AND id=$2 AND status='processing'
-    `,[job.tenant_id,job.id,failed?'failed':'retrying',message.slice(0,1000),delayMs]);
    }
    return true;
   }finally{this.dispatching=false;}

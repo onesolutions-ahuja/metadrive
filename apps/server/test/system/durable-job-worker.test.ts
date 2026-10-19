@@ -45,3 +45,10 @@ test('worker does not leak errors into durable failure reason',async()=>{
  assert.deepEqual(result,{claimed:1,completed:0,failed:1});
  assert.equal(failureCode,'JOB_EXECUTION_FAILED');
 });
+
+test('standalone worker dispatches both shared SQL job and HTTP queues',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const source=readFileSync(new URL('../../src/system-support/job-worker-entrypoint.ts',import.meta.url),'utf8');
+ assert.match(source,/await worker\.runOnce\(10\)/);
+ assert.match(source,/await credentials\.dispatchOne\(\)/);
+});
