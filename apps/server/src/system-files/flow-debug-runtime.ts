@@ -94,10 +94,11 @@ export async function simulateFlowGraph(options:{
   };
   const match=(conditionRows:unknown,logic:unknown,source?:Dict)=>{
     if(!Array.isArray(conditionRows)||conditionRows.length===0)return true;
-    return evaluateFlowDecisionOutcome(conditionRows.filter(record),
-      typeof logic==='string'?logic:undefined,
-      value=>typeof value==='string'&&source&&Object.hasOwn(source,value)
-        ?source[value]:resolve(value),
+    const rows=conditionRows.filter(record).map(item=>
+      source&&typeof item.field==='string'&&Object.hasOwn(source,item.field)
+        ?{...item,field:source[item.field]}:item);
+    return evaluateFlowDecisionOutcome(rows,
+      typeof logic==='string'?logic:undefined,resolve,
       value=>typeof value==='string'&&Object.hasOwn(vars,value));
   };
   const trace:FlowDebugStep[]=[];
