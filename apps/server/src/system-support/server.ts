@@ -1141,45 +1141,6 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
     res.json(await apps.marketplace(actor.tenant_id));
   }));
-  app.get('/api/metadata/flow-job-failures',route(async(req,res)=>{
-    const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
-    await rbac.require(actor.tenant_id,actor.user_id,'DurableJob','manage');
-    res.setHeader('Cache-Control','private, no-store');
-    const {rows}=await db.query<{
-      id:string;job_type:string;resource_id:string|null;resource_version:number|null;
-      attempt:number;max_attempts:number;error_code:string|null;updated_at:Date
-    }>(`
-      SELECT id,job_type,resource_id,resource_version,
-        attempt,max_attempts,error_code,updated_at
-      FROM md_durable_jobs
-      WHERE tenant_id=$1 AND job_type LIKE 'flow.%' AND status='failed'
-      ORDER BY updated_at DESC,id DESC LIMIT 100
-    `,[actor.tenant_id]);
-    res.json({jobs:rows.map(row=>({
-      id:row.id,jobType:row.job_type,resourceId:row.resource_id,
-      versionNumber:row.resource_version,attempts:row.attempt,
-      maxAttempts:row.max_attempts,error:row.error_code,
-      updatedAt:new Date(row.updated_at).toISOString()
-    }))});
-  }));
-  app.post('/api/metadata/flow-job-failures/:id/reconcile',route(async(req,res)=>{
-    const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
-    await rbac.require(actor.tenant_id,actor.user_id,'DurableJob','manage');
-    const id=req.params.id,decision=req.body?.decision;
-    if(!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)
-      ||!['retry','acknowledge'].includes(decision)
-      ||(decision==='retry'&&req.body?.acknowledgedReplayRisk!==true))
-      throw new Error('Explicit authorized Flow job reconciliation is required');
-    const {rows}=await db.query<{id:string}>(`
-      SELECT id FROM md_durable_jobs WHERE tenant_id=$1 AND id=$2
-      AND job_type LIKE 'flow.%' AND status='failed'
-    `,[actor.tenant_id,id]);
-    if(!rows[0]){res.status(404).json({error:'Failed Flow job not found'});return;}
-    await flowJobs.reconcileFailed(actor.tenant_id,id,actor.user_id,decision);
-    res.json({reconciled:true});
-  }));
   app.get('/api/metadata/flow-history',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
