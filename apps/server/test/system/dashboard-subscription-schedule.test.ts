@@ -20,8 +20,7 @@ test('dashboard subscriptions deny mail delivery before OneEngine checks pass',a
  let sqlAccess=false;
  const db={query:async()=>{sqlAccess=true;throw Error('Unexpected SQL');}} as unknown as SqlPersistence;
  const definitions={list:async()=>[{
-  apiName:'Demo',status:'Deployed',visibility:'All Users',components:[]}]}
-  as unknown as SystemDefinitionService;
+  apiName:'Demo',status:'Deployed',visibility:'All Users',components:[]}]} as unknown as SystemDefinitionService;
  const rbac={require:async()=>{throw Error('Permission denied');}} as unknown as RbacEngine;
  const svc=new DashboardSubscriptionService(db,rbac,definitions,
   {} as NamedCredentialService,{} as DashboardSnapshotService);
