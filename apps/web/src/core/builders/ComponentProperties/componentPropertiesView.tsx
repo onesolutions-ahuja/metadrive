@@ -94,6 +94,8 @@ import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
 import FlowInputBindingEditor from '../FlowInputBindingEditor/FlowInputBindingEditor';
 import RecordFilterEditor from '../../../one/OneRecordFilterEditor/RecordFilterEditor';
+import TableRowConfigurationEditor from './TableRowConfigurationEditor';
+import PageStatePropertyBindingsEditor from './PageStatePropertyBindingsEditor';
 import ComponentVisibilityEditor from './ComponentVisibilityEditor';
 import PageRouteDirectory from '../../pages/PageRouteDirectory/PageRouteDirectory';
 import { isComponentVisible } from '../../components/Properties/componentVisibility';
@@ -237,7 +239,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     return Array.isArray(value) ? value : [];
   };
   const sourceKeys = new Set(['libraryComponentId', 'targetObject', 'flowApiName',
-    'actionFlows', 'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
+    'actionFlows', 'columns', 'rowActions', 'stateBindings', 'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
   const isObjectBinding = (key: string) => key === 'objectApiName' || key.endsWith('ObjectApiName');
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const isFilter = (key: string) => key === 'filters' || key.endsWith('Filters');
@@ -277,6 +279,9 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     {Array.from(new Set(['filters', ...Object.keys(properties).filter(isFilter)])).map(key =>
       <RecordFilterEditor key={key} title={key === 'filters' ? 'Record Filters' : labelFor(key)} fields={fieldsFor(key)}
         filters={listProperty(key)} onChange={filters => update(key, filters)} />)}
+    {(properties.kind === 'Table' || (definitionsByKey.has('striped') && definitionsByKey.has('pageSize')))
+      && <TableRowConfigurationEditor properties={properties} object={selectedObject} onChange={onChange}/>}
+    <PageStatePropertyBindingsEditor properties={properties} onChange={onChange}/>
     <div className="properties-section-title">Actions</div>
     <div className="properties-section-title">Event → Flow / Navigation bindings</div>
     <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>

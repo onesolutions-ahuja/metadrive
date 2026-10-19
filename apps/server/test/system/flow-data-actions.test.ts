@@ -83,6 +83,17 @@ test('Create Records collection uses the shared record engine and records create
   assert.deepEqual((vars.created as Array<{Id:string}>).map(row=>row.Id),['new-1','new-2']);
 });
 
+test('Create Records exposes the newly created record to later Flow steps',async()=>{
+  const fakeRecords={createInTransaction:async()=> 'sale-id-1'} as unknown as RecordEngine;
+  const vars:Record<string,unknown>={};
+  await executeFlowDataAction({...makeContext({
+    id:9,type:'Create Records',config:{object:'Sale',recordSource:'fields',
+      fieldValues:[{field:'Name',value:'Sale 1'}],resultVariable:'CreatedSaleId'}
+  },vars),records:fakeRecords});
+  assert.deepEqual(vars.record9,{Name:'Sale 1',Id:'sale-id-1'});
+  assert.equal(vars.CreatedSaleId,'sale-id-1');
+});
+
 test('Update and Delete Records support bounded collection and filter sources',async()=>{
   const updated:Array<{id:string;values:Record<string,unknown>}>=[],deleted:string[]=[];
   const fakeRecords={

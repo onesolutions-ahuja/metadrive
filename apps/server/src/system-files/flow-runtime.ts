@@ -6,7 +6,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {flowDebugResources,simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
-import {mapFlowHttpResponse} from './flow-http-mapping.js';
+import {mapFlowHttpResponse,resolveFlowHttpCalloutKey} from './flow-http-mapping.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
@@ -633,13 +633,16 @@ export class FlowRuntime {
         const output=element.type==='Get Records'
           ?typeof element.config.outputVariable==='string'&&element.config.outputVariable
             ?element.config.outputVariable:'record'+element.id
-          :element.type==='Create Records'&&element.config.recordSource==='collection'
-            &&typeof element.config.resultVariable==='string'?element.config.resultVariable:'';
+          :['Create Records','CreateRecord'].includes(element.type)
+            ?element.config.recordSource==='collection'
+              ?typeof element.config.resultVariable==='string'?element.config.resultVariable:''
+              :'record'+element.id
+            :'';
         if(!output||resources.some(resource=>resource.name===output)
           ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))continue;
         const collection=element.type==='Get Records'
           ?element.config.recordLimit==='all'||Number(element.config.recordLimit??1)>1
-          :true;
+          :element.config.recordSource==='collection';
         persistenceResources.push({name:output,type:collection?'Record Collection':'Record',dataType:objectApi});
       }
       for(const element of elements){
@@ -925,11 +928,12 @@ export class FlowRuntime {
           history=[];
         }else if(node.type==='HTTP Callout'){
           if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
-          const stableKey=runId+'-'+node.id;
           const asynchronous=node.config.deliveryMode==='DURABLE_ASYNC';
           try {
             const scalarVars=Object.fromEntries(Object.entries(vars).filter(
               (entry):entry is [string,Scalar]=>scalar(entry[1])));
+            const stableKey=resolveFlowHttpCalloutKey(node.config.idempotencyKey,
+              runId+'-'+node.id,evaluate);
             const response=await this.httpCallout(tenantId,userId,node.config,scalarVars,stableKey,
               asynchronous?{client,runId,nodeId:current}:undefined);
             if(!asynchronous){

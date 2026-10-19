@@ -62,7 +62,7 @@ export default function FlowInputBindingEditor({
               else setErrors(current => ({ ...current, [name]: 'Select a component data object first.' }));
               return;
             }
-            if (kind === 'Event Field' || kind === 'Literal' || kind === 'Record Field') {
+            if (kind === 'Event Field' || kind === 'Literal' || kind === 'Page State') {
               // Only persist a valid mapping after the developer chooses a source.
               setPendingKinds(current => ({ ...current, [name]: kind }));
               setErrors(current => ({ ...current, [name]: '' }));
@@ -74,6 +74,7 @@ export default function FlowInputBindingEditor({
             <option value="Event Field">Event property</option>
             <option value="Event">Entire event payload</option>
             <option value="Record Field">Record field</option>
+            <option value="Page State">Page state / Flow output</option>
             <option value="Session">Current session</option>
             <option value="Literal">Fixed value</option>
             {source.kind === 'Legacy' && <option value="Legacy">Existing unsupported value</option>}
@@ -84,6 +85,11 @@ export default function FlowInputBindingEditor({
           <input className="form-control" aria-label={name + ' event property'} placeholder="e.g. item.id"
             value={source.kind === 'Event Field' ? source.detail : ''}
             onChange={event => update(name, 'Event Field', event.target.value)} />
+        </label>}
+        {selectedKind === 'Page State' && <label className="form-label">Page state key
+          <input className="form-control" aria-label={name+' page state key'}
+            placeholder="CurrentCartId" value={source.kind==='Page State'?source.detail:''}
+            onChange={event=>update(name,'Page State',event.target.value)} />
         </label>}
         {selectedKind === 'Record Field' && <label className="form-label">Record field
           <select className="form-control" aria-label={name + ' record field'} value={source.detail}

@@ -32,7 +32,10 @@ export default function RecordFilterEditor({
       const fieldName = String(raw.field ?? '');
       const field = fields.find(candidate => candidate.apiName === fieldName);
       const operator = String(raw.operator ?? 'Equals');
-      const value = String(raw.value ?? '');
+      const dynamic=raw.value && typeof raw.value === 'object' && !Array.isArray(raw.value)
+        ?raw.value as {source?:string;key?:string}:undefined;
+      const source=dynamic?.source??'Fixed';
+      const value = dynamic?'':String(raw.value ?? '');
       const available = supportedFilterOperators(field);
       const candidates = fields.filter(item =>
         item.apiName === fieldName || !search
@@ -62,7 +65,22 @@ export default function RecordFilterEditor({
             {available.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
         </label>
-        <label className="form-label">Value
+        <label className="form-label">Value source
+          <select className="form-control" aria-label={title+' value source '+(index+1)}
+            value={source} onChange={e=>set(index,{value:e.target.value==='Fixed'?''
+              :e.target.value==='PageState'?{source:'PageState',key:''}
+              :{source:e.target.value}})}>
+            <option value="Fixed">Fixed value</option>
+            <option value="PageState">Page state / Flow output</option>
+            <option value="CurrentRecord">Current record ID</option>
+            <option value="Session">Current session ID</option>
+          </select>
+        </label>
+        {source==='PageState' ? <label className="form-label">Page state key
+          <input className="form-control" aria-label={title+' page state key '+(index+1)}
+            value={dynamic?.key??''} placeholder="e.g. CurrentCartId"
+            onChange={e=>set(index,{value:{source:'PageState',key:e.target.value}})} />
+        </label> : source==='Fixed' ? <label className="form-label">Value
           {isBooleanFilterField(field)
             ? <select className="form-control" aria-label={title + ' value ' + (index + 1)}
                 value={value} onChange={e => set(index, { value: e.target.value })}>
@@ -80,7 +98,7 @@ export default function RecordFilterEditor({
               : <input className="form-control" aria-label={title + ' value ' + (index + 1)}
                   type={isNumericFilterField(field) ? 'number' : 'text'} value={value}
                   onChange={e => set(index, { value: e.target.value })} />}
-        </label>
+        </label> : null}
         {error && <p className="properties-help" role="alert">{error}</p>}
       </div>;
     })}

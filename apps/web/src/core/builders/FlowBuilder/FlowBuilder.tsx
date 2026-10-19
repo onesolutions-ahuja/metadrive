@@ -1218,13 +1218,13 @@ export default function FlowBuilder({
           <option value="DURABLE_ASYNC">Durable Async · SQL Outbox</option>
         </select></label>
         <div className="info-callout">Durable Async stores an encrypted, tenant-scoped job in PostgreSQL and returns HTTP 202 to the Flow. The server worker retries failed delivery up to the configured maximum using a stable Idempotency-Key. Async callouts do not provide response mappings or output variables; a terminal failure is retained with the job.</div>
-        {displayValue(selected.config.deliveryMode) === 'DURABLE_ASYNC' && <>
-          <label className="form-label">Idempotency Key (optional)<input className="form-control"
-            maxLength={200} value={displayValue(selected.config.idempotencyKey)}
-            onChange={(event) => setConfig('idempotencyKey', event.target.value)}
-            placeholder="{!$Flow.InterviewGuid}" /></label>
-          <div className="info-callout">Retries for POST, PUT, PATCH and DELETE reuse the same idempotency key. If omitted, the worker uses a stable key for this queued job.</div>
-        </>}
+                <label className="form-label">Idempotency Key (optional)<input className="form-control"
+          maxLength={200} value={displayValue(selected.config.idempotencyKey)}
+          onChange={event=>setConfig('idempotencyKey',event.target.value)}
+          placeholder="{!PaymentAttemptId}" /></label>
+        <div className="info-callout">For a retryable payment, select an existing stable attempt ID
+          using a Flow resource reference. The same attempt must reuse the same key across retries;
+          a new attempt must use a new key. Leave blank only for non-retryable calls.</div>
         {displayValue(selected.config.deliveryMode) !== 'DURABLE_ASYNC' && <>
           <HttpCalloutFieldEditor label="Response Mapping" mode="response" value={displayValue(selected.config.responseMapping)} onChange={(value) => setConfig('responseMapping', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
           <label className="form-label">Response Variable<select className="form-control" value={displayValue(selected.config.responseVariable)} onChange={(event) => setConfig('responseVariable', event.target.value)}><option value="">Do not store response</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>

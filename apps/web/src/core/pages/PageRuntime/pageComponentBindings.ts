@@ -31,17 +31,80 @@ export function needsMetadataComponentRuntime(properties: Record<string, unknown
  * permission-checked records. Invalid, missing or unreadable fields fail closed;
  * an empty/unset filter is intentionally equivalent to "all readable records".
  */
+/** Resolve scalar component properties from declared Flow output → page-state keys. */
+export function bindPageStateProperties<T extends Record<string,unknown>>(
+  properties:T,state:Readonly<Record<string,unknown>>
+):T {
+  const raw=properties.stateBindings;
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return properties;
+  const bindings=raw as Record<string,unknown>;
+  const next:Record<string,unknown>={...properties};
+  const protectedKeys=new Set(['objectApiName','actionFlows','stateBindings','filters',
+    'records','onAction','onChange','sessionId','key','ref','children']);
+  for(const [target,key] of Object.entries(bindings)){
+    if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(target)||protectedKeys.has(target)
+      ||typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))continue;
+    const value=state[key];
+    if(value===null||['string','number','boolean'].includes(typeof value))
+      next[target]=value;
+  }
+  return next as T;
+}
+export type PageFilterContext={
+  pageState?:Readonly<Record<string,unknown>>;
+  recordId?:string;
+  sessionId?:string;
+};
+type PageFilter={field:string;operator:string;value:unknown};
+export type PageQueryFilter={field:string;value:string;related:boolean};
+const isDynamic=(value:unknown):value is {source:string;key?:string}=>
+  Boolean(value&&typeof value==='object'&&!Array.isArray(value));
+/** Resolve only declared, typed page context sources; never evaluate expressions. */
+export function resolvePageFilterValue(value:unknown,context:PageFilterContext):unknown {
+  if (!isDynamic(value)) return value;
+  if(value.source==='PageState' && typeof value.key==='string'
+    && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value.key)){
+    const resolved=context.pageState?.[value.key];
+    return resolved===null||['string','number','boolean'].includes(typeof resolved)?resolved:undefined;
+  }
+  if(value.source==='CurrentRecord')return context.recordId||undefined;
+  if(value.source==='Session')return context.sessionId||undefined;
+  return undefined;
+}
+/** Block unbound parent filters *before* querying; missing context never means "all records". */
+export function pageComponentRecordQuery(
+  definitions:unknown,fields:ReadonlyArray<FieldMetadata>,context:PageFilterContext={}
+):{blocked:boolean;filter?:PageQueryFilter}{
+  if(definitions===undefined||definitions===null)return {blocked:false};
+  if(!Array.isArray(definitions))return {blocked:true};
+  let first:PageQueryFilter|undefined;
+  for(const value of definitions){
+    if(examineRecordFilter(value,fields)!==null)return {blocked:true};
+    const filter=value as PageFilter;
+    const resolved=resolvePageFilterValue(filter.value,context);
+    if(isDynamic(filter.value)&&(resolved===undefined||resolved===null||resolved===''))
+      return {blocked:true};
+    if(isDynamic(filter.value)&&filter.operator==='Equals'&&!first
+      &&['string','number','boolean'].includes(typeof resolved)){
+      const field=fields.find(candidate=>candidate.apiName===filter.field);
+      first={field:filter.field,value:String(resolved),related:Boolean(field?.relationship)};
+    }
+  }
+  return {blocked:false,filter:first};
+}
 export function filterPageComponentRecords<T extends Record<string, unknown>>(
   records: readonly T[],
   definitions: unknown,
-  fields: ReadonlyArray<FieldMetadata>
+  fields: ReadonlyArray<FieldMetadata>,
+  context: PageFilterContext={}
 ): T[] {
   if (definitions === undefined || definitions === null) return [...records];
   if (!Array.isArray(definitions)) return [];
-  if (definitions.some(item => examineRecordFilter(item, fields) !== null)) return [];
+  if (pageComponentRecordQuery(definitions,fields,context).blocked)return [];
   return records.filter(record => definitions.every(item => {
-    const filter = item as { field: string; operator: string; value: unknown };
+    const filter = item as PageFilter;
+    const resolved=resolvePageFilterValue(filter.value,context);
     if (!Object.prototype.hasOwnProperty.call(record, filter.field)) return false;
-    return compareMetadataValue(record[filter.field], filter.operator, filter.value, true);
+    return compareMetadataValue(record[filter.field], filter.operator, resolved, true);
   }));
 }

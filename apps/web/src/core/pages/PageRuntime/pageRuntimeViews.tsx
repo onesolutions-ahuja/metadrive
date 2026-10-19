@@ -82,7 +82,7 @@ import PageRouteDirectory from '../PageRouteDirectory/PageRouteDirectory';
 import { isComponentVisible } from '../../components/Properties/componentVisibility';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../TemplatePageRuntime/pageComponentLayout';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from '../../builders/PageBuilder/canvasInteractions';
-import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import { filterPageComponentRecords, pageComponentRecordQuery, bindPageStateProperties, needsMetadataComponentRuntime } from './pageComponentBindings';
 import {resolveMentionProperties} from '../../../one/OneSmartFieldInput/smartFieldMentions';
 import { explicitMentionRecordId, useRelationshipMentionContext } from '../../records/RecordFormDialog/useRelationshipMentionContext';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../TemplatePageRuntime/pageComponentLayout';
@@ -293,6 +293,9 @@ function MetadataBoundPageComponent({
           window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
             detail:{pageSessionKey,key:item.key,value:item.value}
           }));
+        window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated',{
+          detail:{pageSessionKey,sessionId}
+        }));
       }catch(error){
         setActionError(error instanceof Error?error.message:'Unable to apply Flow outputs');
       }
@@ -333,13 +336,16 @@ function MetadataBoundPageComponent({
     window.addEventListener('metadrive:page-flow-mutated', sync);
     return () => window.removeEventListener('metadrive:page-flow-mutated', sync);
   }, [pageSessionKey, sessionId]);
+  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
+  const recordQuery=pageComponentRecordQuery(properties.filters,fields,{pageState,recordId,sessionId});
+  const recordQueryKey=JSON.stringify(recordQuery);
   useEffect(() => {
     let active = true;
     let requestId = 0;
     let pending = false;
     setRecords([]);
     setDataError('');
-    if (!objectApiName) {
+    if (!objectApiName || recordQuery.blocked) {
       setDataLoading(false);
       return () => { active = false; };
     }
@@ -348,7 +354,7 @@ function MetadataBoundPageComponent({
       pending = true;
       const request = ++requestId;
       try {
-        const rows = await loadFlowScreenRecords(objectApiName);
+        const rows = await loadFlowScreenRecords(objectApiName,recordQuery.filter);
         if (active && request === requestId) {
           setRecords(rows);
           setDataError('');
@@ -380,7 +386,7 @@ function MetadataBoundPageComponent({
         document.removeEventListener('visibilitychange', onVisible);
       }
     };
-  }, [objectApiName, revision, properties.recordPresenterApiName, properties.liveRefreshEnabled, disableActions]);
+  }, [objectApiName, recordQueryKey, revision, properties.recordPresenterApiName, properties.liveRefreshEnabled, disableActions]);
   useEffect(() => {
     setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
     const accessPath=String(properties.channelAccessPath??'');
@@ -430,17 +436,20 @@ function MetadataBoundPageComponent({
     name: String(row[String(properties.contactNameFieldApiName??'')]??''),
     phone: String(row[String(properties.contactPhoneFieldApiName??'')]??'')
   })).filter(contact => contact.id && contact.phone);
-  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
-  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields,{pageState,recordId,sessionId});
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
-  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
+  const resolvedProperties = bindPageStateProperties(resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName),pageState);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess, properties);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
   const resolveInput = (source: unknown, eventPayload: Record<string, unknown>): unknown => {
     if (source === '$session') return sessionId;
+    if (typeof source === 'string' && source.startsWith('$state.')) {
+      const key=source.slice(7);
+      return /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) ? pageState[key] : undefined;
+    }
     if (source === '$event') return eventPayload;
     if (typeof source === 'string' && source.startsWith('$event.')) {
       return source.slice(7).split('.').reduce<unknown>((current, key) =>
@@ -499,10 +508,8 @@ function MetadataBoundPageComponent({
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
       const requestId=crypto.randomUUID();
-      if(Object.keys(outputMappings).length){
-        if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
-        pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
-      }
+      if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
+      pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
       onLaunchFlow(flowApiName, inputs,{requestId});
       return { interviewStarted: true };
     }

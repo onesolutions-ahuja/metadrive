@@ -29,6 +29,13 @@ export function examineRecordFilter(raw: unknown, fields: ReadonlyArray<RecordFi
   if (!supportedFilterOperators(field).includes(filter.operator as RecordFilterOperator)) {
     return 'This operator is not supported for the selected field type.';
   }
+  if (filter.value && typeof filter.value === 'object' && !Array.isArray(filter.value)) {
+    const source = filter.value as Record<string,unknown>;
+    if (source.source === 'PageState' && typeof source.key === 'string'
+      && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(source.key)) return null;
+    if (source.source === 'CurrentRecord' || source.source === 'Session') return null;
+    return 'Choose a valid dynamic filter source.';
+  }
   const value = String(filter.value ?? '');
   if (isBooleanFilterField(field) && !['true', 'false'].includes(value)) return 'Choose True or False.';
   if (isNumericFilterField(field) && (value.trim() === '' || !Number.isFinite(Number(value)))) {

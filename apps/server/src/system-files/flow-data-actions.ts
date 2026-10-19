@@ -224,6 +224,9 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
         fields[field]=value;
       }
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+      // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
+      // The optional scalar resultVariable retains its existing Id-only contract.
+      vars['record'+node.id]={...fields,Id:id};
       if(typeof config.resultVariable==='string'&&config.resultVariable)
         set(config.resultVariable,id);
     }
