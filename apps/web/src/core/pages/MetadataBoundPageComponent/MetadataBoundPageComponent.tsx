@@ -259,6 +259,7 @@ export default function MetadataBoundPageComponent({
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loadCompanySettings: () => apiRequest('/metadata/currencies'),
+      changeEventHandledByOnChange: true,
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
