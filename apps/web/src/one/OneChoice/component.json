@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 2,
+  "version": 5,
   "scope": "platform-core",
   "jsxFile": "one/OneChoice/OneChoice.jsx",
   "cssFile": "one/OneChoice/OneChoice.css",
@@ -68,6 +68,76 @@
           "label": "Segmented"
         }
       ]
+    },
+    {
+      "propertyKey": "optionLabelFieldApiName",
+      "label": "Record option label field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 410,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "optionValueFieldApiName",
+      "label": "Record option value field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 420,
+      "defaultValue": "Id"
+    },
+    {
+      "propertyKey": "optionPriceFieldApiName",
+      "label": "Optional numeric option price field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 430,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "maxSelections",
+      "label": "Maximum selected options (0 = unlimited)",
+      "kind": "NUMBER",
+      "displayOrder": 440,
+      "defaultValue": 0
+    },
+    {
+      "propertyKey": "minSelections",
+      "label": "Minimum selected options",
+      "kind": "NUMBER",
+      "displayOrder": 450,
+      "defaultValue": 0
+    },
+    {
+      "propertyKey": "required",
+      "label": "Selection required",
+      "kind": "BOOLEAN",
+      "displayOrder": 460,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "choices",
+      "label": "Static choices (comma-separated)",
+      "kind": "TEXT",
+      "displayOrder": 470,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "currencyCode",
+      "label": "Optional price display currency",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 480
+    },
+    {
+      "propertyKey": "relatedFilterKey",
+      "label": "Selected parent shared key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 720
+    },
+    {
+      "propertyKey": "relatedFieldApiName",
+      "label": "Lookup field linking record to selected parent",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 730
     }
   ]
 }

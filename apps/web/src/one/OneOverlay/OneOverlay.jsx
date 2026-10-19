@@ -26,16 +26,36 @@ export default function OneOverlay(props) {
     align,
     base,
   } = useOneLayout(p);
+  // The same session-scoped selection event used by reusable navigation/grids.
+  React.useEffect(() => {
+    if (!p.pageSessionKey || !p.openOnFilterKey || typeof window==="undefined") return;
+    const selected = (event) => {
+      const detail=event.detail;
+      if(detail?.pageSessionKey!==p.pageSessionKey
+        ||detail?.filterKey!==p.openOnFilterKey)return;
+      setOpen(Boolean(detail.value || detail.recordId));
+    };
+    window.addEventListener("metadrive:page-filter-selected",selected);
+    return () => window.removeEventListener("metadrive:page-filter-selected",selected);
+  },[p.pageSessionKey,p.openOnFilterKey,setOpen]);
+  const close=()=>{
+    setOpen(false);
+    if(p.openOnFilterKey && p.pageSessionKey && typeof window!=="undefined")
+      window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected",{
+        detail:{pageSessionKey:p.pageSessionKey,filterKey:p.openOnFilterKey,
+          value:"",recordId:"",label:"",sourceObjectApiName:""}
+      }));
+  };
   return (
     <div {...css}>
-      <button type="button" className="one-btn" onClick={() => setOpen(true)}>
+      {p.hideTrigger !== true && <button type="button" className="one-btn" onClick={() => setOpen(true)}>
         {p.openLabel || "Open"}
-      </button>
+      </button>}
       {open && (
         <div
           className="one-overlay-backdrop"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setOpen(false);
+            if (e.target === e.currentTarget) close();
           }}
         >
           <div
@@ -56,7 +76,7 @@ export default function OneOverlay(props) {
                 type="button"
                 className="one-btn one-btn--ghost"
                 aria-label="Close"
-                onClick={() => setOpen(false)}
+                onClick={close}
               >
                 ×
               </button>

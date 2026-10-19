@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 9,
+  "version": 11,
   "scope": "platform-core",
   "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
   "cssFile": "one/OneItemGrid/OneItemGrid.css",
@@ -109,6 +109,48 @@
       "kind": "TEXT",
       "defaultValue": "",
       "displayOrder": 450
+    },
+    {
+      "propertyKey": "selectionBehavior",
+      "label": "When an item is tapped",
+      "kind": "SELECT",
+      "defaultValue": "add",
+      "displayOrder": 460,
+      "choices": [
+        {
+          "key": "add",
+          "label": "Add to shared basket (existing behaviour)"
+        },
+        {
+          "key": "select",
+          "label": "Select record for detail / sibling components"
+        },
+        {
+          "key": "action",
+          "label": "Run configured itemSelect action only"
+        }
+      ]
+    },
+    {
+      "propertyKey": "selectionFilterKey",
+      "label": "Selected record shared state key",
+      "kind": "TEXT",
+      "defaultValue": "selectedRecord",
+      "displayOrder": 470
+    },
+    {
+      "propertyKey": "relatedFilterKey",
+      "label": "Selected parent shared key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 720
+    },
+    {
+      "propertyKey": "relatedFieldApiName",
+      "label": "Lookup field linking record to selected parent",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 730
     }
   ]
 }
