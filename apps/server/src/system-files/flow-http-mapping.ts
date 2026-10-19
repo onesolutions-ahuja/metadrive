@@ -1,0 +1,94 @@
+/** Bounded, pure no-code HTTP request and response mapping for all tenant providers. */
+export type FlowHttpScalar=string|number|boolean|null;
+export type FlowHttpVariables=Record<string,FlowHttpScalar>;
+const ref=/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}$/;
+const embedded=/\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}/g;
+const key=/^[A-Za-z][A-Za-z0-9_-]{0,99}$/;
+const own=(value:unknown):value is Record<string,unknown>=>Boolean(value)
+ &&typeof value==='object'&&!Array.isArray(value);
+const scalar=(value:unknown):value is FlowHttpScalar=>value===null||typeof value==='string'
+ ||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value);
+function resource(name:string,vars:FlowHttpVariables):FlowHttpScalar {
+ if(!Object.hasOwn(vars,name))throw new Error('Unknown HTTP Callout resource');
+ return vars[name];
+}
+export function expandFlowHttpText(value:string,vars:FlowHttpVariables):string {
+ return value.replace(embedded,(_match,name:string)=>String(resource(name,vars)??''));
+}
+function mapped(value:unknown,vars:FlowHttpVariables,depth=0,counter={nodes:0}):unknown {
+ if(++counter.nodes>500||depth>8)throw new Error('HTTP mapping exceeds limits');
+ if(typeof value==='string'){
+  const standalone=ref.exec(value);
+  return standalone?resource(standalone[1],vars):expandFlowHttpText(value,vars);
+ }
+ if(value===null||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))
+  return value;
+ if(Array.isArray(value)){
+  if(value.length>100)throw new Error('HTTP mapping array limit exceeded');
+  return value.map(item=>mapped(item,vars,depth+1,counter));
+ }
+ if(!own(value)||Object.keys(value).length>100)throw new Error('Invalid HTTP mapping value');
+ const result:Record<string,unknown>=Object.create(null);
+ for(const [name,item] of Object.entries(value)){
+  if(!key.test(name)||['__proto__','prototype','constructor'].includes(name))
+   throw new Error('Invalid HTTP mapping property name');
+  result[name]=mapped(item,vars,depth+1,counter);
+ }
+ return result;
+}
+export function parseFlowHttpMapping(value:unknown,vars:FlowHttpVariables):Record<string,unknown>{
+ if(typeof value!=='string'||value.length>32768)throw new Error('Invalid HTTP mapping');
+ let parsed:unknown;
+ try{parsed=JSON.parse(value);}catch{throw new Error('Invalid HTTP mapping JSON');}
+ if(!own(parsed))throw new Error('HTTP mapping must be an object');
+ return mapped(parsed,vars) as Record<string,unknown>;
+}
+export function prepareFlowHttpRequest(config:Record<string,unknown>,vars:FlowHttpVariables){
+ const path=String(config.path??'');
+ const destination=expandFlowHttpText(path,vars);
+ if(destination.length>2048)throw new Error('HTTP Callout path exceeds size limit');
+ const url=new URL(destination,'https://metadrive.invalid/');
+ if(url.origin!=='https://metadrive.invalid'||destination.startsWith('/')||destination.includes('\\')
+   ||url.hash)throw new Error('HTTP Callout requires a safe relative path');
+ if(typeof config.queryParameters==='string'&&config.queryParameters.trim()){
+  const query=parseFlowHttpMapping(config.queryParameters,vars);
+  for(const [name,value] of Object.entries(query)){
+   if(!scalar(value)||typeof value==='string'&&value.length>4096)
+    throw new Error('HTTP query mappings require scalar values');
+   if(value!==null)url.searchParams.set(name,String(value));
+  }
+ }
+ const mappedBody=typeof config.body==='string'&&config.body.trim()
+  ?config.body.trim().startsWith('{')||config.body.trim().startsWith('[')
+    ?JSON.stringify(mapped(JSON.parse(config.body),vars))
+    :expandFlowHttpText(config.body,vars):undefined;
+ if(mappedBody&&Buffer.byteLength(mappedBody)>32768)
+  throw new Error('HTTP Callout body too large');
+ return {path:url.pathname.slice(1)+url.search,body:mappedBody};
+}
+export function mapFlowHttpResponse(value:unknown,body:string,vars:FlowHttpVariables):Record<string,FlowHttpScalar> {
+ if(typeof value!=='string'||!value.trim())return {};
+ if(value.length>8192)throw new Error('HTTP response mapping too large');
+ let mapping:unknown,payload:unknown;
+ try{mapping=JSON.parse(value);payload=JSON.parse(body);}catch{throw new Error('Invalid HTTP response mapping or response JSON');}
+ if(!own(mapping)||Object.keys(mapping).length>50)
+  throw new Error('Invalid HTTP response mapping');
+ const output:Record<string,FlowHttpScalar>=Object.create(null);
+ for(const [name,path] of Object.entries(mapping)){
+  if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)
+    ||!Object.hasOwn(vars,name)||typeof path!=='string'||path.length>256
+    ||!/^([A-Za-z][A-Za-z0-9_]*|\[\d+\])(\.[A-Za-z][A-Za-z0-9_]*|\[\d+\])*$/.test(path))
+   throw new Error('Invalid HTTP response output resource');
+  let current:unknown=payload;
+  for(const token of path.match(/[A-Za-z][A-Za-z0-9_]*|\d+/g)??[]){
+   if(!current||typeof current!=='object'||!Object.hasOwn(current,token)){
+    current=null;break;
+   }
+   current=(current as Record<string,unknown>)[token];
+  }
+  if(!scalar(current)||typeof current==='string'&&current.length>4096)
+   throw new Error('HTTP response resource must be a bounded scalar');
+  output[name]=current;
+ }
+ return output;
+}
