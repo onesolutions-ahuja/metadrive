@@ -98,6 +98,43 @@ try{
  assert.equal(foreignList.status,200);
  assert.equal(foreignList.body.jobs.length,0,'Tenant B must not see Tenant A executions');
 
+ const {rows:providerJobs}=await db.query(
+  "SELECT id FROM md_durable_jobs WHERE tenant_id=$1 AND job_type='ci.provider' AND status='failed' LIMIT 1",
+  [tenantId]);
+ const providerJobId=providerJobs[0]?.id;
+ assert.ok(providerJobId,'Provider reconciliation job fixture missing');
+ const {rows:credentialFixture}=await db.query(
+  "SELECT id FROM md_named_credentials WHERE tenant_id=$1 AND name='CI_RECONCILE'",
+  [tenantId]);
+ const {rows:httpReceipts}=await db.query(`
+  INSERT INTO md_outbound_execution_receipts
+   (tenant_id,execution_key,credential_id,request_method,job_id,state)
+  VALUES($1,'ci-http-receipt-2',$2,'POST',$3,'uncertain') RETURNING id`,
+  [tenantId,credentialFixture[0].id,providerJobId]);
+ const httpReceiptId=httpReceipts[0].id;
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',body:{decision:'confirmed_not_sent',evidenceReference:'provider-verified-1234'}})).status,401);
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',token:restrictedToken,
+  body:{decision:'confirmed_not_sent',evidenceReference:'provider-verified-1234'}})).status,403);
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',token:foreignToken,
+  body:{decision:'confirmed_not_sent',evidenceReference:'provider-verified-1234'}})).status,404);
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',token,body:{decision:'confirmed_not_sent'}})).status,400);
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',token,
+  body:{decision:'confirmed_not_sent',evidenceReference:'provider-verified-1234'}})).status,204);
+ assert.equal((await http('/system/receipts/'+httpReceiptId+'/decision',{
+  method:'POST',token,
+  body:{decision:'confirmed_not_sent',evidenceReference:'provider-verified-1234'}})).status,404);
+ const providerDetail=await http('/system/jobs/'+providerJobId,{token});
+ assert.equal(providerDetail.status,200);
+ assert.ok(providerDetail.body.receipts.some(r=>r.id===httpReceiptId&&r.state==='cleared'));
+ assert.ok(providerDetail.body.providerDecisions.some(r=>r.receipt_id===httpReceiptId&&
+  r.decision==='confirmed_not_sent'));
+
+
  const noAuth=await http('/metadata/dashboards/LiveAudit/data/AuditItem__c');
  assert.equal(noAuth.status,401,'Authenticated-only dynamic API returned unexpected status');
 
