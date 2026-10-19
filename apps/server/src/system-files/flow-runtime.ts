@@ -723,6 +723,10 @@ export class FlowRuntime {
     catch(error){
       if(executor)throw error;
       const message=error instanceof Error?error.message:'Unknown Flow failure';
+      // Invalid Screen submissions are retriable client corrections. The
+      // transaction has rolled back: keep the interview pending and editable.
+      if(/^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
+        throw error;
       await this.db.query(
         "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
         [tenantId,runId,message.slice(0,200)]);
