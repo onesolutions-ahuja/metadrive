@@ -7,7 +7,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {flowDebugResources,simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
-import {mapFlowHttpResponse,resolveFlowHttpCalloutKey} from './flow-http-mapping.js';
+import {executeHttpCalloutNode} from './nodes/HttpCalloutNode.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 import {screenRecordPayload,acceptScreenRecordSelection,ScreenSelectionError} from './flow-screen-record-selection.js';
@@ -968,36 +968,12 @@ export class FlowRuntime {
           }
           history=[];
         }else if(node.type==='HTTP Callout'){
-          if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
-          const asynchronous=node.config.deliveryMode==='DURABLE_ASYNC';
-          try {
-            const scalarVars=Object.fromEntries(Object.entries(vars).filter(
-              (entry):entry is [string,Scalar]=>scalar(entry[1])));
-            const stableKey=resolveFlowHttpCalloutKey(node.config.idempotencyKey,
-              runId+'-'+node.id,evaluate);
-            const response=await this.httpCallout(tenantId,userId,node.config,scalarVars,stableKey,
-              asynchronous?{client,runId,nodeId:current}:undefined);
-            if(!asynchronous){
-              if(node.config.statusVariable)set(node.config.statusVariable,response.status);
-              if(node.config.responseVariable)set(node.config.responseVariable,response.body);
-              if(node.config.responseMapping){
-                const mapped=mapFlowHttpResponse(node.config.responseMapping,response.body,
-                  resources.filter(item=>item.type==='Variable').map(item=>({
-                    name:item.name,dataType:item.dataType})));
-                for(const [name,value] of Object.entries(mapped))set(name,value);
-              }
-            }
-          }catch(error){
-            if(node.config.onError==='FAULT_PATH'){
-              const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
-              if(fault){
-                vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
-                vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
-                current=fault.to;history=[];continue;
-              }
-            }
-            if(node.config.onError!=='CONTINUE')throw error;
-          }
+          const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+          const faultTo=await executeHttpCalloutNode({
+            transport:this.httpCallout,tenantId,userId,client,runId,node,current,vars,evaluate,set,
+            resources,faultTarget:fault?.to
+          });
+          if(faultTo!==undefined){current=faultTo;history=[];continue;}
           history=[];
         }else if(node.type==='Orchestration Stage'){
           if(active.flow_type!=='Flow Orchestration')
