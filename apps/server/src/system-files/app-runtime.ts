@@ -164,10 +164,13 @@ export class AppRuntime {
     return rows[0].api_name;
   }
 
+  /** Install one published SQL manifest, never all catalog apps or their executable code. */
   async install(tenantId:string,appApi:string,seed?:import('../system-support/app-page-seeder.js').AppPageSeed) {
     await this.db.transaction(async client=>{
-      const {rows}=await client.query<{id:string}>(`
-        SELECT a.id FROM md_apps a
+      // Serialize tenant install/uninstall so dependency checks cannot race removal.
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':app-lifecycle']);
+      const {rows}=await client.query<{id:string;api_name:string;label:string}>(`
+        SELECT a.id,a.api_name,a.label FROM md_apps a
         JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
         LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
         WHERE COALESCE(m.api_name,a.api_name)=$2 AND a.enabled=true AND e.active=true
@@ -175,18 +178,137 @@ export class AppRuntime {
           AND (e.expires_at IS NULL OR e.expires_at>now()) FOR UPDATE OF e
       `,[tenantId,appApi]);
       if(!rows[0])throw new Error('App licence or entitlement unavailable');
-      await client.query('INSERT INTO md_app_installations (tenant_id,app_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
-        [tenantId,rows[0].id]);
-      if(seed){const {seedAppPage}=await import('../system-support/app-page-seeder.js');await seedAppPage(client,tenantId,rows[0].id,seed);}
+      const app=rows[0];
+      const {rows:versions}=await client.query<{version:number;description:string;brand_color:string}>(`
+        SELECT version,description,brand_color FROM md_app_package_versions
+        WHERE app_id=$1 AND published=true ORDER BY version DESC LIMIT 1
+      `,[app.id]);
+      const published=versions[0];
+      if(published){
+        const {rows:dependencies}=await client.query<{
+          api_name:string;minimum_version:number;installed_version:number|null;installed:boolean;licensed:boolean
+        }>(`
+          SELECT required.api_name,d.minimum_version,iv.version AS installed_version,
+            (i.app_id IS NOT NULL) AS installed,
+            (e.app_id IS NOT NULL AND e.active=true AND
+              (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
+          FROM md_app_package_dependencies d
+          JOIN md_apps required ON required.id=d.required_app_id AND required.enabled=true
+          LEFT JOIN md_app_installations i ON i.tenant_id=$3 AND i.app_id=d.required_app_id
+          LEFT JOIN md_app_entitlements e ON e.tenant_id=$3 AND e.app_id=d.required_app_id
+          LEFT JOIN md_tenant_app_installed_versions iv ON iv.tenant_id=$3
+            AND iv.app_id=d.required_app_id
+          WHERE d.app_id=$1 AND d.version=$2
+          ORDER BY required.api_name
+        `,[app.id,published.version,tenantId]);
+        for(const dependency of dependencies){
+          if(!dependency.installed||!dependency.licensed
+            ||(dependency.installed_version??0)<dependency.minimum_version)
+            throw new Error('Install dependency first: '+dependency.api_name+
+              ' (version '+dependency.minimum_version+' or later)');
+        }
+      }
+      await client.query(`
+        INSERT INTO md_app_installations(tenant_id,app_id) VALUES($1,$2)
+        ON CONFLICT DO NOTHING
+      `,[tenantId,app.id]);
+      if(seed){
+        const {seedAppPage}=await import('../system-support/app-page-seeder.js');
+        await seedAppPage(client,tenantId,app.id,seed);
+      }
+      // Existing catalog entries without manifests retain their legacy install path.
+      if(!published)return;
+      const {rows:requirements}=await client.query<{
+        resource_type:string;api_name:string;parent_api:string
+      }>(`SELECT resource_type,api_name,parent_api FROM md_app_package_resources
+        WHERE app_id=$1 AND version=$2 ORDER BY resource_type,api_name`,[app.id,published.version]);
+      for(const requirement of requirements){
+        const type=requirement.resource_type;
+        const sql=type==='Object'
+          ?'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2'
+          :type==='Field'
+          ?'SELECT 1 FROM md_field_definitions WHERE tenant_id=$1 AND api_name=$2 AND object_api=$3 AND deleted_at IS NULL'
+          :type==='Component'
+          ?'SELECT 1 FROM md_component_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true'
+          :type==='App Page'
+          ?'SELECT 1 FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true'
+          :type==='Flow'
+          ?'SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND active=true AND archived=false'
+          :null;
+        if(!sql)throw new Error('Unsupported app package resource');
+        const result=await client.query(sql,
+          type==='Field'?[tenantId,requirement.api_name,requirement.parent_api]
+            :[tenantId,requirement.api_name]);
+        if(!result.rowCount)throw new Error('Missing app package resource: '+type+' '+(
+          type==='Field'?requirement.parent_api+'.':'')+requirement.api_name);
+      }
+      const {rows:navigation}=await client.query<{
+        entry_type:'Object'|'App Page';api_name:string;sort_order:number
+      }>(`SELECT entry_type,api_name,sort_order FROM md_app_package_navigation
+        WHERE app_id=$1 AND version=$2 ORDER BY sort_order,api_name`,[app.id,published.version]);
+      for(const item of navigation){
+        const table=item.entry_type==='Object'?'md_object_definitions':'md_page_definitions';
+        const found=await client.query('SELECT 1 FROM '+table+' WHERE tenant_id=$1 AND api_name=$2',
+          [tenantId,item.api_name]);
+        if(!found.rowCount)throw new Error('Missing app navigation resource: '+item.api_name);
+      }
+      // Make the tenant's selected app metadata SQL-owned; never overwrite customisations.
+      await client.query(`
+        INSERT INTO md_tenant_app_metadata
+          (tenant_id,app_id,api_name,label,description,brand_color)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,app_id) DO NOTHING
+      `,[tenantId,app.id,app.api_name,app.label,published.description,published.brand_color]);
+      for(const item of navigation){
+        await client.query(`
+          INSERT INTO md_tenant_app_navigation(tenant_id,app_id,entry_type,api_name,sort_order)
+          VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING
+        `,[tenantId,app.id,item.entry_type,item.api_name,item.sort_order]);
+      }
+      const {rows:current}=await client.query<{version:number}>(`
+        SELECT version FROM md_tenant_app_installed_versions
+        WHERE tenant_id=$1 AND app_id=$2 FOR UPDATE
+      `,[tenantId,app.id]);
+      if(current[0]&&current[0].version>published.version)
+        throw new Error('App downgrade is not allowed');
+      await client.query(`
+        INSERT INTO md_tenant_app_installed_versions(tenant_id,app_id,version)
+        VALUES($1,$2,$3)
+        ON CONFLICT(tenant_id,app_id) DO UPDATE SET
+          version=EXCLUDED.version,installed_at=now()
+      `,[tenantId,app.id,published.version]);
     });
   }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
-      await client.query(`UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE tenant_id=$1 AND app_api_name=$2 AND status IN ('queued','leased')`,[tenantId,appApi]);
-      await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
-        AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))`,[tenantId,appApi]);
-      await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT a.id FROM md_apps a LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id WHERE COALESCE(m.api_name,a.api_name)=$2 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1))',
-        [tenantId,appApi]);
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':app-lifecycle']);
+      const {rows:installed}=await client.query<{id:string;api_name:string}>(`
+        SELECT a.id,a.api_name FROM md_apps a
+        JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
+        LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
+        WHERE COALESCE(m.api_name,a.api_name)=$2
+          AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+      `,[tenantId,appApi]);
+      if(!installed.length)return;
+      const target=installed[0];
+      const {rows:blockers}=await client.query<{api_name:string}>(`
+        SELECT parent.api_name FROM md_app_package_dependencies d
+        JOIN md_tenant_app_installed_versions v ON v.app_id=d.app_id
+          AND v.version=d.version AND v.tenant_id=$1
+        JOIN md_app_installations i ON i.tenant_id=v.tenant_id AND i.app_id=v.app_id
+        JOIN md_apps parent ON parent.id=d.app_id
+        WHERE d.required_app_id=$2 LIMIT 1
+      `,[tenantId,target.id]);
+      if(blockers.length)throw new Error('Uninstall dependent app first: '+blockers[0].api_name);
+      await client.query(`
+        UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,
+          lease_until=NULL,updated_at=now()
+        WHERE tenant_id=$1 AND app_api_name IN ($2,$3) AND status IN ('queued','leased')
+      `,[tenantId,appApi,target.api_name]);
+      await client.query('DELETE FROM md_app_home_pages WHERE tenant_id=$1 AND app_id=$2',
+        [tenantId,target.id]);
+      // Version receipt cascades; business records and shared component metadata survive.
+      await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id=$2',
+        [tenantId,target.id]);
     });
   }
   async homePage(tenantId:string,appApi:string,formFactor:string,profileId='') {
