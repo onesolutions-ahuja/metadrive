@@ -236,7 +236,7 @@ test('Flow Get Records ignores unselected optional field mappings for Invoice', 
   result.errors.join('; '));
  assert.ok(sqlCalls.some(sql=>sql.includes('FROM md_field_definitions')));
  const invalid=structuredClone(graph);
- invalid.elements[1].config.fields=['GenuinelyMissingField'];
+ (invalid.elements[1].config as {fields:string[]}).fields=['GenuinelyMissingField'];
  const failed=await validateFlowDraft(rbac,'tenant-id','user-id','OneposBlankFields',invalid,db);
  assert.ok(failed.errors.some(error=>error.includes('Invoice.GenuinelyMissingField')));
 });
