@@ -1,9 +1,10 @@
 import {createHash} from 'node:crypto';
 import type {SqlPersistence} from './sql-persistence.js';
+import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Claim={owner:true}|{owner:false;value:unknown};
-type Row={input_hash:string;state:string;result_payload:unknown;run_id:string|null};
+type Row={input_hash:string;state:string;run_id:string|null};
 
 /** Durable request deduplication for any Flow called with a requestId.
  * It deliberately never interprets app-specific payment or commerce metadata.
@@ -27,7 +28,7 @@ export class FlowExecutionRequests {
       ON CONFLICT(tenant_id,actor_id,flow_api,request_id) DO NOTHING RETURNING request_id`,
       [tenant,actor,flow,requestId,hash]);
     if(inserted.rowCount)return {owner:true};
-    const {rows}=await this.db.query<Row>(`SELECT input_hash,state,result_payload,run_id
+    const {rows}=await this.db.query<Row>(`SELECT input_hash,state,run_id
       FROM md_flow_execution_requests
       WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4`,
       [tenant,actor,flow,requestId]);
@@ -37,8 +38,17 @@ export class FlowExecutionRequests {
       throw new Error('Flow requestId was reused with different inputs');
     if(existing.state==='failed')
       throw new Error('Previous Flow request failed; start a new request to retry');
-    if(existing.state==='completed' && existing.result_payload &&
-      typeof existing.result_payload==='object')return {owner:false,value:existing.result_payload};
+    if(existing.state==='completed'){
+      const {rows:values}=await this.db.query<MetadataValueRow>(
+        `SELECT property_path,value_kind,value_text FROM md_flow_execution_result_values
+         WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4
+         ORDER BY length(property_path),property_path`,
+        [tenant,actor,flow,requestId]);
+      const replay=decodeMetadataValues(values).result;
+      if(!replay||typeof replay!=='object'||Array.isArray(replay))
+        throw new Error('Completed Flow response is unavailable');
+      return {owner:false,value:replay};
+    }
     return {owner:false,value:{id:existing.run_id??'',status:'pending',completed:false}};
   }
   async started(tenant:string,actor:string,flow:string,key:string,runId:string){
@@ -49,10 +59,22 @@ export class FlowExecutionRequests {
   async completed(tenant:string,actor:string,flow:string,key:string,result:unknown){
     const encoded=JSON.stringify(result);
     if(!encoded||encoded.length>262144)throw new Error('Flow result exceeds idempotency limit');
-    await this.db.query(`UPDATE md_flow_execution_requests
-      SET state='completed',result_payload=$5::jsonb,updated_at=now()
-      WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4
-        AND state='pending'`,[tenant,actor,flow,key,encoded]);
+    const rows:Array<{path:string;kind:string;text:string|null}>=[];
+    encodeMetadataValue(result,'/result',rows);
+    if(rows.length>5000||rows.some(row=>row.path.length>1024))
+      throw new Error('Flow response exceeds relational value limits');
+    await this.db.transaction(async client=>{
+      const claim=await client.query(`UPDATE md_flow_execution_requests
+        SET state='completed',updated_at=now()
+        WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4
+          AND state='pending' RETURNING request_id`,[tenant,actor,flow,key]);
+      if(!claim.rowCount)throw new Error('Flow request no longer pending');
+      for(const row of rows)
+        await client.query(`INSERT INTO md_flow_execution_result_values
+          (tenant_id,actor_id,flow_api,request_id,property_path,value_kind,value_text)
+          VALUES($1,$2,$3,$4,$5,$6,$7)`,
+          [tenant,actor,flow,key,row.path,row.kind,row.text]);
+    });
   }
   async failed(tenant:string,actor:string,flow:string,key:string){
     await this.db.query(`UPDATE md_flow_execution_requests
