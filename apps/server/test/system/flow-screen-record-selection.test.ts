@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {
-  acceptScreenRecordSelection,screenRecordPayload,validateScreenRecordBindings
+  acceptScreenRecordSelection,screenRecordPayload,validateScreenRecordBindings,ScreenSelectionError
 } from '../../src/system-files/flow-screen-record-selection.js';
 
 const first='00000000-0000-4000-8000-000000000021';
@@ -48,7 +48,9 @@ test('Screen Flow converts selected IDs to reauthorized typed record collection 
 test('Screen Flow refuses forged, repeated, malformed, over-limit and missing IDs',async()=>{
   const call=(value:unknown)=>acceptScreenRecordSelection(field,value,
     {MealOptions:source},resources,reader);
-  await assert.rejects(()=>call([outside]),/not in the permitted record collection/);
+  await assert.rejects(()=>call([outside]),(error: unknown) =>
+    error instanceof ScreenSelectionError
+    && /not in the permitted record collection/.test(error.message));
   await assert.rejects(()=>call([first,first]),/duplicate/);
   await assert.rejects(()=>call([first,25]),/Invalid Screen selection entries/);
   await assert.rejects(()=>call([first,second,outside]),/selection count/);
