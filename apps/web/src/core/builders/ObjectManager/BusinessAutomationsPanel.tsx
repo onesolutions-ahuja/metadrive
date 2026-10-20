@@ -1,4 +1,4 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
 import type {ObjectMetadata} from '../../metadata/Definitions/metadata';
 import {appRoutePath} from '../../workspace/Navigation/appRouting';
@@ -10,6 +10,20 @@ const empty=(objectApi:string):RecipeInput=>({
 export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata}){
  const [draft,setDraft]=useState<RecipeInput>(()=>empty(object.apiName));
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [users,setUsers]=useState<Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>>([]);
+ const [credentials,setCredentials]=useState<Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>>([]);
+ useEffect(()=>{
+   let active=true;
+   void Promise.allSettled([
+     apiRequest<{records:Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>}>('/records/User?limit=100'),
+     apiRequest<{credentials:Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>}>('/named-credentials')
+   ]).then(results=>{
+     if(!active)return;
+     if(results[0].status==='fulfilled')setUsers(results[0].value.records);
+     if(results[1].status==='fulfilled')setCredentials(results[1].value.credentials);
+   });
+   return()=>{active=false};
+ },[]);
  const fields=object.fields;
  const textFields=fields.filter(f=>['Email','Text'].includes(f.dataType));
  const dateFields=fields.filter(f=>['Date','Date/Time','DateTime'].includes(f.dataType));
@@ -56,14 +70,21 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
   </div>
   {draft.kind==='Assignment'&&<div className="metadata-card">
    <h3>Assign record</h3>
-   <label className="form-label">Tenant user or queue ID<input className="form-control" value={draft.assigneeId??''}
-    onChange={e=>change({assigneeId:e.target.value})}/></label>
+   <label className="form-label">Assign to user<select className="form-control" value={draft.assigneeId??''}
+    onChange={e=>change({assigneeId:e.target.value})}>
+    <option value="">Select user</option>{users.filter(u=>u.IsActive!==false).map(user=>
+      <option key={user.Id} value={user.Id}>{user.Name??user.Email??user.Id}</option>)}
+   </select></label>
    <p>Owner is updated through the shared RecordEngine and its permission checks.
-    Prefer a creation trigger to avoid reassignment loops.</p>
+    Use a creation trigger to avoid reassignment loops.</p>
   </div>}
   {draft.kind==='Auto Response'&&<div className="metadata-card"><h3>Automatic email</h3>
-   <label className="form-label">SMTP Named Credential ID<input className="form-control" value={draft.namedCredentialId??''}
-    onChange={e=>change({namedCredentialId:e.target.value})}/></label>
+   <label className="form-label">SMTP Named Credential<select className="form-control" value={draft.namedCredentialId??''}
+    onChange={e=>change({namedCredentialId:e.target.value})}>
+    <option value="">Select configured SMTP connection</option>
+    {credentials.filter(c=>c.protocol==='SMTP'&&c.enabled).map(c=>
+      <option key={c.id} value={c.id}>{c.label||c.name}</option>)}
+   </select></label>
    <label className="form-label">From email<input className="form-control" value={draft.fromEmail??''} onChange={e=>change({fromEmail:e.target.value})}/></label>
    <label className="form-label">Recipient email field<select className="form-control" value={draft.recipientField??''} onChange={e=>change({recipientField:e.target.value})}>
     <option value="">Select field</option>{textFields.map(f=><option key={f.apiName} value={f.apiName}>{f.label}</option>)}</select></label>
