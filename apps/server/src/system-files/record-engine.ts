@@ -1361,7 +1361,7 @@ export class RecordEngine {
       FROM md_record_values v
       JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.is_deleted=false
       JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
-        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+        AND f.api_name=v.field_api
       WHERE v.tenant_id=$1 AND v.reference_record_id=$2 AND f.related_object=$3
       ORDER BY f.relationship_type,r.object_api,r.id`,
     [tenantId,id,objectApi]);
@@ -1533,6 +1533,9 @@ export class RecordEngine {
           [tenantId,link.source_record_id,link.source_object_api,link.field_api,
             link.target_record_id]);
         if(restored.rowCount){
+          await client.query(`DELETE FROM md_deleted_lookup_links
+            WHERE tenant_id=$1 AND deletion_group_id=$2 AND source_record_id=$3 AND field_api=$4`,
+            [tenantId,record.deletion_group_id,link.source_record_id,link.field_api]);
           await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
             [tenantId,link.source_object_api,link.source_record_id]);
           const sourceParents=await this.rollupParents(client,tenantId,link.source_object_api,link.source_record_id);
@@ -1543,8 +1546,8 @@ export class RecordEngine {
             [tenantId,link.source_record_id,link.source_object_api,link.field_api,userId,link.target_record_id]);
         }
       }
-      await client.query('DELETE FROM md_deleted_lookup_links WHERE tenant_id=$1 AND deletion_group_id=$2',
-        [tenantId,record.deletion_group_id]);
+      // Keep unresolved recovery links for privileged/manual reconciliation.
+      // Never discard them when a source Field or the user's edit rights have changed.
       for(const restored of rows){
         const parents=await this.rollupParents(client,tenantId,restored.object_api,restored.id);
         await this.refreshRollups(client,tenantId,restored.object_api,parents);
