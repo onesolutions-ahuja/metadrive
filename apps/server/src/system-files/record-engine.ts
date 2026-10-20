@@ -1557,6 +1557,10 @@ export class RecordEngine {
         VALUES($1,$2,$3,$4,$5,'restore')`,
         [tenantId,id,objectApi,record.deletion_group_id,userId]);
       return {restored:rows.length};
+    }).catch((error:unknown)=>{
+      if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')
+        throw new Error('Restore conflicts with an existing unique field value');
+      throw error;
     });
   }
 }
