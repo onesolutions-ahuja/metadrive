@@ -733,7 +733,7 @@ function ShoppingCartTill({ props }) {
     <section
       className={
         "one-shopping-till" +
-        (props.viewMode === "basket" ? " one-shopping-basket-only" : "")
+        (props.viewMode === "basket" ? " one-shopping-basket-only" : "") + (props.basketPresentation === "footer" ? " one-shopping-basket-footer" : "")
       }
     >
       {props.viewMode !== "basket" && !pageToolbarOwnsHeader && (
