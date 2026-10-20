@@ -284,6 +284,17 @@ function RecordWorkspace({
       </div>
     </nav>;
   };
+  type GlobalActionView={id:string;label:string;behavior:'Create Record'|'Run Flow'|'Send Email';targetObjectApi?:string};
+  const [globalActions,setGlobalActions] = useState<GlobalActionView[]>([]);
+  const [globalEmailActionId,setGlobalEmailActionId] = useState('');
+  const [globalActionMessage,setGlobalActionMessage] = useState('');
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{actions:GlobalActionView[]}>('/actions/global')
+      .then(result=>{if(active)setGlobalActions(result.actions);})
+      .catch(()=>{if(active)setGlobalActions([]);});
+    return ()=>{active=false;};
+  },[route.kind]);
   const [emailAction,setEmailAction] = useState<ObjectActionMetadata|null>(null);
   const [emailTo,setEmailTo] = useState('');
   const [emailSubject,setEmailSubject] = useState('');
@@ -796,18 +807,20 @@ function RecordWorkspace({
   };
   const handledRelatedCreation=useRef('');
   useEffect(()=>{
-    if(route.kind!=='record-list'||!route.relatedCreation||!object){
+    if(route.kind!=='record-list'||(!route.relatedCreation&&!route.globalCreation)||!object){
       handledRelatedCreation.current='';return;
     }
     const ctx=route.relatedCreation;
-    const key=[object.apiName,ctx.sourceObjectApi,ctx.sourceRecordId,ctx.actionId].join(':');
+    const key=ctx?[object.apiName,ctx.sourceObjectApi,ctx.sourceRecordId,ctx.actionId].join(':')
+      :[object.apiName,'global',route.globalCreation?.actionId].join(':');
     if(handledRelatedCreation.current===key)return;
     handledRelatedCreation.current=key;
     setEditingId(null);setEditingTimestamp('');
     setFormValues({RecordTypeId:defaultRecordTypeId});
     setFormError('');setFormOpen(true);
   },[route.kind,route.kind==='record-list'?route.relatedCreation?.actionId:'',
-    route.kind==='record-list'?route.relatedCreation?.sourceRecordId:'',object?.apiName,defaultRecordTypeId]);
+    route.kind==='record-list'?route.relatedCreation?.sourceRecordId:'',
+    route.kind==='record-list'?route.globalCreation?.actionId:'',object?.apiName,defaultRecordTypeId]);
 
   const openEditForm = (item: RecordData) => {
     if (!object) return;
@@ -853,8 +866,9 @@ function RecordWorkspace({
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
+      const globalCreation=route.kind==='record-list'&&!editingId?route.globalCreation:undefined;
       if (!navigator.onLine) {
-        if(relatedCreation)throw new Error('Creating related records requires an active connection for relationship and Action permission checks.');
+        if(relatedCreation||globalCreation)throw new Error('Creating related records requires an active connection for relationship and Action permission checks.');
         await queueRecordLocally(writableValues, 'pending');
         return;
       }
@@ -863,6 +877,12 @@ function RecordWorkspace({
         if(relatedCreation){
           const saved=await apiRequest<{recordId:string;objectApiName:string}>(`/records/${encodeURIComponent(relatedCreation.sourceObjectApi)}/${encodeURIComponent(relatedCreation.sourceRecordId)}/actions/${encodeURIComponent(relatedCreation.actionId)}/execute`,{
             method:'POST',body:JSON.stringify(writableValues)});
+          response={record:{Id:saved.recordId} as RecordData};
+        }else if(globalCreation){
+          const saved=await apiRequest<{recordId:string;objectApiName:string}>(
+            `/actions/global/${encodeURIComponent(globalCreation.actionId)}/execute`,{
+              method:'POST',body:JSON.stringify(writableValues)});
+          if(saved.objectApiName!==object.apiName)throw new Error('Global action target changed; reload');
           response={record:{Id:saved.recordId} as RecordData};
         } else response=await apiRequest<{ record: RecordData }>(path, {
           method: editingId ? 'PUT' : 'POST',
