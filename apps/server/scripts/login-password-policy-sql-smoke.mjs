@@ -11,7 +11,11 @@ export async function verifyLoginPasswordSql(db,additionalChecks){
  await db.query(`CREATE SCHEMA ${schema}`);
  try{
   await db.query(`SET search_path TO ${schema},public`);
-  await db.query(`CREATE TABLE md_tenants(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),status text DEFAULT 'ACTIVE');
+  await db.query(`-- Phase 1/2 isolate their own schema. Phase 3 tests exercise the actual licence/OAuth predicates.
+   CREATE FUNCTION md_user_licensed(uuid,uuid) RETURNS boolean LANGUAGE sql AS 'SELECT true';
+   CREATE FUNCTION md_oauth_refresh_allowed(text,uuid) RETURNS boolean LANGUAGE sql AS 'SELECT true';
+   CREATE FUNCTION md_oauth_token_allowed(uuid,uuid,text,text,text) RETURNS boolean LANGUAGE sql AS 'SELECT true';
+   CREATE TABLE md_tenants(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),status text DEFAULT 'ACTIVE');
    CREATE TABLE md_users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid REFERENCES md_tenants(id),
     email text,password_hash text,enabled boolean DEFAULT true,locked_until timestamptz,UNIQUE(tenant_id,id));
    CREATE TABLE md_security_events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid REFERENCES md_tenants(id),

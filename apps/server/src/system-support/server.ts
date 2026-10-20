@@ -1,3 +1,8 @@
+import {withAuditContext,auditContext,setAuditActor} from './audit-context.js';
+import {ConnectedAppService} from './connected-app-service.js';
+import {SecurityMonitorService} from './security-monitor-service.js';
+import {normalizedLoginIp} from './session-policy-service.js';
+import {registerConnectedPublicRoutes,registerGovernanceRoutes} from './security-governance-routes.js';
 import {createHash} from 'node:crypto';
 import {ComponentLibraryService} from './component-library-service.js';
 import {DashboardSnapshotService} from './dashboard-snapshot-service.js';
@@ -144,12 +149,19 @@ export function createSystemServer(db:SqlPersistence) {
   const app=express();
   configureTrustedProxy(app,process.env.METADRIVE_TRUST_PROXY_CIDRS);
   app.disable('x-powered-by');
+  app.use((_req,res,next)=>withAuditContext({},()=>{res.setHeader('X-Correlation-ID',auditContext()!.correlationId);next();}));
   app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb'}));
   app.use(express.urlencoded({extended:false,limit:'1mb'}));
   app.use((_req,res,next)=>{res.set(browserSecurityHeaders({frame_policy:'DENY',csp_enabled:true}));next();});
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
+  const connected=new ConnectedAppService(db,auth,rbac),securityMonitor=new SecurityMonitorService(db,rbac);
+  auth.setLoginGuard(async(tenant,user,context)=>{
+    const event=await securityMonitor.enforce({actor:{tenant_id:tenant,user_id:user},correlationId:auditContext()!.correlationId,eventType:'login',path:'/api/auth/login',method:'POST',ip:normalizedLoginIp(context.ip)});
+    await securityMonitor.complete(tenant,event.id,event.blocked?403:200,0);
+    if(event.blocked)throw Error('Login blocked by transaction security policy');
+  });
   const rbacAdministration=new RbacAdministration(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const flowJobs=new DurableJobService(db);
@@ -235,9 +247,13 @@ export function createSystemServer(db:SqlPersistence) {
       try { const parsed=new URL(origin); if(!['https:','http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname!=='/' || parsed.search || parsed.hash) throw Error(); if(process.env.NODE_ENV==='production' && (parsed.protocol!=='https:' || (parsed.port && parsed.port!=='443')))throw Error(); host=parsed.hostname.toLowerCase(); }
       catch { res.status(403).json({error:'Unrecognised origin'});return; }
       const authorized=await db.query('SELECT tenant_id FROM md_tenant_domains WHERE domain=$1',[host]);
-      if(!authorized.rows.length) { res.status(403).json({error:'Unregistered origin'});return; }
+      if(!authorized.rows.length) {
+        const publicOAuth=['/api/oauth/token','/api/oauth/revoke'].includes(req.path);
+        const bearer=req.get('authorization');
+        if((!publicOAuth&&req.method!=='OPTIONS'&&!/^Bearer [A-Za-z0-9_-]+$/.test(bearer??''))||!await connected.originAllowed(origin,publicOAuth||req.method==='OPTIONS'?undefined:bearer!.slice(7))){res.status(403).json({error:'Unregistered origin'});return;}
+      }
       res.setHeader('Access-Control-Allow-Origin',origin);
-      res.setHeader('Access-Control-Allow-Credentials','true');
+      if(authorized.rows.length)res.setHeader('Access-Control-Allow-Credentials','true');
       res.setHeader('Vary','Origin');
       res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, If-Match, If-Unmodified-Since, X-MetaDrive-Request-Source, X-MetaDrive-Offline-Sync');
       res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');
@@ -250,9 +266,14 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const bearer=req.get('authorization')??'';
       if(!/^Bearer [a-zA-Z0-9_-]+$/.test(bearer)) {res.status(401).json({error:'Bearer access token required'});return;}
-      req.actor=await auth.authenticate(bearer.slice(7),{ip:req.ip});
+      const path=req.originalUrl.split('?')[0],started=Date.now();
+      req.actor=await auth.authenticate(bearer.slice(7),{ip:req.ip,path,method:req.method});
+      setAuditActor(req.actor.tenant_id,req.actor.user_id);
+      const event=await securityMonitor.enforce({actor:req.actor,correlationId:auditContext()!.correlationId,eventType:path.startsWith('/api/metadata/')?'metadata':'api',path,method:req.method,ip:normalizedLoginIp(req.ip)});
+      res.once('finish',()=>{void securityMonitor.complete(req.actor!.tenant_id,event.id,res.statusCode,Date.now()-started).catch(()=>console.error('Security monitoring completion failed'));});
+      if(event.blocked){res.status(403).json({error:'Blocked by transaction security policy'});return;}
       next();
-    } catch {res.status(401).json({error:'Invalid session'});}
+    } catch(error) {if(error instanceof Error&&error.message==='Invalid session')res.status(401).json({error:'Invalid session'});else next(error);}
   };
 
   app.get('/health',route(async(_req,res)=>{
@@ -332,7 +353,9 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Set-Cookie',[...(Array.isArray(previous)?previous:previous?[String(previous)]:[]),`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`]);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     }});
+  registerConnectedPublicRoutes(app,connected);
   app.use('/api',authorize);
+  registerGovernanceRoutes(app,db,rbac,auth,connected,securityMonitor);
   registerIdentityAdminRoutes(app,{sessions:sessionPolicies,federation,passkeys,backups});
   app.use('/api',countTenantApiRequests(db));
   app.use('/services/data',authorize);
@@ -1872,6 +1895,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.status(404).json({error:err.message});
     else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
     else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission|Managed package metadata is read-only)/.test(err.message))res.status(403).json({error:err.message});
+    else if(err.message==='Login blocked by transaction security policy'||err.message==='MFA required for connected app consent')res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='App licence or entitlement unavailable')
       res.status(403).json({error:err.message});

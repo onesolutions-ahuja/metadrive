@@ -14,6 +14,7 @@
     "preflight:sql": "tsx src/system-support/cutover-cli.ts",
     "start:worker": "node dist-system/system-support/job-worker-entrypoint.js",
     "dev:worker": "tsx src/system-support/job-worker-entrypoint.ts",
+    "test:governance:sql": "node scripts/security-governance-sql-smoke.mjs",
     "test:identity:sql": "node scripts/identity-session-sql-smoke.mjs"
   },
   "dependencies": {

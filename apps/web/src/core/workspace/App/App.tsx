@@ -68,6 +68,7 @@ type NewFieldLookupFilterDraft = {
 
 
 
+const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthConsent'));
 type AuthState = 'restoring' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -166,6 +167,9 @@ function App() {
 
   useEffect(() => {
     if (sessionRestoreStarted.current) return;
+    // SSO returns to the registered tenant root. Restore only this fixed consent
+    // route; the server revalidates every client, redirect, scope and user grant.
+    try{if(window.location.pathname==='/'&&!window.location.search){const raw=sessionStorage.getItem('md_oauth_return');if(raw){sessionStorage.removeItem('md_oauth_return');const saved=JSON.parse(raw);if(saved.expires>Date.now()&&typeof saved.query==='string'&&saved.query.startsWith('?')&&saved.query.length<8000)window.history.replaceState({},'','/oauth/authorize'+saved.query);}}}catch{/* Storage can be disabled. The client can restart authorization. */}
     sessionRestoreStarted.current = true;
     void restoreSession();
   }, []);
@@ -174,7 +178,7 @@ function App() {
   // for its app, honour that assignment after login or session restoration.
   // Never override explicit record, app page or Setup navigation.
   useEffect(() => {
-    if (authState !== 'authenticated') return;
+    if (authState !== 'authenticated'||window.location.pathname==='/oauth/authorize') return;
     const currentRoute = parseAppRoute(window.location.pathname, window.location.search);
     if (currentRoute.kind !== 'setup' || currentRoute.workspace !== 'home') return;
     const preferredApp = new URLSearchParams(window.location.search).get('appId') || 'Records';
@@ -205,6 +209,7 @@ function App() {
   if (authState === 'restoring') return <div className="auth-loading" role="status">Restoring session…</div>;
   if (authState === 'anonymous') return <Login onStart={cancelRestore} onSuccess={loginSuccess} />;
   if (authState === 'error') return <Login error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
+  if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
   return <SetupApp entryTiming={entryTiming} onLogout={() => { sessionGeneration.current += 1; setEntryTiming(null); setAccessToken(undefined); setAuthState('anonymous'); }} />;
 }
 
