@@ -1224,3 +1224,6 @@ export class FlowRuntime {
     }
   }
 }
+
+// Preserve the canonical Flow Engine name alongside the legacy FlowRuntime export.
+export {FlowRuntime as FlowEngineCore};
