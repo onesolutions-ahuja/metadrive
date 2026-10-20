@@ -81,8 +81,26 @@ export class FlowExecutionRequests {
         SET state='completed',updated_at=now()
         WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4
           AND state='pending' RETURNING request_id`,[tenant,actor,flow,key]);
-      if(!claim.rowCount)throw new Error('Flow request no longer pending');
-      await FlowExecutionRequests.insertResult(client,tenant,actor,flow,key,rows);
+      if(claim.rowCount){
+        await FlowExecutionRequests.insertResult(client,tenant,actor,flow,key,rows);
+        return;
+      }
+      // An End element in the same shared runtime may have completed the
+      // request transaction already. Accept only an identical typed result.
+      const {rows:status}=await client.query<{state:string}>(`
+        SELECT state FROM md_flow_execution_requests
+        WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4`,
+        [tenant,actor,flow,key]);
+      if(status[0]?.state!=='completed')throw new Error('Flow request no longer pending');
+      const {rows:stored}=await client.query<MetadataValueRow>(`
+        SELECT property_path,value_kind,value_text FROM md_flow_execution_result_values
+        WHERE tenant_id=$1 AND actor_id=$2 AND flow_api=$3 AND request_id=$4`,
+        [tenant,actor,flow,key]);
+      const saved=new Map(stored.map(row=>[row.property_path,row]));
+      if(saved.size!==rows.length||rows.some(row=>{
+        const prior=saved.get(row.path);
+        return !prior||prior.value_kind!==row.kind||prior.value_text!==row.text;
+      }))throw new Error('Conflicting completed Flow response');
     });
   }
   /** End a paused Screen Flow and persist its replay in the caller's SQL
