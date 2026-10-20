@@ -9,12 +9,13 @@ export class DuplicateMatchError extends Error {
 /** One SQL matching engine. Enforces matches against all tenant records, without exposing inaccessible IDs. */
 export class RecordMatching {
  constructor(private readonly rbac:RbacEngine){}
- async check(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Values,
-    excludeId?:string):Promise<Array<{ruleApi:string;recordId:string}>>{
+ async check(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Values|(()=>Promise<Values>),
+    excludeId?:string):Promise<Array<{ruleApi:string;recordId:string}>|null>{
   const result=await client.query<Rule>(
    'SELECT api_name,match_mode,action FROM md_matching_rules WHERE tenant_id=$1 AND object_api=$2 AND active=true ORDER BY api_name',
    [tenantId,objectApi]);
-  if(!result.rows.length)return [];
+  if(!result.rows.length)return null;
+  const current=typeof values==='function'?await values():values;
   const columns=await client.query<RuleField>(`SELECT rule_api,field_api,case_sensitive
     FROM md_matching_rule_fields WHERE tenant_id=$1 AND object_api=$2 ORDER BY rule_api,field_api`,
    [tenantId,objectApi]);
@@ -25,7 +26,7 @@ export class RecordMatching {
    const clauses:string[]=[];
    const params:unknown[]=[tenantId,objectApi,excludeId??null];
    for(const field of fields){
-    const value=values[field.field_api];
+    const value=current[field.field_api];
     if(value===null||value===undefined||typeof value!=='string'||!value.trim()){
       if(rule.match_mode==='All'){clauses.length=0;break;}
       continue;
@@ -50,7 +51,8 @@ export class RecordMatching {
   return matches;
  }
  async save(client:PoolClient,tenantId:string,objectApi:string,recordId:string,
-   matches:Array<{ruleApi:string;recordId:string}>){
+   matches:Array<{ruleApi:string;recordId:string}>|null){
+  if(matches===null)return;
   await client.query('DELETE FROM md_duplicate_record_sets WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3',
    [tenantId,objectApi,recordId]);
   for(const match of matches)await client.query(`INSERT INTO md_duplicate_record_sets
