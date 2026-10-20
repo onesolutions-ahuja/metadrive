@@ -488,13 +488,6 @@ export class ObjectDefinitionService {
   }
   async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string,settings?:Record<string,unknown>) {
     const field=parseFieldDefinition({...(settings??{}),apiName:fieldApi,dataType,relatedObject:settings?.relationship??relatedObject,label:label??settings?.label},objectApi);
-    if(field.defaultValue!==null){
-      const existingFormulaDefault=await this.db.query(
-        'SELECT 1 FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
-        [tenantId,objectApi,fieldApi]);
-      if(existingFormulaDefault.rowCount)
-        throw new Error('Invalid field default: remove the formula default first');
-    }
     if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
       throw new Error('Hierarchical relationships are supported only as User self-lookups');
     const formula=field.dataType==='formula'&&field.formulaExpression
