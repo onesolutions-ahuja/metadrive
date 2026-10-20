@@ -1,3 +1,4 @@
+import {validateAppNavigation} from '../app-runtime/AppNavigationRegistry.js';
 import {resolveTenantAppMetadata} from '../app-runtime/AppMetadataResolver.js';
 import type {SqlPersistence} from './sql-persistence.js';
 export class AppRuntime {
@@ -19,34 +20,7 @@ export class AppRuntime {
       ||p.navigationItems.length>100||p.navigationPageApiNames.length>100
       ||p.navigationOrder.length>200||p.utilityItems.length>2)
       throw new Error('Invalid App metadata');
-    const objects=p.navigationItems as unknown[],pages=p.navigationPageApiNames as unknown[];
-    if([...objects,...pages].some(name=>typeof name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)))
-      throw new Error('Invalid App navigation');
-    if(new Set(objects).size!==objects.length||new Set(pages).size!==pages.length)
-      throw new Error('Duplicate App navigation');
-    const allowed=new Set<string>([
-      ...objects.map(name=>'Object:'+name),
-      ...pages.map(name=>'App Page:'+name)
-    ]);
-    const order:Array<{type:'Object'|'App Page';apiName:string}>=[];
-    const chosen=new Set<string>();
-    for(const rawEntry of p.navigationOrder as unknown[]){
-      if(!rawEntry||typeof rawEntry!=='object'||Array.isArray(rawEntry))
-        throw new Error('Invalid App navigation');
-      const item=rawEntry as Record<string,unknown>;
-      const key=item.type+':'+item.apiName;
-      if(!allowed.has(key)||chosen.has(key))throw new Error('Invalid App navigation order');
-      chosen.add(key);
-      order.push({type:item.type as 'Object'|'App Page',apiName:item.apiName as string});
-    }
-    for(const key of allowed)if(!chosen.has(key)){
-      const type=key.startsWith('Object:')?'Object':'App Page';
-      order.push({type,apiName:key.slice(type.length+1)});
-    }
-    const utilityItems=p.utilityItems as unknown[];
-    if(utilityItems.some(item=>item!=='Notes'&&item!=='History')||
-      new Set(utilityItems).size!==utilityItems.length)
-      throw new Error('Invalid App utilities');
+    const {objects,pages,order,utilityItems}=validateAppNavigation(p);
     await this.db.transaction(async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',
         [tenantId+':app:'+apiName]);
