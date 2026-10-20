@@ -88,4 +88,58 @@ export async function seedPublishedAppPackage(
       VALUES($1,$2,$3,$4,$5)
     `,[tenantId,page[0].id,item.component_api,item.slot,item.sort_order]);
   }
+  const {rows:properties}=await client.query<{
+    page_api:string;component_api:string;slot:string;sort_order:number;
+    property_path:string;data_type:string;value_text:string|null;
+    reference_kind:'Object'|'Field'|'Flow'|null;reference_api:string|null;reference_parent_api:string|null
+  }>(`
+    SELECT page_api,component_api,slot,sort_order,property_path,data_type,value_text,
+      reference_kind,reference_api,reference_parent_api
+    FROM md_app_package_page_property_templates
+    WHERE app_id=$1 AND version=$2 ORDER BY page_api,component_api,slot,property_path
+  `,[appId,version]);
+  for(const property of properties){
+    const {rows:instances}=await client.query<{id:string}>(`
+      SELECT part.id FROM md_page_components part
+      JOIN md_page_definitions page ON page.id=part.page_id AND page.tenant_id=part.tenant_id
+      WHERE part.tenant_id=$1 AND page.api_name=$2 AND part.component_api=$3
+        AND part.slot=$4 AND part.sort_order=$5
+    `,[tenantId,property.page_api,property.component_api,property.slot,property.sort_order]);
+    if(instances.length!==1)throw new Error('App package Page Component property target unavailable or ambiguous');
+    let objectId:string|null=null,fieldId:string|null=null,flowId:string|null=null;
+    if(property.data_type==='reference'){
+      let query:string;
+      let args:unknown[];
+      if(property.reference_kind==='Object'){
+        query='SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2';
+        args=[tenantId,property.reference_api];
+      }else if(property.reference_kind==='Field'&&property.reference_parent_api){
+        query='SELECT id FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL';
+        args=[tenantId,property.reference_parent_api,property.reference_api];
+      }else if(property.reference_kind==='Flow'){
+        query=`SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2
+          AND active=true AND archived=false ORDER BY version DESC LIMIT 1`;
+        args=[tenantId,property.reference_api];
+      }else throw new Error('Invalid app package Page Component metadata reference');
+      const {rows:target}=await client.query<{id:string}>(query,args);
+      if(!target.length)throw new Error('Unresolved app package Page Component reference: '+property.reference_api);
+      if(property.reference_kind==='Object')objectId=target[0].id;
+      if(property.reference_kind==='Field')fieldId=target[0].id;
+      if(property.reference_kind==='Flow')flowId=target[0].id;
+    }else if(property.reference_kind||property.reference_api||property.reference_parent_api)
+      throw new Error('Invalid non-reference app property');
+    if(property.data_type==='number'&&(property.value_text===null
+      ||!Number.isFinite(Number(property.value_text))))
+      throw new Error('Invalid numeric app property');
+    if(property.data_type==='boolean'&&!['true','false'].includes(property.value_text??''))
+      throw new Error('Invalid boolean app property');
+    await client.query(`
+      INSERT INTO md_page_component_properties
+        (tenant_id,component_id,property_path,value_text,data_type,object_id,field_id,flow_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING
+    `,[tenantId,instances[0].id,property.property_path,
+      property.data_type==='reference'?null:property.value_text,
+      property.data_type,objectId,fieldId,flowId]);
+  }
+
 }
