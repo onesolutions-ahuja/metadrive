@@ -1,25 +1,9 @@
+import {template,uuid,scalar,type ActionContext} from './nodes/ActionNodeShared.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import type {FormulaEvaluationContext} from './flow-formula-runtime.js';
 import type {RecordEngine} from './record-engine.js';
 import {persistPlatformEvent} from './platform-event-runtime.js';
-
-type FaultConnector={to:number;kind?:string};
-type ActionContext={
- client:PoolClient;rbac:RbacEngine;tenantId:string;userId:string;flowApi:string;
- records?:RecordEngine;
- runId:string;
- httpCallout?:(tenantId:string,userId:string,config:Record<string,unknown>,
-  variables:Record<string,string|number|boolean|null>,idempotencyKey:string,
-  execution?:{client:PoolClient;runId:string;nodeId:number})=>Promise<{status:number;body:string}>;
- enqueueEmail?:(message:{credentialId:string;from:string;recipients:string[];
-  subject:string;body:string})=>Promise<void>;
- config:Record<string,unknown>;resolve:(value:unknown)=>unknown;
- variables:Record<string,unknown>;connectors:FaultConnector[];elementId:number;
-};
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const scalar=(value:unknown):value is string|number|boolean|null=>
- value===null||typeof value==='string'||typeof value==='number'&&Number.isFinite(value)||typeof value==='boolean';
 
 export async function loadFlowUserResource(client:PoolClient,tenantId:string,userId:string,
  graph:unknown,variables:Record<string,unknown>):Promise<FormulaEvaluationContext> {
@@ -53,16 +37,6 @@ export async function loadFlowUserResource(client:PoolClient,tenantId:string,use
  variables.$User={Id:actor.id,Name:actor.display_name.trim()||actor.email,Email:actor.email,
   TimeZone:actor.time_zone};
  return {timeZone:actor.time_zone,currencyRates};
-}
-
-function template(value:unknown,resolve:(value:unknown)=>unknown):string {
- if(typeof value!=='string')throw new Error('Notification values must be text');
- return value.replace(/\{!([A-Za-z_$][A-Za-z0-9_$.]*)\}/g,(_match,reference:string)=>{
-  const resolved=resolve('{!'+reference+'}');
-  if(resolved!==null&&resolved!==undefined&&!scalar(resolved))
-   throw new Error('Notification template references a non-scalar resource');
-  return resolved===null||resolved===undefined?'':String(resolved);
- });
 }
 
 async function sendCustomNotification(context:ActionContext) {
