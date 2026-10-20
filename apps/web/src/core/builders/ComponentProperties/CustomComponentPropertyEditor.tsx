@@ -6,7 +6,7 @@ import ExpressionPropertyEditor from './property-editors/ExpressionPropertyEdito
 import StringPropertyEditor from './property-editors/StringPropertyEditor';
 import EventPropertyEditor from './property-editors/EventPropertyEditor';
 import ResponsivePropertyEditor from './property-editors/ResponsivePropertyEditor';
-import {metadataReference,metadataSelection,metadataFieldObject} from '../../metadata/Definitions/metadataReferences';
+import {metadataFieldObject} from '../../metadata/Definitions/metadataReferences';
 import { useState } from 'react';
 import TenantMediaPicker from './TenantMediaPicker';
 import type { ObjectMetadata,FlowDefinitionMetadata } from '../../metadata/Definitions/metadata';
@@ -71,11 +71,7 @@ export default function CustomComponentPropertyEditor({
         const id = `component-property-${name}`;
         const boundObject=metadataFieldObject(objects,{...properties,objectApiName:properties.objectApiName||primaryObjectApiName},name);
         return <div className="metadata-array-property" key={name}>
-          {definition?.kind === 'OBJECT_FIELD' ? <ObjectFieldMapPropertyEditor id={id} label={label} name={name} value={value} disabled={disabled} fields={boundObject?.fields??[]} onChange={next=>update(name,next)}/> : definition?.kind === 'FLOW' ? <label className="form-label" htmlFor={id}>{label}
-            <select id={id} className="form-control" disabled={disabled} value={metadataSelection(flows,value)?.apiName??String(value??'')}
-              onChange={event=>{const flow=flows.find(f=>f.apiName===event.target.value);update(name,flow?.id?metadataReference(flow.id):event.target.value);}}>
-              <option value="">Select Flow…</option>{flows.map(flow=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-            </select></label> : definition?.kind === 'SELECT' && definition.choices ? <PicklistPropertyEditor id={id} label={label} value={value} disabled={disabled} required={definition.required} choices={definition.choices} onChange={next=>update(name,next)}/> :
+          {definition?.kind === 'OBJECT_FIELD' ? <ObjectFieldMapPropertyEditor id={id} label={label} name={name} value={value} disabled={disabled} fields={boundObject?.fields??[]} onChange={next=>update(name,next)}/> : definition?.kind === 'FLOW' ? <PicklistPropertyEditor id={id} label={label} value={value} disabled={disabled} flows={flows} onChange={next=>update(name,next)}/> : definition?.kind === 'SELECT' && definition.choices ? <PicklistPropertyEditor id={id} label={label} value={value} disabled={disabled} required={definition.required} choices={definition.choices} onChange={next=>update(name,next)}/> :
           definition?.kind === 'IMAGE' ? <div className="form-label"><label>{label}</label>
             <TenantMediaPicker value={String(value??'')} disabled={disabled}
               onChange={next=>update(name,next)}/></div> :
