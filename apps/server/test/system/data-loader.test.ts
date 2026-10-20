@@ -10,6 +10,8 @@ const b='22222222-2222-4222-8222-222222222222';
 function harness(deny=false,forbidRecord=false) {
  const permissions:string[]=[];const writes:string[]=[];let transactions=0;
  const client={query:async(sql:string,params:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))
+    return {rows:[],rowCount:0};
   if(sql.includes('FROM md_field_definitions'))return {rows:[
    {api_name:'VAT_Applicable__c',data_type:'boolean',related_object:null,required:false,max_length:null}
   ],rowCount:1};
@@ -25,7 +27,7 @@ function harness(deny=false,forbidRecord=false) {
   transactions++;
   return fn(client);
  },query:async()=>{throw Error('Out-of-transaction SQL is forbidden for importing');}} as unknown as SqlPersistence;
- const rbac={require:async(t:string,u:string,resource:string,permission:string)=>{
+ const rbac={allowedMany:async()=>[],require:async(t:string,u:string,resource:string,permission:string)=>{
   assert.equal(t,'tenant-a');assert.equal(u,'actor');
   permissions.push(resource+'.'+permission);
   if(deny)throw Error('Permission denied');
