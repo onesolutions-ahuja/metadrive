@@ -714,11 +714,11 @@ export class RecordEngine {
     return this.createRecord(tenantId,userId,objectApi,values,false);
   }
   private async createRecord(tenantId:string,userId:string,objectApi:string,
-    values:Record<string,unknown>,isClone:boolean) {
+    values:Record<string,unknown>,isClone:boolean,existingClient?:PoolClient) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
-    // Reject invalid input before reserving a transaction connection.
-    await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,true);
-    return this.db.transaction(async client=>{
+    // External-ID upserts reuse the same before/after Flow contract inside their lock.
+    await this.prepare(tenantId,userId,objectApi,values,true,existingClient,undefined,true);
+    const save=async(client:PoolClient)=>{
       await this.lockObjectForWrite(client,tenantId,objectApi);
       const defaults=await this.fields(tenantId,objectApi,client);
       const literals=Object.fromEntries(defaults.filter(field=>field.default_value!==null)
@@ -740,7 +740,12 @@ export class RecordEngine {
         await this.recordTrigger(client,tenantId,userId,objectApi,'created',record,null,'after-save',isClone);
       }
       return id;
-    });
+    };
+    return existingClient?save(existingClient):this.db.transaction(save);
+  }
+  async createWithTriggersInTransaction(client:PoolClient,tenantId:string,userId:string,
+    objectApi:string,values:Record<string,unknown>) {
+    return this.createRecord(tenantId,userId,objectApi,values,false,client);
   }
   async clone(tenantId:string,userId:string,objectApi:string,sourceId:string) {
     if(objectApi==='User')throw new Error('User records cannot be cloned');
