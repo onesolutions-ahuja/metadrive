@@ -1,3 +1,5 @@
+import {executeDeleteRecordsNode} from './DeleteRecordsNode.js';
+import {executeUpdateRecordsNode} from './UpdateRecordsNode.js';
 import {executeGetRecordsNode} from './GetRecordsNode.js';
 import {executeCreateRecordsNode} from './CreateRecordsNode.js';
 import {executeLoopNode} from './LoopNode.js';
@@ -100,52 +102,8 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
   const {tenantId,userId,client,node,records,recordQuery,vars,loops,evaluate,set}=context;
   const config=node.config;
   if(node.type==='Get Records')return executeGetRecordsNode({...context,conditionsFrom,recordValues,scalar});
-  if(node.type==='Update Records'||node.type==='Delete Records'){
-    const objectApi=String(config.object??'');
-    if(!apiName.test(objectApi))throw new Error('Invalid record mutation Object');
-    const configuredId=config.recordId===undefined?'':evaluate(config.recordId);
-    let targets:Record<string,unknown>[];
-    if(config.recordSource==='collection'){
-      targets=recordValues(vars[String(config.collection??'')]);
-    }else if(config.recordSource==='record'){
-      const record=vars[String(config.recordVariable??'')];
-      if(!record||typeof record!=='object'||Array.isArray(record))
-        throw new Error('Record mutation requires a single record variable');
-      targets=[record as Record<string,unknown>];
-    }else if(typeof configuredId==='string'&&configuredId){
-      targets=[{Id:configuredId}];
-    }else{
-      const conditions=conditionsFrom(config.conditions,evaluate);
-      if(!conditions.length)throw new Error('Record mutation requires an ID, record collection, or filter condition');
-      targets=await recordQuery.find(tenantId,userId,objectApi,conditions,
-        typeof config.conditionLogic==='string'?config.conditionLogic:undefined,
-        {limit:200},client);
-    }
-    if(targets.length>200)throw new Error('Flow record mutation exceeds the 200-record limit');
-    if(node.type==='Delete Records'){
-      for(const record of targets){
-        if(typeof record.Id!=='string')throw new Error('Invalid Delete Records target');
-        await records.remove(tenantId,userId,objectApi,record.Id,client);
-      }
-    }else{
-      const fieldValues:Record<string,unknown>={};
-      const assignments=Array.isArray(config.fieldValues)?config.fieldValues:[];
-      if(assignments.length<1||assignments.length>100)
-        throw new Error('Update Records requires between 1 and 100 field assignments');
-      for(const item of assignments as Array<Record<string,unknown>>){
-        const field=String(item.field??item.apiName??'');
-        if(!apiName.test(field))throw new Error('Invalid Update Records field');
-        const value=evaluate(item.value??null);
-        if(!scalar(value))throw new Error('Update Records values must be scalar');
-        fieldValues[field]=value;
-      }
-      for(const record of targets){
-        if(typeof record.Id!=='string')throw new Error('Invalid Update Records target');
-        await records.update(tenantId,userId,objectApi,record.Id,fieldValues,undefined,client);
-      }
-    }
-    return {handled:true,clearHistory:true};
-  }
+  if(node.type==='Update Records')return executeUpdateRecordsNode({...context,conditionsFrom,recordValues,scalar});
+  if(node.type==='Delete Records')return executeDeleteRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Loop')return executeLoopNode({node,vars,loops});
   if(node.type==='Collection Filter'||node.type==='Collection Sort'||node.type==='Transform'){
     const output=String(config.outputCollection??'');
