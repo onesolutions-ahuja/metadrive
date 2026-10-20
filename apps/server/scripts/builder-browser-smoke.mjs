@@ -48,6 +48,10 @@ try{
  const recycleDefinition=await new EarlyObjectDefinition(db).create(tenantId,'BrowserRecycle__c',
   'Browser Recycle',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
  assert.ok(recycleDefinition);
+ await db.query(`INSERT INTO md_object_actions
+   (tenant_id,object_api,action_id,label,action_type,enabled,sort_order)
+   VALUES($1,'BrowserRecycle__c','Delete','Delete','Standard',true,0)
+   ON CONFLICT(tenant_id,object_api,action_id) DO NOTHING`,[tenantId]);
  const recycleSetup=new EarlyRecordEngine(db,new EarlyRbacEngine(db));
  const recycleId=await recycleSetup.create(tenantId,userId,'BrowserRecycle__c',{Name:'Browser recovery test'});
  await recycleSetup.remove(tenantId,userId,'BrowserRecycle__c',recycleId);
