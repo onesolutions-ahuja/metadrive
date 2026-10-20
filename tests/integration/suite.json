@@ -22,6 +22,7 @@
     "apps/server/test/system/platform-event-service.test.ts",
     "apps/server/test/system/platform-event-stream.test.ts",
     "apps/server/test/system/record-query.test.ts",
+    "apps/server/test/system/relationship-engine.test.ts",
     "apps/server/test/system/versioned-api-query.test.ts"
   ]
 }
