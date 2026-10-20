@@ -301,6 +301,10 @@ function ObjectManager({
   const [customLinkUrl, setCustomLinkUrl] = useState('');
   const [customLinkNewWindow, setCustomLinkNewWindow] = useState(false);
   const [customActionLabel, setCustomActionLabel] = useState('');
+  const [customActionBehavior, setCustomActionBehavior] = useState<NonNullable<ObjectActionMetadata['behavior']>>('Set Field Value');
+  const [customActionTargetObject, setCustomActionTargetObject] = useState('');
+  const [customActionRelationshipField, setCustomActionRelationshipField] = useState('');
+  const [customActionFlow, setCustomActionFlow] = useState('');
   const [customActionFieldApiName, setCustomActionFieldApiName] = useState('');
   const [customActionValue, setCustomActionValue] = useState('');
   const [recordTypePicklistDrafts, setRecordTypePicklistDrafts] = useState<Record<string, string>>({});
@@ -1113,45 +1117,150 @@ function ObjectManager({
     const actions = draft.actions ?? [];
     const writableFields = draft.fields.filter((field) => !field.formula && !field.relationship
       && field.dataType !== 'AutoNumber' && field.dataType !== 'Auto Number');
+    const relationsFor = (targetApi:string) => objects.find(item=>item.apiName===targetApi)
+      ?.fields.filter(field=>field.relationship?.targetObject===draft.apiName)??[];
+    const updateAction = (id:string,changes:Partial<ObjectActionMetadata>) =>
+      updateDraft({actions:actions.map(item=>item.id===id?{...item,...changes}:item)});
     const addCustomAction = () => {
-      const label = customActionLabel.trim();
-      if (!label || !customActionFieldApiName) return;
-      if (actions.some((action) => action.label.toLocaleLowerCase() === label.toLocaleLowerCase())) {
-        onNotify('An action with this label already exists');
+      const label=customActionLabel.trim();
+      if(!label||actions.some(action=>action.label.toLowerCase()===label.toLowerCase())
+        ||['new','edit','delete'].includes(label.toLowerCase())){
+        onNotify('Choose a unique quick action label that does not match a standard action');
         return;
       }
-      if (['new', 'edit', 'delete'].includes(label.toLocaleLowerCase())) {
-        onNotify('Custom actions cannot reuse standard action labels');
-        return;
-      }
-      const action: ObjectActionMetadata = {
-        id: `custom-${Date.now()}`, label, type: 'Custom', enabled: true,
-        behavior: 'Set Field Value', fieldApiName: customActionFieldApiName, value: customActionValue
+      if(customActionBehavior==='Set Field Value'&&!customActionFieldApiName)return;
+      if(customActionBehavior==='Run Flow'&&!customActionFlow)return;
+      if(customActionBehavior==='Create Related'
+        &&(!customActionTargetObject||!customActionRelationshipField))return;
+      const action:ObjectActionMetadata={
+        id:`custom-${crypto.randomUUID()}`,label,type:'Custom',enabled:true,
+        behavior:customActionBehavior,
+        ...(customActionBehavior==='Set Field Value'?{fieldApiName:customActionFieldApiName,
+          value:customActionValue}:{}),
+        ...(customActionBehavior==='Log Call'?{value:customActionValue}:{}),
+        ...(customActionBehavior==='Run Flow'?{flowApiName:customActionFlow}:{}),
+        ...(customActionBehavior==='Create Related'?{targetObjectApi:customActionTargetObject,
+          relationshipFieldApi:customActionRelationshipField}:{})
       };
-      updateDraft({ actions: [...actions, action] });
-      setCustomActionLabel('');
-      setCustomActionFieldApiName('');
-      setCustomActionValue('');
+      updateDraft({actions:[...actions,action]});
+      setCustomActionLabel('');setCustomActionValue('');
     };
     return <section className="surface object-setting-surface">
-      <div className="section-toolbar"><div><h2>Buttons, Links, and Actions</h2><p>Configure supported record actions. Custom actions currently update one field when run.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div>
-      <div className="metadata-card"><h3>Object Actions</h3>{actions.map((action) => <div className="metadata-card" key={action.id}>
-        <div className="metadata-row"><span><strong>{action.label}</strong><small>{action.type === 'Standard' ? 'Standard record action' : action.behavior === 'Set Field Value' ? `Sets ${draft.fields.find((field) => field.apiName === action.fieldApiName)?.label ?? action.fieldApiName} to the configured value` : 'Needs a supported behavior configured'}</small></span><input aria-label={`Enable ${action.label} action`} type="checkbox" checked={action.enabled} onChange={(event) => updateDraft({ actions: actions.map((item) => item.id === action.id ? { ...item, enabled: event.target.checked } : item) })} />{action.type === 'Custom' && <button className="row-menu" aria-label={`Delete ${action.label} action`} onClick={() => updateDraft({ actions: actions.filter((item) => item.id !== action.id) })}><X size={14} /></button>}</div>
-        {action.type === 'Custom' && <div className="record-type-create">
-          <select className="form-control" aria-label={`Target field for ${action.label}`} value={action.fieldApiName ?? ''} onChange={(event) => updateDraft({ actions: actions.map((item) => item.id === action.id ? { ...item, behavior: 'Set Field Value', fieldApiName: event.target.value } : item) })}>
-            <option value="">Choose field</option>{writableFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
+      <div className="section-toolbar"><div><h2>Buttons, Links, and Actions</h2>
+        <p>Configure reusable record Quick Actions. Execution uses the shared CRUD, Activity and Flow engines with server-side permissions.</p></div>
+        <button className="btn btn-brand" onClick={persistDraft}><Save size={14}/>Save</button></div>
+      <div className="metadata-card"><h3>Object Actions</h3>
+        {actions.map(action=><div className="metadata-card" key={action.id}>
+          <div className="metadata-row"><span><strong>{action.label}</strong>
+            <small>{action.type==='Standard'?'Standard record action':action.behavior??'Custom action'}</small></span>
+            <input aria-label={`Enable ${action.label} action`} type="checkbox" checked={action.enabled}
+              onChange={event=>updateAction(action.id,{enabled:event.target.checked})}/>
+            {action.type==='Custom'&&<button className="row-menu" aria-label={`Delete ${action.label} action`}
+              onClick={()=>updateDraft({actions:actions.filter(item=>item.id!==action.id)})}><X size={14}/></button>}
+          </div>
+          {action.type==='Custom'&&<div className="record-type-create">
+            <label>Action behavior
+              <select className="form-control" aria-label={`Behavior for ${action.label}`}
+                value={action.behavior??'Set Field Value'} onChange={event=>updateAction(action.id,{
+                  behavior:event.target.value as NonNullable<ObjectActionMetadata['behavior']>,
+                  fieldApiName:undefined,value:undefined,targetObjectApi:undefined,
+                  relationshipFieldApi:undefined,flowApiName:undefined})}>
+                <option value="Set Field Value">Update a field</option>
+                <option value="Log Call">Log a call</option>
+                <option value="Run Flow">Run Flow</option>
+                <option value="Create Related">Create related record</option>
+              </select>
+            </label>
+            {action.behavior==='Set Field Value'&&<>
+              <select className="form-control" aria-label={`Target field for ${action.label}`}
+                value={action.fieldApiName??''} onChange={event=>updateAction(action.id,{fieldApiName:event.target.value})}>
+                <option value="">Choose field</option>
+                {writableFields.map(field=><option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
+              </select>
+              <input className="form-control" aria-label={`Value for ${action.label}`}
+                value={action.value??''} onChange={event=>updateAction(action.id,{value:event.target.value})}/>
+            </>}
+            {action.behavior==='Log Call'&&<input className="form-control"
+              aria-label={`Default call subject for ${action.label}`} maxLength={200}
+              placeholder="Default subject (optional)" value={action.value??''}
+              onChange={event=>updateAction(action.id,{value:event.target.value})}/>}
+            {action.behavior==='Run Flow'&&<select className="form-control"
+              aria-label={`Flow for ${action.label}`} value={action.flowApiName??''}
+              onChange={event=>updateAction(action.id,{flowApiName:event.target.value})}>
+              <option value="">Choose a Flow</option>
+              {flows.filter(flow=>flow.status==='Active').map(flow=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+            </select>}
+            {action.behavior==='Create Related'&&<>
+              <select className="form-control" aria-label={`Related object for ${action.label}`}
+                value={action.targetObjectApi??''} onChange={event=>updateAction(action.id,{
+                  targetObjectApi:event.target.value,relationshipFieldApi:undefined})}>
+                <option value="">Choose child object</option>
+                {objects.filter(item=>relationsFor(item.apiName).length>0).map(item=>
+                  <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
+              </select>
+              <select className="form-control" aria-label={`Relationship field for ${action.label}`}
+                value={action.relationshipFieldApi??''} onChange={event=>updateAction(action.id,{relationshipFieldApi:event.target.value})}>
+                <option value="">Choose relationship</option>
+                {relationsFor(action.targetObjectApi??'').map(field=>
+                  <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+              </select>
+            </>}
+          </div>}
+        </div>)}
+        <div className="record-type-create">
+          <input className="form-control" aria-label="New custom action" maxLength={80}
+            placeholder="Quick action label" value={customActionLabel}
+            onChange={event=>setCustomActionLabel(event.target.value)}/>
+          <select className="form-control" aria-label="New quick action behavior" value={customActionBehavior}
+            onChange={event=>setCustomActionBehavior(event.target.value as NonNullable<ObjectActionMetadata['behavior']>)}>
+            <option value="Set Field Value">Update a field</option>
+            <option value="Log Call">Log a call</option>
+            <option value="Run Flow">Run Flow</option>
+            <option value="Create Related">Create related record</option>
           </select>
-          <input className="form-control" aria-label={`Value for ${action.label}`} placeholder="Value to set" value={action.value ?? ''} onChange={(event) => updateDraft({ actions: actions.map((item) => item.id === action.id ? { ...item, behavior: 'Set Field Value', value: event.target.value } : item) })} />
-        </div>}
-      </div>)}
-      <div className="record-type-create">
-        <input className="form-control" aria-label="New custom action" placeholder="Custom action label" maxLength={80} value={customActionLabel} onChange={(event) => setCustomActionLabel(event.target.value)} />
-        <select className="form-control" aria-label="Custom action target field" value={customActionFieldApiName} onChange={(event) => setCustomActionFieldApiName(event.target.value)}>
-          <option value="">Choose field</option>{writableFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
-        </select>
-        <input className="form-control" aria-label="Custom action field value" placeholder="Value to set" maxLength={10000} value={customActionValue} onChange={(event) => setCustomActionValue(event.target.value)} />
-        <button className="btn" onClick={addCustomAction} disabled={!customActionLabel.trim() || customActionLabel.length > 80 || !customActionFieldApiName}><Plus size={14} />Add Action</button>
-      </div></div>
+          {customActionBehavior==='Set Field Value'&&<>
+            <select className="form-control" aria-label="Custom action target field"
+              value={customActionFieldApiName} onChange={event=>setCustomActionFieldApiName(event.target.value)}>
+              <option value="">Choose field</option>
+              {writableFields.map(field=><option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
+            </select>
+            <input className="form-control" aria-label="Custom action field value"
+              placeholder="Value to set" maxLength={10000} value={customActionValue}
+              onChange={event=>setCustomActionValue(event.target.value)}/>
+          </>}
+          {customActionBehavior==='Log Call'&&<input className="form-control" aria-label="Default call subject"
+            maxLength={200} placeholder="Default call subject" value={customActionValue}
+            onChange={event=>setCustomActionValue(event.target.value)}/>}
+          {customActionBehavior==='Run Flow'&&<select className="form-control" aria-label="Quick action Flow"
+            value={customActionFlow} onChange={event=>setCustomActionFlow(event.target.value)}>
+            <option value="">Choose a Flow</option>
+            {flows.filter(flow=>flow.status==='Active').map(flow=>
+              <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+          </select>}
+          {customActionBehavior==='Create Related'&&<>
+            <select className="form-control" aria-label="Quick action related object"
+              value={customActionTargetObject} onChange={event=>{setCustomActionTargetObject(event.target.value);
+                setCustomActionRelationshipField('');}}>
+              <option value="">Choose child object</option>
+              {objects.filter(item=>relationsFor(item.apiName).length>0).map(item=>
+                <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
+            </select>
+            <select className="form-control" aria-label="Quick action relationship field"
+              value={customActionRelationshipField}
+              onChange={event=>setCustomActionRelationshipField(event.target.value)}>
+              <option value="">Choose relationship</option>
+              {relationsFor(customActionTargetObject).map(field=>
+                <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select>
+          </>}
+          <button className="btn" onClick={addCustomAction}
+            disabled={!customActionLabel.trim()||customActionLabel.length>80
+              ||(customActionBehavior==='Set Field Value'&&!customActionFieldApiName)
+              ||(customActionBehavior==='Run Flow'&&!customActionFlow)
+              ||(customActionBehavior==='Create Related'&&(!customActionTargetObject||!customActionRelationshipField))}>
+            <Plus size={14}/>Add Action</button>
+        </div>
+      </div>
     </section>;
   };
   const renderLightningRecordPages = () => {
