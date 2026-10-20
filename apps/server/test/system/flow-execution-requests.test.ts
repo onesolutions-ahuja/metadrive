@@ -34,8 +34,7 @@ function fixture(){
    if(sql.includes("SET state='failed'")){state.status='failed';return {rowCount:1,rows:[]};}
    throw Error('Unexpected SQL '+sql);
  };
- const db={query,transaction:async(run:(client:{query:typeof query})=>Promise<unknown>)=>run({query})}
-   as unknown as SqlPersistence;
+ const db={query,transaction:async(run:(client:{query:typeof query})=>Promise<unknown>)=>run({query})} as unknown as SqlPersistence;
  return {client:new FlowExecutionRequests(db),state,queries};
 }
 
