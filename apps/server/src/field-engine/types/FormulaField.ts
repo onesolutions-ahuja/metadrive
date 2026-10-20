@@ -6,4 +6,8 @@ export const FormulaDefinition:FieldTypeDefinition=Object.freeze({
 });
 
 // Formula fields share the existing parser/evaluator; no parallel formula engine.
-export {evaluateFlowFormula,validateFlowFormula,flowFormulaReferences,inferFlowFormulaType} from '../../system-files/flow-formula-runtime.js';
+export async function loadFormulaFieldEngine(){
+ const engine=await import('../../system-files/flow-formula-runtime.js');
+ return {evaluateFlowFormula:engine.evaluateFlowFormula,validateFlowFormula:engine.validateFlowFormula,
+  flowFormulaReferences:engine.flowFormulaReferences,inferFlowFormulaType:engine.inferFlowFormulaType};
+}
