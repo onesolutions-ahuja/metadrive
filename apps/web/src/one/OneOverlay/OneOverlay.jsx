@@ -104,7 +104,7 @@ export default function OneOverlay(props) {
                 <h3 className="one-heading">{title}</h3>
                 {description && <p>{description}</p>}
                 {priceLabel && <strong>{priceLabel}</strong>}
-                {p.confirmBehavior !== "none" && <button type="button" className="one-btn one-btn--primary"
+                {["add","flow"].includes(p.confirmBehavior) && <button type="button" className="one-btn one-btn--primary"
                   onClick={() => {
                     if (p.confirmBehavior==="add" && p.cartTargetKey && p.pageSessionKey && typeof window!=="undefined") {
                       window.dispatchEvent(new CustomEvent("metadrive:page-cart-add",{
