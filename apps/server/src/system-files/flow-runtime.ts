@@ -13,6 +13,7 @@ import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.j
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {executeFlowSubflow} from './flow-subflow-runtime.js';
+import {FlowExecutionRequests} from './flow-execution-requests.js';
 import {persistFlowInterviewPause} from './flow-interview-persistence.js';
 import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import {executeFlowAction,submitFlowStageApproval,loadFlowUserResource} from './flow-action-runtime.js';
@@ -493,15 +494,31 @@ export class FlowRuntime {
     if(rows[0]?.flow_type==='Record-Triggered Flow'||rows[0]?.flow_type==='Schedule-Triggered Flow'
       ||rows[0]?.flow_type==='Platform Event-Triggered Flow')
       throw new Error('Triggered Flows cannot be manually executed');
-    const id=await this.start(tenantId,flowApi,userId,inputs);
-    const {rows:actors}=await this.db.query<{started_by:string}>(
-      'SELECT started_by FROM md_flow_runs WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
-    const executionUserId=actors[0]?.started_by;
-    if(!executionUserId)throw new Error('Flow run has no execution identity');
-    // Authored Screen/Autolaunched Flows both use the one normalized action engine.
-    // SQL-only definitions from before the Builder migration retain their legacy adapter.
-    return rows[0]?.has_editor?this.advanceInterview(tenantId,executionUserId,id,{})
-      :this.run(tenantId,id,executionUserId);
+    const requests=new FlowExecutionRequests(this.db);
+    const requestId=FlowExecutionRequests.key(inputs);
+    if(requestId){
+      const claim=await requests.claim(tenantId,userId,flowApi,requestId,inputs);
+      if(!claim.owner)return claim.value;
+    }
+    try{
+      const id=await this.start(tenantId,flowApi,userId,inputs);
+      if(requestId)await requests.started(tenantId,userId,flowApi,requestId,id);
+      const {rows:actors}=await this.db.query<{started_by:string}>(
+        'SELECT started_by FROM md_flow_runs WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+      const executionUserId=actors[0]?.started_by;
+      if(!executionUserId)throw new Error('Flow run has no execution identity');
+      // Only shared durable runtimes execute actions; caller-selected request IDs
+      // cannot create another interview after the SQL ledger has claimed them.
+      const result=rows[0]?.has_editor
+        ?await this.advanceInterview(tenantId,executionUserId,id,{})
+        :await this.run(tenantId,id,executionUserId);
+      if(requestId && result.status==='completed')
+        await requests.completed(tenantId,userId,flowApi,requestId,result);
+      return result;
+    }catch(error){
+      if(requestId)await requests.failed(tenantId,userId,flowApi,requestId);
+      throw error;
+    }
   }
 
   async resumeWaitingInterview(tenantId:string,userId:string,runId:string,version:number){
@@ -854,6 +871,10 @@ export class FlowRuntime {
                 outputs[resource.name]=resolveResource(resource.name);
             }
           const completion={id:runId,status:'completed' as const,completed:true,outputs};
+          await client.query(`UPDATE md_flow_execution_requests
+            SET state='completed',result_payload=$3::jsonb,updated_at=now()
+            WHERE tenant_id=$1 AND run_id=$2 AND state='pending'`,
+            [tenantId,runId,JSON.stringify(completion)]);
           if(active.flow_type==='Record-Triggered Flow')return {...completion,record:vars.$Record};
           return completion;
         }
