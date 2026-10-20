@@ -15,10 +15,11 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from '../../metadata/Cache/offlineRecordQueue';
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
-import GlobalQuickActionsEditor from './GlobalQuickActionsEditor';
+// Global Quick Actions editor is builder-only; load it on its settings tab.
 import CustomMetadataManager from './CustomMetadataManager';
-const MatchingRulesPanel = React.lazy(() => import('./MatchingRulesPanel'));
 import * as React from 'react';
+const MatchingRulesPanel = React.lazy(() => import('./MatchingRulesPanel'));
+const GlobalQuickActionsEditor = React.lazy(() => import('./GlobalQuickActionsEditor'));
 const BusinessAutomationsPanel=React.lazy(()=>import('./BusinessAutomationsPanel'));
 const DeclarativeRulesPanel=React.lazy(()=>import('./DeclarativeRulesPanel'));
 import { createPortal } from 'react-dom';
@@ -1339,7 +1340,7 @@ function ObjectManager({
             <Plus size={14}/>Add Action</button>
         </div>
       </div>
-      <GlobalQuickActionsEditor apiRequest={apiRequest} objects={objects} flows={flows} onNotify={onNotify}/>
+      <React.Suspense fallback={<p>Loading global Quick Actions…</p>}><GlobalQuickActionsEditor apiRequest={apiRequest} objects={objects} flows={flows} onNotify={onNotify}/></React.Suspense>
     </section>;
   };
   const renderLightningRecordPages = () => {
