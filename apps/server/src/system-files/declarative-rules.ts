@@ -35,6 +35,7 @@ export class DeclarativeRules {
       let field:string|null=null;
       if(reference.startsWith('$Record.'))field=reference.slice(8);
       else if(reference.startsWith('$Record__Prior.'))field=reference.slice(15);
+      else if(reference.startsWith(objectApi+'.'))field=reference.slice(objectApi.length+1);
       else if(api.test(reference)&&Object.hasOwn(current,reference))field=reference;
       else if(reference.startsWith('$')&&!reference.startsWith('$User.')
         &&!reference.startsWith('$Profile.')
@@ -52,6 +53,7 @@ export class DeclarativeRules {
       if(name==='$Profile')return profile;
       if(name.startsWith('$Record.'))return current[name.slice(8)]??null;
       if(name.startsWith('$Record__Prior.'))return prior?.[name.slice(15)]??null;
+      if(name.startsWith(objectApi+'.'))return current[name.slice(objectApi.length+1)]??null;
       if(name.startsWith('$User.'))return user[name.slice(6) as keyof typeof user]??null;
       if(name.startsWith('$Profile.'))return profile[name.slice(9) as keyof typeof profile]??null;
       return current[name]??null;
@@ -76,7 +78,8 @@ export class DeclarativeRules {
       visiting.add(field);
       const expression=pending.get(field)!;
       for(const ref of flowFormulaReferences(expression)){
-        const name=ref.startsWith('$Record.')?ref.slice(8):ref;
+        const name=ref.startsWith('$Record.')?ref.slice(8):
+          ref.startsWith(objectApi+'.')?ref.slice(objectApi.length+1):ref;
         if(pending.has(name))await resolveDefault(name);
       }
       const ctx=await this.context(client,tenantId,userId,objectApi,values,null,expression);
