@@ -1343,6 +1343,8 @@ $$;
    target_object_api text,
    relationship_field_api text,
    flow_api_name text,
+   credential_id uuid,
+   from_email text,
    sort_order integer NOT NULL DEFAULT 0,
    PRIMARY KEY(tenant_id,object_api,action_id),
    FOREIGN KEY(tenant_id,object_api)
@@ -1353,19 +1355,26 @@ $$;
    CHECK(length(label) BETWEEN 1 AND 80),
    CHECK(value_text IS NULL OR length(value_text)<=10000),
    CONSTRAINT md_object_actions_behavior_contract CHECK(
-     (action_type='Standard' AND behavior IS NULL AND field_api IS NULL AND value_text IS NULL
-      AND target_object_api IS NULL AND relationship_field_api IS NULL AND flow_api_name IS NULL)
-     OR (action_type='Custom' AND (
-       (behavior='Set Field Value' AND field_api IS NOT NULL AND value_text IS NOT NULL
-        AND target_object_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Log Call' AND field_api IS NULL AND target_object_api IS NULL
-        AND flow_api_name IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Run Flow' AND flow_api_name IS NOT NULL AND field_api IS NULL
-        AND target_object_api IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Create Related' AND target_object_api IS NOT NULL
-        AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL)
-     )))
- );
+ (action_type='Standard' AND behavior IS NULL AND field_api IS NULL AND value_text IS NULL
+  AND target_object_api IS NULL AND relationship_field_api IS NULL AND flow_api_name IS NULL
+  AND credential_id IS NULL AND from_email IS NULL)
+ OR (action_type='Custom' AND (
+   (behavior='Set Field Value' AND field_api IS NOT NULL AND value_text IS NOT NULL
+     AND target_object_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL
+     AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Log Call' AND field_api IS NULL AND target_object_api IS NULL
+     AND flow_api_name IS NULL AND relationship_field_api IS NULL AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Run Flow' AND flow_api_name IS NOT NULL AND field_api IS NULL
+     AND target_object_api IS NULL AND relationship_field_api IS NULL AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Create Related' AND target_object_api IS NOT NULL
+     AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL
+     AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Send Email' AND credential_id IS NOT NULL AND from_email IS NOT NULL
+     AND length(from_email)<=254 AND from_email~'^[^[:space:]@<>]+@[^[:space:]@<>]+\.[^[:space:]@<>]+$'
+     AND field_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL
+     AND target_object_api IS NULL AND value_text IS NULL)
+  ))
+);
  CREATE TABLE IF NOT EXISTS md_encrypted_field_access_audit (
    tenant_id uuid NOT NULL,
    id uuid NOT NULL DEFAULT gen_random_uuid(),
