@@ -873,10 +873,7 @@ export class FlowRuntime {
           const completion={id:runId,status:'completed' as const,completed:true,outputs};
           if (typeof vars.requestId==='string'
             && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(vars.requestId))
-            await client.query(`UPDATE md_flow_execution_requests
-              SET state='completed',result_payload=$3::jsonb,updated_at=now()
-              WHERE tenant_id=$1 AND run_id=$2 AND state='pending'`,
-              [tenantId,runId,JSON.stringify(completion)]);
+            await FlowExecutionRequests.completeRun(client,tenantId,runId,completion);
           if(active.flow_type==='Record-Triggered Flow')return {...completion,record:vars.$Record};
           return completion;
         }
