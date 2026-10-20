@@ -440,9 +440,9 @@ export class NamedCredentialService {
   actionId:string,credentialId:string,from:string,to:string,subject:string,body:string){
   await this.rbac.require(tenantId,userId,'Email','send');
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
-  const email=/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/;
+  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
   if(!email.test(to)||to.length>254||!email.test(from)||from.length>254
-    ||typeof subject!=='string'||!subject.trim()||subject.length>300||/[\\r\\n]/.test(subject)
+    ||typeof subject!=='string'||!subject.trim()||subject.length>300||/[\r\n]/.test(subject)
     ||typeof body!=='string'||!body.trim()||body.length>10000)
     throw new Error('Invalid Quick Action email');
   try{
