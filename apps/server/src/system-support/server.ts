@@ -13,6 +13,7 @@ import {applySystemMigrations} from './system-migrations.js';
 import {loadFlowCapabilityCatalog} from '../system-files/flow-capability-catalog.js';
 import {finishFlowOrchestrationDecision} from '../system-files/flow-orchestration-runtime.js';
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
+import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -1946,6 +1947,7 @@ export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
   try { await applySystemMigrations(db); await db.verifySchema();
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
+    await seedCartObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
     const bundledTenants=await seedBundledComponentsForExistingTenants(db);
