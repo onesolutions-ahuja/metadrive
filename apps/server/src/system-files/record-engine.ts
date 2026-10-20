@@ -1,3 +1,7 @@
+import {registeredRelationships} from '../relationship-engine/RelationshipRegistry.js';
+import {assertDeletionAllowed} from '../relationship-engine/ReferentialIntegrityGuard.js';
+import {assertLookupTargetExists} from '../relationship-engine/LookupResolver.js';
+import {enforceMasterDetailReparenting} from '../relationship-engine/MasterDetailManager.js';
 import {rollupParents,refreshRollups} from '../relationship-engine/RollupAggregationManager.js';
 import {readRollupSummaryField} from '../field-engine/types/RollupSummaryField.js';
 import {validateLookupField} from '../field-engine/types/LookupField.js';
@@ -6,7 +10,6 @@ import {normalizeCheckboxField} from '../field-engine/types/CheckboxField.js';
 import {validateTextField} from '../field-engine/types/TextField.js';
 import {validatePicklistField} from '../field-engine/types/PicklistField.js';
 import {validateMultiSelectPicklistField} from '../field-engine/types/MultiSelectPicklistField.js';
-import {assertMasterDetailReparenting} from '../field-engine/types/MasterDetailField.js';
 import {validatePhoneField} from '../field-engine/types/PhoneField.js';
 import {validateEmailField} from '../field-engine/types/EmailField.js';
 import {validateUrlField} from '../field-engine/types/UrlField.js';
@@ -441,11 +444,9 @@ export class RecordEngine {
             const previous=await (client??this.db).query<{reference_record_id:string|null}>(
               'SELECT reference_record_id FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
               [tenantId,recordId,key]);
-            assertMasterDetailReparenting(previous.rows[0]?.reference_record_id,value,key,field.allow_reparenting);
+            enforceMasterDetailReparenting(previous.rows[0]?.reference_record_id,value,key,field.allow_reparenting);
           }
-          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
-            [tenantId,field.related_object,value]);
-            if(!match.rowCount)throw new Error('Invalid relationship target: '+key); }
+          await assertLookupTargetExists(client??this.db,tenantId,field.related_object,value,key);
           text='';reference=value;break;
         case 'geolocation': {
           if(!value||typeof value!=='object'||Array.isArray(value))
@@ -1364,21 +1365,8 @@ export class RecordEngine {
     }
     const affectedParents=await rollupParents(client,tenantId,objectApi,id);
     visiting.add(recordKey);
-    const {rows:references}=await client.query<{
-      record_id:string;object_api:string;field_api:string;relationship_type:string;
-      delete_behavior:string|null;required:boolean
-    }>(`SELECT r.id AS record_id,r.object_api,f.api_name AS field_api,
-        COALESCE(f.relationship_type,'Lookup') AS relationship_type,f.delete_behavior,f.required
-      FROM md_record_values v
-      JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.is_deleted=false
-      JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
-        AND f.api_name=v.field_api
-      WHERE v.tenant_id=$1 AND v.reference_record_id=$2 AND f.related_object=$3
-      ORDER BY f.relationship_type,r.object_api,r.id`,
-    [tenantId,id,objectApi]);
-    if(references.some(reference=>reference.relationship_type==='Lookup'
-      &&(reference.delete_behavior==='Restrict'||reference.required)))
-      throw new Error('Record delete restricted by a lookup relationship');
+    const references=await registeredRelationships(client,tenantId,{recordId:id,objectApi});
+    assertDeletionAllowed(references);
     const cascaded=new Set<string>();
     for(const reference of references){
       if(reference.relationship_type!=='Master-Detail')continue;
