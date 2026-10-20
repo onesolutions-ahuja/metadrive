@@ -435,6 +435,31 @@ export class NamedCredentialService {
  async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
   return this.sendTenantEmail(tenantId,id,from,to,subject,body);
  }
+ /** Quick Actions reuse secure SMTP transport and existing OneEngine communication policy. */
+ async sendQuickActionEmail(tenantId:string,userId:string,objectApi:string,recordId:string,
+  actionId:string,credentialId:string,from:string,to:string,subject:string,body:string){
+  await this.rbac.require(tenantId,userId,'Email','send');
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  const email=/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/;
+  if(!email.test(to)||to.length>254||!email.test(from)||from.length>254
+    ||typeof subject!=='string'||!subject.trim()||subject.length>300||/[\\r\\n]/.test(subject)
+    ||typeof body!=='string'||!body.trim()||body.length>10000)
+    throw new Error('Invalid Quick Action email');
+  try{
+   await this.sendTenantEmail(tenantId,credentialId,from,to,subject,body);
+   await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+     VALUES($1,$2,'quick-action.email.sent',jsonb_build_object(
+       'objectApi',$3::text,'recordId',$4::text,'actionId',$5::text))`,
+    [tenantId,userId,objectApi,recordId,actionId]);
+  }catch(error){
+   await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+     VALUES($1,$2,'quick-action.email.failed',jsonb_build_object(
+       'objectApi',$3::text,'recordId',$4::text,'actionId',$5::text))`,
+    [tenantId,userId,objectApi,recordId,actionId]).catch(()=>undefined);
+   throw error;
+  }
+ }
+
  async enqueueFlowEmail(client:PoolClient,tenantId:string,userId:string,flowId:string,flowVersion:number,
   runId:string,nodeId:number,step:number,credentialId:string,from:string,recipients:string[],
   subject:string,body:string) {
