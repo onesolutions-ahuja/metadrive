@@ -1041,13 +1041,13 @@ export class ObjectDefinitionService {
       `,[tenantId,objectApi]);
       if(validationRefs.rows.some(rule=>rule.error_field_api===fieldApi||
         flowFormulaReferences(rule.expression).some(ref=>
-          ref===fieldApi||ref==='$Record.'+fieldApi||ref==='$Record__Prior.'+fieldApi)))
+          ref===fieldApi||ref===objectApi+'.'+fieldApi||ref==='$Record.'+fieldApi||ref==='$Record__Prior.'+fieldApi)))
         throw new Error('Field is referenced by a validation rule');
       const defaultRefs=await client.query<{field_api:string;expression:string}>(`
         SELECT field_api,expression FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2
       `,[tenantId,objectApi]);
       if(defaultRefs.rows.some(item=>flowFormulaReferences(item.expression).some(ref=>
-        ref===fieldApi||ref==='$Record.'+fieldApi)))
+        ref===fieldApi||ref===objectApi+'.'+fieldApi||ref==='$Record.'+fieldApi)))
         throw new Error('Field is referenced by a formula default');
       await client.query(`UPDATE md_field_definitions SET deleted_at=now()
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
