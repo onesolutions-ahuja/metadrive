@@ -11,7 +11,7 @@ export default function OneTenantImage({src,alt="",loadAsset, ...props}) {
     Promise.resolve(loadAsset(match[1])).then(asset=>{
       if(!active||!asset||!types.has(asset.contentType)
         ||typeof asset.contentBase64!=="string"
-        ||asset.contentBase64.length>1450000
+        ||asset.contentBase64.length>7100000
         ||!/^[A-Za-z0-9+/]+={0,2}$/.test(asset.contentBase64))return;
       setLoaded("data:"+asset.contentType+";base64,"+asset.contentBase64);
     }).catch(()=>{if(active)setLoaded("");});
