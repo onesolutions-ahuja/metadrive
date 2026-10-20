@@ -22,7 +22,15 @@ function resolveImport(from, specifier) {
   const base = path.resolve(path.dirname(from), specifier);
   const noJs = base.replace(/\.(?:js|mjs|cjs)$/, '');
   const choices = new Set([base, ...extensions.map(x => base + x), ...extensions.map(x => noJs + x)]);
-  if (![...choices].some(fs.existsSync)) missing.push({ file: path.relative(root, from), target: specifier, type: 'module' });
+  if ([...choices].some(fs.existsSync)) return;
+  // Audit source references to future compiled system modules before build.
+  const outputRoot=path.join(root,'apps/server/dist-system');
+  const relative=path.relative(outputRoot,base);
+  if(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative)){
+    const source=path.join(root,'apps/server/src',relative).replace(/\.(?:js|mjs|cjs)$/,'');
+    if(['.ts','.tsx','.mts','.cts'].some(extension=>fs.existsSync(source+extension)))return;
+  }
+  missing.push({ file: path.relative(root, from), target: specifier, type: 'module' });
 }
 const importPattern = /(?:\b(?:import|export)\s+(?:[\s\S]{0,160}?\s+from\s*)?['"]([^'"]+)['"]|\b(?:require|import)\(\s*['"]([^'"]+)['"]\s*\))/g;
 const fileExec = /\b(?:node|tsx|bash|sh)\s+(?:--[\w-]+\s+)*((?:\.\/|\.\.\/|scripts\/|apps\/|tests\/)[\w./-]+\.(?:mjs|js|ts|sh))\b/g;
