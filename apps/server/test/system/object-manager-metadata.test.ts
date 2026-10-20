@@ -51,10 +51,43 @@ test('Object Manager persists only supported custom actions with writable fields
  const actionWrite=writes.find(write=>write.sql.includes('INSERT INTO md_object_actions'));
  assert.ok(actionWrite);
  assert.deepEqual(actionWrite.values,['tenant','Account','MarkReviewed','Mark Reviewed','Custom',true,
-  'Set Field Value','Status','Reviewed',0]);
+  'Set Field Value','Status','Reviewed',0,null,null,null]);
  await assert.rejects(()=>service.persistWithin(client,'tenant','Account',{
   pluralLabel:'Accounts',settings:{},fieldSets:[],
   actions:[{id:'BadAction',label:'Bad Action',type:'Custom',enabled:true,
    behavior:'Set Field Value',fieldApiName:'Calculated',value:'x'}]
  }),/writable field/);
+});
+
+test('Object Manager persists Flow, call and related actions in the same SQL metadata registry',async()=>{
+ const writes:Array<{sql:string;values:unknown[]}>= [];
+ const client={query:async(sql:string,values:unknown[]=[])=>{
+  if(sql.includes('SELECT api_name FROM md_object_definitions'))
+   return {rows:[{api_name:'Account'}],rowCount:1};
+  if(sql.includes('SELECT api_name,data_type'))return {rows:[{api_name:'Name',data_type:'text'}],rowCount:1};
+  if(sql.includes('SELECT 1 FROM md_field_definitions'))
+   return {rows:[{exists:1}],rowCount:1};
+  writes.push({sql,values});return {rows:[],rowCount:1};
+ }} as unknown as PoolClient;
+ const metadata=new ObjectManagerMetadataService({} as SqlPersistence,access);
+ const saved=await metadata.persistWithin(client,'tenant','Account',{
+  pluralLabel:'Accounts',settings:{},fieldSets:[],actions:[
+   {id:'PhoneCall',label:'Log Phone Call',type:'Custom',enabled:true,
+    behavior:'Log Call',value:'Customer call'},
+   {id:'StartFlow',label:'Start Flow',type:'Custom',enabled:true,
+    behavior:'Run Flow',flowApiName:'Account_Onboarding'},
+   {id:'AddContact',label:'New Contact',type:'Custom',enabled:true,
+    behavior:'Create Related',targetObjectApi:'Contact',relationshipFieldApi:'AccountId'}
+  ]
+ });
+ assert.equal(saved.actions.length,3);
+ const rows=writes.filter(x=>x.sql.includes('INSERT INTO md_object_actions'));
+ assert.deepEqual(rows.map(r=>r.values.slice(6,9)),[
+  ['Log Call',null,'Customer call'],['Run Flow',null,null],['Create Related',null,null]]);
+ assert.deepEqual(rows[2].values.slice(10),['Contact','AccountId',null]);
+ await assert.rejects(()=>metadata.persistWithin(client,'tenant','Account',{
+  pluralLabel:'Accounts',settings:{},fieldSets:[],actions:[{
+   id:'Bad',label:'Bad',type:'Custom',enabled:true,behavior:'Run Flow',flowApiName:'../unsafe'
+  }]
+ }),/Invalid quick action Flow/);
 });
