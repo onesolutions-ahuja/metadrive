@@ -42,7 +42,8 @@ test('escalation recipe has an immediate path and a durable scheduled task',()=>
 
 test('generated assignment and escalation graphs satisfy shared Flow schema',async()=>{
  const db=withFlowCapabilities({query:async(sql:string)=>{
-  if(sql.includes('FROM md_field_definitions'))return {rows:[{data_type:'date'}]};
+  if(sql.includes('FROM md_object_definitions'))return {rows:[{api_name:'Ticket__c'}]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{object_api:'Ticket__c',api_name:'DueDate__c',data_type:'date'}]};
   if(sql.includes('FROM md_named_credentials'))return {rows:[{id:user}]};
   return {rows:[]};
  }} as unknown as SqlPersistence);
