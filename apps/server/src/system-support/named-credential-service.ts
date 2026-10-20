@@ -507,18 +507,23 @@ export class NamedCredentialService {
       const actionResource='Action:'+(job.object_api==='Global'
         ?'Global.':job.object_api+'.')+job.action_id;
       const {rowCount:eligible}=await this.db.query(`
-        SELECT 1 FROM md_users u JOIN md_tenants t ON t.id=u.tenant_id
+        SELECT 1 FROM md_users u
+        JOIN md_tenants t ON t.id=u.tenant_id
         JOIN md_named_credentials c ON c.tenant_id=u.tenant_id AND c.id=$4
         WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true
           AND t.status='ACTIVE' AND c.protocol='SMTP' AND c.enabled=true
-          AND EXISTS(SELECT 1 FROM md_global_quick_actions a WHERE $3='Global'
-            AND a.tenant_id=u.tenant_id AND a.action_id=$5
-            AND a.enabled=true AND a.behavior='Send Email' AND a.credential_id=$4)
-          OR u.tenant_id=$1 AND u.id=$2 AND u.enabled=true
-          AND t.status='ACTIVE' AND c.protocol='SMTP' AND c.enabled=true
-          AND EXISTS(SELECT 1 FROM md_object_actions a WHERE $3<>'Global'
-            AND a.tenant_id=u.tenant_id AND a.object_api=$3 AND a.action_id=$5
-            AND a.enabled=true AND a.behavior='Send Email' AND a.credential_id=$4)`,
+          AND (
+            ($3='Global' AND EXISTS(
+              SELECT 1 FROM md_global_quick_actions a
+              WHERE a.tenant_id=u.tenant_id AND a.action_id=$5
+                AND a.enabled=true AND a.behavior='Send Email'
+                AND a.credential_id=$4))
+            OR ($3<>'Global' AND EXISTS(
+              SELECT 1 FROM md_object_actions a
+              WHERE a.tenant_id=u.tenant_id AND a.object_api=$3 AND a.action_id=$5
+                AND a.enabled=true AND a.behavior='Send Email'
+                AND a.credential_id=$4))
+          )`,
         [job.tenant_id,job.user_id,job.object_api,job.credential_id,job.action_id]);
       if(!eligible
         ||!await this.rbac.allowed(job.tenant_id,job.user_id,actionResource,'execute')
