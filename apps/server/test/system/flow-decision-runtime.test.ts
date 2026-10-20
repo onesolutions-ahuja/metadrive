@@ -209,3 +209,34 @@ test('authored Flow routes Decision outcomes and executes Custom Notification ac
   assert.equal(tasks,1);
   assert.equal(posts,1);
 });
+
+
+test('Flow Get Records ignores unselected optional field mappings for Invoice', async()=>{
+ const rbac={require:async()=>undefined} as unknown as RbacEngine;
+ const sqlCalls:string[]=[];
+ const db={query:async(sql:string)=>{
+  sqlCalls.push(sql);
+  if(sql.includes('FROM md_object_definitions'))return {rows:[{api_name:'Invoice'}]};
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{object_api:'Invoice',api_name:'Name'}]};
+  return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const graph={
+  apiName:'OneposBlankFields',flowType:'Autolaunched Flow',
+  resources:[{name:'invoice',type:'Record',dataType:'Invoice'}],
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Get Records',config:{object:'Invoice',recordLimit:1,
+    outputVariable:'invoice',conditions:[],fields:['Name',''],sortField:''}},
+   {id:3,type:'End',config:{}}
+  ],
+  connectors:[{from:1,to:2},{from:2,to:3}]
+ };
+ const result=await validateFlowDraft(rbac,'tenant-id','user-id','OneposBlankFields',graph,db);
+ assert.equal(result.errors.some(error=>error==='Flow data action references an unavailable field: Invoice.'),false,
+  result.errors.join('; '));
+ assert.ok(sqlCalls.some(sql=>sql.includes('FROM md_field_definitions')));
+ const invalid=structuredClone(graph);
+ invalid.elements[1].config.fields=['GenuinelyMissingField'];
+ const failed=await validateFlowDraft(rbac,'tenant-id','user-id','OneposBlankFields',invalid,db);
+ assert.ok(failed.errors.some(error=>error.includes('Invoice.GenuinelyMissingField')));
+});
