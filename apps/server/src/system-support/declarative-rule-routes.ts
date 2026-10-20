@@ -1,7 +1,7 @@
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
-import {validateFlowFormula,flowFormulaReferences} from '../system-files/flow-formula-runtime.js';
+import {validateFlowFormula,flowFormulaReferences,inferFlowFormulaType,type FormulaValueType} from '../system-files/flow-formula-runtime.js';
 type Actor={tenant_id:string;user_id:string};
 type AuthRequest=Request & {actor?:Actor};
 const api=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
@@ -10,6 +10,34 @@ const route=(fn:(req:AuthRequest,res:Response)=>Promise<void>)=>
 function actor(req:AuthRequest):Actor {
   if(!req.actor)throw new Error('Permission denied');
   return req.actor;
+}
+const typeOfField=(dataType:string,formulaReturnType:string|null):FormulaValueType=>{
+  const type=dataType==='formula'?(formulaReturnType??'Text'):dataType;
+  switch(type.toLowerCase()){
+    case 'boolean':case 'checkbox':return 'Checkbox';
+    case 'number':case 'currency':case 'percent':case 'autonumber':case 'rollup':return 'Number';
+    case 'date':return 'Date';
+    case 'datetime':return 'DateTime';
+    case 'time':return 'Time';
+    case 'picklist':return 'Picklist';
+    case 'multipicklist':return 'MultiPicklist';
+    case 'geolocation':return 'Geolocation';
+    default:return 'Text';
+  }
+};
+async function inferRuleType(db:SqlPersistence,tenantId:string,objectApi:string,expression:string){
+  const {rows}=await db.query<{api_name:string;data_type:string;formula_return_type:string|null}>(
+    `SELECT api_name,data_type,formula_return_type FROM md_field_definitions
+      WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL`,[tenantId,objectApi]);
+  const fieldTypes=new Map(rows.map(f=>[f.api_name,typeOfField(f.data_type,f.formula_return_type)]));
+  const resolve=(reference:string):FormulaValueType|null=>{
+    if(['$User.Id','$User.Name','$User.Email','$User.TimeZone','$Profile.Name'].includes(reference))
+      return 'Text';
+    const field=reference.startsWith('$Record.')?reference.slice(8):
+      reference.startsWith('$Record__Prior.')?reference.slice(15):reference;
+    return fieldTypes.get(field)??null;
+  };
+  return inferFlowFormulaType(expression,resolve);
 }
 export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
   const base='/api/metadata/objects/:objectApi';
@@ -42,6 +70,8 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
       ||(rule.sortOrder!==undefined&&(!Number.isSafeInteger(rule.sortOrder)||Math.abs(rule.sortOrder)>1000000)))
       throw new Error('Invalid validation rule');
     validateFlowFormula(rule.expression);
+    if(await inferRuleType(db,a.tenant_id,req.params.objectApi,rule.expression)!=='Checkbox')
+      throw new Error('Invalid validation rule: formula must return Checkbox');
     const fields=flowFormulaReferences(rule.expression)
       .filter(ref=>ref.startsWith('$Record.')||ref.startsWith('$Record__Prior.'))
       .map(ref=>ref.startsWith('$Record.')?ref.slice(8):ref.slice(15));
@@ -86,6 +116,12 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
         AND api_name=$3 AND deleted_at IS NULL`,[a.tenant_id,req.params.objectApi,field]);
     if(!rows.length||['autonumber','formula','rollup','encryptedtext','reference'].includes(rows[0].data_type))
       throw new Error('Invalid default formula target');
+    const inferred=await inferRuleType(db,a.tenant_id,req.params.objectApi,expression);
+    const expected=typeOfField(rows[0].data_type,null);
+    if(inferred!==expected&&inferred!=='Null'
+      &&!(expected==='Text'&&['Text','Picklist'].includes(inferred))
+      &&!(expected==='Picklist'&&inferred==='Text'))
+      throw new Error('Invalid default formula result type');
     const references=flowFormulaReferences(expression);
     if(references.some(ref=>ref.startsWith('$Record__Prior')||ref==='ISNEW'))
       throw new Error('Invalid default formula reference');
