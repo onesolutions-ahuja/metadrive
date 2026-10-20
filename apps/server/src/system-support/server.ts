@@ -36,6 +36,7 @@ import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {ObjectQuickActionRuntime} from './object-quick-action-runtime.js';
+import {GlobalQuickActionMetadataService} from './global-quick-action-metadata.js';
 import {RecordRetentionService} from './record-retention-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {TenantMediaService} from '../system-files/tenant-media-service.js';
@@ -157,6 +158,7 @@ export function createSystemServer(db:SqlPersistence) {
         message.credentialId,message.from,message.recipients,message.subject,message.body);
     });
   const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows,namedCredentials);
+  const globalQuickActionMetadata=new GlobalQuickActionMetadataService(db,rbac);
   const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
     async(client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>{
       await flowJobs.enqueue(tenantId,'flow.resume',{
@@ -1536,6 +1538,26 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Cache-Control','private, no-store');
     res.json(await quickActions.authorizeFlow(req.actor!,req.params.objectApi,req.params.id,
       req.params.actionId));
+  }));
+  app.get('/api/metadata/global-actions',route(async(req,res)=>{
+    const actor=req.actor!;res.setHeader('Cache-Control','private, no-store');
+    res.json(await globalQuickActionMetadata.list(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/metadata/global-actions',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await globalQuickActionMetadata.save(actor.tenant_id,actor.user_id,req.body?.actions));
+  }));
+  app.get('/api/actions/global',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.globalAvailable(req.actor!));
+  }));
+  app.get('/api/actions/global/:actionId/flow-launch',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.authorizeGlobalFlow(req.actor!,req.params.actionId));
+  }));
+  app.post('/api/actions/global/:actionId/execute',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.executeGlobal(req.actor!,req.params.actionId,req.body??{}));
   }));
   app.post('/api/records/:objectApi/:id/actions/:actionId/execute',route(async(req,res)=>{
     const actor=req.actor!;
