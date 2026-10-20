@@ -29,14 +29,21 @@ export const responsiveNumberFields = [
   {key:'borderRadius',label:'Corner radius',min:0,max:160},
   {key:'gap',label:'Spacing / gap',min:0,max:160},
   {key:'opacity',label:'Opacity (%)',min:0,max:100},
-  {key:'fontSize',label:'Font size',min:8,max:96}
+  {key:'fontSize',label:'Font size',min:8,max:96},
+  {key:'top',label:'Top offset (px)',min:-1000,max:1000},
+  {key:'bottom',label:'Bottom offset (px)',min:-1000,max:1000},
+  {key:'left',label:'Left offset (px)',min:-1000,max:1000},
+  {key:'right',label:'Right offset (px)',min:-1000,max:1000},
+  {key:'zIndex',label:'Stacking order',min:0,max:999}
 ] as const;
 export const responsiveOptionFields = [
   {key:'alignItems',label:'Cross-axis alignment',options:['stretch','flex-start','center','flex-end']},
   {key:'justifyContent',label:'Main-axis alignment',options:['flex-start','center','flex-end','space-between','space-around']},
   {key:'fontWeight',label:'Font weight',options:['400','500','600','700','800']},
   {key:'textAlign',label:'Text alignment',options:['left','center','right','start','end']},
-  {key:'boxShadow',label:'Shadow',options:['none','sm','md','lg']}
+  {key:'boxShadow',label:'Shadow',options:['none','sm','md','lg']},
+  {key:'position',label:'Position',options:['static','relative','sticky','fixed','absolute']},
+  {key:'overflowY',label:'Vertical overflow',options:['visible','auto','hidden','scroll']}
 ] as const;
 export const responsiveColorFields = [
   {key:'backgroundColor',label:'Background colour'},
