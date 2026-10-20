@@ -162,6 +162,14 @@ export class RecordEngine {
       VALUES($1,$2,$3,$4,$5)`,[tenantId,recordId,objectApi,fieldApi,userId]);
     return plaintext;
   }
+  // Legacy engine surface retained for system tests and trusted callers.
+  private async rollupParents(client:PoolClient,tenantId:string,childObject:string,recordId:string){
+    return rollupParents(client,tenantId,childObject,recordId);
+  }
+  private async refreshRollups(client:PoolClient,tenantId:string,childObject:string,
+    parentIds:Map<string,Set<string>>,visited=new Set<string>(),depth=0){
+    return refreshRollups(client,tenantId,childObject,parentIds,visited,depth);
+  }
   private async applyFormulaFields(tenantId:string,userId:string,objectApi:string,
     record:Record<string,unknown>,definitions:readonly FieldDefinition[],client?:PoolClient,
     migrationMode=false,formulaContext:FormulaEvaluationContext={}) {
