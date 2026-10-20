@@ -126,6 +126,15 @@ try{
  const dependent=await records.create(tenantId,userId,'LifecycleDetail__c',
    {Name:'Cascaded detail',AccountId:parent});
  await records.create(tenantId,userId,'LifecycleDetail__c',{Name:'Other detail',AccountId:otherParent});
+ const lookupObject=await objects.create(tenantId,'LifecycleLookup__c','Lifecycle Lookup',[
+   {apiName:'Name',label:'Name',dataType:'Text(80)',required:true},
+   {apiName:'AccountId',label:'Account',dataType:'Lookup(LifecycleAccount__c)',
+    relationship:{type:'Lookup',targetObject:'LifecycleAccount__c',
+      relationshipName:'Account',childRelationshipName:'Lookups',deleteBehavior:'Clear'}}
+ ]);
+ assert.ok(lookupObject);
+ const lookup=await records.create(tenantId,userId,'LifecycleLookup__c',
+   {Name:'Restorable lookup',AccountId:parent});
  const linked=await records.list(tenantId,userId,'LifecycleDetail__c',50,0,
    {relatedField:'AccountId',relatedId:parent});
  assert.equal(linked.total,1,'related list must not include children of another parent');
@@ -135,6 +144,8 @@ try{
    VALUES($1,$2,$3,$4,'Task','Retained during recycle')`,
    [tenantId,'LifecycleAccount__c',parent,userId]);
  await records.remove(tenantId,userId,'LifecycleAccount__c',parent);
+ assert.equal((await records.get(tenantId,userId,'LifecycleLookup__c',lookup)).AccountId,null,
+   'deleted lookup target must be cleared on an active source');
  assert.equal((await records.list(tenantId,userId,'LifecycleDetail__c')).total,1,
    'Master-Detail children must be hidden while recycled');
  assert.equal((await records.recycleBin(tenantId,userId,'LifecycleAccount__c')).total,1);
@@ -148,6 +159,9 @@ try{
  await records.update(tenantId,userId,'LifecycleAccount__c',replacement,{Name:'New unique name'});
  const recovered=await records.restore(tenantId,userId,'LifecycleAccount__c',parent);
  assert.equal(recovered.restored,2,'restore must include dependent Master-Detail records');
+ assert.equal((await records.get(tenantId,userId,'LifecycleLookup__c',lookup)).AccountId,parent,
+   'restore must recover the original lookup without changing the source record');
+
  assert.equal((await records.list(tenantId,userId,'LifecycleDetail__c',50,0,
    {relatedField:'AccountId',relatedId:parent})).total,1);
  const retainedActivity=await db.query(
