@@ -49,11 +49,14 @@ export default function HomeScreen() {
   const [mfaCode, setMfaCode] = useState('');
   const [challengeToken, setChallengeToken] = useState('');
   const [records, setRecords] = useState<CachedRecord[]>([]);
+  const [recordQuery, setRecordQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [connection, setConnection] = useState<'checking' | 'online' | 'offline'>('checking');
+
+  const visibleRecords = records.filter(item => (`${recordTitle(item)} ${item.objectApi} ${item.recordId}`).toLocaleLowerCase().includes(recordQuery.trim().toLocaleLowerCase()));
 
   const refreshCache = useCallback(async (activeSession: MobileSession) => {
     try {
@@ -276,10 +279,12 @@ export default function HomeScreen() {
       {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
       {notice ? <Text style={styles.notice} accessibilityRole="status">{notice}</Text> : null}
       <Text style={styles.sectionTitle}>Cached records ({records.length})</Text>
+      {records.length > 0 && <TextInput style={styles.input} placeholder="Search cached records…" value={recordQuery} onChangeText={setRecordQuery} accessibilityLabel="Search offline records" autoCorrect={false} clearButtonMode="while-editing" />}
+      {records.length > 0 && visibleRecords.length === 0 && <View style={styles.empty}><Text style={styles.emptyTitle}>No matching records</Text><Text style={styles.muted}>Try another search term.</Text></View>}
       {records.length === 0 ? <View style={styles.empty}>
         <Text style={styles.emptyTitle}>No offline records yet</Text>
         <Text style={styles.muted}>Ask your administrator to configure your briefcase, then sync while online.</Text>
-      </View> : records.map(item => <View key={`${item.objectApi}:${item.recordId}`} style={styles.recordCard}>
+      </View> : visibleRecords.map(item => <View key={`${item.objectApi}:${item.recordId}`} style={styles.recordCard}>
         <View style={styles.recordHeading}>
           <View style={styles.recordTitleBlock}>
             <Text style={styles.recordName}>{recordTitle(item)}</Text>
