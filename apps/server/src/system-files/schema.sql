@@ -1441,7 +1441,7 @@ CREATE TABLE IF NOT EXISTS md_object_actions (
      AND length(from_email)<=254 AND from_email~'^[^[:space:]@<>]+@[^[:space:]@<>]+\.[^[:space:]@<>]+$'
      AND field_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL
      AND target_object_api IS NULL AND value_text IS NULL)
-  ))
+  )))
 );
 
 -- Global Quick Actions use one tenant metadata registry and shared execution permissions.
