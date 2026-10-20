@@ -143,7 +143,8 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
       }>(`DELETE FROM md_validation_rules WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
         AND revision=$4 RETURNING revision,label,expression,error_message,error_field_api,active,sort_order`,
         [a.tenant_id,req.params.objectApi,req.params.ruleApi,expected]);
-      if(rows[0])await client.query(`INSERT INTO md_validation_rule_history
+      if(!rows[0])throw new Error('Rule revision conflict');
+      await client.query(`INSERT INTO md_validation_rule_history
         (tenant_id,object_api,rule_api,revision,label,expression,error_message,error_field_api,active,sort_order)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
         [a.tenant_id,req.params.objectApi,req.params.ruleApi,rows[0].revision,rows[0].label,
@@ -221,7 +222,8 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
       const {rows}=await client.query<{revision:number;expression:string}>(`
         DELETE FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3
         AND revision=$4 RETURNING revision,expression`,[a.tenant_id,req.params.objectApi,req.params.fieldApi,expected]);
-      if(rows[0])await client.query(`INSERT INTO md_field_default_formula_history
+      if(!rows[0])throw new Error('Rule revision conflict');
+      await client.query(`INSERT INTO md_field_default_formula_history
         (tenant_id,object_api,field_api,revision,expression) VALUES($1,$2,$3,$4,$5)`,
         [a.tenant_id,req.params.objectApi,req.params.fieldApi,rows[0].revision,rows[0].expression]);
     });
