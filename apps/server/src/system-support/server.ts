@@ -35,6 +35,7 @@ import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../sy
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
+import {ObjectQuickActionRuntime} from './object-quick-action-runtime.js';
 import {RecordRetentionService} from './record-retention-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {TenantMediaService} from '../system-files/tenant-media-service.js';
@@ -157,6 +158,7 @@ export function createSystemServer(db:SqlPersistence) {
       await namedCredentials.enqueueFlowEmail(client,tenantId,userId,flowId,version,runId,nodeId,step,
         message.credentialId,message.from,message.recipients,message.subject,message.body);
     });
+  const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows);
   const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
     async(client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>{
       await flowJobs.enqueue(tenantId,'flow.resume',{
@@ -1527,6 +1529,21 @@ export function createSystemServer(db:SqlPersistence) {
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
     res.status(201).json({id,record:{Id:id}});
+  }));
+  app.get('/api/records/:objectApi/:id/actions',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.available(req.actor!,req.params.objectApi,req.params.id));
+  }));
+  app.get('/api/records/:objectApi/:id/actions/:actionId/flow-launch',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.authorizeFlow(req.actor!,req.params.objectApi,req.params.id,
+      req.params.actionId));
+  }));
+  app.post('/api/records/:objectApi/:id/actions/:actionId/execute',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.execute(actor,req.params.objectApi,req.params.id,
+      req.params.actionId,req.body??{}));
   }));
   app.post('/api/records/:objectApi/:id/clone',route(async(req,res)=>{
     const actor=req.actor!;

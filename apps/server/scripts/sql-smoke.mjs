@@ -182,6 +182,34 @@ try{
    'opt-in retention scan must not delete without automatic-purge enablement');
 
  const flows=new FlowRuntime(db,new RbacEngine(db),records);
+ // Phase 2: real SQL Action registry, permission evaluation, CRUD and activity integration.
+ const {ObjectQuickActionRuntime}=await import(new URL('object-quick-action-runtime.js',support).href);
+ const {RecordCollaborationService}=await import(new URL('record-collaboration-service.js',support).href);
+ const quickActions=new ObjectQuickActionRuntime(db,new RbacEngine(db),records,
+   new RecordCollaborationService(db,new RbacEngine(db)),flows);
+ const actionConfig=[
+   ['CallAccount','Call Customer','Log Call',null,'Customer follow-up',null,null,null],
+   ['NewDetail','New Detail','Create Related',null,null,'LifecycleDetail__c','AccountId',null]
+ ];
+ for(const [id,label,behavior,field,value,target,relationship,flow] of actionConfig)
+   await db.query(`INSERT INTO md_object_actions
+     (tenant_id,object_api,action_id,label,action_type,enabled,behavior,field_api,
+      value_text,target_object_api,relationship_field_api,flow_api_name)
+     VALUES($1,'LifecycleAccount__c',$2,$3,'Custom',true,$4,$5,$6,$7,$8,$9)`,
+     [tenantId,id,label,behavior,field,value,target,relationship,flow]);
+ const allowed=await quickActions.available({tenant_id:tenantId,user_id:userId},'LifecycleAccount__c',parent);
+ assert.ok(allowed.actionIds.includes('CallAccount')&&allowed.actionIds.includes('NewDetail'));
+ const quickRelated=await quickActions.execute(
+  {tenant_id:tenantId,user_id:userId},'LifecycleAccount__c',parent,'NewDetail',{Name:'Quick child'});
+ assert.equal(quickRelated.objectApiName,'LifecycleDetail__c');
+ assert.equal((await records.get(tenantId,userId,'LifecycleDetail__c',quickRelated.recordId)).AccountId,parent);
+ const call=await quickActions.execute(
+  {tenant_id:tenantId,user_id:userId},'LifecycleAccount__c',parent,'CallAccount',{description:'Spoke to client'});
+ assert.equal(call.status,'completed');
+ assert.equal((await db.query(`SELECT kind FROM md_record_activities
+    WHERE tenant_id=$1 AND object_api='LifecycleAccount__c' AND record_id=$2 AND subject='Customer follow-up'`,
+    [tenantId,parent])).rows[0]?.kind,'Call');
+
  const draft={apiName:'AuditCheckout',label:'Audit Checkout',flowType:'Screen Flow',
   status:'Draft',versionNumber:1,activeVersion:null,
   elements:[{id:1,type:'Start',label:'Start',config:{}},

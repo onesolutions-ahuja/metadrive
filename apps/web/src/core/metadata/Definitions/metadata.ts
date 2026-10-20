@@ -139,9 +139,12 @@ export type ObjectActionMetadata = {
   label: string;
   type: 'Standard' | 'Custom';
   enabled: boolean;
-  behavior?: 'Set Field Value';
+  behavior?: 'Set Field Value' | 'Log Call' | 'Run Flow' | 'Create Related';
   fieldApiName?: string;
   value?: string;
+  targetObjectApi?: string;
+  relationshipFieldApi?: string;
+  flowApiName?: string;
 };
 
 export type ObjectSettingsMetadata = {
