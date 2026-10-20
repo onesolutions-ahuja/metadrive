@@ -134,7 +134,7 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
     const a=await requireManage(req);
     if(!api.test(req.params.ruleApi))throw new Error('Invalid rule API name');
     const match=req.get('if-match');
-    const expected=match&&/^"\\d+"$/.test(match)?Number(match.slice(1,-1)):NaN;
+    const expected=match&&/^"[0-9]+"$/.test(match)?Number(match.slice(1,-1)):NaN;
     if(!Number.isSafeInteger(expected)||expected<1)throw new Error('Invalid rule revision precondition');
     await db.transaction(async client=>{
       const {rows}=await client.query<{
@@ -215,7 +215,7 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
     const a=await requireManage(req);
     if(!api.test(req.params.fieldApi))throw new Error('Invalid field API name');
     const match=req.get('if-match');
-    const expected=match&&/^"\\d+"$/.test(match)?Number(match.slice(1,-1)):NaN;
+    const expected=match&&/^"[0-9]+"$/.test(match)?Number(match.slice(1,-1)):NaN;
     if(!Number.isSafeInteger(expected)||expected<1)throw new Error('Invalid rule revision precondition');
     await db.transaction(async client=>{
       const {rows}=await client.query<{revision:number;expression:string}>(`
