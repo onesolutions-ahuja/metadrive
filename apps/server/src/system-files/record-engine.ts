@@ -702,13 +702,13 @@ export class RecordEngine {
     await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,true);
     return this.db.transaction(async client=>{
       await this.lockObjectForWrite(client,tenantId,objectApi);
-      let rowValues=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values});
+      const defaults=await this.fields(tenantId,objectApi,client);
+      const literals=Object.fromEntries(defaults.filter(field=>field.default_value!==null)
+        .map(field=>[field.api_name,['number','currency','percent'].includes(field.data_type)
+          ?Number(field.default_value):field.data_type==='boolean'
+            ?field.default_value==='true':field.default_value]));
+      let rowValues=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...literals,...values});
       if(this.recordTrigger){
-        const defaults=await this.fields(tenantId,objectApi,client);
-        rowValues={...Object.fromEntries(defaults.filter(field=>field.default_value!==null)
-          .map(field=>[field.api_name,['number','currency','percent'].includes(field.data_type)
-            ?Number(field.default_value):field.data_type==='boolean'
-              ?field.default_value==='true':field.default_value])),...rowValues};
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
           rowValues,null,'before-save',isClone)??rowValues;
       }
@@ -740,7 +740,12 @@ export class RecordEngine {
   async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
     await this.lockObjectForWrite(client,tenantId,objectApi);
-    const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values});
+    const definitions=await this.fields(tenantId,objectApi,client);
+    const literals=Object.fromEntries(definitions.filter(field=>field.default_value!==null)
+      .map(field=>[field.api_name,['number','currency','percent'].includes(field.data_type)
+        ?Number(field.default_value):field.data_type==='boolean'
+          ?field.default_value==='true':field.default_value]));
+    const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...literals,...values});
     await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
@@ -1258,8 +1263,16 @@ export class RecordEngine {
         }
       }
       const proposedValues={...prior,...values};
+      const declaredTypes=new Map((await this.fields(tenantId,objectApi,transactionClient))
+        .map(field=>[field.api_name,field.data_type]));
       for(const [field,value] of finalPrepared){
-        if(!field.startsWith('__'))proposedValues[field]=value.reference_record_id??value.value_text;
+        if(field.startsWith('__'))continue;
+        const type=declaredTypes.get(field);
+        proposedValues[field]=value.reference_record_id??(
+          type==='boolean'?value.value_boolean:
+          ['number','currency','percent'].includes(type??'')
+            ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
+            :value.value_text);
       }
       await this.declarativeRules.validate(transactionClient,tenantId,userId,objectApi,proposedValues,prior);
       await write(transactionClient,finalPrepared);
