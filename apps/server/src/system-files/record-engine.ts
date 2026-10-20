@@ -710,6 +710,9 @@ export class RecordEngine {
   private async createRecord(tenantId:string,userId:string,objectApi:string,
     values:Record<string,unknown>,isClone:boolean) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
+    // Reject unknown or unauthorized input before taking a transaction connection.
+    // Required-field checks are deferred until formula defaults and before-save Flows run.
+    await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,true);
     return this.db.transaction(async client=>{
       await this.lockObjectForWrite(client,tenantId,objectApi);
       let rowValues=await this.creationDefaults(client,tenantId,userId,objectApi,values);
