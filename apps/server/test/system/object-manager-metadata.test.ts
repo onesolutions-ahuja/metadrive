@@ -51,7 +51,7 @@ test('Object Manager persists only supported custom actions with writable fields
  const actionWrite=writes.find(write=>write.sql.includes('INSERT INTO md_object_actions'));
  assert.ok(actionWrite);
  assert.deepEqual(actionWrite.values,['tenant','Account','MarkReviewed','Mark Reviewed','Custom',true,
-  'Set Field Value','Status','Reviewed',0,null,null,null]);
+  'Set Field Value','Status','Reviewed',0,null,null,null,null,null]);
  await assert.rejects(()=>service.persistWithin(client,'tenant','Account',{
   pluralLabel:'Accounts',settings:{},fieldSets:[],
   actions:[{id:'BadAction',label:'Bad Action',type:'Custom',enabled:true,
@@ -84,10 +84,34 @@ test('Object Manager persists Flow, call and related actions in the same SQL met
  const rows=writes.filter(x=>x.sql.includes('INSERT INTO md_object_actions'));
  assert.deepEqual(rows.map(r=>r.values.slice(6,9)),[
   ['Log Call',null,'Customer call'],['Run Flow',null,null],['Create Related',null,null]]);
- assert.deepEqual(rows[2].values.slice(10),['Contact','AccountId',null]);
+ assert.deepEqual(rows[2].values.slice(10),['Contact','AccountId',null,null,null]);
  await assert.rejects(()=>metadata.persistWithin(client,'tenant','Account',{
   pluralLabel:'Accounts',settings:{},fieldSets:[],actions:[{
    id:'Bad',label:'Bad',type:'Custom',enabled:true,behavior:'Run Flow',flowApiName:'../unsafe'
   }]
  }),/Invalid quick action Flow/);
+});
+
+test('Send Email action validates tenant SMTP reference before persistence',async()=>{
+ const calls:Array<{sql:string;args:unknown[]}>= [];
+ const client={query:async(sql:string,args:unknown[]=[])=>{
+  calls.push({sql,args});
+  if(sql.includes('SELECT api_name FROM md_object_definitions'))return {rows:[{api_name:'Account'}],rowCount:1};
+  if(sql.includes('SELECT api_name,data_type'))return {rows:[{api_name:'Name',data_type:'text'}],rowCount:1};
+  if(sql.includes('FROM md_named_credentials'))return {rows:[{exists:1}],rowCount:1};
+  return {rows:[],rowCount:1};
+ }} as unknown as PoolClient;
+ const service=new ObjectManagerMetadataService({} as SqlPersistence,access);
+ const credential='00000000-0000-4000-8000-000000000011';
+ const saved=await service.persistWithin(client,'tenant','Account',{pluralLabel:'Accounts',
+  settings:{},fieldSets:[],actions:[{id:'Email',label:'Send Email',type:'Custom',enabled:true,
+   behavior:'Send Email',credentialId:credential,fromEmail:'sales@example.com'}]});
+ assert.equal(saved.actions[0].behavior,'Send Email');
+ const insert=calls.find(x=>x.sql.includes('INSERT INTO md_object_actions'));
+ assert.deepEqual(insert?.args.slice(-2),[credential,'sales@example.com']);
+ await assert.rejects(()=>service.persistWithin(client,'tenant','Account',{
+  pluralLabel:'Accounts',settings:{},fieldSets:[],actions:[{
+   id:'Email',label:'Send Email',type:'Custom',enabled:true,
+   behavior:'Send Email',credentialId:'unsafe',fromEmail:'sales@example.com'}
+  ]}),/valid SMTP credential/);
 });
