@@ -34,7 +34,8 @@ function Table({ p, rows }) {
         fire(p, action.event, row);
       }}>{action.label}</button>
   );
-  const sorted = sort
+  const serverPaging = p.serverPaging === true;
+  const sorted = !serverPaging && sort
     ? [...rows].sort(
         (a, b) =>
           view(a[sort]).localeCompare(view(b[sort]), undefined, {
@@ -42,9 +43,18 @@ function Table({ p, rows }) {
           }) * dir,
       )
     : rows;
-  const max = Math.max(1, Math.ceil(sorted.length / size)),
+  const total = serverPaging ? Math.max(rows.length, Number(p.totalRecords) || rows.length) : sorted.length;
+  const max = Math.max(1, Math.ceil(total / size)),
     multi = p.multiselect === true,
     selectable = p.selectionMode === true;
+  const currentPage = serverPaging ? Math.max(1, Math.min(max, Number(p.currentPage) || 1)) : Math.min(page, max);
+  const displayed = serverPaging ? sorted : sorted.slice((currentPage - 1) * size, currentPage * size);
+  const changePage = next => { if (serverPaging) p.onPageChange?.(next); else setPage(next); };
+  const toggleAll = event => {
+    const ids = displayed.map(row => String(row.Id ?? row.id ?? "")).filter(Boolean);
+    const value = event.target.checked ? [...new Set([...selected, ...ids])] : selected.filter(id => !ids.includes(id));
+    p.onChange?.(value); fire(p, "selectionChange", value);
+  };
   const selected = selectable
     ? Array.isArray(p.value)
       ? p.value.map(String)
@@ -76,17 +86,19 @@ function Table({ p, rows }) {
         <table className="one-table">
           <thead>
             <tr>
-              {selectable && <th scope="col">Select</th>}
+              {selectable && <th scope="col">{multi ? <input type="checkbox" aria-label="Select all visible rows" checked={displayed.length > 0 && displayed.every(row => selected.includes(String(row.Id ?? row.id ?? "")))} onChange={toggleAll} /> : "Select"}</th>}
               {trailing.length > 0 && <th scope="col">Actions</th>}
               {cols.map((c) => (
-                <th key={c.key} scope="col">
+                <th key={c.key} scope="col" aria-sort={sort === c.key ? (dir === 1 ? "ascending" : "descending") : "none"}>
                   <button
                     type="button"
                     className="one-btn one-btn--ghost"
-                    style={{ padding: 2, minHeight: 0 }}
                     onClick={() => {
-                      setDir(sort === c.key ? -dir : 1);
+                      const nextDir = sort === c.key ? -dir : 1;
+                      setDir(nextDir);
                       setSort(c.key);
+                      if (serverPaging) p.onSortChange?.({field: c.key, direction: nextDir === 1 ? "asc" : "desc"});
+                      else setPage(1);
                     }}
                   >
                     {c.label} {sort === c.key ? (dir === 1 ? "↑" : "↓") : ""}
@@ -96,12 +108,7 @@ function Table({ p, rows }) {
             </tr>
           </thead>
           <tbody>
-            {sorted
-              .slice(
-                (Math.min(page, max) - 1) * size,
-                Math.min(page, max) * size,
-              )
-              .map((row, i) => {
+            {displayed.map((row, i) => {
                 const id = String(row.Id ?? row.id ?? "");
                 return (
                   <tr
@@ -145,8 +152,8 @@ function Table({ p, rows }) {
           </tbody>
         </table>
       </div>
-      {rows.length === 0 && <div className="one-empty">No records</div>}
-      {rows.length > size && (
+      {rows.length === 0 && <div className="one-empty" role="status"><strong>No records yet</strong><p>Records will appear here when available.</p></div>}
+      {total > size && (
         <div
           className="one-row"
           style={{ justifyContent: "flex-end", paddingTop: 10 }}
@@ -154,19 +161,19 @@ function Table({ p, rows }) {
           <button
             type="button"
             className="one-btn"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
+            disabled={currentPage <= 1}
+            onClick={() => changePage(currentPage - 1)}
           >
             Previous
           </button>
           <span>
-            {Math.min(page, max)} / {max}
+            Page {currentPage} of {max}
           </span>
           <button
             type="button"
             className="one-btn"
-            disabled={page >= max}
-            onClick={() => setPage(page + 1)}
+            disabled={currentPage >= max}
+            onClick={() => changePage(currentPage + 1)}
           >
             Next
           </button>
