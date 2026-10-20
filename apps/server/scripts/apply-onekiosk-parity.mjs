@@ -97,6 +97,11 @@ if (!hasSubcategories && next.has('kiosk_subcategories'))
   next.get('kiosk_subcategories').visible=false;
 // Existing kiosk-only ProductType filter must remain; don't reintroduce retail demo stock.
 const grid=next.get('kiosk_products');
+grid.position={x:263,y:520,width:785,height:1150};
+grid.properties.imageHeight=155;
+grid.properties.cardPadding=8;
+const nav=next.get('kiosk_categories');
+if(nav)nav.properties.recordItemMinHeight=145;
 const oldGrid=page.components.find(c=>c.id==='kiosk_products');
 grid.properties.filters=oldGrid?.properties?.filters || [
   {field:'ProductType',operator:'Not Equals',value:''}
