@@ -1,11 +1,4 @@
 export type Token={kind:'number'|'string'|'identifier'|'reference'|'operator'|'punctuation';value:string};
-type Expression=
-  |{kind:'literal';value:string|number|boolean|null}
-  |{kind:'reference';value:string}
-  |{kind:'unary';operator:string;value:Expression}
-  |{kind:'binary';operator:string;left:Expression;right:Expression}
-  |{kind:'call';name:string;args:Expression[]};
-
 export function tokenize(source:string):Token[] {
   if(source.length>4000)throw new Error('Flow formula exceeds the 4000-character limit');
   const tokens:Token[]=[];
