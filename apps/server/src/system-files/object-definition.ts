@@ -644,6 +644,12 @@ export class ObjectDefinitionService {
       formula:changesDataType?proposal.formula:proposal.formula??current.formula,
       defaultValue:proposal.defaultValue===undefined?current.defaultValue:proposal.defaultValue
     },objectApi);
+    if(field.defaultValue!==null&&current.defaultValue==null){
+      const conflict=await this.db.query(
+        'SELECT 1 FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3',
+        [tenantId,objectApi,fieldApi]);
+      if(conflict.rowCount)throw new Error('Invalid field default: clear its formula first');
+    }
     if(field.relationshipType==='Hierarchical'&&(objectApi!=='User'||field.relatedObject!=='User'))
       throw new Error('Hierarchical relationships are supported only as User self-lookups');
     const globalValueSetChanged=field.globalValueSetApiName!==(current.globalValueSetApiName??null);
