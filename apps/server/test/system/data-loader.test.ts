@@ -10,7 +10,7 @@ const b='22222222-2222-4222-8222-222222222222';
 function harness(deny=false,forbidRecord=false) {
  const permissions:string[]=[];const writes:string[]=[];let transactions=0;
  const client={query:async(sql:string,params:unknown[])=>{
-  if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+  if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
   if(sql.includes('FROM md_field_definitions'))return {rows:[
    {api_name:'VAT_Applicable__c',data_type:'boolean',related_object:null,required:false,max_length:null}
   ],rowCount:1};
