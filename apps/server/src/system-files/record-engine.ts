@@ -707,7 +707,7 @@ export class RecordEngine {
         .map(field=>[field.api_name,['number','currency','percent'].includes(field.data_type)
           ?Number(field.default_value):field.data_type==='boolean'
             ?field.default_value==='true':field.default_value]));
-      let rowValues=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...literals,...values});
+      let rowValues=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
       if(this.recordTrigger){
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
           rowValues,null,'before-save',isClone)??rowValues;
@@ -745,7 +745,7 @@ export class RecordEngine {
       .map(field=>[field.api_name,['number','currency','percent'].includes(field.data_type)
         ?Number(field.default_value):field.data_type==='boolean'
           ?field.default_value==='true':field.default_value]));
-    const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...literals,...values});
+    const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
     await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
