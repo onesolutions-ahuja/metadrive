@@ -527,8 +527,12 @@ function ObjectManager({
     }
   }
   for (const [layoutKey, fieldApiNames] of Object.entries(draft.searchLayouts ?? {})) {
-    for (const fieldApiName of fieldApiNames) {
-      addDependency(layoutKey, fieldApiName, 'Search Layout', { setting: 'Search Layouts' });
+    if (!Array.isArray(fieldApiNames)) continue;
+    for (const item of fieldApiNames) {
+      const fieldApiName=typeof item==='string'?item
+        :item&&typeof item==='object'&&'fieldApiName' in item&&typeof item.fieldApiName==='string'
+          ?item.fieldApiName:undefined;
+      if(fieldApiName)addDependency(layoutKey, fieldApiName, 'Search Layout', { setting: 'Search Layouts' });
     }
   }
   for (const action of draft.actions ?? []) {
@@ -1109,9 +1113,37 @@ function ObjectManager({
   const renderSearchLayouts = () => {
     const searchLayouts = draft.searchLayouts ?? {};
     const options = ['searchResults', 'lookupDialog', 'lookupPhoneDialog'] as const;
+    const searchable=searchLayouts.searchableFields??[];
+    const eligibleFields=draft.fields.filter(field=>
+      ['text','email','phone','url','picklist'].includes(field.dataType.toLocaleLowerCase()));
+    const updateSearchable=(fieldApiName:string,weight?:'A'|'B'|'C'|'D')=>{
+      const next=weight
+        ?searchable.map(field=>field.fieldApiName===fieldApiName?{...field,weight}:field)
+        :searchable.some(field=>field.fieldApiName===fieldApiName)
+          ?searchable.filter(field=>field.fieldApiName!==fieldApiName)
+          :[...searchable,{fieldApiName,weight:'C' as const}];
+      updateDraft({searchLayouts:{...searchLayouts,searchableFields:next}});
+    };
     return <section className="surface object-setting-surface">
-      <div className="section-toolbar"><div><h2>Search Layouts</h2><p>Configure fields shown in object search and lookup dialogs.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div>
+      <div className="section-toolbar"><div><h2>Search Layouts</h2><p>Configure result columns, lookup columns and weighted server-search fields.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div>
       {options.map((name) => <div className="metadata-card" key={name}><h3>{name === 'searchResults' ? 'Search Results' : name === 'lookupDialog' ? 'Lookup Dialog' : 'Lookup Phone Dialog'}</h3><FieldSelectorList fields={draft.fields} selected={searchLayouts[name] ?? []} onToggle={(apiName) => updateDraft({ searchLayouts: { ...searchLayouts, [name]: toggleField(searchLayouts[name] ?? [], apiName) } })} /></div>)}
+      <div className="metadata-card"><h3>Searchable Fields</h3>
+        <p>Only configured fields are indexed. Field-level access is still enforced for every search.</p>
+        {eligibleFields.map(field=>{
+          const selected=searchable.find(item=>item.fieldApiName===field.apiName);
+          return <div className="metadata-list-row" key={field.apiName}>
+            <label><input type="checkbox" checked={Boolean(selected)}
+              onChange={()=>updateSearchable(field.apiName)} /> {field.label}</label>
+            {selected&&<label>Search weight
+              <select aria-label={`Search weight for ${field.label}`} value={selected.weight}
+                onChange={event=>updateSearchable(field.apiName,event.target.value as 'A'|'B'|'C'|'D')}>
+                <option value="A">Highest</option><option value="B">High</option>
+                <option value="C">Normal</option><option value="D">Low</option>
+              </select>
+            </label>}
+          </div>;
+        })}
+      </div>
     </section>;
   };
   const renderActions = () => {

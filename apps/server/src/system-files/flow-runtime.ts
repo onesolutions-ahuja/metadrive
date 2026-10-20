@@ -1054,6 +1054,7 @@ export class FlowRuntime {
           const fault=await executeFlowAction({client,rbac:this.rbac!,tenantId,userId,
             flowApi:active.api_name,config:node.type==='Publish Platform Event'?{...node.config,actionType:'Publish Platform Event'}:node.config,
             resolve:evaluate,variables:vars,records:this.records!,
+            httpCallout:this.httpCallout,
             connectors:connectors.filter(edge=>edge.from===current),elementId:current,
             enqueueEmail:this.queueFlowEmail?message=>this.queueFlowEmail!(
               client,tenantId,userId,active.flow_id,active.version,runId,current,steps,message):undefined,

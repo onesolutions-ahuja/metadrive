@@ -40,11 +40,11 @@ test('reset confirmation revokes both session types and audits inside one transa
  const db={transaction:async(run:(client:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
   query:async(sql:string)=>{
    queries.push(sql);
-   if(sql.includes('FROM md_password_reset_challenges'))return {rows:[{id:'challenge',user_id:'user'}]};
+   if(sql.includes('FROM md_password_reset_challenges'))return {rows:[{id:'challenge',user_id:'user',password_hash:'old-hash'}]};
    return {rows:[],rowCount:1};
   }
  })} as unknown as SqlPersistence;
- const auth={hashPassword:async()=> 'encoded-hash'} as unknown as AuthenticationService;
+ const auth={hashPassword:async()=> 'encoded-hash',verifyPassword:async()=>false} as unknown as AuthenticationService;
  const service=new PasswordResetService(db,auth,async()=>{});
  await service.confirm('tenant','person@example.org','A'.repeat(43),'new-long-password');
  assert.equal(queries.filter(sql=>sql.includes('revoked_at=now()')).length,2);

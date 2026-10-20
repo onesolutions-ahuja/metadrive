@@ -52,12 +52,20 @@ import {
 } from '../../metadata/Definitions/metadata';
 type FlowListRow = Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status' | 'versionNumber' | 'activeVersion' | 'createdAt' | 'createdBy' | 'lastModifiedAt' | 'lastModifiedBy'>;
 type FlowListResponse = { flows: FlowListRow[]; total: number; page: number; pageSize: number };
+type ExternalServiceParameter = { name: string; location: 'path' | 'query' | 'body'; required: boolean; valueType: string };
+type ExternalServiceOperation = {
+  operationApi: string; label: string; method: string; path: string;
+  requestBodyRequired: boolean; parameters: ExternalServiceParameter[];
+};
+type ExternalServiceMetadata = { apiName: string; label: string; operations: ExternalServiceOperation[] };
 type FlowBuilderProps = {
   landing?: boolean;
   flow: FlowDefinitionMetadata;
   flows: FlowDefinitionMetadata[];
   onListFlows?: (page: number, search: string) => Promise<FlowListResponse>;
   onLoadCapabilities: () => Promise<FlowCapabilityCatalog>;
+  onLoadExternalServices: () => Promise<{ services: ExternalServiceMetadata[] }>;
+  onImportExternalService: (apiName: string, label: string, spec: unknown) => Promise<void>;
   libraryComponents: LibraryComponentMetadata[];
   platformEvents: PlatformEventMetadata[];
   objects: ObjectMetadata[];
@@ -113,7 +121,7 @@ type FlowBuilderProps = {
   onDeletePlatformEvent: (apiName: string) => Promise<void>;
 };
 export default function FlowBuilder({
-  landing = false, flow, flows, onListFlows, onLoadCapabilities, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
+  landing = false, flow, flows, onListFlows, onLoadCapabilities, onLoadExternalServices, onImportExternalService, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
   onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onRunTests, onNotify,
   onSaveNamedCredential, onDeleteNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
@@ -121,6 +129,10 @@ export default function FlowBuilder({
   const flowComponents = uniqueLibraryComponents(libraryComponents, 'flow').map(component => ({ ...component, label: libraryComponentLabel(component) }));
   const [capabilityCatalog, setCapabilityCatalog] = useState<FlowCapabilityCatalog | null>(null);
   const [capabilityError, setCapabilityError] = useState('');
+  const [externalServices, setExternalServices] = useState<ExternalServiceMetadata[]>([]);
+  const [externalServiceError, setExternalServiceError] = useState('');
+  const [newExternalServiceApiName, setNewExternalServiceApiName] = useState('');
+  const [newExternalServiceLabel, setNewExternalServiceLabel] = useState('');
   useEffect(() => {
     // The Builder mounts only when opened; never load this catalogue for app runtime.
     // Refetch when switching between the Flow list and editor; do not reuse tenant state.
@@ -134,6 +146,19 @@ export default function FlowBuilder({
     });
     return () => { current = false; };
     // onLoadCapabilities is provided by Setup rendering and has an unstable callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landing]);
+  useEffect(() => {
+    let current = true;
+    setExternalServices([]);
+    setExternalServiceError('');
+    void onLoadExternalServices().then((response) => {
+      if (current) setExternalServices(response.services);
+    }).catch(() => {
+      if (current) setExternalServiceError('External Services could not be loaded.');
+    });
+    return () => { current = false; };
+    // Load tenant-specific actions only while the Flow Builder is mounted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landing]);
   const flowTypeOptions = flowCreateOptions(capabilityCatalog);
@@ -1132,7 +1157,84 @@ export default function FlowBuilder({
       <div className="settings-panel-copy">Create exactly two normal connectors labeled Approved and Rejected. Work items appear in the approvers' existing inbox, and Pending Work shows paused stages. Canceling the interview also cancels unfinished approval requests.</div>
     </>;
     if (selected.type === 'Action') return <>
-      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
+      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>External Service Action</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
+      {displayValue(selected.config.actionType) === 'External Service Action' && (() => {
+        const service = externalServices.find((item) => item.apiName === selected.config.externalServiceApiName);
+        const operation = service?.operations.find((item) => item.operationApi === selected.config.externalOperationApiName);
+        const inputs = selected.config.externalInputs && typeof selected.config.externalInputs === 'object'
+          && !Array.isArray(selected.config.externalInputs)
+          ? selected.config.externalInputs as Record<string, unknown> : {};
+        const updateInput = (name: string, value: string) => setConfig('externalInputs', { ...inputs, [name]: value });
+        return <>
+          <label className="form-label">External Service<select className="form-control"
+            value={displayValue(selected.config.externalServiceApiName)}
+            onChange={(event) => onFlowChange({
+              ...flow, elements: flow.elements.map((element) => element.id === selected.id
+                ? { ...element, config: { ...element.config, externalServiceApiName: event.target.value,
+                  externalOperationApiName: '', externalInputs: {} } } : element)
+            })}>
+            <option value="">Select imported service</option>
+            {externalServices.map((item) => <option key={item.apiName} value={item.apiName}>{item.label} · {item.apiName}</option>)}
+          </select></label>
+          <label className="form-label">Operation<select className="form-control"
+            value={displayValue(selected.config.externalOperationApiName)}
+            onChange={(event) => onFlowChange({
+              ...flow, elements: flow.elements.map((element) => element.id === selected.id
+                ? { ...element, config: { ...element.config, externalOperationApiName: event.target.value,
+                  externalInputs: {} } } : element)
+            })}>
+            <option value="">Select operation</option>
+            {service?.operations.map((item) => <option key={item.operationApi} value={item.operationApi}>
+              {item.method} {item.path} · {item.label}
+            </option>)}
+          </select></label>
+          {externalServiceError && <p className="info-callout" role="alert">{externalServiceError}</p>}
+          <div className="metadata-card">
+            <h3>Import an OpenAPI 3.x definition</h3>
+            <label className="form-label">Service API Name<input className="form-control" value={newExternalServiceApiName}
+              onChange={(event) => setNewExternalServiceApiName(event.target.value)} placeholder="InventoryService" /></label>
+            <label className="form-label">Service Label<input className="form-control" value={newExternalServiceLabel}
+              onChange={(event) => setNewExternalServiceLabel(event.target.value)} placeholder="Inventory Service" /></label>
+            <label className="form-label">OpenAPI JSON<input className="form-control" type="file" accept=".json,application/json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void file.text().then((text) => {
+                  const spec = JSON.parse(text) as unknown;
+                  return onImportExternalService(newExternalServiceApiName, newExternalServiceLabel, spec);
+                }).then(() => onLoadExternalServices()).then((result) => {
+                  setExternalServices(result.services);
+                  setExternalServiceError('');
+                  onNotify('External Service imported.');
+                }).catch((error) => onNotify(error instanceof Error ? error.message : 'External Service import failed.'));
+              }} /></label>
+            <p className="settings-panel-copy">Only inline OpenAPI 3.x operations using path/query parameters and JSON object bodies are supported. Callouts run through an HTTPS Named Credential and are queued durably.</p>
+          </div>
+          {operation && <>
+            <label className="form-label">HTTPS Named Credential<select className="form-control"
+              value={displayValue(selected.config.namedCredentialId)}
+              onChange={(event) => setConfig('namedCredentialId', event.target.value)}>
+              <option value="">Select credential</option>
+              {namedCredentials.filter((credential) => credential.protocol === 'HTTPS' && credential.enabled)
+                .map((credential) => <option key={credential.id} value={credential.id}>{credential.label}</option>)}
+            </select></label>
+            <div className="flow-config-list">{operation.parameters.map((parameter) => (
+              <label className="form-label" key={`${parameter.location}-${parameter.name}`}>
+                {parameter.location === 'body' ? 'JSON Request Body' : `${parameter.location === 'path' ? 'Path' : 'Query'} · ${parameter.name}`}
+                {parameter.required ? ' *' : ''}
+                {parameter.location === 'body'
+                  ? <textarea className="form-control" rows={5} value={displayValue(inputs[parameter.name])}
+                    placeholder='{"recordId":"{!$Record.Id}"}'
+                    onChange={(event) => updateInput(parameter.name, event.target.value)} />
+                  : <input className="form-control" value={displayValue(inputs[parameter.name])}
+                    placeholder={parameter.valueType === 'string' ? '{!$Record.Id} or a literal' : 'Value or Flow reference'}
+                    onChange={(event) => updateInput(parameter.name, event.target.value)} />}
+              </label>
+            ))}</div>
+            <div className="info-callout">This Action queues a durable HTTPS callout through the selected Named Credential. Execution requires Flow permissions and HTTP Callout execution permission. Responses are not returned to the Flow.</div>
+          </>}
+        </>;
+      })()}
       {flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && displayValue(selected.config.actionType) === 'Generate Verification' ? <>
         <label className="form-label">Verification Method<select className="form-control" value={displayValue(selected.config.method) || 'TENANT_POLICY'} onChange={(event)=>setConfig('method',event.target.value)}>
           <option value="TENANT_POLICY">Tenant policy</option><option value="OTP">Email OTP</option><option value="LINK">Reset link</option></select></label>

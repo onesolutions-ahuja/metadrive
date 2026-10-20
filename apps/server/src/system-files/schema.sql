@@ -268,7 +268,10 @@ CREATE TABLE IF NOT EXISTS md_email_alert_details (
 );
 
 -- Tenant-level settings persisted independently from Core metadata.
-CREATE TABLE IF NOT EXISTS md_tenant_settings (tenant_id uuid NOT NULL REFERENCES md_tenants(id), setting_key text NOT NULL CHECK (setting_key IN ('company-profile','currencies','automation-settings')), properties jsonb NOT NULL CHECK (jsonb_typeof(properties)='object'),revision integer NOT NULL DEFAULT 1 CHECK (revision>0),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,setting_key));
+CREATE TABLE IF NOT EXISTS md_tenant_settings (tenant_id uuid NOT NULL REFERENCES md_tenants(id), setting_key text NOT NULL CHECK (setting_key IN ('company-profile','currencies','automation-settings','business-calendar','offline-briefcase')), properties jsonb NOT NULL CHECK (jsonb_typeof(properties)='object'),revision integer NOT NULL DEFAULT 1 CHECK (revision>0),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,setting_key));
+CREATE TABLE IF NOT EXISTS md_metadata_package_installations(tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,package_api text NOT NULL,label text NOT NULL,package_type text NOT NULL CHECK(package_type IN ('Managed','Unlocked')),version integer NOT NULL CHECK(version>0),digest text NOT NULL CHECK(digest ~ '^[0-9a-f]{64}$'),active boolean NOT NULL DEFAULT true,installed_by uuid NOT NULL REFERENCES md_users(id),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,package_api));
+CREATE TABLE IF NOT EXISTS md_metadata_package_versions(tenant_id uuid NOT NULL,package_api text NOT NULL,version integer NOT NULL CHECK(version>0),digest text NOT NULL CHECK(digest ~ '^[0-9a-f]{64}$'),installed_by uuid NOT NULL,installed_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,package_api,version),FOREIGN KEY(tenant_id,package_api) REFERENCES md_metadata_package_installations(tenant_id,package_api) ON DELETE CASCADE,FOREIGN KEY(tenant_id,installed_by) REFERENCES md_users(tenant_id,id));
+CREATE TABLE IF NOT EXISTS md_metadata_package_components(tenant_id uuid NOT NULL,package_api text NOT NULL,component_type text NOT NULL CHECK(component_type IN ('object','page','component')),component_api text NOT NULL,component_state text NOT NULL DEFAULT 'Active' CHECK(component_state IN ('Active','Disabled','Retained')),component_digest text NOT NULL CHECK(component_digest ~ '^[0-9a-f]{64}$'),PRIMARY KEY(tenant_id,package_api,component_type,component_api),FOREIGN KEY(tenant_id,package_api) REFERENCES md_metadata_package_installations(tenant_id,package_api) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS md_tenant_automation_settings (
  tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id) ON DELETE CASCADE,
  flow_service_user_id uuid,
@@ -828,6 +831,7 @@ CREATE INDEX IF NOT EXISTS md_flow_trigger_subscriptions_dispatch
 CREATE TABLE IF NOT EXISTS md_platform_event_messages (
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
  id uuid NOT NULL DEFAULT gen_random_uuid(),
+ replay_id bigserial NOT NULL,
  event_api_name text NOT NULL,
  published_by uuid NOT NULL,
  published_at timestamptz NOT NULL DEFAULT now(),
@@ -837,6 +841,8 @@ CREATE TABLE IF NOT EXISTS md_platform_event_messages (
  PRIMARY KEY(tenant_id,id),
  FOREIGN KEY(tenant_id,published_by) REFERENCES md_users(tenant_id,id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS md_platform_event_messages_replay
+ ON md_platform_event_messages(tenant_id,replay_id);
 CREATE UNIQUE INDEX IF NOT EXISTS md_platform_event_messages_idempotency
  ON md_platform_event_messages(tenant_id,event_api_name,idempotency_key)
  WHERE idempotency_key IS NOT NULL;
@@ -870,6 +876,40 @@ CREATE TABLE IF NOT EXISTS md_platform_event_deliveries (
 );
 CREATE INDEX IF NOT EXISTS md_platform_event_deliveries_queue
  ON md_platform_event_deliveries(tenant_id,status,created_at,id) WHERE status='queued';
+CREATE TABLE IF NOT EXISTS md_webhook_subscriptions (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ api_name text NOT NULL,
+ event_api_name text NOT NULL,
+ credential_id uuid NOT NULL,
+ relative_path text NOT NULL,
+ start_replay_id bigint NOT NULL CHECK(start_replay_id>=1),
+ enabled boolean NOT NULL DEFAULT true,
+ created_by uuid NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,id),UNIQUE(tenant_id,api_name),
+ FOREIGN KEY(tenant_id,credential_id) REFERENCES md_named_credentials(tenant_id,id),
+ FOREIGN KEY(tenant_id,created_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_webhook_subscriptions_event
+ ON md_webhook_subscriptions(tenant_id,event_api_name,start_replay_id) WHERE enabled=true;
+CREATE TABLE IF NOT EXISTS md_webhook_deliveries (
+ tenant_id uuid NOT NULL,
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ subscription_id uuid NOT NULL,
+ event_id uuid NOT NULL,
+ status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','delivered','failed')),
+ response_status integer,
+ error_code text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ completed_at timestamptz,
+ PRIMARY KEY(tenant_id,id),UNIQUE(tenant_id,subscription_id,event_id),
+ FOREIGN KEY(tenant_id,subscription_id) REFERENCES md_webhook_subscriptions(tenant_id,id),
+ FOREIGN KEY(tenant_id,event_id) REFERENCES md_platform_event_messages(tenant_id,id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_webhook_deliveries_queue
+ ON md_webhook_deliveries(tenant_id,status,created_at,id) WHERE status='queued';
 ALTER TABLE md_flow_definitions ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS md_flow_definitions_latest
  ON md_flow_definitions(tenant_id,api_name,version DESC) WHERE archived=false;
@@ -1781,7 +1821,6 @@ CREATE TABLE IF NOT EXISTS md_flow_execution_result_values (
     REFERENCES md_flow_execution_requests(tenant_id,actor_id,flow_api,request_id)
     ON DELETE CASCADE
 );
-
 -- Central versioned application manifests; no app code is copied into tenant runtime.
 -- Tenants receive only installation receipts and metadata needed by the selected app.
 CREATE TABLE IF NOT EXISTS md_app_package_versions (
@@ -1905,3 +1944,182 @@ CREATE TABLE IF NOT EXISTS md_app_package_page_property_templates (
        AND reference_parent_api IS NULL)
  )
 );
+
+-- Core tenant policy. Defaults preserve existing passwords; failed logins are bounded.
+CREATE TABLE IF NOT EXISTS md_password_policies (
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id),
+ min_length integer NOT NULL DEFAULT 12 CHECK(min_length BETWEEN 12 AND 128),
+ require_uppercase boolean NOT NULL DEFAULT false,
+ require_lowercase boolean NOT NULL DEFAULT false,
+ require_number boolean NOT NULL DEFAULT false,
+ require_symbol boolean NOT NULL DEFAULT false,
+ max_age_days integer NOT NULL DEFAULT 0 CHECK(max_age_days BETWEEN 0 AND 365),
+ history_count integer NOT NULL DEFAULT 5 CHECK(history_count BETWEEN 0 AND 24),
+ max_failed_attempts integer NOT NULL DEFAULT 5 CHECK(max_failed_attempts BETWEEN 3 AND 20),
+ lockout_minutes integer NOT NULL DEFAULT 15 CHECK(lockout_minutes BETWEEN 1 AND 1440),
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+INSERT INTO md_password_policies(tenant_id) SELECT id FROM md_tenants ON CONFLICT DO NOTHING;
+ALTER TABLE md_users ADD COLUMN IF NOT EXISTS failed_login_attempts integer NOT NULL DEFAULT 0;
+ALTER TABLE md_users ADD COLUMN IF NOT EXISTS password_changed_at timestamptz NOT NULL DEFAULT now();
+CREATE TABLE IF NOT EXISTS md_password_history (
+ id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ password_hash text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_password_history_user ON md_password_history(tenant_id,user_id,id DESC);
+-- Unknown-account failures have no user identity; they still belong to the resolved tenant.
+ALTER TABLE md_security_events ALTER COLUMN actor_user_id DROP NOT NULL;
+ALTER TABLE md_security_events ADD COLUMN IF NOT EXISTS login_identifier text;
+ALTER TABLE md_security_events ADD COLUMN IF NOT EXISTS source_ip text;
+
+-- Universal, tenant-scoped MFA metadata and one-time authentication challenges.
+CREATE TABLE IF NOT EXISTS md_tenant_mfa_policies(
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id),
+ mode text NOT NULL DEFAULT 'Off' CHECK(mode IN ('Off','Optional','Required')),
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS md_user_mfa_secrets(
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ secret_ciphertext bytea NOT NULL,
+ key_id text NOT NULL,
+ last_counter bigint NOT NULL DEFAULT -1,
+ enrolled_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,user_id),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_mfa_enrollment_tokens(
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ token_hash text NOT NULL UNIQUE CHECK(length(token_hash)=64),
+ failed_attempts integer NOT NULL DEFAULT 0 CHECK(failed_attempts BETWEEN 0 AND 10),
+ secret_ciphertext bytea NOT NULL,
+ key_id text NOT NULL,
+ expires_at timestamptz NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,user_id),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_mfa_login_challenges(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ challenge_hash text NOT NULL UNIQUE CHECK(length(challenge_hash)=64),
+ failed_attempts integer NOT NULL DEFAULT 0 CHECK(failed_attempts BETWEEN 0 AND 10),
+ enrollment_secret_ciphertext bytea,
+ key_id text,
+ expires_at timestamptz NOT NULL,
+ consumed_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_mfa_login_recent ON md_mfa_login_challenges(tenant_id,user_id,created_at DESC);
+ALTER TABLE md_sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false;
+ALTER TABLE md_refresh_sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS md_session_policies(
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id),
+ access_minutes integer NOT NULL DEFAULT 60 CHECK(access_minutes BETWEEN 5 AND 1440),
+ refresh_minutes integer NOT NULL DEFAULT 43200 CHECK(refresh_minutes BETWEEN 5 AND 43200),
+ idle_minutes integer NOT NULL DEFAULT 60 CHECK(idle_minutes BETWEEN 5 AND 1440),
+ require_mfa boolean NOT NULL DEFAULT false,
+ frame_policy text NOT NULL DEFAULT 'DENY' CHECK(frame_policy IN ('DENY','SAMEORIGIN')),
+ csp_enabled boolean NOT NULL DEFAULT true
+);
+INSERT INTO md_session_policies(tenant_id) SELECT id FROM md_tenants ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS md_login_ip_ranges(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ profile_id uuid,kind text NOT NULL CHECK(kind IN ('login','trusted')),network cidr NOT NULL,
+ FOREIGN KEY(tenant_id,profile_id) REFERENCES md_profiles(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_login_hours(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ profile_id uuid,weekday integer NOT NULL CHECK(weekday BETWEEN 1 AND 7),
+ start_minute integer NOT NULL CHECK(start_minute BETWEEN 0 AND 1439),
+ end_minute integer NOT NULL CHECK(end_minute BETWEEN 1 AND 1440),
+ timezone text NOT NULL DEFAULT 'Europe/London',CHECK(start_minute<end_minute),
+ FOREIGN KEY(tenant_id,profile_id) REFERENCES md_profiles(tenant_id,id)
+);
+ALTER TABLE md_sessions ADD COLUMN IF NOT EXISTS last_seen_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE md_sessions ADD COLUMN IF NOT EXISTS source_ip inet;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='md_sessions' AND column_name='family_id') THEN
+  UPDATE md_sessions SET revoked_at=now() WHERE revoked_at IS NULL;
+ END IF;
+END $$;
+ALTER TABLE md_sessions ADD COLUMN IF NOT EXISTS family_id uuid NOT NULL DEFAULT gen_random_uuid();
+ALTER TABLE md_refresh_sessions ADD COLUMN IF NOT EXISTS last_seen_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE md_refresh_sessions ADD COLUMN IF NOT EXISTS absolute_expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days';
+ALTER TABLE md_refresh_sessions ADD COLUMN IF NOT EXISTS source_ip inet;
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='md_refresh_sessions' AND column_name='family_id') THEN
+  UPDATE md_refresh_sessions SET revoked_at=now() WHERE revoked_at IS NULL;
+ END IF;
+END $$;
+ALTER TABLE md_refresh_sessions ADD COLUMN IF NOT EXISTS family_id uuid NOT NULL DEFAULT gen_random_uuid();
+CREATE TABLE IF NOT EXISTS md_mfa_backup_codes(
+ tenant_id uuid NOT NULL,user_id uuid NOT NULL,code_hash text NOT NULL,used_at timestamptz,
+ PRIMARY KEY(tenant_id,user_id,code_hash),FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+ALTER TABLE md_mfa_login_challenges ADD COLUMN IF NOT EXISTS source_ip inet;
+CREATE TABLE IF NOT EXISTS md_webauthn_credentials(
+ tenant_id uuid NOT NULL,user_id uuid NOT NULL,credential_id text NOT NULL,public_key bytea NOT NULL,
+ counter bigint NOT NULL DEFAULT 0,label text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,credential_id),FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_webauthn_challenges(
+ token_hash text PRIMARY KEY,tenant_id uuid NOT NULL,user_id uuid NOT NULL,
+ purpose text NOT NULL CHECK(purpose IN ('register','authenticate')),challenge text NOT NULL,
+ origin text NOT NULL,rp_id text NOT NULL,mfa_challenge_hash text,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '5 minutes',consumed_at timestamptz,
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_identity_providers(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ label text NOT NULL,protocol text NOT NULL CHECK(protocol IN ('oidc','saml')),enabled boolean NOT NULL DEFAULT false,
+ issuer text NOT NULL,authorization_url text NOT NULL,token_url text NOT NULL DEFAULT '',jwks_url text NOT NULL DEFAULT '',
+ client_id text NOT NULL DEFAULT '',secret_ciphertext bytea,key_id text,certificate text NOT NULL DEFAULT '',
+ UNIQUE(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_federated_identities(
+ tenant_id uuid NOT NULL,provider_id uuid NOT NULL,subject text NOT NULL,user_id uuid NOT NULL,
+ PRIMARY KEY(tenant_id,provider_id,subject),UNIQUE(tenant_id,provider_id,user_id),
+ FOREIGN KEY(tenant_id,provider_id) REFERENCES md_identity_providers(tenant_id,id),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_federation_requests(
+ state_hash text PRIMARY KEY,tenant_id uuid NOT NULL,provider_id uuid NOT NULL,
+ browser_hash text NOT NULL,nonce text NOT NULL,verifier_ciphertext bytea,key_id text,origin text NOT NULL,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '5 minutes',consumed_at timestamptz,
+ FOREIGN KEY(tenant_id,provider_id) REFERENCES md_identity_providers(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_saml_request_ids(
+ tenant_id uuid NOT NULL,provider_id uuid NOT NULL,request_id text NOT NULL,value text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(tenant_id,provider_id,request_id),
+ FOREIGN KEY(tenant_id,provider_id) REFERENCES md_identity_providers(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_federation_tickets(
+ token_hash text PRIMARY KEY,tenant_id uuid NOT NULL,user_id uuid NOT NULL,origin text NOT NULL,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '1 minute',consumed_at timestamptz,
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id)
+);
+
+-- One reusable SQL boundary predicate for login, refresh and every authenticated request.
+CREATE OR REPLACE FUNCTION md_login_boundary_allowed(t uuid,u uuid,ip inet)
+RETURNS boolean LANGUAGE sql STABLE AS $$
+ WITH scopes AS (
+  SELECT NULL::uuid AS profile_id UNION SELECT profile_id FROM md_user_profiles WHERE tenant_id=t AND user_id=u
+ ), clock AS (SELECT h.*,now() AT TIME ZONE h.timezone AS local_time FROM md_login_hours h WHERE h.tenant_id=t)
+ SELECT NOT EXISTS(SELECT 1 FROM scopes s WHERE
+  (EXISTS(SELECT 1 FROM md_login_ip_ranges r WHERE r.tenant_id=t AND r.kind='login' AND r.profile_id IS NOT DISTINCT FROM s.profile_id)
+   AND NOT EXISTS(SELECT 1 FROM md_login_ip_ranges r WHERE r.tenant_id=t AND r.kind='login' AND r.profile_id IS NOT DISTINCT FROM s.profile_id AND ip <<= r.network))
+  OR (EXISTS(SELECT 1 FROM clock h WHERE h.profile_id IS NOT DISTINCT FROM s.profile_id)
+   AND NOT EXISTS(SELECT 1 FROM clock h WHERE h.profile_id IS NOT DISTINCT FROM s.profile_id
+    AND extract(isodow FROM h.local_time)=h.weekday
+    AND extract(hour FROM h.local_time)*60+extract(minute FROM h.local_time)>=h.start_minute
+    AND extract(hour FROM h.local_time)*60+extract(minute FROM h.local_time)<h.end_minute)))
+$$;

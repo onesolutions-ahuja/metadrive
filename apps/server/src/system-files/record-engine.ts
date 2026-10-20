@@ -7,6 +7,7 @@ import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
   type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
 import {sanitizeRichText} from './rich-text.js';
+import {compileRecordFilters,type RecordCursor,type RecordFilter} from './record-query.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;rollup_source_data_type?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;global_value_set_api?:string|null};
 type EncryptedValueVault={
   encryptOpaque(value:string):{ciphertext:Buffer;keyId:string};
@@ -59,9 +60,14 @@ export class RecordEngine {
     this.richTextFilePruner=handler;
   }
   private async fields(tenantId:string,objectApi:string,client?:PoolClient):Promise<FieldDefinition[]> {
-    const {rows}=await (client??this.db).query<FieldDefinition>(
+    const executor=client??this.db;
+    const {rows}=await executor.query<FieldDefinition&{package_object_retained?:boolean}>(
       `SELECT api_name,data_type,related_object,relationship_type,allow_reparenting,required,max_length,precision,scale,is_unique,external_id,
        formula_expression,formula_return_type,g.value_set_api AS global_value_set_api,
+       EXISTS(SELECT 1 FROM md_metadata_package_components c
+         WHERE c.tenant_id=md_field_definitions.tenant_id AND c.component_type='object'
+          AND c.component_api=md_field_definitions.object_api AND c.component_state='Retained')
+         AS package_object_retained,
         case_sensitive,default_value,auto_number_format,picklist_restricted,
         rollup_child_object,rollup_relationship_field,rollup_operation,rollup_source_field,
         (SELECT s.data_type FROM md_field_definitions s
@@ -78,6 +84,16 @@ export class RecordEngine {
        WHERE md_field_definitions.tenant_id=$1 AND md_field_definitions.object_api=$2
          AND md_field_definitions.deleted_at IS NULL`,
       [tenantId,objectApi]);
+    if(rows[0]?.package_object_retained)
+      throw Error('Metadata package component is uninstalled: '+objectApi);
+    if(!rows.length){
+      const retained=await executor.query<{retained:boolean}>(`SELECT EXISTS(
+        SELECT 1 FROM md_metadata_package_components
+        WHERE tenant_id=$1 AND component_type='object' AND component_api=$2
+          AND component_state='Retained') AS retained`,[tenantId,objectApi]);
+      if(retained.rows[0]?.retained)
+        throw Error('Metadata package component is uninstalled: '+objectApi);
+    }
     return rows;
   }
   private async formulaContext(tenantId:string,userId:string,client?:PoolClient):Promise<FormulaEvaluationContext>{
@@ -756,7 +772,7 @@ export class RecordEngine {
       throw new Error('Invalid import object');
     if(!Array.isArray(records)||records.length===0||records.length>200)
       throw new Error('Invalid import batch size (1-200 records)');
-    const ids=new Set<string>();
+    const seenIds=new Set<string>();
     const updates=records.map((item:unknown)=>{
       if(!item||typeof item!=='object'||Array.isArray(item)
         ||(Object.getPrototypeOf(item)!==Object.prototype&&Object.getPrototypeOf(item)!==null))
@@ -766,8 +782,8 @@ export class RecordEngine {
       if(id!==undefined&&(!('Id' in data)||typeof id!=='string'||!uuid.test(id)))
         throw new Error('Invalid import record ID');
       if(typeof id==='string'){
-        if(ids.has(id.toLowerCase()))throw new Error('Duplicate import record ID');
-        ids.add(id.toLowerCase());
+        if(seenIds.has(id.toLowerCase()))throw new Error('Duplicate import record ID');
+        seenIds.add(id.toLowerCase());
       }
       const values=Object.fromEntries(Object.entries(data).filter(([key])=>key!=='Id'));
       if(!Object.keys(values).length)throw new Error('Invalid import record without fields');
@@ -776,15 +792,16 @@ export class RecordEngine {
     const mode=updates.every(item=>typeof item.id==='string')?'update'
       :updates.every(item=>item.id===undefined)?'create':null;
     if(!mode)throw new Error('Invalid import batch: cannot mix creates and updates');
+    const resultIds:string[]=[];
     await this.db.transaction(async client=>{
       for(const item of updates){
-        if(mode==='update')
+        if(mode==='update'){
           await this.updateInTransaction(client,tenantId,userId,objectApi,item.id as string,item.values);
-        else
-          await this.createInTransaction(client,tenantId,userId,objectApi,item.values);
+          resultIds.push(item.id as string);
+        }else resultIds.push(await this.createInTransaction(client,tenantId,userId,objectApi,item.values));
       }
     });
-    return {count:updates.length,mode};
+    return {count:updates.length,mode,ids:resultIds};
   }
   private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,
     prepared:Map<string,Storable>,isClone=false) {
@@ -847,9 +864,10 @@ export class RecordEngine {
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0,
     options:{sortField?:string;sortDirection?:'asc'|'desc';search?:string;filterField?:string;
       filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes';
-      relatedField?:string;relatedId?:string}={}) {
+      relatedField?:string;relatedId?:string;filters?:RecordFilter[];filterLogic?:string;
+      cursor?:RecordCursor;scope?:'my'|'all'|'my_team'|'queue'}={}) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
-    const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
+    const pageSize=Math.min(Math.max(limit,1),100),start=options.cursor?0:Math.max(offset,0);
     const definitions=await this.fields(tenantId,objectApi);
     const byApi=new Map(definitions.map(field=>[field.api_name,field]));
     const fieldFor=(name:string|undefined)=>{
@@ -906,9 +924,19 @@ export class RecordEngine {
       if(!parent.rowCount)throw new Error('Related parent record not found');
     }
     const searchFields:string[]=[];
-    if(search)for(const field of definitions)
-      if(!['formula','geolocation','address','encryptedtext'].includes(field.data_type)&&await canRead(field.api_name))
-        searchFields.push(field.api_name);
+    let searchFieldParameter:string|undefined;
+    let searchTermParameter:string|undefined;
+    if(search){
+      const {rows:configuredSearchFields}=await this.db.query<{field_api:string}>(`
+        SELECT search_fields.field_api FROM md_search_layout_fields search_fields
+        LEFT JOIN md_object_manager_settings settings
+          ON settings.tenant_id=search_fields.tenant_id AND settings.object_api=search_fields.object_api
+        WHERE search_fields.tenant_id=$1 AND search_fields.object_api=$2
+          AND COALESCE(settings.allow_search,true) ORDER BY search_fields.field_api`,
+      [tenantId,objectApi]);
+      for(const {field_api:fieldApi} of configuredSearchFields)
+        if(byApi.has(fieldApi)&&await canRead(fieldApi))searchFields.push(fieldApi);
+    }
     const predicates:string[]=[];
     const conditionParams:unknown[]=[];
     if(filterField&&filterValue!==undefined){
@@ -947,26 +975,59 @@ export class RecordEngine {
           AND relation.object_api=r.object_api AND relation.field_api=${relationshipParam}
           AND relation.reference_record_id=${parentParam}::uuid)`);
     }
+    if(options.filters?.length){
+      for(const filter of options.filters)
+        if(!await canRead(filter.field))throw new Error('Field is not readable');
+      const compiled=compileRecordFilters(options.filters,options.filterLogic,byApi,
+        4+conditionParams.length);
+      predicates.push(compiled.predicate);
+      conditionParams.push(...compiled.parameters);
+    }else if(options.filterLogic?.trim())throw new Error('Filter logic requires filters');
+    if(options.scope==='my')predicates.push('r.owner_id=$3');
+    else if(options.scope==='my_team')predicates.push(`EXISTS(
+      SELECT 1 FROM md_user_roles team_owner
+      WHERE team_owner.tenant_id=r.tenant_id AND team_owner.user_id=r.owner_id
+        AND team_owner.role_id IN(SELECT role_id FROM md_user_role_tree($1,$3)))`);
+    else if(options.scope==='queue')predicates.push(`r.owner_queue_id IS NOT NULL
+      AND md_access_member($1,$3,r.owner_queue_id)`);
+    else if(options.scope!==undefined&&options.scope!=='all')throw new Error('Invalid list view scope');
     if(search){
       conditionParams.push(searchFields);
       const fieldsParam='$'+(3+conditionParams.length);
       conditionParams.push(search);
       const searchParam='$'+(3+conditionParams.length);
-      predicates.push(`EXISTS(SELECT 1 FROM md_record_values qv
+      searchFieldParameter=fieldsParam;
+      searchTermParameter=searchParam;
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_search_values qv
         WHERE qv.tenant_id=r.tenant_id AND qv.record_id=r.id AND qv.object_api=r.object_api
           AND qv.field_api=ANY(${fieldsParam}::text[])
-          AND strpos(lower(COALESCE(qv.value_text,qv.reference_record_id::text,'')),lower(${searchParam}))>0)`);
+          AND qv.search_vector @@ websearch_to_tsquery('simple',${searchParam}))`);
     }
     const where=predicates.length?' AND '+predicates.join(' AND '):'';
-    const count=await this.db.query<{total:string}>(`
-      SELECT count(*)::text AS total FROM md_records r
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
-    `,[tenantId,objectApi,userId,...conditionParams]);
+    let pageCursorPredicate:string|undefined;
     const params:unknown[]=[tenantId,objectApi,userId,...conditionParams];
-    let orderBy='r.created_at ASC,r.id ASC';
-    let sortSelection='NULL::text AS sort_value';
+    let effectiveDirection=options.sortDirection??(search?'desc':'asc');
+    let orderBy=search?'r.sort_value DESC,r.created_at ASC,r.id ASC':'r.created_at ASC,r.id ASC';
+    let sortSelection=search?'search_rank.score AS sort_value':'r.created_at AS sort_value';
     let resultOrder='r.created_at,r.id,v.field_api';
     let sortJoin='';
+    let cursorValueType=search?'numeric':'timestamptz';
+    let cursorExpression=search?'search_rank.score':'r.created_at';
+    if(search&&!sortField&&searchFieldParameter&&searchTermParameter){
+      params.push(searchFields,search);
+      const rankFieldsParam=`$${params.length-1}`;
+      const rankTermParam=`$${params.length}`;
+      sortJoin=`CROSS JOIN LATERAL (
+        SELECT max(ts_rank_cd(setweight(qv.search_vector,qv.weight),
+          websearch_to_tsquery('simple',${rankTermParam}))) AS score
+        FROM md_record_search_values qv
+        WHERE qv.tenant_id=r.tenant_id AND qv.record_id=r.id AND qv.object_api=r.object_api
+          AND qv.field_api=ANY(${rankFieldsParam}::text[])
+          AND qv.search_vector @@ websearch_to_tsquery('simple',${rankTermParam})
+      ) search_rank`;
+      orderBy='search_rank.score DESC,r.id ASC';
+      resultOrder='r.sort_value DESC,r.id ASC,v.field_api';
+    }
     if(sortField){
       params.push(sortField.api_name);
       sortJoin=`LEFT JOIN md_record_values sv ON sv.tenant_id=r.tenant_id AND sv.record_id=r.id
@@ -979,34 +1040,69 @@ export class RecordEngine {
         :sortType==='date'?'sv.value_date'
           :sortType==='datetime'?'sv.value_datetime'
             :sortField.data_type==='reference'?'sv.reference_record_id::text'
-              :sortField.data_type==='boolean'?'sv.value_text'
+              :sortType==='boolean'?'sv.value_boolean'
                 :'lower(COALESCE(sv.value_text,sv.reference_record_id::text))';
       sortSelection=`${sortValue} AS sort_value`;
-      orderBy=`${sortValue} ${direction} NULLS LAST,r.created_at ASC,r.id ASC`;
-      resultOrder=`r.sort_value ${direction} NULLS LAST,r.created_at ASC,r.id ASC,v.field_api`;
+      cursorExpression=sortValue;
+      cursorValueType=['number','currency','percent'].includes(String(sortType))?'numeric'
+        :sortType==='date'?'date':sortType==='datetime'?'timestamptz'
+          :sortType==='boolean'?'boolean':'text';
+      orderBy=`${sortValue} ${direction} NULLS LAST,r.id ASC`;
+      resultOrder=`r.sort_value ${direction} NULLS LAST,r.id ASC,v.field_api`;
+      effectiveDirection=options.sortDirection??'asc';
+    }
+    if(options.cursor){
+      const {field,direction,value,id}=options.cursor;
+      if(field!==(sortField?.api_name??null)||direction!==effectiveDirection)
+        throw new Error('Record cursor does not match the requested sort');
+      params.push(id);
+      const idParam=`$${params.length}`;
+      if(value===null){
+        predicates.push(`${cursorExpression} IS NULL AND r.id>${idParam}::uuid`);
+      }else{
+        params.push(value);
+        const valueParam=`$${params.length}::${cursorValueType}`;
+        const comparison=direction==='desc'?'<':'>';
+        predicates.push(`(${cursorExpression}${comparison}${valueParam}
+          OR ${cursorExpression} IS NULL
+          OR (${cursorExpression}=${valueParam} AND r.id>${idParam}::uuid))`);
+      }
+      pageCursorPredicate=predicates.pop();
     }
     params.push(pageSize,start);
     const limitParam=params.length-1,offsetParam=params.length;
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
+      id:string|null;created_at:Date|null;updated_at:Date|null;owner_id:string|null;record_type_id:string|null;is_clone:boolean|null;
+      total_count:string;
+      sort_value:string|Date|null;
       field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
       value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
       geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
       address_state:string|null;address_postal_code:string|null;address_country:string|null
     }>(`
-      WITH selected AS (
+      WITH authorized AS MATERIALIZED (
+        SELECT r.id
+        FROM md_records r
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
+          AND md_record_access($1,$3,r.id,'read')${where}
+      ), totals AS (
+        SELECT count(*)::text AS total_count FROM authorized
+      ), selected AS (
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
           r.record_type_id,r.is_clone,${sortSelection}
-        FROM md_records r ${sortJoin}
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
+        FROM authorized a JOIN md_records r
+          ON r.tenant_id=$1 AND r.object_api=$2 AND r.id=a.id
+        ${sortJoin}
+        ${pageCursorPredicate?`WHERE ${pageCursorPredicate}`:''}
         ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
       )
-      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,r.sort_value,
+        totals.total_count,
         v.field_api,v.value_text,v.reference_record_id,
         v.value_number,v.value_date,v.value_datetime,v.value_boolean,
         v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,
         v.address_country,f.data_type
-      FROM selected r
+      FROM totals LEFT JOIN selected r ON true
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
         AND EXISTS(SELECT 1 FROM md_field_definitions active_field
           WHERE active_field.tenant_id=v.tenant_id AND active_field.object_api=v.object_api
@@ -1017,10 +1113,18 @@ export class RecordEngine {
     `,params);
     const collected=new Map<string,Record<string,unknown>>();
     const allowed=new Map<string,boolean>();
+    let lastCursor:RecordCursor|undefined;
     for(const row of rows) {
-      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,
-        LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id,
-        __isClone:row.is_clone===true});
+      if(!row.id)continue;
+      if(!collected.has(row.id)){
+        collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,
+          LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id,
+          __isClone:row.is_clone===true});
+        const rawValue=row.sort_value;
+        lastCursor={field:sortField?.api_name??null,
+          direction:sortField?(options.sortDirection??'asc'):(search?'desc':'asc'),
+          value:rawValue===null?null:rawValue instanceof Date?rawValue.toISOString():String(rawValue),id:row.id};
+      }
       if(!row.field_api||row.field_api==='OwnerId')continue;
       if(!allowed.has(row.field_api))allowed.set(row.field_api,await canRead(row.field_api));
       if(!allowed.get(row.field_api))continue;
@@ -1049,7 +1153,10 @@ export class RecordEngine {
         await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,undefined,false,formulaContext);
     }
     for(const record of records)delete record.__isClone;
-    return {records,total:Number(count.rows[0]?.total??0)};
+    const nextCursor=records.length&&lastCursor
+      &&(lastCursor.value===null||lastCursor.value.length<=512)
+      ?Buffer.from(JSON.stringify(lastCursor)).toString('base64url'):undefined;
+    return {records,total:Number(rows[0]?.total_count??0),...(nextCursor?{nextCursor}:{})};
   }
   /** Typed SQL filtering with existing Object, Field and Record authorization. */
   async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,

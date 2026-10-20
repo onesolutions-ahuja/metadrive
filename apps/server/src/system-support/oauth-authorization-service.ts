@@ -11,7 +11,7 @@ const digest=(value:string)=>sha(value).toString('hex');
 const idPattern=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 type Config={clientId:string;authorizationUrl:string;tokenUrl:string;scope?:string};
 type StoredCredential={id:string;enabled:boolean;auth_type:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;encryption_key_id:string};
-function safeUrl(raw:string):URL{
+export function safeUrl(raw:string):URL{
  const parsed=new URL(raw);
  if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.hash||
    (parsed.port&&parsed.port!=='443')||isIP(parsed.hostname)||
@@ -20,7 +20,7 @@ function safeUrl(raw:string):URL{
  return parsed;
 }
 // Use one vetted public-address rule for all token calls; DNS pinning prevents rebinding.
-function publicIp(ip:string){
+export function publicIp(ip:string){
  if(isIP(ip)===4){
   const [a,b,c]=ip.split('.').map(Number);
   return !(a===0||a===10||a===127||a>=224||a===169&&b===254||
@@ -30,7 +30,7 @@ function publicIp(ip:string){
  }
  if(isIP(ip)===6){
   const normalized=ip.toLowerCase();
-  return !(normalized.startsWith('::')||/^(fc|fd|fe8|fe9|fea|feb)/.test(normalized)||
+  return !(normalized.startsWith('::')||/^(ff|fc|fd|fe8|fe9|fea|feb)/.test(normalized)||
     normalized.includes(':ffff:'));
  }
  return false;

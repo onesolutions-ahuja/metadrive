@@ -38,7 +38,7 @@ test('Existing-product CSV import uses shared tenant-scoped update and history',
  const h=harness();
  const result=await h.engine.importRecords('tenant-a','actor','Product',[
   {Id:a,VAT_Applicable__c:true},{Id:b,VAT_Applicable__c:false}]);
- assert.deepEqual(result,{count:2,mode:'update'});
+ assert.deepEqual(result,{count:2,mode:'update',ids:[a,b]});
  assert.equal(h.transactions,1);
  assert.equal(h.writes.filter(sql=>sql.includes('md_record_history')).length,2);
  assert.ok(h.writes.every(sql=>!sql.includes('DROP TABLE')));
@@ -80,7 +80,7 @@ test('Create-only import uses shared create pipeline',async()=>{
  const h=harness();
  const result=await h.engine.importRecords('tenant-a','actor','Product',
   [{VAT_Applicable__c:true}]);
- assert.deepEqual(result,{count:1,mode:'create'});
+ assert.deepEqual(result,{count:1,mode:'create',ids:[a]});
  assert.ok(h.permissions.includes('Product.create'));
  assert.ok(h.writes.some(sql=>sql.includes('md_records')));
 });

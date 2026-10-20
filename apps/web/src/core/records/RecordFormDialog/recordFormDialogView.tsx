@@ -221,6 +221,7 @@ export function RecordFormDialog({
   formValues,
   recordId,
   lookupRecords,
+  searchLookupRecords,
   formError,
   saving,
   editing,
@@ -241,6 +242,7 @@ export function RecordFormDialog({
   formValues: Record<string, unknown>;
   recordId?: string|null;
   lookupRecords: Record<string, RecordData[]>;
+  searchLookupRecords: (targetObject:string,term:string)=>Promise<RecordData[]>;
   formError: string;
   saving: boolean;
   editing: boolean;
@@ -253,6 +255,9 @@ export function RecordFormDialog({
   const [isPhoneViewport, setIsPhoneViewport] = useState(() => window.matchMedia('(max-width: 600px)').matches);
   const [lookupDialogField, setLookupDialogField] = useState<FieldMetadata | null>(null);
   const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupSearchResults,setLookupSearchResults]=useState<RecordData[]|null>(null);
+  const [lookupSearchBusy,setLookupSearchBusy]=useState(false);
+  const [lookupSearchError,setLookupSearchError]=useState('');
   const [includeNonmatchingOptionalLookupResults, setIncludeNonmatchingOptionalLookupResults] = useState(false);
   const [imageUploadError,setImageUploadError]=useState('');
   const [imageUploading,setImageUploading]=useState(false);
@@ -262,6 +267,30 @@ export function RecordFormDialog({
     media.addEventListener('change', updateViewport);
     return () => media.removeEventListener('change', updateViewport);
   }, []);
+  useEffect(()=>{
+    const targetObject=lookupDialogField?.relationship?.targetObject;
+    const term=lookupQuery.trim();
+    if(!targetObject||term.length<2){
+      setLookupSearchResults(null);
+      setLookupSearchBusy(false);
+      setLookupSearchError('');
+      return;
+    }
+    let active=true;
+    setLookupSearchResults(null);
+    const timer=window.setTimeout(()=>{
+      setLookupSearchBusy(true);
+      setLookupSearchError('');
+      void searchLookupRecords(targetObject,term).then(results=>{
+        if(active)setLookupSearchResults(results);
+      }).catch(failure=>{
+        if(active)setLookupSearchError(failure instanceof Error?failure.message:'Unable to search lookup records');
+      }).finally(()=>{
+        if(active)setLookupSearchBusy(false);
+      });
+    },200);
+    return ()=>{active=false;window.clearTimeout(timer);};
+  },[lookupDialogField?.apiName,lookupQuery,searchLookupRecords]);
   const layoutFieldNames = selectedLayout?.sections.flatMap((section) => section.fieldApiNames) ?? [];
   const visibleFields = object.fields.filter((field) => !field.formula
     && !field.dataType.toLocaleLowerCase().startsWith('auto number')
@@ -365,6 +394,8 @@ export function RecordFormDialog({
   const openLookupDialog = (field: FieldMetadata) => {
     setLookupDialogField(field);
     setLookupQuery('');
+    setLookupSearchResults(null);
+    setLookupSearchError('');
     setIncludeNonmatchingOptionalLookupResults(false);
   };
   const renderField = (field: FieldMetadata) => {
@@ -621,7 +652,8 @@ export function RecordFormDialog({
     </section>
     {lookupDialogField && (() => {
       const targetObject = objects.find((item) => item.apiName === lookupDialogField.relationship?.targetObject);
-      const options = lookupRecords[lookupDialogField.relationship?.targetObject ?? ''] ?? [];
+      const initialOptions = lookupRecords[lookupDialogField.relationship?.targetObject ?? ''] ?? [];
+      const options = lookupQuery.trim().length>=2 ? lookupSearchResults??[] : initialOptions;
       const requiredFilters = object.relatedLookupFilters?.filter((filter) =>
         filter.fieldApiName === lookupDialogField.apiName && filter.required) ?? [];
       const optionalFilters = object.relatedLookupFilters?.filter((filter) =>
@@ -639,8 +671,8 @@ export function RecordFormDialog({
         (field.apiName === 'Name' || field.apiName === 'Email')
         && fieldAccess[`${targetObject.apiName}.${field.apiName}`]?.read) ?? [];
       const query = lookupQuery.trim().toLocaleLowerCase();
-      const matchingOptions = filteredOptions.filter((item) => !query || searchableFields.some((field) =>
-        String(item[field.apiName] ?? '').toLocaleLowerCase().includes(query)));
+      const matchingOptions = filteredOptions.filter((item) => !query || lookupSearchResults!==null
+        || searchableFields.some((field)=>String(item[field.apiName]??'').toLocaleLowerCase().includes(query)));
       return <div className="lookup-dialog-backdrop" role="presentation" onMouseDown={(event) => {
         if (event.target === event.currentTarget) setLookupDialogField(null);
       }}>
@@ -660,6 +692,8 @@ export function RecordFormDialog({
               onChange={(event) => setIncludeNonmatchingOptionalLookupResults(event.target.checked)} />
             <span>Include records outside optional lookup filters</span>
           </label>}
+          {lookupSearchBusy&&<p role="status">Searching records…</p>}
+          {lookupSearchError&&<p className="records-message" role="alert">{lookupSearchError}</p>}
           {matchingOptions.length ? <div className="lookup-dialog-results" role="listbox" aria-label={`${targetObject?.label ?? 'Record'} results`}>
             {matchingOptions.map((item) => <button type="button" role="option" aria-selected={String(formValues[lookupDialogField.apiName] ?? '') === item.Id}
               key={item.Id} className="lookup-dialog-result" onClick={() => {
@@ -669,7 +703,10 @@ export function RecordFormDialog({
               {searchableFields.map((field) => <span key={field.apiName}><small>{displayFieldLabel(field)}</small>{formatRecordValue(item[field.apiName])}</span>)}
               {!searchableFields.length && <span>{String(item.Name ?? item.Email ?? item.Id)}</span>}
             </button>)}
-          </div> : <div className="records-empty">{options.length ? 'No matching records satisfy the search and required lookup filters.' : 'No records are available for this lookup.'}</div>}
+          </div> : <div className="records-empty">{lookupSearchBusy?'Searching…':lookupQuery.trim().length<2
+            ?'Type at least two characters to search records.'
+            :initialOptions.length?'No matching records satisfy the search and required lookup filters.'
+              :'No records are available for this lookup.'}</div>}
           <footer><button type="button" className="btn" onClick={() => setLookupDialogField(null)}>Cancel</button></footer>
         </section>
       </div>;

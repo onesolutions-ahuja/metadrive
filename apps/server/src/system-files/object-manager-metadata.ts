@@ -19,6 +19,7 @@ export type ObjectAction = {
   fieldApiName?:string;value?:string;targetObjectApi?:string;
   relationshipFieldApi?:string;flowApiName?:string
 };
+export type SearchLayoutField={fieldApiName:string;weight:'A'|'B'|'C'|'D'};
 export type ObjectManagerConfiguration = {
   pluralLabel:string;
   description:string;
@@ -26,6 +27,8 @@ export type ObjectManagerConfiguration = {
   settings:ObjectSettings;
   fieldSets:FieldSet[];
   actions:ObjectAction[];
+  searchLayouts:{searchResults?:string[];lookupDialog?:string[];lookupPhoneDialog?:string[];
+    searchableFields:SearchLayoutField[]};
 };
 const defaults: ObjectSettings = {
   allowReports:true,allowActivities:false,trackFieldHistory:false,allowInChatter:false,
@@ -138,7 +141,8 @@ export class ObjectManagerMetadataService {
     await this.rbac.require(tenantId,userId,'ObjectDefinition','read');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     return this.loadForObjects(tenantId,[objectApi]).then(items=>items.get(objectApi)??{
-      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},fieldSets:[],actions:[]
+      pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},fieldSets:[],actions:[],
+      searchLayouts:{searchableFields:[]}
     });
   }
 
@@ -165,6 +169,16 @@ export class ObjectManagerMetadataService {
     }>(`SELECT object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order,
         target_object_api,relationship_field_api,flow_api_name FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
         ORDER BY object_api,sort_order,action_id`,[tenantId,objectApis]);
+    const searchFields=await this.db.query<{
+      object_api:string;field_api:string;weight:'A'|'B'|'C'|'D'
+    }>(`SELECT object_api,field_api,weight FROM md_search_layout_fields
+      WHERE tenant_id=$1 AND object_api=ANY($2::text[]) ORDER BY object_api,weight,field_api`,
+    [tenantId,objectApis]);
+    const searchColumns=await this.db.query<{
+      object_api:string;layout_key:'searchResults'|'lookupDialog'|'lookupPhoneDialog';field_api:string
+    }>(`SELECT object_api,layout_key,field_api FROM md_search_layout_columns
+      WHERE tenant_id=$1 AND object_api=ANY($2::text[]) ORDER BY object_api,layout_key,position`,
+    [tenantId,objectApis]);
     const setsByObject=new Map<string,FieldSet[]>();
     for(const row of sets.rows){
       const fieldSets=setsByObject.get(row.object_api)??[];
@@ -185,6 +199,24 @@ export class ObjectManagerMetadataService {
           targetObjectApi:row.target_object_api??'',relationshipFieldApi:row.relationship_field_api??''}:{})});
       actionsByObject.set(row.object_api,items);
     }
+    const searchFieldsByObject=new Map<string,SearchLayoutField[]>();
+    for(const row of searchFields.rows){
+      const items=searchFieldsByObject.get(row.object_api)??[];
+      items.push({fieldApiName:row.field_api,weight:row.weight});
+      searchFieldsByObject.set(row.object_api,items);
+    }
+    const searchColumnsByObject=new Map<string,ObjectManagerConfiguration['searchLayouts']>();
+    for(const row of searchColumns.rows){
+      const layouts=searchColumnsByObject.get(row.object_api)??{
+        searchableFields:[]
+      };
+      const configured=layouts[row.layout_key]??[];
+      configured.push(row.field_api);
+      layouts[row.layout_key]=configured;
+      searchColumnsByObject.set(row.object_api,layouts);
+    }
+    for(const [objectApi,layouts] of searchColumnsByObject)
+      layouts.searchableFields=searchFieldsByObject.get(objectApi)??[];
     const result=new Map<string,ObjectManagerConfiguration>();
     for(const row of config.rows)result.set(row.object_api,{pluralLabel:row.plural_label,description:row.description,helpText:row.help_text,
       settings:{
@@ -192,10 +224,14 @@ export class ObjectManagerMetadataService {
         trackFieldHistory:row.track_field_history,allowInChatter:row.allow_in_chatter,
         allowSearch:row.allow_search,deploymentStatus:row.deployment_status,
         recordNameType:row.record_name_type,recordNameFormat:row.record_name_format
-      },fieldSets:setsByObject.get(row.object_api)??[],actions:actionsByObject.get(row.object_api)??[]});
+      },fieldSets:setsByObject.get(row.object_api)??[],actions:actionsByObject.get(row.object_api)??[],
+      searchLayouts:searchColumnsByObject.get(row.object_api)??{
+        searchableFields:searchFieldsByObject.get(row.object_api)??[]}});
     for(const objectApi of objectApis)if(!result.has(objectApi))result.set(objectApi,{
       pluralLabel:objectApi,description:'',helpText:'',settings:{...defaults},
-      fieldSets:setsByObject.get(objectApi)??[],actions:actionsByObject.get(objectApi)??[]
+      fieldSets:setsByObject.get(objectApi)??[],actions:actionsByObject.get(objectApi)??[],
+      searchLayouts:searchColumnsByObject.get(objectApi)??{
+        searchableFields:searchFieldsByObject.get(objectApi)??[]}
     });
     return result;
   }
@@ -225,6 +261,49 @@ export class ObjectManagerMetadataService {
     [tenantId,objectApi]);
     const fieldNames=new Set(fields.rows.map(field=>field.api_name));
     const fieldTypes=new Map(fields.rows.map(field=>[field.api_name,field.data_type]));
+    const searchLayouts=input.searchLayouts;
+    if(searchLayouts!==undefined){
+      if(!searchLayouts||typeof searchLayouts!=='object'||Array.isArray(searchLayouts))
+        throw new Error('Invalid search layouts');
+      const searchableFields=(searchLayouts as Record<string,unknown>).searchableFields;
+      if(searchableFields!==undefined){
+        if(!Array.isArray(searchableFields)||searchableFields.length>100)
+          throw new Error('Invalid searchable fields');
+        const seen=new Set<string>();
+        for(const item of searchableFields){
+          if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid searchable field');
+          const field=item as Record<string,unknown>;
+          const allowedType=typeof field.fieldApiName==='string'?fieldTypes.get(field.fieldApiName):undefined;
+          if(typeof field.fieldApiName!=='string'
+            ||!['text','email','phone','url','picklist'].includes(allowedType??'')
+            ||!['A','B','C','D'].includes(String(field.weight))
+            ||seen.has(field.fieldApiName))throw new Error('Invalid searchable field');
+          seen.add(field.fieldApiName);
+        }
+        await client.query('DELETE FROM md_search_layout_fields WHERE tenant_id=$1 AND object_api=$2',
+          [tenantId,objectApi]);
+        for(const item of searchableFields){
+          const field=item as Record<string,unknown>;
+          await client.query(`INSERT INTO md_search_layout_fields
+            (tenant_id,object_api,field_api,weight) VALUES($1,$2,$3,$4)`,
+          [tenantId,objectApi,field.fieldApiName,field.weight]);
+        }
+      }
+      for(const layoutKey of ['searchResults','lookupDialog','lookupPhoneDialog'] as const){
+        const configured=(searchLayouts as Record<string,unknown>)[layoutKey];
+        if(configured===undefined)continue;
+        if(!Array.isArray(configured)||configured.length>500
+          ||configured.some(field=>typeof field!=='string'||!fieldNames.has(field))
+          ||new Set(configured).size!==configured.length)
+          throw new Error('Invalid search layout fields');
+        await client.query(`DELETE FROM md_search_layout_columns
+          WHERE tenant_id=$1 AND object_api=$2 AND layout_key=$3`,[tenantId,objectApi,layoutKey]);
+        for(const [position,fieldApi] of configured.entries())
+          await client.query(`INSERT INTO md_search_layout_columns
+            (tenant_id,object_api,layout_key,position,field_api) VALUES($1,$2,$3,$4,$5)`,
+          [tenantId,objectApi,layoutKey,position,fieldApi]);
+      }
+    }
     const recordName=fields.rows.find(field=>field.api_name==='Name');
     if(settings.recordNameType==='Auto Number'&&recordName?.data_type!=='autonumber')
       throw new Error('The Name field must use Auto Number before enabling Auto Number record names');

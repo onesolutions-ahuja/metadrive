@@ -3,6 +3,8 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {AuthenticationService} from '../system-files/authentication.js';
 import type {NamedCredentialService} from './named-credential-service.js';
+import {consumeBackupCode} from './mfa-backup-service.js';
+import {enforceLoginBoundary,readSessionPolicy,type LoginContext} from './session-policy-service.js';
 
 const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
 const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -50,7 +52,7 @@ export class MfaService {
  async status(tenantId:string,userId:string){
   const {rows}=await this.db.query<{enrolled:boolean}>(`
     SELECT EXISTS(SELECT 1 FROM md_user_mfa_secrets
-      WHERE tenant_id=$1 AND user_id=$2) AS enrolled`,[tenantId,userId]);
+      WHERE tenant_id=$1 AND user_id=$2) OR EXISTS(SELECT 1 FROM md_webauthn_credentials WHERE tenant_id=$1 AND user_id=$2) AS enrolled`,[tenantId,userId]);
   return {mode:await this.mode(tenantId),enrolled:rows[0]?.enrolled===true};
  }
  async policy(tenantId:string,userId:string){
@@ -79,7 +81,7 @@ export class MfaService {
     (tenant_id,user_id,token_hash,secret_ciphertext,key_id,expires_at)
     VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes')
     ON CONFLICT(tenant_id,user_id) DO UPDATE
-    SET token_hash=$3,secret_ciphertext=$4,key_id=$5,expires_at=now()+interval '10 minutes',created_at=now()`,
+    SET token_hash=$3,secret_ciphertext=$4,key_id=$5,failed_attempts=0,expires_at=now()+interval '10 minutes',created_at=now()`,
     [tenantId,userId,digest(token),cipher.ciphertext,cipher.keyId]);
   return {enrollment_token:token,setup_secret:secret};
  }
@@ -105,6 +107,8 @@ export class MfaService {
     [tenantId,userId,rows[0].secret_ciphertext,rows[0].key_id,counter]);
    await client.query('DELETE FROM md_mfa_enrollment_tokens WHERE tenant_id=$1 AND user_id=$2',
     [tenantId,userId]);
+   await client.query('DELETE FROM md_mfa_backup_codes WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
+   for(const table of ['md_sessions','md_refresh_sessions'])await client.query('UPDATE '+table+' SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
    await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,$3)',
     [tenantId,userId,'MfaEnrolled']);
    return true;
@@ -129,7 +133,7 @@ export class MfaService {
   });
  }
  async disable(tenantId:string,userId:string,password:unknown,code:unknown){
-  if(await this.mode(tenantId)==='Required')throw new Error('MFA required by tenant policy');
+  if(await this.mode(tenantId)==='Required'||(await readSessionPolicy(this.db,tenantId)).require_mfa)throw new Error('MFA required by tenant policy');
   if(typeof password!=='string')throw new Error('Invalid credentials');
   await this.auth.verifyCurrentPassword(tenantId,userId,password);
   await this.db.transaction(async client=>{
@@ -141,16 +145,20 @@ export class MfaService {
    if(acceptableCounter(secret,code,Number(rows[0].last_counter))===null)
     throw new Error('Invalid authenticator code');
    await client.query('DELETE FROM md_user_mfa_secrets WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
+   await client.query('DELETE FROM md_mfa_backup_codes WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
+   for(const table of ['md_sessions','md_refresh_sessions'])await client.query('UPDATE '+table+' SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2',[tenantId,userId]);
    await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,$3)',
     [tenantId,userId,'MfaDisabled']);
   });
   return {enrolled:false};
  }
- async createChallenge(tenantId:string,userId:string){
-  const mode=await this.mode(tenantId);
+ async createChallenge(tenantId:string,userId:string,context:LoginContext={}){
+  await enforceLoginBoundary(this.db,tenantId,userId,context);
+  const mode=(await readSessionPolicy(this.db,tenantId)).require_mfa?'Required':await this.mode(tenantId);
   if(mode==='Off')return null;
   const {rows:enrollment}=await this.db.query<{enrolled:boolean}>(`
-    SELECT EXISTS(SELECT 1 FROM md_user_mfa_secrets WHERE tenant_id=$1 AND user_id=$2) AS enrolled`,
+    SELECT EXISTS(SELECT 1 FROM md_user_mfa_secrets WHERE tenant_id=$1 AND user_id=$2)
+     OR EXISTS(SELECT 1 FROM md_webauthn_credentials WHERE tenant_id=$1 AND user_id=$2) AS enrolled`,
     [tenantId,userId]);
   const enrolled=enrollment[0]?.enrolled===true;
   if(!enrolled&&mode==='Optional')return null;
@@ -165,14 +173,14 @@ export class MfaService {
     [tenantId,userId]);
    if(Number(rows[0]?.n??0)>=6)throw new Error('Too many MFA challenges');
    await client.query(`INSERT INTO md_mfa_login_challenges
-    (tenant_id,user_id,challenge_hash,enrollment_secret_ciphertext,key_id,expires_at)
-    VALUES($1,$2,$3,$4,$5,now()+interval '5 minutes')`,
-    [tenantId,userId,digest(token),encrypted?.ciphertext??null,encrypted?.keyId??null]);
+    (tenant_id,user_id,challenge_hash,enrollment_secret_ciphertext,key_id,expires_at,source_ip)
+    VALUES($1,$2,$3,$4,$5,now()+interval '5 minutes',$6::inet)`,
+    [tenantId,userId,digest(token),encrypted?.ciphertext??null,encrypted?.keyId??null,context.ip??null]);
   });
   return {mfa_required:true,challenge_token:token,enrollment_required:!enrolled,
     ...(secret?{setup_secret:secret}:{})};
  }
- async verifyChallenge(token:unknown,code:unknown){
+ async verifyChallenge(token:unknown,code:unknown,context:LoginContext={}){
   if(typeof token!=='string'||!/^[a-zA-Z0-9_-]{43}$/.test(token))
    throw new Error('Invalid MFA challenge');
   const identity=await this.db.transaction(async client=>{
@@ -185,8 +193,16 @@ export class MfaService {
       [digest(token)]);
    const challenge=rows[0];
    if(!challenge)throw new Error('Invalid MFA challenge');
+   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[challenge.tenant_id+':mfa:'+challenge.user_id]);
+   if(!challenge.enrollment_secret_ciphertext&&await consumeBackupCode(client,challenge.tenant_id,challenge.user_id,code)){
+    await client.query('UPDATE md_mfa_login_challenges SET consumed_at=now() WHERE id=$1',[challenge.id]);
+    await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'MfaBackupCodeUsed')",[challenge.tenant_id,challenge.user_id]);
+    return {tenantId:challenge.tenant_id,userId:challenge.user_id};
+   }
    let cipher:Buffer,keyId:string,lastCounter=-1;
    if(challenge.enrollment_secret_ciphertext&&challenge.key_id){
+    const enrolled=await client.query('SELECT user_id FROM md_user_mfa_secrets WHERE tenant_id=$1 AND user_id=$2',[challenge.tenant_id,challenge.user_id]);
+    if(enrolled.rows[0])throw Error('Invalid MFA enrollment: already enrolled');
     cipher=challenge.enrollment_secret_ciphertext;keyId=challenge.key_id;
    }else{
     const {rows:stored}=await client.query<{secret_ciphertext:Buffer;key_id:string;last_counter:number}>(`
@@ -201,6 +217,7 @@ export class MfaService {
    if(counter===null){
     await client.query('UPDATE md_mfa_login_challenges SET failed_attempts=failed_attempts+1 WHERE id=$1',
       [challenge.id]);
+    await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$2,'LoginMfaFailed')",[challenge.tenant_id,challenge.user_id]);
     return null;
    }
    if(challenge.enrollment_secret_ciphertext){
@@ -217,6 +234,6 @@ export class MfaService {
    return {tenantId:challenge.tenant_id,userId:challenge.user_id};
   });
   if(!identity)throw new Error('Invalid authenticator code');
-  return this.auth.issueMfaSession(identity.tenantId,identity.userId);
+  return this.auth.issueMfaSession(identity.tenantId,identity.userId,context);
  }
 }

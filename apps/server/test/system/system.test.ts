@@ -125,11 +125,15 @@ test('Records HTTP API returns the actual list rather than double-nested records
   const {createSystemServer}=await import('../../src/system-support/server.js');
   const db={
     query:async(sql:string)=>{
-      if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.startsWith('WITH active AS'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};
+      if(sql.startsWith('UPDATE md_sessions s SET last_seen_at'))return {rows:[{id:'session'}],rowCount:1};
+      if(sql.startsWith('UPDATE md_refresh_sessions r SET last_seen_at'))return {rows:[],rowCount:1};
       if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
       if(sql.includes('SELECT api_name,data_type,related_object'))return {rows:[]};
-      if(sql.includes('WITH selected AS'))return {rows:[]};
-      if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
+      if(sql.includes('md_metadata_package_components'))return {rows:[{retained:false}]};
+      if(sql.includes('INSERT INTO md_tenant_api_usage_daily'))return {rows:[],rowCount:1};
+      if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[{id:null,total_count:'0'}]};
       throw new Error('Unexpected SQL '+sql);
     }
   } as unknown as SqlPersistence;
@@ -141,8 +145,9 @@ test('Records HTTP API returns the actual list rather than double-nested records
     const response=await fetch(`http://127.0.0.1:${port}/api/records/Product__c`,{
       headers:{Authorization:'Bearer valid-token'}
     });
-    assert.equal(response.status,200);
-    assert.deepEqual(await response.json(),{records:[],total:0});
+    const body=await response.text();
+    assert.equal(response.status,200,body);
+    assert.deepEqual(JSON.parse(body),{records:[],total:0});
   } finally {
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
@@ -385,6 +390,7 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
+    if(sql.includes('INSERT INTO md_tenant_api_usage_daily'))return {rows:[],rowCount:1};
     assert.ok(sql.includes('md_rbac_decision'));
     assert.ok(sql.includes('md_rbac_decision'));
     assert.equal(params[1],'developer');
@@ -405,8 +411,11 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
 test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
   const {createSystemServer}=await import('../../src/system-support/server.js');
   const db={query:async(sql:string)=>{
-    if(sql.includes('FROM md_sessions s JOIN md_users'))
+    if(sql.startsWith('WITH active AS'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
+    if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};
+    if(sql.startsWith('UPDATE md_sessions s SET last_seen_at'))return {rows:[{id:'session'}],rowCount:1};
+    if(sql.startsWith('UPDATE md_refresh_sessions r SET last_seen_at'))return {rows:[],rowCount:1};
     if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},{ordinal:2,allow_granted:true,deny_granted:false}]};
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
@@ -423,8 +432,9 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
     const response=await fetch('http://127.0.0.1:'+port+'/api/auth/me',{
       headers:{Authorization:'Bearer validtoken'}
     });
-    assert.equal(response.status,200);
-    const json=await response.json() as {user?:{id:string;permissions:string[]}};
+    const body=await response.text();
+    assert.equal(response.status,200,body);
+    const json=JSON.parse(body) as {user?:{id:string;permissions:string[]}};
     assert.equal(json.user?.id,'developer');
     assert.ok(json.user?.permissions.includes('metadata:read'));
   }finally {
@@ -475,6 +485,7 @@ test('Account password change checks old password and revokes sessions in the sa
      run({query:async(sql:string,args:unknown[]=[])=>{
        events.push(sql);
        assert.equal(args[0],'tenant');
+       if(sql.includes('FROM md_password_policies'))return {rows:[]};
        assert.equal(args[1],'user');
        if(sql.includes('SELECT password_hash'))return {rows:[{password_hash:existing}]};
        return {rows:[],rowCount:1};
@@ -1238,8 +1249,7 @@ test('numeric filters compare numeric values rather than their text representati
       precision:12,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
       auto_number_format:null
     }],rowCount:1};
-    if(sql.includes('count(*)::text'))return {rows:[{total:'0'}],rowCount:1};
-    if(sql.includes('WITH selected AS'))return {rows:[],rowCount:0};
+    if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[],rowCount:0};
     throw new Error('Unexpected query '+sql);
   }} as unknown as SqlPersistence;
   const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
@@ -1255,8 +1265,13 @@ test('Record list applies authorised sort, search and field filters before pagin
       {api_name:'Name',data_type:'text',related_object:null,required:false,max_length:80},
       {api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null}
     ]};
-    if(sql.includes('count(*)::text'))return {rows:[{total:'1'}]};
-    if(sql.includes('WITH selected AS'))return {rows:[]};
+    if(sql.includes('FROM md_search_layout_fields search_fields'))return {rows:[{field_api:'Name'}]};
+    if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[{
+      id:null,total_count:'1',field_api:null,value_text:null,reference_record_id:null,
+      value_number:null,value_date:null,value_datetime:null,value_boolean:null,
+      geo_latitude:null,geo_longitude:null,address_street:null,address_city:null,address_state:null,
+      address_postal_code:null,address_country:null,data_type:null,
+    }]};
     throw new Error('Unexpected list query '+sql);
   }} as unknown as SqlPersistence;
   const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
@@ -1265,12 +1280,14 @@ test('Record list applies authorised sort, search and field filters before pagin
       sortField:'Amount',sortDirection:'desc',search:'Acme',filterField:'Name',filterValue:'Acme Ltd'
     });
   assert.deepEqual(result,{records:[],total:1});
-  const list=sqlCalls.find(item=>item.sql.includes('WITH selected AS'));
+  const list=sqlCalls.find(item=>item.sql.includes('WITH authorized AS MATERIALIZED'));
   assert.ok(list);
   assert.match(list.sql,/sv\.value_number DESC NULLS LAST/);
   assert.match(list.sql,/fv\.field_api=\$4/);
-  assert.match(list.sql,/strpos\(lower\(COALESCE\(qv\.value_text/);
-  assert.deepEqual(list.args.slice(-3),['Amount',25,0]);
+  assert.match(list.sql,/qv\.search_vector @@ websearch_to_tsquery/);
+  assert.equal((list.sql.match(/md_record_access\(/g)??[]).length,1);
+  assert.deepEqual(list.args.slice(-2),[25,0]);
+  assert.ok(list.args.includes('Amount'));
   assert.ok(list.args.includes('Acme Ltd'));
   assert.ok(list.args.includes('Acme'));
 });

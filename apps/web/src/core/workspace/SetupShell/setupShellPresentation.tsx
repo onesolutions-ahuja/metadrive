@@ -371,6 +371,10 @@ export function renderSetupShell(ctx: any) {
               flows={flows}
               onListFlows={fetchFlowListPage}
               onLoadCapabilities={() => apiRequest('/metadata/flow-capabilities')}
+              onLoadExternalServices={() => apiRequest('/metadata/external-services')}
+              onImportExternalService={(apiName, label, spec) => apiRequest('/metadata/external-services/import', {
+                method: 'POST', body: JSON.stringify({ apiName, label, spec })
+              })}
               libraryComponents={libraryComponents}
               platformEvents={platformEvents}
               objects={objects}

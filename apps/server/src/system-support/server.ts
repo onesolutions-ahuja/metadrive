@@ -14,7 +14,14 @@ import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-im
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {PasswordResetService} from './password-reset-service.js';
+import {PasswordPolicyService} from './password-policy-service.js';
 import {MfaService} from './mfa-service.js';
+import {MfaBackupService} from './mfa-backup-service.js';
+import {WebAuthnService} from './webauthn-service.js';
+import {FederationService} from './federation-service.js';
+import {SessionPolicyService,browserSecurityHeaders,readSessionPolicy} from './session-policy-service.js';
+import {registerFederationCallback,registerIdentityPublicRoutes,registerIdentityAdminRoutes} from './identity-routes.js';
+import {configureTrustedProxy,registerSecurityWebHost} from './security-web-host.js';
 import {TenantDeveloperService} from './tenant-developer-service.js';
 import {TenantRecoveryContacts} from './tenant-recovery-contacts.js';
 import {TenantRecoveryCases} from './tenant-recovery-cases.js';
@@ -33,17 +40,24 @@ import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {GlobalValueSetService} from './global-value-set-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {parseRecordCursor,parseRecordFilters} from '../system-files/record-query.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {ObjectQuickActionRuntime} from './object-quick-action-runtime.js';
 import {RecordRetentionService} from './record-retention-service.js';
+import {RecordListViewService,type ViewInput} from './record-list-view-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {TenantMediaService} from '../system-files/tenant-media-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
 import {registerDeclarativeRuleRoutes} from './declarative-rule-routes.js';
 import {DeclarativeRuleError} from '../system-files/declarative-rules.js';
-import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
+import {registerVersionedApiRoutes} from './versioned-api-routes.js';
+import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
+import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
+import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
+import {assertMetadataPackageEditable,MetadataPackageService,registerMetadataPackageRoutes} from './metadata-package-service.js';
+import {OpenApiExternalService,registerOpenApiExternalServiceRoutes} from './openapi-external-service.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
@@ -73,6 +87,25 @@ const route=(handler:Handler)=>(req:Request,res:Response,next:NextFunction)=>{
   // These routes use named parameters only; Express wildcard parameters are not registered here.
   Promise.resolve(handler(req as AuthenticatedRequest,res)).catch(next);
 };
+const stableMetadata=(value:unknown):string=>JSON.stringify(value,(_key,item)=>
+  item&&typeof item==='object'&&!Array.isArray(item)
+    ?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
+async function assertChangedPackagePermissionSetsEditable(db:SqlPersistence,
+  administration:RbacAdministration,tenant:string,user:string,raw:unknown){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return;
+  const next=(raw as Record<string,unknown>).permissionSets;
+  if(!Array.isArray(next))return;
+  const current=await administration.describe(tenant,user);
+  const currentByApi=new Map(current.permissionSets.map(item=>[item.apiName,item]));
+  const nextByApi=new Map(next.filter((item):item is Record<string,unknown>=>
+    Boolean(item)&&typeof item==='object'&&!Array.isArray(item))
+    .map(item=>[String(item.apiName??''),item]));
+  for(const [apiName,previous] of currentByApi){
+    const updated=nextByApi.get(apiName);
+    if(stableMetadata(previous)!==stableMetadata(updated))
+      await assertMetadataPackageEditable(db,tenant,'permission-set',apiName);
+  }
+}
 const tokenCookie='md_refresh';
 const getCookie=(req:Request):string|undefined=>{
   const encoded=(req.get('cookie')??'').split(';').map(x=>x.trim()).find(x=>x.startsWith(tokenCookie+'='));
@@ -105,9 +138,12 @@ async function resolveTenant(db:SqlPersistence,req:Request,tenantSlug?:unknown) 
 }
 export function createSystemServer(db:SqlPersistence) {
   const app=express();
+  configureTrustedProxy(app,process.env.METADRIVE_TRUST_PROXY_CIDRS);
   app.disable('x-powered-by');
   app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb'}));
+  app.use(express.urlencoded({extended:false,limit:'1mb'}));
+  app.use((_req,res,next)=>{res.set(browserSecurityHeaders({frame_policy:'DENY',csp_enabled:true}));next();});
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const rbacAdministration=new RbacAdministration(db,rbac);
@@ -116,6 +152,7 @@ export function createSystemServer(db:SqlPersistence) {
   const recordRetention=new RecordRetentionService(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac,namedCredentials);
+  const recordListViews=new RecordListViewService(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
   const recordFiles=new RecordFileService(db,rbac);
@@ -127,6 +164,13 @@ export function createSystemServer(db:SqlPersistence) {
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
+  const federation=new FederationService(db,rbac,namedCredentials);
+  const passkeys=new WebAuthnService(db,auth);
+  const backups=new MfaBackupService(db,auth,mfa,rbac);
+  const sessionPolicies=new SessionPolicyService(db,rbac);
+  // SAML POSTs originate at the IdP. State + browser cookie protect these callbacks;
+  // they must precede the browser-origin CORS gate and never accept bearer identity.
+  registerFederationCallback(app,federation);
   const tenantDeveloper=new TenantDeveloperService(db,rbac,auth,mfa);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
@@ -144,6 +188,7 @@ export function createSystemServer(db:SqlPersistence) {
   const components=new ComponentRuntime(db);
   const library=new ComponentLibraryService(db,rbac);
   const pages=new PageRuntime(db);
+  const externalServices=new OpenApiExternalService(db,rbac);
   const flows=new FlowRuntime(db,rbac,records,
     (tenantId,userId,config,variables,key,execution)=>execution
       ?namedCredentials.enqueueCallout(execution.client,tenantId,userId,execution.runId,
@@ -159,6 +204,8 @@ export function createSystemServer(db:SqlPersistence) {
         message.credentialId,message.from,message.recipients,message.subject,message.body);
     });
   const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows);
+  const metadataPackages=new MetadataPackageService(db,rbac,definitions,pages,library,
+    objectManagerMetadata,flows,rbacAdministration);
   const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
     async(client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>{
       await flowJobs.enqueue(tenantId,'flow.resume',{
@@ -197,7 +244,7 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const bearer=req.get('authorization')??'';
       if(!/^Bearer [a-zA-Z0-9_-]+$/.test(bearer)) {res.status(401).json({error:'Bearer access token required'});return;}
-      req.actor=await auth.authenticate(bearer.slice(7));
+      req.actor=await auth.authenticate(bearer.slice(7),{ip:req.ip});
       next();
     } catch {res.status(401).json({error:'Invalid session'});}
   };
@@ -216,17 +263,17 @@ export function createSystemServer(db:SqlPersistence) {
     const tenantId=await resolveTenant(db,req,tenantSlug);
     if(!tenantId) {res.status(401).json({error:'Invalid credentials or tenant domain'});return;}
     try {
-      const userId=await auth.verifyIdentity(tenantId,email,password);
-      const challenge=await mfa.createChallenge(tenantId,userId);
+      const userId=await auth.verifyIdentity(tenantId,email,password,req.ip);
+      const challenge=await mfa.createChallenge(tenantId,userId,{ip:req.ip});
       if(challenge){res.json(challenge);return;}
-      const session=await auth.issuePasswordSession(tenantId,userId);
+      const session=await auth.issuePasswordSession(tenantId,userId,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch(error) {
       // Distinguish rejected credentials from SQL/session failures. A successful
       // password check followed by a failed database write must not become 401.
-      if(error instanceof Error&&error.message==='Invalid credentials')
-        res.status(401).json({error:'Invalid credentials'});
+      if(error instanceof Error&&(error.message.startsWith('Invalid credentials')||error.message.startsWith('Password expired.')))
+        res.status(401).json({error:error.message});
       else throw error;
     }
   }));
@@ -234,7 +281,7 @@ export function createSystemServer(db:SqlPersistence) {
     const token=getCookie(req);
     if(!token) {res.status(401).json({error:'Refresh token required'});return;}
     try {
-      const session=await auth.refresh(token);
+      const session=await auth.refresh(token,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
@@ -250,7 +297,7 @@ export function createSystemServer(db:SqlPersistence) {
     res.json(await passwordReset.confirm(tenantId,req.body?.email,req.body?.token,req.body?.newPassword));
   }));
   app.post('/api/auth/mfa/verify',route(async(req,res)=>{
-    const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code);
+    const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code,{ip:req.ip});
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
     res.json({access_token:session.accessToken,expires_in:session.expiresIn});
   }));
@@ -273,7 +320,17 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Cache-Control','no-store');
     res.json(await recoveryCases.proof(req.params.id,req.body,true));
   }));
+  registerIdentityPublicRoutes(app,{federation,auth,mfa,passkeys,resolveTenant:req=>resolveTenant(db,req),
+    setSession:(req,res,session)=>{
+      const previous=res.getHeader('Set-Cookie');
+      res.setHeader('Set-Cookie',[...(Array.isArray(previous)?previous:previous?[String(previous)]:[]),`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`]);
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+    }});
   app.use('/api',authorize);
+  registerIdentityAdminRoutes(app,{sessions:sessionPolicies,federation,passkeys,backups});
+  app.use('/api',countTenantApiRequests(db));
+  app.use('/services/data',authorize);
+  app.use('/services/data',countTenantApiRequests(db));
   // Durable notifications: only the addressed user can list or acknowledge them.
   const notificationView=(row:{id:string;recipient_id:string;title:string;body:string;flow_api_name:string;sent_by:string|null;created_at:Date;read_at:Date|null})=>({
     id:row.id,recipientId:row.recipient_id,title:row.title,body:row.body,
@@ -456,7 +513,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(locking && (!Number.isInteger(duration)||duration<1||duration>1440))
       throw new Error('Invalid account lock duration');
     await db.transaction(async client=>{
-      const updated=await client.query(`UPDATE md_users SET locked_until=${locking?"now() + ($3::integer * interval '1 minute')":"NULL"}
+      const updated=await client.query(`UPDATE md_users SET failed_login_attempts=0,locked_until=${locking?"now() + ($3::integer * interval '1 minute')":"NULL"}
         WHERE tenant_id=$1 AND id=$2 RETURNING id`,locking
         ?[actor.tenant_id,id,duration]:[actor.tenant_id,id]);
       if(!updated.rowCount)throw new Error('User not found');
@@ -469,14 +526,23 @@ export function createSystemServer(db:SqlPersistence) {
   });
   app.post('/api/auth/users/:id/lock',setAccountLock);
   app.post('/api/auth/users/:id/unlock',setAccountLock);
+  const passwordPolicy=new PasswordPolicyService(db,rbac);
+  app.get('/api/auth/password-policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await passwordPolicy.read(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/auth/password-policy',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await passwordPolicy.save(actor.tenant_id,actor.user_id,req.body));
+  }));
   app.get('/api/auth/security-events',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
     const limit=Number(req.query.limit??50);
     if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('Invalid pagination');
-    const {rows}=await db.query<{id:string;actor_user_id:string;action:string;details:Record<string,string>;created_at:Date}>(
-      'SELECT id,actor_user_id,action,details,created_at FROM md_security_events WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2',[actor.tenant_id,limit]);
-    res.json({events:rows.map(r=>({id:r.id,actorUserId:r.actor_user_id,at:new Date(r.created_at).toISOString(),action:r.action,details:r.details}))});
+    const {rows}=await db.query<{id:string;actor_user_id:string|null;action:string;login_identifier:string|null;source_ip:string|null;details:Record<string,string>;created_at:Date}>(
+      'SELECT id,actor_user_id,action,details,created_at,login_identifier,source_ip FROM md_security_events WHERE tenant_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2',[actor.tenant_id,limit]);
+    res.json({events:rows.map(r=>({id:r.id,actorUserId:r.actor_user_id,at:new Date(r.created_at).toISOString(),action:r.action,details:r.details,loginIdentifier:r.login_identifier,sourceIp:r.source_ip}))});
   }));
   app.post('/api/auth/users/:id/lock',route(async(req,res)=>{
     const actor=req.actor!;
@@ -504,7 +570,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
       throw new Error('Invalid user ID');
     await db.transaction(async client=>{
-      const target=await client.query('UPDATE md_users SET locked_until=NULL WHERE tenant_id=$1 AND id=$2 RETURNING id',[actor.tenant_id,id]);
+      const target=await client.query('UPDATE md_users SET failed_login_attempts=0,locked_until=NULL WHERE tenant_id=$1 AND id=$2 RETURNING id',[actor.tenant_id,id]);
       if(!target.rowCount)throw new Error('User not found');
       await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$3,'user.unlock')",[actor.tenant_id,actor.user_id,id]);
     });
@@ -558,6 +624,53 @@ export function createSystemServer(db:SqlPersistence) {
   app.put('/api/tenant/company-profile',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({profile:await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'company-profile',req.body)});
+  }));
+  app.get('/api/tenant/business-calendar',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({calendar:await platformTenants.getSetting(actor.tenant_id,actor.user_id,'business-calendar')});
+  }));
+  app.put('/api/tenant/business-calendar',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({calendar:await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'business-calendar',req.body)});
+  }));
+  app.get('/api/tenant/offline-briefcase',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({briefcase:await platformTenants.getSetting(
+      actor.tenant_id,actor.user_id,'offline-briefcase')??{selections:[]}});
+  }));
+  app.put('/api/tenant/offline-briefcase',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({briefcase:await platformTenants.saveSetting(
+      actor.tenant_id,actor.user_id,'offline-briefcase',req.body)});
+  }));
+  app.get('/api/tenant/offline-briefcase/data',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    const configuration=await platformTenants.getSetting(
+      actor.tenant_id,actor.user_id,'offline-briefcase') as {selections?:unknown}|null;
+    if(!configuration)return res.json({
+      tenantId:actor.tenant_id,userId:actor.user_id,syncedAt:new Date().toISOString(),selections:[]
+    });
+    if(!Array.isArray(configuration.selections))
+      throw new Error('Invalid saved offline briefcase configuration');
+    const selections=await Promise.all(configuration.selections.map(async(selection:unknown)=>{
+      if(!selection||typeof selection!=='object'||Array.isArray(selection))
+        throw new Error('Invalid saved offline briefcase selection');
+      const item=selection as Record<string,unknown>;
+      const objectApi=item.objectApi;
+      const recordIds=item.recordIds;
+      if(typeof objectApi!=='string'||!Array.isArray(recordIds)
+        ||!recordIds.every((id):id is string=>typeof id==='string'))
+        throw new Error('Invalid saved offline briefcase selection');
+      return {objectApi,records:await Promise.all(recordIds.map(async recordId=>({
+        recordId,record:await records.get(actor.tenant_id,actor.user_id,objectApi,recordId)
+      })))};
+    }));
+    res.json({tenantId:actor.tenant_id,userId:actor.user_id,
+      syncedAt:new Date().toISOString(),selections});
   }));
   app.get('/api/metadata/currencies',route(async(req,res)=>{
     const actor=req.actor!;
@@ -620,10 +733,12 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/permissions/sets',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertChangedPackagePermissionSetsEditable(db,rbacAdministration,actor.tenant_id,actor.user_id,req.body);
     res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.put('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertChangedPackagePermissionSetsEditable(db,rbacAdministration,actor.tenant_id,actor.user_id,req.body);
     res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/objects',route(async(req,res)=>{
@@ -674,6 +789,7 @@ export function createSystemServer(db:SqlPersistence) {
   // Metadata lookups use the same tenant-scoped SQL registry as list/create.
   app.put('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     const proposal=req.body;
@@ -691,6 +807,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/metadata/objects/:apiName/fields/:fieldApi/migrations/:migrationId/rollback',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     res.json({object:await definitions.rollbackFieldTypeMigration(
@@ -713,6 +830,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.delete('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
@@ -725,6 +843,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/metadata/objects/:apiName/fields/:fieldApi/restore',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     res.json({object:await definitions.restoreField(actor.tenant_id,req.params.apiName,req.params.fieldApi)});
@@ -873,7 +992,10 @@ export function createSystemServer(db:SqlPersistence) {
     const objects=await definitions.list(actor.tenant_id);
     const configurations=await objectManagerMetadata.loadForObjects(actor.tenant_id,
       objects.map(object=>object.apiName));
-    res.json({objects:objects.map(object=>({...object,...configurations.get(object.apiName)}))});
+    res.json({objects:objects.map(object=>{
+      const configuration=configurations.get(object.apiName);
+      return {...object,...configuration};
+    })});
   }));
   app.post('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -891,7 +1013,8 @@ export function createSystemServer(db:SqlPersistence) {
     const object=await definitions.create(actor.tenant_id,apiName,label,payload.fields??[],async client=>{
       await objectManagerMetadata.persistWithin(client,actor.tenant_id,apiName,{
         pluralLabel:payload.pluralLabel,description:payload.description??'',helpText:payload.helpText??'',
-        settings:payload.settings??{},fieldSets:payload.fieldSets??[],actions:payload.actions??[]
+        settings:payload.settings??{},fieldSets:payload.fieldSets??[],actions:payload.actions??[],
+        searchLayouts:payload.searchLayouts
       });
     });
     const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,apiName);
@@ -899,6 +1022,8 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/objects/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object-config',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','manage');
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     const revisionHeader=req.get('if-match')??'';
@@ -914,7 +1039,7 @@ export function createSystemServer(db:SqlPersistence) {
         await objectManagerMetadata.persistWithin(client,
           actor.tenant_id,req.params.apiName,{
           description:draft.description,helpText:draft.helpText,settings:draft.settings,
-          fieldSets:draft.fieldSets,actions:draft.actions
+          fieldSets:draft.fieldSets,actions:draft.actions,searchLayouts:draft.searchLayouts
           });
       });
     const configuration=await objectManagerMetadata.load(actor.tenant_id,actor.user_id,req.params.apiName);
@@ -922,6 +1047,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'object',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
     const field=req.body?.field??req.body??{};
     const {apiName,dataType}=field;
@@ -956,19 +1082,23 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/component-library/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'component',req.params.apiName);
     res.json({component:await library.save(actor.tenant_id,actor.user_id,req.body,req.params.apiName)});
   }));
   app.post('/api/component-library/:apiName/publish',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'component',req.params.apiName);
     res.json({component:await library.publish(actor.tenant_id,actor.user_id,req.params.apiName)});
   }));
   app.post('/api/component-library/:apiName/rollback',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'component',req.params.apiName);
     res.json({component:await library.publish(actor.tenant_id,actor.user_id,
       req.params.apiName,req.body?.version)});
   }));
   app.delete('/api/component-library/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'component',req.params.apiName);
     await library.remove(actor.tenant_id,actor.user_id,req.params.apiName);
     res.status(204).end();
   }));
@@ -1014,6 +1144,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/pages/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'page',req.params.apiName);
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','manage');
     const page=await pages.save(actor.tenant_id,req.params.apiName,req.body);
     res.json({page});
@@ -1182,6 +1313,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/metadata/flows/:apiName/deactivate',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'flow',req.params.apiName);
     res.json(await flows.deactivate(actor.tenant_id,actor.user_id,req.params.apiName));
   }));
   app.get('/api/metadata/flows',route(async(req,res)=>{
@@ -1223,10 +1355,12 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'flow',req.params.apiName);
     res.json({flow:await flows.saveEditor(actor.tenant_id,actor.user_id,req.params.apiName,req.body)});
   }));
   app.delete('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
+    await assertMetadataPackageEditable(db,actor.tenant_id,'flow',req.params.apiName);
     await flows.deleteEditor(actor.tenant_id,actor.user_id,req.params.apiName);
     res.status(204).end();
   }));
@@ -1367,7 +1501,7 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     await requireUserFields(actor,req.body,'create');
     const values=userFields(req.body,true);
-    const passwordHash=await auth.hashPassword(values.password!);
+    const passwordHash=await auth.hashPassword(values.password!,actor.tenant_id);
     const row=await db.transaction(async client=>{
       const result=await client.query<{id:string}>(
         'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled) VALUES($1,$2,$3,$4,$5) RETURNING id',
@@ -1416,6 +1550,42 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
 
+  app.get('/api/records/:objectApi/list-view-groups',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({groups:await recordListViews.groups(actor.tenant_id,actor.user_id,req.params.objectApi)});
+  }));
+  app.get('/api/records/:objectApi/list-views',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({views:await recordListViews.list(actor.tenant_id,actor.user_id,req.params.objectApi)});
+  }));
+  app.post('/api/records/:objectApi/list-views',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.status(201).json({view:await recordListViews.save(actor.tenant_id,actor.user_id,
+      req.params.objectApi,req.body as ViewInput)});
+  }));
+  app.get('/api/records/:objectApi/list-views/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({view:await recordListViews.load(actor.tenant_id,actor.user_id,
+      req.params.objectApi,req.params.id)});
+  }));
+  app.put('/api/records/:objectApi/list-views/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))
+      throw new Error('Invalid list view');
+    res.json({view:await recordListViews.save(actor.tenant_id,actor.user_id,req.params.objectApi,
+      {...req.body,id:req.params.id} as ViewInput)});
+  }));
+  app.delete('/api/records/:objectApi/list-views/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await recordListViews.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
+    res.status(204).end();
+  }));
+  app.put('/api/records/:objectApi/list-views/:id/pin',route(async(req,res)=>{
+    const actor=req.actor!;
+    await recordListViews.pin(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body?.pinned);
+    res.json({pinned:req.body?.pinned});
+  }));
   app.get('/api/records/:objectApi/:id/activities',route(async(req,res)=>{
     res.json(await collaboration.listActivities(req.actor!,req.params.objectApi,req.params.id));
   }));
@@ -1509,19 +1679,33 @@ export function createSystemServer(db:SqlPersistence) {
     const filterValue=queryString('filterValue');
     const filterOperator=queryString('filterOperator')??'Equals';
     const search=queryString('search');
+    const filtersValue=queryString('filters');
+    const filterLogic=queryString('filterLogic');
+    const cursorValue=queryString('cursor');
     if(sortDirection!==undefined&&sortDirection!=='asc'&&sortDirection!=='desc')
       throw new Error('Invalid sort direction');
     if(!['Equals','Includes','Excludes'].includes(filterOperator))
       throw new Error('Invalid record list filter operator');
     if((filterField===undefined)!==(filterValue===undefined)
-      ||(search!==undefined&&search.length>256)||(filterValue!==undefined&&filterValue.length>2000))
+      ||(search!==undefined&&search.length>256)||(filterValue!==undefined&&filterValue.length>2000)
+      ||(filtersValue!==undefined&&filtersValue.length>12000)
+      ||(filterLogic!==undefined&&filterLogic.length>256)
+      ||(cursorValue!==undefined&&cursorValue.length>2048))
       throw new Error('Invalid record list query');
+    const filters=parseRecordFilters(filtersValue);
+    if(filterLogic!==undefined&&!filters.length)throw new Error('Filter logic requires filters');
+    const cursor=parseRecordCursor(cursorValue);
+    const viewId=queryString('viewId');
+    const view=viewId?await recordListViews.load(actor.tenant_id,actor.user_id,req.params.objectApi,viewId):undefined;
     const objectApi=req.params.objectApi;
     if(typeof objectApi!=='string')throw new Error('Invalid object name');
     res.json(await records.list(actor.tenant_id,actor.user_id,objectApi,limit,offset,{
-      sortField:queryString('sortField'),sortDirection:sortDirection as 'asc'|'desc'|undefined,
       search,filterField,filterValue,filterOperator:filterOperator as 'Equals'|'Includes'|'Excludes',
-      relatedField:queryString('relatedField'),relatedId:queryString('relatedId')
+      relatedField:queryString('relatedField'),relatedId:queryString('relatedId'),
+      sortField:queryString('sortField')??view?.sort_field??undefined,
+      sortDirection:(sortDirection as 'asc'|'desc'|undefined)??view?.sort_direction,
+      filters:filters.length?filters:view?.filters,filterLogic:filterLogic??view?.filter_logic,
+      scope:view?.scope,cursor
     }));
   }));
   app.post('/api/records/:objectApi',route(async(req,res)=>{
@@ -1616,9 +1800,15 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
+  registerMetadataPackageRoutes(app,metadataPackages);
+  registerOpenApiExternalServiceRoutes(app,externalServices);
   registerDurableJobAdminRoutes(app,db,rbac);
   registerDeclarativeRuleRoutes(app,db,rbac);
+  registerVersionedApiRoutes(app,records,definitions,rbac,db);
+  registerPlatformEventStreamRoutes(app,db,rbac);
+  registerOutboundWebhookRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
+  registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err instanceof DeclarativeRuleError)res.status(400).json({
       error:err.message,ruleApi:err.ruleApi,
@@ -1628,8 +1818,10 @@ export function createSystemServer(db:SqlPersistence) {
       error:err.message,errors:[{message:err.message,...(err.fieldName?{fields:[err.fieldName]}:{})}]
     });
     else if(err.message.startsWith('Rule revision conflict'))res.status(409).json({error:err.message});
+    else if(err.message==='Unsupported REST API version'||err.message==='Query locator is not available to this session')
+      res.status(404).json({error:err.message});
     else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
-    else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
+    else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission|Managed package metadata is read-only)/.test(err.message))res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='App licence or entitlement unavailable')
       res.status(403).json({error:err.message});
@@ -1639,6 +1831,9 @@ export function createSystemServer(db:SqlPersistence) {
     else if(err.message==='Too many inline images for this field')res.status(409).json({error:err.message});
     else if(err.message.startsWith('Converted values conflict')||err.message.startsWith('Field type migrations must')
       ||err.message.startsWith('Field values were added')||err.message.startsWith('Field values changed')
+      ||err.message.startsWith('Package cannot be installed')||err.message.startsWith('Package installation changed')
+      ||err.message.startsWith('Package object is not owned')||err.message.startsWith('Package page is not owned')
+      ||err.message.startsWith('Package component is not owned')
       ||err.message==='Field type migration is not active'
       ||err.message.startsWith('Field definition changed concurrently')
       ||err.message.startsWith('Field definition changed after migration')
@@ -1649,7 +1844,8 @@ export function createSystemServer(db:SqlPersistence) {
     else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(['23503','23505'].includes((err as Error&{code?:string}).code??''))res.status(409).json({error:'Policy dependency or duplicate identity conflict'});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
-    else if(err.message.startsWith('Invalid ')||/^(Unknown |Duplicate |Cyclic |Stale |External |Queue |Active sharing|Restriction |Portal |Too many)/.test(err.message)) res.status(400).json({error:err.message});
+    else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unsupported ')
+      ||/^(Unknown |Duplicate |Cyclic |Stale |External |Queue |Active sharing|Restriction |Portal |Too many)/.test(err.message)) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
   });
   return app;

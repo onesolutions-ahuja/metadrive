@@ -1,4 +1,5 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
+import type {PoolClient} from 'pg';
 import {RbacEngine} from '../system-files/rbac-engine.js';
 import {snapshot,grantRules,type Snapshot,type Rule} from './rbac-contract.js';
 import {readRbac} from './rbac-description.js';
@@ -13,13 +14,22 @@ const assignments=(u:Snapshot['users'][number])=>stable({
 /** The complete editor uses one revision, one SQL transaction, and the central RBAC engine. */
 export class RbacAdministration{
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
+ async describe(tenant:string,actor:string){
+  await this.rbac.require(tenant,actor,'Security','read');
+  return snapshot.parse(await readRbac(this.db,tenant));
+ }
  async save(tenant:string,actor:string,body:unknown){
   await this.rbac.require(tenant,actor,'Security','manage');
   await this.rbac.require(tenant,actor,'Security','read');
   const parsed=snapshot.safeParse(body);
   if(!parsed.success)throw Error('Invalid RBAC request: '+parsed.error.issues.slice(0,3).map(i=>i.path.join('.')+' '+i.message).join('; '));
   const next=parsed.data;
-  return this.db.transaction(async tx=>{
+  return this.db.transaction(tx=>this.saveWithin(tx,tenant,actor,next));
+ }
+ async saveWithin(tx:PoolClient,tenant:string,actor:string,body:unknown){
+   const parsed=snapshot.safeParse(body);
+   if(!parsed.success)throw Error('Invalid RBAC request: '+parsed.error.issues.slice(0,3).map(i=>i.path.join('.')+' '+i.message).join('; '));
+   const next=parsed.data;
    await tx.query('SELECT id FROM md_tenants WHERE id=$1 FOR UPDATE',[tenant]);
    // Recheck after acquiring the tenant policy lock: no stale authorization window.
    const currentRbac=new RbacEngine(tx as unknown as SqlPersistence);
@@ -160,6 +170,5 @@ export class RbacAdministration{
    await tx.query('INSERT INTO md_rbac_revisions(tenant_id,revision) VALUES($1,1) ON CONFLICT(tenant_id) DO UPDATE SET revision=md_rbac_revisions.revision+1',[tenant]);
    await tx.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'rbac.policies.update')",[tenant,actor]);
    return readRbac(tx,tenant);
-  });
  }
 }

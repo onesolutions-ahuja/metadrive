@@ -1,18 +1,22 @@
 import { useState, type ReactNode } from 'react';
+import BusinessCalendarSettings from '../../platform/BusinessCalendarSettings/BusinessCalendarSettings';
+import OfflineBriefcaseSettings from '../../platform/OfflineBriefcaseSettings/OfflineBriefcaseSettings';
+import MetadataPackageManager from '../../applications/MetadataPackages/MetadataPackageManager';
+import { apiRequest } from '../../authentication/Client/authClient';
 import './CompanySettingsWorkspace.css';
-type Section = 'general'|'currency'|'branding'|'business'|'contacts'|'integrations'|'security'|'developer';
+type Section = 'general'|'currency'|'branding'|'business'|'contacts'|'mobile'|'integrations'|'security'|'developer';
 type DeveloperDestination = {label:string;workspace:string;description:string;allowed:boolean};
 const sections:ReadonlyArray<{id:Section;label:string}>=[
 {id:'general',label:'General'},{id:'currency',label:'Currency & Locale'},
 {id:'branding',label:'Branding'},{id:'business',label:'Business Settings'},
-{id:'contacts',label:'Contacts'},{id:'integrations',label:'Integrations'},
+{id:'contacts',label:'Contacts'},{id:'mobile',label:'Mobile & Offline'},{id:'integrations',label:'Integrations'},
 {id:'security',label:'Security & Recovery'},{id:'developer',label:'Developer'}];
 /** Presentation only: retains existing OneEngine-protected runtime controls and slots. */
-export default function CompanySettingsWorkspace({company,domains,developer,usage,recovery,mfa,emailRecovery,locks,sessions,audit,onNavigateDeveloper,developerAccess}:{
-company:ReactNode;domains:ReactNode;developer:ReactNode;usage:ReactNode;
+export default function CompanySettingsWorkspace({company,domains,developer,usage,calendar,recovery,mfa,emailRecovery,locks,sessions,audit,onNavigateDeveloper,developerAccess}:{
+company:ReactNode;domains:ReactNode;developer:ReactNode;usage:ReactNode;calendar?:ReactNode;
 recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;sessions:ReactNode;audit:ReactNode;
  onNavigateDeveloper?:(workspace:string)=>void;
- developerAccess?:{metadata:boolean;apps:boolean;flows:boolean;dashboards:boolean;reports:boolean;approvals:boolean;security:boolean};
+ developerAccess?:{metadata:boolean;apps:boolean;packages?:boolean;flows:boolean;dashboards:boolean;reports:boolean;approvals:boolean;security:boolean};
 }){
  const [active,setActive]=useState<Section>('general');
  const rights=developerAccess;
@@ -43,8 +47,13 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
      {(active==='general'||active==='currency'||active==='business'||active==='contacts'||active==='branding')&&company}
      {active==='integrations'&&<section className="company-workspace-stack">{domains}{developer}</section>}
      {active==='security'&&<section className="company-workspace-stack">{mfa}{emailRecovery}{locks}{sessions}{recovery}{audit}</section>}
-     {active==='business'&&<div className="company-workspace-secondary">{usage}</div>}
-     {active==='developer'&&<section className="company-workspace-card" aria-label="Developer tools"><h2>Developer tools</h2><p>Build and manage your apps with OneEngine-controlled access.</p><div className="company-developer-links">{available.map(item=><button type="button" key={item.workspace} onClick={()=>onNavigateDeveloper?.(item.workspace)} disabled={!onNavigateDeveloper}><strong>{item.label}</strong><span>{item.description}</span><span aria-hidden="true">›</span></button>)}</div></section>}
+     {active==='business'&&<div className="company-workspace-secondary">
+       {calendar??<BusinessCalendarSettings request={apiRequest} permitted />}
+       {usage}
+     </div>}
+     {active==='mobile'&&<OfflineBriefcaseSettings request={apiRequest} permitted />}
+     {active==='developer'&&<><section className="company-workspace-card" aria-label="Developer tools"><h2>Developer tools</h2><p>Build and manage your apps with OneEngine-controlled access.</p><div className="company-developer-links">{available.map(item=><button type="button" key={item.workspace} onClick={()=>onNavigateDeveloper?.(item.workspace)} disabled={!onNavigateDeveloper}><strong>{item.label}</strong><span>{item.description}</span><span aria-hidden="true">›</span></button>)}</div></section>
+       <MetadataPackageManager request={apiRequest} permitted={!!rights?.metadata} canManage={!!(rights?.packages??rights?.apps)} /></>}
    </div>
  </div>;
 }
