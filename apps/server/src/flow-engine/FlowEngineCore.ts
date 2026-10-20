@@ -1,3 +1,4 @@
+import {failedFlowLogs,pendingFlowInterviews} from './FlowExecutionHistory.js';
 import {executeActionButtonNode} from '../system-files/nodes/ActionButtonNode.js';
 import {executeWaitPauseNode} from '../system-files/nodes/WaitPauseNode.js';
 import {executeDecisionNode} from '../system-files/nodes/DecisionNode.js';
@@ -275,50 +276,11 @@ export class FlowRuntime {
     const rowCount=await deactivateFlowDefinition(this.db,tenantId,apiName,true);
     if(!rowCount)throw new Error('Flow not found');
   }
-  /** Durable run telemetry from shared SQL Flow run records, tenant scoped. */
   async failedLogs(tenantId:string,userId:string) {
-    if(!this.rbac)throw new Error('Flow permissions not configured');
-    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
-    const {rows}=await this.db.query<{
-      id:string;api_name:string;label:string|null;started_by:string;finished_at:Date|null;
-      started_at:Date;error_code:string|null
-    }>(`
-      SELECT r.id,f.api_name,f.label,r.started_by,r.finished_at,r.started_at,r.error_code
-      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
-      WHERE r.tenant_id=$1 AND r.status='failed'
-      ORDER BY r.started_at DESC LIMIT 100
-    `,[tenantId]);
-    return {logs:rows.map(r=>({
-      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
-      trigger:'Manual' as const,failedAt:new Date(r.finished_at??r.started_at).toISOString(),
-      error:r.error_code??'Execution failed',userId:r.started_by
-    }))};
+    return failedFlowLogs(this.db,this.rbac,tenantId,userId);
   }
   async pendingInterviews(tenantId:string,userId:string) {
-    if(!this.rbac)throw new Error('Flow permissions not configured');
-    await this.rbac.require(tenantId,userId,'FlowDefinition','read');
-    const {rows}=await this.db.query<{
-      id:string;api_name:string;label:string|null;version:number;flow_type:string;
-      wait_kind:string;
-      started_by:string;email:string;started_at:Date;wait_until:Date|null
-    }>(`
-      SELECT r.id,f.api_name,f.label,f.version,f.flow_type,r.wait_kind,
-        r.started_by,u.email,r.started_at,r.wait_until
-      FROM md_flow_runs r JOIN md_flow_definitions f ON f.id=r.flow_id AND f.tenant_id=r.tenant_id
-      JOIN md_users u ON u.id=r.started_by AND u.tenant_id=r.tenant_id
-      WHERE r.tenant_id=$1 AND r.status IN ('pending','waiting')
-      ORDER BY r.started_at DESC LIMIT 100
-    `,[tenantId]);
-    return {interviews:rows.map(r=>({
-      id:r.id,flowApiName:r.api_name,flowLabel:r.label??r.api_name,
-      versionNumber:r.version,kind:r.flow_type==='Screen Flow'?'screen' as const
-        :r.wait_kind==='scheduled-path'?'scheduled' as const
-        :r.wait_kind==='orchestration'?'orchestration' as const:'wait' as const,
-      userId:r.started_by,userName:r.email,screenLabel:null,recordId:null,
-      createdAt:new Date(r.started_at).toISOString(),
-      expiresAt:new Date(new Date(r.started_at).getTime()+86400000).toISOString(),
-      waitUntil:r.wait_until?new Date(r.wait_until).toISOString():null,retryAt:null,attempts:0
-    }))};
+    return pendingFlowInterviews(this.db,this.rbac,tenantId,userId);
   }
   /** Cancel a durable pending interview without deleting its execution history. */
   async cancelInterview(tenantId:string,userId:string,interviewId:string){
