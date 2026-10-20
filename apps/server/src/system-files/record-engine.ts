@@ -1502,7 +1502,7 @@ export class RecordEngine {
           await this.rbac.requireRecord(tenantId,userId,link.source_object_api,link.source_record_id,'edit');
         } catch {continue;}
         const restored=await client.query(`UPDATE md_record_values v
-          SET value_text=$6,reference_record_id=$6::uuid
+          SET value_text='',reference_record_id=$5::uuid
           FROM md_records source,md_records target,md_field_definitions field
           WHERE v.tenant_id=$1 AND v.record_id=$2 AND v.object_api=$3 AND v.field_api=$4
             AND v.reference_record_id IS NULL AND v.value_text IS NULL
@@ -1512,7 +1512,7 @@ export class RecordEngine {
             AND field.api_name=v.field_api AND field.related_object=target.object_api
             AND field.deleted_at IS NULL RETURNING v.record_id`,
           [tenantId,link.source_record_id,link.source_object_api,link.field_api,
-            link.target_record_id,link.target_record_id]);
+            link.target_record_id]);
         if(restored.rowCount){
           await client.query(`INSERT INTO md_record_history
             (tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value)
