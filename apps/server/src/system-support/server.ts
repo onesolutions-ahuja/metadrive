@@ -1480,7 +1480,8 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof objectApi!=='string')throw new Error('Invalid object name');
     res.json(await records.list(actor.tenant_id,actor.user_id,objectApi,limit,offset,{
       sortField:queryString('sortField'),sortDirection:sortDirection as 'asc'|'desc'|undefined,
-      search,filterField,filterValue,filterOperator:filterOperator as 'Equals'|'Includes'|'Excludes'
+      search,filterField,filterValue,filterOperator:filterOperator as 'Equals'|'Includes'|'Excludes',
+      relatedField:queryString('relatedField'),relatedId:queryString('relatedId')
     }));
   }));
   app.post('/api/records/:objectApi',route(async(req,res)=>{
