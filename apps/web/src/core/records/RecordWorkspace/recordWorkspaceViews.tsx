@@ -287,6 +287,7 @@ function RecordWorkspace({
   type GlobalActionView={id:string;label:string;behavior:'Create Record'|'Run Flow'|'Send Email';targetObjectApi?:string};
   const [globalActions,setGlobalActions] = useState<GlobalActionView[]>([]);
   const [globalEmailActionId,setGlobalEmailActionId] = useState('');
+  const quickEmailRequestKey=useRef(crypto.randomUUID());
   const [globalActionMessage,setGlobalActionMessage] = useState('');
   useEffect(()=>{
     let active=true;
@@ -948,9 +949,10 @@ function RecordWorkspace({
     setCustomActionPendingId(emailAction.id);setCustomActionMessage('');
     try{
       await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(emailAction.id)}/execute`,{
-        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody})
+        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
+          requestKey:quickEmailRequestKey.current})
       });
-      setCustomActionMessage('Email sent.');setEmailAction(null);
+      setCustomActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setEmailAction(null);
       setEmailTo('');setEmailSubject('');setEmailBody('');
     }catch(error){
       setCustomActionMessage(error instanceof Error?error.message:'Unable to send email');
@@ -982,8 +984,9 @@ function RecordWorkspace({
     setCustomActionPendingId('global:'+globalEmailActionId);setGlobalActionMessage('');
     try{
       await apiRequest(`/actions/global/${encodeURIComponent(globalEmailActionId)}/execute`,{
-        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody})});
-      setGlobalActionMessage('Email sent.');setGlobalEmailActionId('');
+        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
+          requestKey:quickEmailRequestKey.current})});
+      setGlobalActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setGlobalEmailActionId('');
       setEmailTo('');setEmailSubject('');setEmailBody('');
     }catch(error){
       setGlobalActionMessage(error instanceof Error?error.message:'Unable to send global email');
