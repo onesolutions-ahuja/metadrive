@@ -42,56 +42,69 @@ test('Master-Detail definitions reject cycles and a third master relationship',a
     'tenant','Child__c','ThirdParentId','Master-Detail(ThirdParent__c)'),/more than two/);
 });
 
-test('lookup deletion behavior restricts or clears referencing fields',async()=>{
-  const deletes:string[]=[];
-  const history:Array<unknown[]>= [];
+
+const parentRecordId='00000000-0000-4000-8000-000000000011';
+const childRecordId='00000000-0000-4000-8000-000000000012';
+const deleteGroupId='00000000-0000-4000-8000-000000000013';
+
+test('lookup deletion restricts or clears with a recovery ledger',async()=>{
+  const tombstones:string[]=[];
+  const history:Array<unknown[]>=[];
+  const links:Array<unknown[]>=[];
   const makeRecords=(behavior:'Restrict'|'Clear',required=false)=>{
-    const client={query:async(sql:string,args:unknown[])=>{
-      if(sql.includes('md_record_access'))return {rows:[{id:'parent'}],rowCount:1};
+    const client={query:async(sql:string,args:unknown[]=[])=>{
+      if(sql.includes('SELECT gen_random_uuid()::text AS id'))
+        return {rows:[{id:deleteGroupId}],rowCount:1};
+      if(sql.includes('md_record_access'))return {rows:[{id:parentRecordId}],rowCount:1};
       if(sql.includes('SELECT r.id AS record_id'))return {rows:[{
-        record_id:'child',object_api:'Child__c',field_api:'ParentId',
+        record_id:childRecordId,object_api:'Child__c',field_api:'ParentId',
         relationship_type:'Lookup',delete_behavior:behavior,required
       }],rowCount:1};
       if(sql.includes('UPDATE md_record_values SET value_text=NULL'))
-        return {rows:[{record_id:'child',object_api:'Child__c',field_api:'ParentId'}],rowCount:1};
+        return {rows:[{record_id:childRecordId,object_api:'Child__c',field_api:'ParentId'}],rowCount:1};
+      if(sql.includes('INSERT INTO md_deleted_lookup_links'))links.push(args);
       if(sql.includes('INSERT INTO md_record_history'))history.push(args);
-      if(sql.startsWith('DELETE FROM md_records'))deletes.push(String(args[2]));
+      if(sql.startsWith('UPDATE md_records SET is_deleted=true'))tombstones.push(String(args[2]));
       return {rows:[],rowCount:1};
     }};
     const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
     const rbac={require:async()=>{}} as unknown as RbacEngine;
     return new RecordEngine(db,rbac);
   };
-  await assert.rejects(()=>makeRecords('Restrict').remove('tenant','user','Parent__c','parent'),
+  await assert.rejects(()=>makeRecords('Restrict').remove('tenant','user','Parent__c',parentRecordId),
     /restricted by a lookup/);
-  assert.deepEqual(deletes,[]);
-  await makeRecords('Clear').remove('tenant','user','Parent__c','parent');
-  assert.deepEqual(deletes,['parent']);
+  assert.deepEqual(tombstones,[]);
+  await makeRecords('Clear').remove('tenant','user','Parent__c',parentRecordId);
+  assert.deepEqual(tombstones,[parentRecordId]);
   assert.equal(history.length,1);
-  assert.equal(history[0][5],'parent');
-  await assert.rejects(()=>makeRecords('Clear',true).remove('tenant','user','Parent__c','parent'),
+  assert.equal(history[0][5],parentRecordId);
+  assert.equal(links.length,1);
+  await assert.rejects(()=>makeRecords('Clear',true).remove('tenant','user','Parent__c',parentRecordId),
     /restricted by a lookup/);
-  assert.deepEqual(deletes,['parent']);
+  assert.deepEqual(tombstones,[parentRecordId]);
 });
 
-test('deleting a master record cascades through detail records',async()=>{
+test('soft-deleting a master record cascades tombstones through detail records',async()=>{
   const deleted:string[]=[];
-  const client={query:async(sql:string,args:unknown[])=>{
-    if(sql.includes('md_record_access'))return {rows:[{id:'parent'}],rowCount:1};
-    if(sql.includes('SELECT id FROM md_records'))return {rows:[{id:String(args[2])}],rowCount:1};
-    if(sql.includes('SELECT r.id AS record_id'))return args[1]==='parent'
-      ?{rows:[{record_id:'child',object_api:'Child__c',field_api:'ParentId',
+  const client={query:async(sql:string,args:unknown[]=[])=>{
+    if(sql.includes('SELECT gen_random_uuid()::text AS id'))
+      return {rows:[{id:deleteGroupId}],rowCount:1};
+    if(sql.includes('md_record_access'))return {rows:[{id:parentRecordId}],rowCount:1};
+    if(sql.includes('SELECT id FROM md_records'))
+      return {rows:[{id:String(args[2])}],rowCount:1};
+    if(sql.includes('SELECT r.id AS record_id'))return args[1]===parentRecordId
+      ?{rows:[{record_id:childRecordId,object_api:'Child__c',field_api:'ParentId',
         relationship_type:'Master-Detail',delete_behavior:'Cascade'}],rowCount:1}
       :{rows:[],rowCount:0};
-    if(sql.startsWith('DELETE FROM md_records'))deleted.push(String(args[2]));
+    if(sql.startsWith('UPDATE md_records SET is_deleted=true'))deleted.push(String(args[2]));
+    if(sql.startsWith('DELETE FROM md_records'))throw new Error('Hard record deletion forbidden');
     return {rows:[],rowCount:1};
   }};
   const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
   const rbac={require:async()=>{}} as unknown as RbacEngine;
-  await new RecordEngine(db,rbac).remove('tenant','user','Parent__c','parent');
-  assert.deepEqual(deleted,['child','parent']);
+  await new RecordEngine(db,rbac).remove('tenant','user','Parent__c',parentRecordId);
+  assert.deepEqual(deleted,[childRecordId,parentRecordId]);
 });
-
 test('master-detail updates cannot reparent a child unless enabled',async()=>{
   const db={query:async(sql:string)=>{
     if(sql.includes('FROM md_field_definitions'))return {rows:[{
