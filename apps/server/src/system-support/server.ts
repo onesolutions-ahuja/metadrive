@@ -1433,6 +1433,19 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  // Shared, tenant-scoped record Recycle Bin. This is separate from field-definition recovery.
+  app.get('/api/recycle-bin/records/:objectApi',route(async(req,res)=>{
+    const actor=req.actor!;
+    const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await records.recycleBin(actor.tenant_id,actor.user_id,req.params.objectApi,limit,offset));
+  }));
+  app.post('/api/recycle-bin/records/:objectApi/:id/restore',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await records.restore(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id));
+  }));
+
   // Shared import pipeline: tenant actor and OneEngine Object/Field/Record rights are
   // enforced inside the generic Record Engine for each row of one SQL transaction.
   app.post('/api/records/:objectApi/import',route(async(req,res)=>{
