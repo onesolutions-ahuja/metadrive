@@ -41,6 +41,17 @@ try{
  `,[tenantId,userId]);
  const caseId=reviewCase.rows[0].id;
 
+ // Create lifecycle fixture before the browser authenticates and caches landing metadata.
+ const {ObjectDefinitionService:EarlyObjectDefinition}=await import(new URL('object-definition.js',built).href);
+ const EarlyRecordEngine=(await import(new URL('record-engine.js',built).href)).RecordEngine;
+ const EarlyRbacEngine=(await import(new URL('rbac-engine.js',built).href)).RbacEngine;
+ const recycleDefinition=await new EarlyObjectDefinition(db).create(tenantId,'BrowserRecycle__c',
+  'Browser Recycle',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
+ assert.ok(recycleDefinition);
+ const recycleSetup=new EarlyRecordEngine(db,new EarlyRbacEngine(db));
+ const recycleId=await recycleSetup.create(tenantId,userId,'BrowserRecycle__c',{Name:'Browser recovery test'});
+ await recycleSetup.remove(tenantId,userId,'BrowserRecycle__c',recycleId);
+
  const tokens=await new AuthenticationService(db).signIn(tenantId,'developer@example.invalid',password);
  frontend=spawn('npm',['run','dev','--workspace','apps/web','--','--host','127.0.0.1','--port','4173'],{
   cwd:new URL('../../../',import.meta.url).pathname,
@@ -334,13 +345,7 @@ try{
  console.info('RBAC browser Save/refresh/SQL checks passed for profile creation and permission-set metadata');
  // Phase 1: verify the actual Records browser can restore a SQL-tombstoned record
  // and the tenant administrator can publish an audited retention policy.
- const {ObjectDefinitionService}=await import(new URL('object-definition.js',built).href);
- const recycleDefinition=await new ObjectDefinitionService(db).create(tenantId,'BrowserRecycle__c',
-  'Browser Recycle',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
- assert.ok(recycleDefinition);
  const recordEngine=new RecordEngine(db,rbac);
- const recycleId=await recordEngine.create(tenantId,userId,'BrowserRecycle__c',{Name:'Browser recovery test'});
- await recordEngine.remove(tenantId,userId,'BrowserRecycle__c',recycleId);
  await page.goto(origin+'/une/o/BrowserRecycle__c/list',{waitUntil:'domcontentloaded'});
  const recycleButton=page.getByRole('button',{name:'Recycle Bin',exact:true});
  await recycleButton.waitFor({state:'visible',timeout:15000});
