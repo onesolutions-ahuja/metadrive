@@ -27,5 +27,7 @@ export async function applySystemMigrations(db:SqlPersistence) {
    await client.query(source);
    await client.query('INSERT INTO md_system_migrations(version,checksum) VALUES($1,$2)',[name,checksum]);
   }
+  // Cover setup tables introduced by later migrations in the same transaction.
+  await client.query('SELECT md_install_setup_audit()');
  });
 }

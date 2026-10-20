@@ -26,6 +26,8 @@ Phase 2 implementation and deployment requirements are recorded in [IDENTITY_SES
 
 ## Phase 3 — Governance, licensing and monitoring
 
+Implemented controls and supported boundaries: [SECURITY_GOVERNANCE_PHASE3.md](SECURITY_GOVERNANCE_PHASE3.md).
+
 - Complete the system-permission catalogue and map each permission to enforced central RBAC decisions; preserve individual grant revocation and explicit denies.
 - Complete user and permission-set licence entitlement checks and administration, separate from permission grants.
 - Audit every metadata/setup mutation through shared engines, with tenant/actor/correlation context, redaction, retention and paginated/exportable Setup Audit Trail.
@@ -44,4 +46,4 @@ Implementation validation: all 478 unit tests (397 server, 33 metadata, 48 compo
 
 Production database/provider verification and the Phase 2/3 controls remain separate work; this phase does not claim Salesforce feature parity.
 
-Phase 2 follow-up validation: `npm run check` now passes in the current checkout, including the Core file-boundary check, 491 tests, builds and lazy loading. Isolated signed WebAuthn/OIDC/SAML and recovery/session SQL tests also pass. See the Phase 2 implementation document for deployment prerequisites, supported protocol variants and remaining provider/hardware acceptance testing. Phase 3 remains outstanding.
+Phase 2 follow-up validation: `npm run check` now passes in the current checkout, including the Core file-boundary check, 491 tests, builds and lazy loading. Isolated signed WebAuthn/OIDC/SAML and recovery/session SQL tests also pass. See the Phase 2 implementation document for deployment prerequisites, supported protocol variants and remaining provider/hardware acceptance testing. Phase 3 implementation and deployment requirements are recorded in [SECURITY_GOVERNANCE_PHASE3.md](SECURITY_GOVERNANCE_PHASE3.md).

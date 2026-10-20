@@ -28,7 +28,18 @@ export const systemPermissionBindings: Readonly<Record<string, readonly [string,
   'components:manage':['ComponentDefinition','create'],
   'dashboards:manage':['SystemDefinition:dashboards','manage'],
   'dashboards:viewTeam':['SystemDefinition:dashboards','read'],
-  'data:viewAll':['Record','viewAll']
+  'data:viewAll':['Record','viewAll'],
+  'data:modifyAll':['Record','modifyAll'],
+  'api:enabled':['API','execute'],
+  'users:read':['User','read'],
+  'users:create':['User','create'],
+  'users:edit':['User','edit'],
+  'users:delete':['User','delete'],
+  'audit:read':['SetupAudit','read'],
+  'audit:export':['SetupAudit','export'],
+  'monitoring:read':['SecurityMonitoring','read'],
+  'monitoring:manage':['SecurityMonitoring','manage'],
+  'connectedApps:manage':['ConnectedApp','manage']
 };
 const reverse = new Map(Object.entries(systemPermissionBindings).map(([key,[resource,action]])=>[resource+':'+action,key]));
 export function toPermissionRule(key:string):{resource:string;action:string} {

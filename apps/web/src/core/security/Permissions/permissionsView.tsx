@@ -512,28 +512,10 @@ function Permissions({
     const current = set.fieldPermissions[fieldName] ?? { read: false, edit: false };
     patchSet(set.id, { fieldPermissions: { ...set.fieldPermissions, [fieldName]: { ...current, [permission]: !current[permission] } } });
   };
-  const allSystemPermissions = [
-    ['metadata:read', 'View metadata'],
-    ['metadata:write', 'Manage all application metadata'],
-    ['security:read', 'View users and permissions'],
-    ['security:manage', 'Manage users and permissions'],
-    ['objects:manage', 'Manage objects and fields'],
-    ['fields:create', 'Create field definitions'],
-    ['fields:delete', 'Delete field definitions'],
-    ['flows:manage', 'Manage flows'],
-    ['flows:run', 'Run flows'],
-    ['namedCredentials:manage', 'Manage named credentials'],
-    ['email:send', 'Send flow emails'],
-    ['callouts:execute', 'Execute Flow HTTP callouts'],
-    ['notifications:send', 'Send custom notifications'],
-    ['approvals:manage', 'Manage all approval requests'],
-    ['reports:manage', 'Manage reports'],
-    ['pages:manage', 'Manage Lightning pages'],
-    ['components:manage', 'Manage global custom components'],
-    ['dashboards:manage', 'Manage all dashboards'],
-    ['dashboards:viewTeam', "View My Team's Dashboards"],
-    ['data:viewAll', 'View All Data']
-  ];
+  const [allSystemPermissions,setSystemPermissions]=useState<string[][]>([]);
+  useEffect(()=>{void apiRequest<{permissions:Array<{permission_key:string;label:string}>}>('/security/permissions')
+    .then(r=>setSystemPermissions(r.permissions.map(p=>[p.permission_key,p.label])))
+    .catch(e=>setError('Permission catalogue: '+String(e)));},[]);
   const tabLabel = tab === 'profiles' ? 'Profiles' : tab === 'sets' ? 'Permission Sets'
     : tab === 'groups' ? 'Permission Set Groups' : tab === 'sharing' ? 'Sharing Settings'
       : tab === 'roles' ? 'Roles' : tab === 'publicGroups' ? 'Public Groups'

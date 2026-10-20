@@ -1,4 +1,5 @@
 import type {DurableJobService} from './durable-job-service.js';
+import {withAuditContext} from './audit-context.js';
 
 export type ClaimedJob={
  id:string;tenant_id:string;job_type:string;actor_user_id:string|null;
@@ -24,7 +25,7 @@ export class DurableJobWorker {
  register(kind:string,handler:JobHandler){
   if(this.handlers.has(kind))throw new Error('Duplicate job handler: '+kind);
   if(!/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(kind))throw new Error('Invalid job kind');
-  this.handlers.set(kind,handler);
+  this.handlers.set(kind,job=>withAuditContext({actorTenant:job.tenant_id,actorUser:job.actor_user_id??undefined},()=>handler(job)));
  }
  async runOnce(batch=10){
   const due=await this.jobs.claim(this.workerId,batch);

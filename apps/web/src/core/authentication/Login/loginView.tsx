@@ -124,7 +124,10 @@ export function createLoginView(logoUrl: string) {
         <button className="text-action" type="button" onClick={()=>setRecovering(true)}>Forgot password?</button>
         {providers.map(provider=><button key={provider.id} type="button" className="btn" disabled={submitting} onClick={()=>{
           setSubmitting(true);void apiRequest<{url:string}>('/auth/federation/start',{method:'POST',body:JSON.stringify({providerId:provider.id})})
-            .then(r=>window.location.assign(r.url)).catch(e=>{setMessage(e instanceof Error?e.message:String(e));setSubmitting(false);});
+            .then(r=>{
+              if(window.location.pathname==='/oauth/authorize')sessionStorage.setItem('md_oauth_return',JSON.stringify({query:window.location.search,expires:Date.now()+600000}));
+              window.location.assign(r.url);
+            }).catch(e=>{setMessage(e instanceof Error?e.message:String(e));setSubmitting(false);});
         }}>Continue with {provider.label}</button>)}
         </>}
         <button className="btn btn-brand auth-submit" disabled={submitting}>

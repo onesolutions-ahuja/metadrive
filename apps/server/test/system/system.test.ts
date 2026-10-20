@@ -123,9 +123,10 @@ test('atomic object creation rejects unsupported fields before any SQL write', a
 
 test('Records HTTP API returns the actual list rather than double-nested records', async () => {
   const {createSystemServer}=await import('../../src/system-support/server.js');
-  const db={
+  const db={transaction:async(run:(c:{query:()=>Promise<{rows:unknown[]}>})=>Promise<unknown>)=>run({query:async()=>({rows:[]})}),
     query:async(sql:string)=>{
-      if(sql.startsWith('WITH active AS'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.includes('md_monitor_events'))return {rows:[],rowCount:0};
+    if(sql.startsWith('WITH active AS'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
       if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};
       if(sql.startsWith('UPDATE md_sessions s SET last_seen_at'))return {rows:[{id:'session'}],rowCount:1};
       if(sql.startsWith('UPDATE md_refresh_sessions r SET last_seen_at'))return {rows:[],rowCount:1};
@@ -410,7 +411,8 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
 });
 test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
   const {createSystemServer}=await import('../../src/system-support/server.js');
-  const db={query:async(sql:string)=>{
+  const db={transaction:async(run:(c:{query:()=>Promise<{rows:unknown[]}>})=>Promise<unknown>)=>run({query:async()=>({rows:[]})}),query:async(sql:string)=>{
+    if(sql.includes('md_monitor_events'))return {rows:[],rowCount:0};
     if(sql.startsWith('WITH active AS'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
     if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};

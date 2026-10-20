@@ -1,6 +1,7 @@
 import { randomUUID, randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { SqlPersistence } from './sql-persistence.js';
+import {setAuditActor} from '../system-support/audit-context.js';
 import {readPasswordPolicy,validatePassword,checkPasswordHistory,retainPasswordHistory} from '../system-support/password-policy-service.js';
 import {enforceLoginBoundary,normalizedLoginIp,readSessionPolicy,type LoginContext} from '../system-support/session-policy-service.js';
 const scrypt = promisify(scryptCallback);
@@ -8,6 +9,8 @@ const fingerprint = (value: string) => createHash('sha256').update(value).digest
 const mintToken = () => randomBytes(32).toString('base64url');
 export class AuthenticationService {
   constructor(private readonly db:SqlPersistence) {}
+  private loginGuard?: (tenant:string,user:string,context:LoginContext)=>Promise<void>;
+  setLoginGuard(guard:(tenant:string,user:string,context:LoginContext)=>Promise<void>){this.loginGuard=guard;}
   async hashPassword(password:string,tenantId?:string) {
     if (password.length < 12||password.length>1024) throw new Error('Invalid password: length must be 12 to 1024 characters');
     if(tenantId)validatePassword(password,await readPasswordPolicy(this.db,tenantId));
@@ -22,16 +25,18 @@ export class AuthenticationService {
     return timingSafeEqual(digest,Buffer.from(hash,'hex'));
   }
   private async issue(tenantId:string,userId:string,mfaVerified=false,context:LoginContext={}) {
+    setAuditActor(tenantId,userId);
     const access=mintToken(),refresh=mintToken(),family=randomUUID();
     const policy=await readSessionPolicy(this.db,tenantId);
     if(policy.require_mfa&&!mfaVerified)throw Error('MFA required');
     await enforceLoginBoundary(this.db,tenantId,userId,context);
+    await this.loginGuard?.(tenantId,userId,context);
     const accessSeconds=Math.min(policy.access_minutes,policy.refresh_minutes)*60,refreshSeconds=policy.refresh_minutes*60;
     await this.db.transaction(async client=>{
       const eligible=await client.query(`SELECT u.id FROM md_users u
         JOIN md_tenants t ON t.id=u.tenant_id AND t.status='ACTIVE'
         LEFT JOIN md_password_policies p ON p.tenant_id=u.tenant_id
-        WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true
+        WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true AND md_user_licensed(u.tenant_id,u.id)
         AND (u.locked_until IS NULL OR u.locked_until<=now())
         AND (COALESCE(p.max_age_days,0)=0 OR u.password_changed_at+(p.max_age_days * interval '1 day')>now()) FOR UPDATE OF u`,[tenantId,userId]);
       if(!eligible.rows[0])throw new Error('Invalid credentials');
@@ -113,8 +118,8 @@ export class AuthenticationService {
     const nextAccess=mintToken(),nextRefresh=mintToken();
     const identity=await this.db.transaction(async client=>{
       const old=await client.query<{tenant_id:string,user_id:string;mfa_verified:boolean;absolute_expires_at:Date;last_seen_at:Date;family_id:string}>(
-        'UPDATE md_refresh_sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now() AND absolute_expires_at>now() RETURNING tenant_id,user_id,mfa_verified,absolute_expires_at,last_seen_at,family_id',
-        [fingerprint(token)]);
+        'UPDATE md_refresh_sessions SET revoked_at=now() WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>now() AND absolute_expires_at>now() AND md_oauth_refresh_allowed($1,$2::uuid) RETURNING tenant_id,user_id,mfa_verified,absolute_expires_at,last_seen_at,family_id',
+        [fingerprint(token),context.oauthClientId??null]);
       if(!old.rows[0]) throw new Error('Invalid session');
       const {tenant_id,user_id,mfa_verified}=old.rows[0];
       const policy=await readSessionPolicy(client,tenant_id);
@@ -125,7 +130,7 @@ export class AuthenticationService {
         LEFT JOIN md_user_mfa_secrets m ON m.tenant_id=u.tenant_id AND m.user_id=u.id
         LEFT JOIN md_password_policies pp ON pp.tenant_id=u.tenant_id
         WHERE (COALESCE(pp.max_age_days,0)=0 OR u.password_changed_at+(pp.max_age_days * interval '1 day')>now())
-          AND u.id=$1 AND u.tenant_id=$2 AND u.enabled=true AND (u.locked_until IS NULL OR u.locked_until<=now())
+          AND u.id=$1 AND u.tenant_id=$2 AND u.enabled=true AND md_user_licensed(u.tenant_id,u.id) AND (u.locked_until IS NULL OR u.locked_until<=now())
           AND (COALESCE(p.mode,'Off')='Off' OR (p.mode='Optional' AND m.user_id IS NULL AND NOT EXISTS(SELECT 1 FROM md_webauthn_credentials w WHERE w.tenant_id=u.tenant_id AND w.user_id=u.id)) OR $3::boolean=true)`,[user_id,tenant_id,mfa_verified]);
       if(!enabled.rowCount) throw new Error('Invalid session');
       const seconds=Math.min(policy.access_minutes*60,Math.max(0,Math.floor((new Date(old.rows[0].absolute_expires_at).getTime()-Date.now())/1000)));
@@ -155,12 +160,13 @@ export class AuthenticationService {
         AND s.token_hash=$1 AND s.expires_at>now() AND s.revoked_at IS NULL
         AND s.last_seen_at>now()-(COALESCE(policy.idle_minutes,60)*interval '1 minute')
         AND md_login_boundary_allowed(s.tenant_id,s.user_id,$2::inet)
+        AND md_user_licensed(s.tenant_id,s.user_id) AND md_oauth_token_allowed(s.tenant_id,s.user_id,$1,$3,$4)
       RETURNING s.tenant_id,s.user_id,s.family_id
     ), touched AS (
       UPDATE md_refresh_sessions r SET last_seen_at=now() FROM active a
       WHERE r.family_id=a.family_id AND r.tenant_id=a.tenant_id AND r.user_id=a.user_id
        AND r.revoked_at IS NULL AND r.expires_at>now() RETURNING r.id
-    ) SELECT tenant_id,user_id FROM active`,[fingerprint(token),normalizedLoginIp(context.ip)]);
+    ) SELECT tenant_id,user_id FROM active`,[fingerprint(token),normalizedLoginIp(context.ip),context.path??'',context.method??'']);
     if(!rows[0])throw Error('Invalid session');
     return rows[0];
   }

@@ -1,4 +1,5 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+import {auditContext,setSqlAuditContext} from '../system-support/audit-context.js';
 export function resolveSqlConnection(databaseUrl:string,env:NodeJS.ProcessEnv) {
   if(!databaseUrl)throw new Error('DATABASE_URL is required');
   const uri=new URL(databaseUrl);
@@ -40,11 +41,15 @@ export class SqlPersistence {
     this.pool = new Pool({ ...config, max: resolveSqlPoolSize(process.env), connectionTimeoutMillis: 10000 });
   }
   query<T extends QueryResultRow = QueryResultRow>(sql: string, params: readonly unknown[] = []) {
+    const context=auditContext();
+    if(context?.actorUser&&/^\s*(INSERT|UPDATE|DELETE|WITH|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql))
+      return this.transaction(client=>client.query<T>(sql,[...params]));
     return this.pool.query<T>(sql, [...params]);
   }
   async transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
-    try { await client.query('BEGIN'); const value = await run(client); await client.query('COMMIT'); return value; }
+    try { await client.query('BEGIN'); const context=auditContext();if(context)await setSqlAuditContext(client,context);
+      const value = await run(client); await client.query('COMMIT'); return value; }
     catch (error) { await client.query('ROLLBACK'); throw error; }
     finally { client.release(); }
   }
@@ -64,6 +69,7 @@ export class SqlPersistence {
       'md_mfa_backup_codes','md_webauthn_credentials','md_webauthn_challenges',
       'md_identity_providers','md_federated_identities','md_federation_requests',
       'md_saml_request_ids','md_federation_tickets');
+    names.push('md_system_permission_catalogue','md_license_entitlements','md_license_capabilities','md_user_license_assignments','md_permission_set_license_requirements','md_setup_audit_events','md_setup_audit_tables','md_monitor_settings','md_monitor_events','md_transaction_security_rules','md_security_rule_windows','md_oauth_clients','md_oauth_codes','md_oauth_tokens','md_oauth_consents');
     const {rows}=await this.query<{table_name:string}>(
       'SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name=ANY($1::text[])',
       [names]);

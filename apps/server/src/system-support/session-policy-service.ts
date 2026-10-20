@@ -2,7 +2,7 @@ import {isIP} from 'node:net';
 import {z} from 'zod';
 import type {SqlExecutor,SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
-export type LoginContext={ip?:string};
+export type LoginContext={ip?:string;path?:string;method?:string;oauthClientId?:string};
 export function normalizedLoginIp(raw:string|undefined){
  const candidate=raw?.startsWith('::ffff:')&&isIP(raw.slice(7))===4?raw.slice(7):raw;
  return candidate&&isIP(candidate)?candidate:null;

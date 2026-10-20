@@ -1,3 +1,4 @@
+import TenantGovernance from './TenantGovernance';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Save, Trash2, Plus, Lock, Unlock } from 'lucide-react';
 import SettingsViewRow from '../SettingsViewRow/SettingsViewRow';
@@ -356,7 +357,7 @@ function TenantSecurityAudit() {
 function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: () => void; canManage: boolean }) {
   return <><TenantMfaControls request={apiRequest} canManage={canManage} onReauthenticate={onReauthenticate}/>
     <TenantSessionControls request={apiRequest} canManage={canManage}/>
-    <TenantFederationControls request={apiRequest} canManage={canManage}/></>;
+    <TenantFederationControls request={apiRequest} canManage={canManage}/><TenantGovernance request={apiRequest} canManage={canManage}/></>;
 }
 
 type CompanyProfile = {logoUrl?:string;legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};
