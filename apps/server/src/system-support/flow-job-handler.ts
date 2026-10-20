@@ -1,3 +1,4 @@
+import {executeResumeEventNode} from '../system-files/nodes/ResumeEventNode.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
@@ -124,10 +125,11 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
   await flows.execute(job.tenant_id,job.resource_id!,job.actor_user_id!,{});
  });
  worker.register('flow.resume',async job=>{
-  if(job.attempt>1)throw new Error('Flow replay requires explicit reconciliation');
-  if(!await authorize(job))throw new Error('Job authorization changed');
-  await flows.resumeWaitingInterview(job.tenant_id,job.actor_user_id!,
-   job.resource_id!,job.resource_version!);
+  await executeResumeEventNode({
+   attempt:job.attempt,tenantId:job.tenant_id,userId:job.actor_user_id!,
+   runId:job.resource_id!,version:job.resource_version!,flows,
+   authorize:()=>authorize(job)
+  });
  });
  worker.register('flow.scheduled',async job=>{
   if(job.attempt>1)throw new Error('Flow replay requires explicit reconciliation');
