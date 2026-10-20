@@ -104,7 +104,7 @@ export default function AppExchange(props: Props) {
       <div className="exchange-hero-copy">
         <div className="exchange-eyebrow"><Puzzle size={13}/> CONNECTOR APP MARKETPLACE</div>
         <h1>Connect your business apps</h1>
-        <p>Install connector apps, activate your 21-day trial, and configure secure connections. Installation does not start the trial.</p>
+        <p>Install only the applications your tenant needs. App code remains shared; tenant metadata and installation status are stored in SQL.</p>
         <PlatformPageSlot slotKey="field-marketplaceSearch"><label className="exchange-search"><Search size={17}/>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search connector apps" aria-label="Search AppExchange"/>
           {query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}
@@ -118,7 +118,7 @@ export default function AppExchange(props: Props) {
         <button role="tab" aria-selected={view === 'installed'} className={view === 'installed' ? 'active' : ''} onClick={() => setView('installed')}>Installed apps <span>{installed}</span></button>
       </div>
       <div className="exchange-section-heading"><div><h2>{view === 'installed' ? 'Installed connector apps' : 'Available connectors'}</h2>
-        <p>App definitions, installation status and licence data come from Connector App records.</p></div>
+        <p>Published package versions, installation status and licences come from tenant-scoped SQL metadata.</p></div>
         <div className="exchange-trust-note"><ShieldCheck size={16}/> Permission-aware setup</div>
       </div>
       <div className="exchange-category-row" aria-label="Filter by category">
@@ -137,11 +137,13 @@ export default function AppExchange(props: Props) {
             <p>{app.Description__c || 'Configurable metadata-driven API connector'}</p>
           </button>
           <div className="exchange-card-meta"><span>{app.Category__c || 'Integrations'}</span>
-            <span>{app.LicenceStatus__c === 'ACTIVE' ? 'Licence active' : 'Licence required'}</span></div>
+            <span>{app.LicenceStatus__c === 'ACTIVE' ? 'Licence active' : 'Licence required'}{app.PackageVersion__c ? ' · v'+app.PackageVersion__c : ''}</span></div>
           <div className="exchange-card-footer">
             <span className="exchange-category-label">{app.Category__c || 'Connector'}</span>
             {app.Installed__c
-              ? <button className="btn btn-small btn-brand" onClick={() => setOpenedKey(app.AppKey__c)}>Open <ArrowRight size={13}/></button>
+              ? <button className="btn btn-small btn-brand" onClick={() => setSelected(app.AppKey__c)}>
+                  {app.PackageVersion__c && app.PackageVersion__c > (app.InstalledPackageVersion__c ?? 0)
+                    ? 'Update available' : 'Details'} <ArrowRight size={13}/></button>
               : <button className="btn btn-brand btn-small" onClick={() => setSelected(app.AppKey__c)}>Details <Download size={13}/></button>}
           </div>
         </article>)}
@@ -162,13 +164,18 @@ export default function AppExchange(props: Props) {
           <div><h3>Includes</h3><p>Settings, connection testing, app-filtered records, Flow dependencies and licence management.</p></div>
           <div><h3>Access</h3><p>Uses existing object, field and Named Credential permissions within this tenant.</p></div>
         </div>
-        <div className="exchange-data-note"><ShieldCheck size={15}/><span>Trial starts only when you press Start Trial. Reinstallation never resets a previous trial.</span></div>
+        <div className="exchange-data-note"><ShieldCheck size={15}/><span>Installing or updating preserves existing tenant data and customisations. Licences are checked server-side.</span></div>
         {!details.Installed__c && <div className="exchange-data-note"><LockKeyhole size={15}/>
           <span>Access is granted through user profiles and permission sets. Installation does not grant credentials access to every user.</span>
         </div>}
         <div className="exchange-detail-footer"><span><PackageCheck size={14}/> Connector</span>
           {details.Installed__c
-            ? <button className="btn btn-brand" onClick={() => {setOpenedKey(details.AppKey__c);setSelected(null);}}>Open</button>
+            ? <>
+                {details.PackageVersion__c && details.PackageVersion__c > (details.InstalledPackageVersion__c ?? 0) &&
+                  <button className="btn btn-brand" disabled={busy || !props.canInstall || details.LicenceStatus__c !== 'ACTIVE'}
+                    onClick={() => void action(details,'install')}>{busy ? 'Updating…' : 'Update package'}</button>}
+                <button className="btn btn-brand" onClick={() => {setOpenedKey(details.AppKey__c);setSelected(null);}}>Open</button>
+              </>
             : <button className="btn btn-brand" disabled={busy || !props.canInstall ||
                 (details.LicenceStatus__c !== 'ACTIVE' && !props.canManageLicences)}
                 onClick={() => void action(details,details.LicenceStatus__c === 'ACTIVE' ? 'install' : 'grant-install')}>
