@@ -325,6 +325,61 @@ try{
  const debug=await supportedFlows.debugGraph(tenantId,userId,checkout.apiName,{});
  assert.equal(debug.status,'waiting');
  assert.equal(calloutCount,1);
+ // End-to-end SQL Screen Flow: Get Records -> Data Table -> Selected Rows -> Loop -> Create Records.
+ const mealFirst=await records.create(tenantId,userId,'AuditItem__c',{Name:'Meal Source Chicken'});
+ const mealSecond=await records.create(tenantId,userId,'AuditItem__c',{Name:'Meal Source Sides'});
+ const mealSelectionFlow={apiName:'AuditMealRecordSelection',label:'Meal record selections',
+  flowType:'Screen Flow',status:'Active',startConfig:{},tests:[],versions:[],
+  resources:[
+   {name:'MealOptions',label:'Meal options',type:'Record Collection',
+    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false},
+   {name:'SelectedMeals',label:'Selected meals',type:'Record Collection',
+    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false}
+  ],
+  elements:[
+   {id:1,type:'Start',label:'Start',config:{}},
+   {id:2,type:'Get Records',label:'Options',config:{object:'AuditItem__c',
+     recordLimit:'all',outputVariable:'MealOptions',conditions:[
+       {field:'Name',operator:'Starts With',value:'Meal Source '}] }},
+   {id:3,type:'Screen',label:'Choose meal',config:{fields:[
+     {apiName:'Chosen',label:'Choose',type:'Data Table',collection:'MealOptions',
+      columns:['Name'],multiselect:true,selectedRowsResource:'SelectedMeals',
+      minimumSelections:1,maximumSelections:2,required:true}]}},
+   {id:4,type:'Loop',label:'Selected products',config:{collection:'SelectedMeals',
+     loopVariable:'CurrentMeal',direction:'First to last'}},
+   {id:5,type:'Create Records',label:'Copy selection',config:{object:'AuditItem__c',
+     fieldValues:[{field:'Name',value:'{!CurrentMeal.Name}'}]}},
+   {id:6,type:'End',label:'Complete',config:{}}
+  ],
+  connectors:[
+   {id:'1',from:1,to:2,kind:'normal',label:'default'},
+   {id:'2',from:2,to:3,kind:'normal',label:'default'},
+   {id:'3',from:3,to:4,kind:'normal',label:'Next'},
+   {id:'4',from:4,to:5,kind:'normal',label:'For Each'},
+   {id:'5',from:5,to:4,kind:'normal',label:'default'},
+   {id:'6',from:4,to:6,kind:'normal',label:'After Last'}
+  ]};
+ assert.equal((await supportedFlows.saveEditor(tenantId,userId,mealSelectionFlow.apiName,
+   mealSelectionFlow)).status,'Active');
+ const selectionStart=await supportedFlows.execute(tenantId,mealSelectionFlow.apiName,userId);
+ assert.equal(selectionStart.screen.id,3);
+ assert.deepEqual(selectionStart.screenResources.MealOptions.map(row=>row.Id).sort(),
+   [mealFirst,mealSecond].sort());
+ const selectionRun=selectionStart.interviewId;
+ await assert.rejects(()=>supportedFlows.advanceInterview(tenantId,userId,selectionRun,{
+   values:{Chosen:['00000000-0000-4000-8000-000000000099']}}),
+   /not in the permitted record collection/);
+ await assert.rejects(()=>supportedFlows.advanceInterview(tenantId,userId,selectionRun,{
+   values:{Chosen:[]}}),/selection count/);
+ const beforeSelected=(await db.query("SELECT count(*)::int AS total FROM md_records WHERE tenant_id=$1 AND object_api='AuditItem__c'",
+   [tenantId])).rows[0].total;
+ const selectedComplete=await supportedFlows.advanceInterview(tenantId,userId,selectionRun,
+   {values:{Chosen:[mealSecond,mealFirst]}});
+ assert.equal(selectedComplete.completed,true);
+ const afterSelected=(await db.query("SELECT count(*)::int AS total FROM md_records WHERE tenant_id=$1 AND object_api='AuditItem__c'",
+   [tenantId])).rows[0].total;
+ assert.equal(afterSelected,beforeSelected+2,'Selected Rows Loop must create exactly two records');
+ console.info('Screen Data Table typed selections -> Loop -> Create Records SQL smoke passed');
 
  const recordId=await records.create(tenantId,userId,'AuditItem__c',{Name:'First',RecordTypeId:'master'});
  const initial=await records.get(tenantId,userId,'AuditItem__c',recordId);

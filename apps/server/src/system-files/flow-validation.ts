@@ -6,6 +6,7 @@ import type {FlowCapabilityCatalog} from './flow-capability-catalog.js';
 import {resolveFlowIntegrationCallout} from './flow-integration-connection.js';
 import {parseFlowHttpMapping} from './flow-http-mapping.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
+import {validateScreenRecordBindings} from './flow-screen-record-selection.js';
 
 export async function flowAppIsEntitled(db:SqlExecutor,tenantId:string,appApiName:string|null) {
  if(appApiName===null)return true;
@@ -125,6 +126,11 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
         }>:[];
       hydrateFlowScreenChoices({id:node.id as number,type:'Screen',
         label:String(node.label??'Screen'),config:properties},choices);
+      const declared=Array.isArray(data.resources)
+        ?data.resources.filter(item=>!!item&&typeof item==='object'&&!Array.isArray(item))
+          .map(item=>item as {name:string;type:string;dataType:string}):[];
+      const graphNodes=nodes.filter(item=>!!item&&typeof item==='object'&&!Array.isArray(item)) as Array<{id?:unknown;type?:unknown;config?:unknown}>;
+      errors.push(...validateScreenRecordBindings({config:properties},declared,graphNodes));
     }catch(error){errors.push(error instanceof Error?error.message:'Invalid Screen Choice Set');}
   }
   if(type==='Assignment'){

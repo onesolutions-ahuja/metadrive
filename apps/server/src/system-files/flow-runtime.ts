@@ -9,6 +9,7 @@ import {executeFlowDataAction} from './flow-data-actions.js';
 import {mapFlowHttpResponse,resolveFlowHttpCalloutKey} from './flow-http-mapping.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
+import {screenRecordPayload,acceptScreenRecordSelection,ScreenSelectionError} from './flow-screen-record-selection.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
@@ -790,11 +791,9 @@ export class FlowRuntime {
           updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,[tenantId,runId,current,history]);
         const screen=byId.get(current);
         if(!screen||screen.type!=='Screen')throw new Error('Invalid Screen history');
-        const fields=Array.isArray(screen.config.fields)?screen.config.fields as Array<Record<string,unknown>>:[];
+        const screenPayload=screenRecordPayload(screen,vars,persistenceResources);
         return {interviewId:runId,screen:hydrateFlowScreenChoices(screen,resources),outcomes:this.screenOutcomes(screen),
-          canGoBack:history.length>0,
-          values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
-            .map(f=>[f.apiName,vars[String(f.apiName)]]))};
+          canGoBack:history.length>0,...screenPayload};
       }
       const visible=byId.get(current);
       const values=request.values??{};
@@ -819,15 +818,25 @@ export class FlowRuntime {
             if(Object.hasOwn(vars,key)&&vars[key]===value)continue;
             throw new Error('Invalid Screen field: '+key);
           }
-          if(!scalar(value)||typeof value==='string'&&value.length>4096)
-            throw new Error('Invalid Screen field: '+key);
-          set(key,value);
+          const selected=await acceptScreenRecordSelection(field??{},value,vars,persistenceResources,
+            (objectApi,id)=>this.records!.get(tenantId,userId,objectApi,id));
+          if(!selected){
+            if(!scalar(value)||typeof value==='string'&&value.length>4096)
+              throw new Error('Invalid Screen field: '+key);
+            set(key,value);
+          }
         }
         for(const field of fields){
           const key=field.apiName;
-          if(typeof key==='string'&&field.required===true
-            &&(vars[key]===undefined||vars[key]===null||vars[key]===''))
-            throw new Error('Required Screen field: '+key);
+          if(typeof key==='string'&&field.required===true){
+            const output=typeof field.selectedRowsResource==='string'&&field.selectedRowsResource
+              ?field.selectedRowsResource:key;
+            const collection=persistenceResources.some(item=>item.name===output
+              &&item.type==='Record Collection') ? vars[output]:undefined;
+            if(Array.isArray(collection)?collection.length===0
+              :vars[key]===undefined||vars[key]===null||vars[key]==='')
+              throw new Error('Required Screen field: '+key);
+          }
         }
         history.push(current);
         if(history.length>25)throw new Error('Screen history exceeded limit');
@@ -853,11 +862,9 @@ export class FlowRuntime {
             throw new Error('Record-Triggered Flows cannot pause at a Screen');
           await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
             loopIndexes,vars,persistenceResources);
-          const fields=Array.isArray(node.config.fields)?node.config.fields as Array<Record<string,unknown>>:[];
+          const screenPayload=screenRecordPayload(node,vars,persistenceResources);
           return {interviewId:runId,screen:hydrateFlowScreenChoices(node,resources),outcomes:this.screenOutcomes(node),
-            canGoBack:history.length>0,
-            values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
-              .map(f=>[f.apiName,vars[String(f.apiName)]]))};
+            canGoBack:history.length>0,...screenPayload};
         }
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now(),wait_until=NULL WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
@@ -1098,7 +1105,8 @@ export class FlowRuntime {
       const message=error instanceof Error?error.message:'Unknown Flow failure';
       // Invalid Screen submissions are retriable client corrections. The
       // transaction has rolled back: keep the interview pending and editable.
-      if(/^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
+      if(error instanceof ScreenSelectionError
+        || /^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
         throw error;
       await this.db.query(
         "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
