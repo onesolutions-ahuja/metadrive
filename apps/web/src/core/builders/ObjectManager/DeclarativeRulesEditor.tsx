@@ -44,7 +44,7 @@ export default function DeclarativeRulesEditor({
     }).finally(()=>{if(alive)setLoading(false);});
     return ()=>{alive=false;};
   },[objectApi]);
-  const defaultFields=useMemo(()=>fields.filter(field=>!field.defaultValue &&
+  const defaultFields=useMemo(()=>fields.filter(field=>field.defaultValue===undefined &&
     !['Formula','Roll-Up Summary','Auto Number','AutoNumber','Text (Encrypted)',
       'Multi-Select Picklist','Rich Text Area','Geolocation','Address']
       .some(type=>field.dataType.startsWith(type))&&!field.relationship),[fields]);
