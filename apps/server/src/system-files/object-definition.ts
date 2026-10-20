@@ -329,7 +329,7 @@ type RelatedListSettings={
   pageSize?:10|25|50;showNewAction?:boolean;showRowActions?:boolean
 };
 const relatedFieldPattern=/^[A-Za-z][A-Za-z0-9_]*$/;
-function validateRelatedListSettings(names:string[],input:unknown):Record<string,RelatedListSettings>{
+export function validateRelatedListSettings(names:string[],input:unknown):Record<string,RelatedListSettings>{
   if(input===undefined)return {};
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid related list settings');
   const values=input as Record<string,unknown>;
