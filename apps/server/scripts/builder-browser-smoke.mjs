@@ -453,6 +453,7 @@ try{
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
 }catch(error){
  if(page){
+  console.error('Browser JavaScript errors:',failures.slice(-15));
   console.error('Browser failure URL:',page.url());
   console.error('Browser failure text:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000));
   await page.screenshot({path:new URL('../artifacts/rbac-failure.png',import.meta.url).pathname}).catch(()=>{});
