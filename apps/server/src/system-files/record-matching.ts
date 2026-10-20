@@ -6,7 +6,7 @@ type RuleField={rule_api:string;field_api:string;case_sensitive:boolean};
 export class DuplicateMatchError extends Error {
  constructor(readonly ruleApi:string){super('Potential duplicate record matches rule: '+ruleApi);this.name='DuplicateMatchError';}
 }
-/** One SQL matching engine. Uses existing field-value storage and OneEngine record visibility. */
+/** One SQL matching engine. Enforces matches against all tenant records, without exposing inaccessible IDs. */
 export class RecordMatching {
  constructor(private readonly rbac:RbacEngine){}
  async check(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Values,
@@ -42,7 +42,7 @@ export class RecordMatching {
    const records=await client.query<{id:string}>(`SELECT r.id FROM md_records r WHERE
      r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
      AND ($4::uuid IS NULL OR r.id<>$4::uuid)
-     AND md_record_access($1,$3,r.id,'read') AND (${filter}) ORDER BY r.id LIMIT 20`,params);
+     AND (${filter}) ORDER BY r.id LIMIT 20`,params);
    if(!records.rows.length)continue;
    if(rule.action==='Block')throw new DuplicateMatchError(rule.api_name);
    for(const record of records.rows)matches.push({ruleApi:rule.api_name,recordId:record.id});
