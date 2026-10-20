@@ -78,6 +78,8 @@ export type PageLayoutCustomLinkMetadata = {
   label: string;
   url: string;
   openInNewWindow: boolean;
+  visibleWhenField?: string;
+  visibleWhenValue?: string;
 };
 
 export type RelatedListSettingsMetadata = {
