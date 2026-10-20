@@ -1,4 +1,5 @@
-import {template,uuid,type ActionContext} from './ActionNodeShared.js';
+import type {ActionContext} from './ActionNodeShared.js';
+import {prepareEmailDispatch} from '../../communication-engine/EmailDispatcher.js';
 export async function executeActionEmailNode(context:ActionContext) {
  let config=context.config;
  if(config.actionType==='Email Alert'){
@@ -28,18 +29,7 @@ export async function executeActionEmailNode(context:ActionContext) {
  }
  if(typeof context.enqueueEmail!=='function')
   throw new Error('Flow email queue is not configured');
- const credentialId=config.namedCredentialId;
- const from=template(config.fromEmail,context.resolve).trim();
- const recipients=[...new Set(template(config.recipients,context.resolve)
-  .split(/[;,\r\n]+/).map(value=>value.trim()).filter(Boolean))];
- const subject=template(config.subject,context.resolve);
- const body=template(config.body,context.resolve);
- const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
- if(typeof credentialId!=='string'||!uuid.test(credentialId)||!email.test(from)
-  ||from.length>254||!recipients.length||recipients.length>100
-  ||recipients.some(value=>value.length>254||!email.test(value))
-  ||!subject.trim()||subject.length>300||/[\r\n]/.test(subject)||body.length>10000)
-  throw new Error('Invalid Flow email configuration');
- await context.enqueueEmail({credentialId,from,recipients,subject,body});
+ const message=prepareEmailDispatch(config,context.resolve);
+ await context.enqueueEmail(message);
 }
 
