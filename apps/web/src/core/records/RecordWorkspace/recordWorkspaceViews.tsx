@@ -1802,15 +1802,19 @@ function RecordWorkspace({
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
-            {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
-              &&allowedActionIds.includes(action.id)
-              && (!recordLayout || recordLayout.actions.includes(action.id))
-              && (action.behavior==='Run Flow'||action.behavior==='Create Related'||action.behavior==='Send Email'
-                || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
-                  && (action.behavior==='Log Call'
-                    ||(action.behavior==='Set Field Value'&&Boolean(action.fieldApiName
-                      &&fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit)))))
-            ).map((action) => <button className="btn" key={action.id} disabled={Boolean(customActionPendingId)} onClick={() => void runCustomObjectAction(action)}>{customActionPendingId === action.id ? 'Running…' : action.label}</button>)}
+            {(object.actions ?? []).filter((action) => {
+              if (action.type !== 'Custom' || !action.enabled || !allowedActionIds.includes(action.id)) return false;
+              if (recordLayout && !recordLayout.actions.includes(action.id)) return false;
+              if (['Run Flow', 'Create Related', 'Send Email'].includes(action.behavior ?? '')) return true;
+              if (!canEdit || (recordLayout && !recordLayout.actions.includes('Edit'))) return false;
+              if (action.behavior === 'Log Call') return true;
+              return action.behavior === 'Set Field Value' && Boolean(action.fieldApiName
+                && fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit);
+            }).map((action) => <button className="btn" key={action.id}
+              disabled={Boolean(customActionPendingId)}
+              onClick={() => void runCustomObjectAction(action)}>
+                {customActionPendingId === action.id ? 'Running…' : action.label}
+              </button>)}
           </div>
         </section>
         {renderGlobalQuickActions()}
