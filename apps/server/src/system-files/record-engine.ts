@@ -3,6 +3,7 @@ import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import {formatAutoNumberValue} from './auto-number-format.js';
 import {DeclarativeRules} from './declarative-rules.js';
+import {RecordMatching} from './record-matching.js';
 import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
   type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
@@ -44,6 +45,7 @@ const roundDecimal=(value:number,scale:number)=>{
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
   private get declarativeRules(){return new DeclarativeRules(this.rbac);}
+  private get recordMatching(){return new RecordMatching(this.rbac);}
   private richTextFilePruner?:(
     client:PoolClient,tenantId:string,objectApi:string,recordId:string,fieldApi:string,html:string|null
   )=>Promise<void>;
@@ -730,7 +732,9 @@ export class RecordEngine {
       }
       const finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
       await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,rowValues);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
+      await this.recordMatching.save(client,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
         await this.recordTrigger(client,tenantId,userId,objectApi,'created',record,null,'after-save',isClone);
@@ -764,7 +768,10 @@ export class RecordEngine {
     const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
     await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
-    return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
+    const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,supplied);
+    const id=await this.insertPrepared(client,tenantId,userId,objectApi,prepared);
+    await this.recordMatching.save(client,tenantId,objectApi,id,matches);
+    return id;
   }
   /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
   async importRecords(tenantId:string,userId:string,objectApi:string,records:unknown) {
@@ -1377,7 +1384,9 @@ export class RecordEngine {
       const loadPrior=async()=>previous??(previous=await this.get(tenantId,userId,objectApi,id,client));
       await this.declarativeRules.validate(client,tenantId,userId,objectApi,
         async()=>({...await loadPrior(),...values}),loadPrior);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,{...await loadPrior(),...values},id);
       await write(client,prepared);
+      await this.recordMatching.save(client,tenantId,objectApi,id,matches);
     }
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
@@ -1412,7 +1421,9 @@ export class RecordEngine {
             :value.value_text);
       }
       await this.declarativeRules.validate(transactionClient,tenantId,userId,objectApi,proposedValues,prior);
+      const matches=await this.recordMatching.check(transactionClient,tenantId,userId,objectApi,proposedValues,id);
       await write(transactionClient,finalPrepared);
+      await this.recordMatching.save(transactionClient,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,transactionClient);
         await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',record,prior,'after-save');
