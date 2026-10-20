@@ -49,7 +49,7 @@ test('restore unmarks the full Master-Detail deletion group with an audit entry'
     return {rows:[],rowCount:1};
   }};
   const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   const outcome=await new RecordEngine(db,rbac).restore('tenant',actor,'Account__c',root);
   assert.deepEqual(outcome,{restored:2});
   assert.ok(writes.some(sql=>sql.startsWith('UPDATE md_records SET is_deleted=false')));
@@ -67,7 +67,7 @@ test('restore refuses a detail without its root and leaves tombstones unchanged'
     return {rows:[],rowCount:1};
   }};
   const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   await assert.rejects(()=>new RecordEngine(db,rbac).restore('tenant',actor,'Invoice__c',detail),
     /Restore the deleted parent/);
   assert.ok(!writes.some(sql=>sql.startsWith('UPDATE md_records SET is_deleted=false')));
