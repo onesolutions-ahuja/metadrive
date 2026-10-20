@@ -426,6 +426,28 @@ try{
    'Browser recovery test');
  await page.screenshot({path:new URL('../artifacts/recycle-bin.png',import.meta.url).pathname});
  console.info('Browser Recycle Bin and policy editor restore/SQL checks passed');
+ // Phase 2: configure a global action without code, publish to tenant SQL,
+ // then verify the generic Records browser exposes and routes it.
+ await page.goto(origin+'/une/setup/object-manager/BrowserRecycle__c/ButtonsLinksAndActions',
+   {waitUntil:'domcontentloaded'});
+ await page.getByRole('heading',{name:'Global Quick Actions'}).waitFor({timeout:15000});
+ await page.getByLabel('New global action name').fill('Browser Global Create');
+ await page.getByLabel('Global action target Object').selectOption('BrowserRecycle__c');
+ await page.getByRole('button',{name:'Add Global Action'}).click();
+ const savedGlobal=page.waitForResponse(res=>res.url().endsWith('/api/metadata/global-actions')
+   &&res.request().method()==='PUT');
+ await page.getByRole('button',{name:'Save Global Actions'}).click();
+ assert.equal((await savedGlobal).status(),200,'Global action browser save failed');
+ const globalSql=await db.query(`SELECT action_id,target_object_api FROM md_global_quick_actions
+   WHERE tenant_id=$1 AND label='Browser Global Create'`,[tenantId]);
+ assert.equal(globalSql.rowCount,1,'Global action did not reach tenant SQL');
+ await page.goto(origin+'/une/o/BrowserRecycle__c/list',{waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'Browser Global Create'}).waitFor({timeout:12000});
+ await page.getByRole('button',{name:'Browser Global Create'}).click();
+ await page.waitForURL(/globalActionId=/);
+ assert.ok(page.url().includes('BrowserRecycle__c'),'Global action routed to incorrect Object');
+ await page.screenshot({path:new URL('../artifacts/global-quick-action.png',import.meta.url).pathname});
+ console.info('Browser global Quick Action creation and runtime navigation passed');
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
