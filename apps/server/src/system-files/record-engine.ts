@@ -52,7 +52,7 @@ export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
     private readonly encryptedValueVault?:EncryptedValueVault) {}
   private async lockObjectForWrite(client:PoolClient,tenantId:string,objectApi:string) {
-    await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
       [`${tenantId}:${objectApi}`]);
   }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
