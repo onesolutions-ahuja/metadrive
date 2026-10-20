@@ -35,6 +35,7 @@ import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../sy
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
+import {RecordRetentionService} from './record-retention-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
@@ -107,6 +108,7 @@ export function createSystemServer(db:SqlPersistence) {
   const rbacAdministration=new RbacAdministration(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const flowJobs=new DurableJobService(db);
+  const recordRetention=new RecordRetentionService(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac,namedCredentials);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -1433,6 +1435,24 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  // Retention is tenant-configured, defaults to no automatic permanent purge.
+  app.get('/api/recycle-bin/retention',route(async(req,res)=>{
+    const actor=req.actor!;res.setHeader('Cache-Control','private, no-store');
+    res.json(await recordRetention.get(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/recycle-bin/retention',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))
+      throw new Error('Invalid retention configuration');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await recordRetention.set(actor.tenant_id,actor.user_id,
+      req.body.retentionDays,req.body.automaticPurgeEnabled));
+  }));
+  app.delete('/api/recycle-bin/records/:objectApi/:id/purge',route(async(req,res)=>{
+    const actor=req.actor!;res.setHeader('Cache-Control','private, no-store');
+    res.json(await recordRetention.purge(actor.tenant_id,actor.user_id,
+      req.params.objectApi,req.params.id));
+  }));
   // Shared, tenant-scoped record Recycle Bin. This is separate from field-definition recovery.
   app.get('/api/recycle-bin/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1625,10 +1645,12 @@ export async function startSystemServer() {
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
   const definitions=new ObjectDefinitionService(db);
+  const retention=new RecordRetentionService(db,new RbacEngine(db));
   await definitions.purgeExpiredFields();
+  await retention.purgeExpired();
   const purgeTimer=setInterval(()=>{
-    void definitions.purgeExpiredFields().catch(error=>{
-      console.error('Expired field cleanup failed:',error);
+    void Promise.all([definitions.purgeExpiredFields(),retention.purgeExpired()]).catch(error=>{
+      console.error('Expired metadata/record cleanup failed:',error);
     });
   },60*60*1000);
   purgeTimer.unref();
