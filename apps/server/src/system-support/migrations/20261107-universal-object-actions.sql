@@ -27,7 +27,7 @@ ALTER TABLE md_object_actions ADD CONSTRAINT md_object_actions_behavior_contract
      AND target_object_api IS NULL AND relationship_field_api IS NULL)
    OR (behavior='Create Related' AND target_object_api IS NOT NULL
      AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL)
- )))
+ ))
 );
 CREATE INDEX IF NOT EXISTS md_object_actions_enabled_lookup
  ON md_object_actions(tenant_id,object_api,action_id) WHERE enabled=true;
