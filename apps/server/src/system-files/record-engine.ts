@@ -1392,6 +1392,9 @@ export class RecordEngine {
         VALUES($1,$2,$3,$4,$5,$6,NULL)`,
       [tenantId,reference.record_id,reference.object_api,reference.field_api,userId,id]);
     }
+    await client.query(`UPDATE md_record_values SET record_is_deleted=true
+      WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3`,
+      [tenantId,objectApi,id]);
     await client.query(`UPDATE md_records SET is_deleted=true,deleted_at=now(),deleted_by=$4,
       deletion_group_id=$5,deletion_root_id=$6,updated_at=now()
       WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false`,
@@ -1485,6 +1488,11 @@ export class RecordEngine {
           AND parent.is_deleted=true AND parent.deletion_group_id IS DISTINCT FROM $3::uuid
         LIMIT 1`,[tenantId,rows.map(row=>row.id),record.deletion_group_id]);
       if(external.rowCount)throw new Error('Restore the master record first');
+      await client.query(`UPDATE md_record_values v SET record_is_deleted=false
+        FROM md_records r
+        WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND
+          r.tenant_id=$1 AND r.deletion_group_id=$2 AND r.is_deleted=true`,
+        [tenantId,record.deletion_group_id]);
       await client.query(`UPDATE md_records SET is_deleted=false,deleted_at=NULL,deleted_by=NULL,
         deletion_group_id=NULL,deletion_root_id=NULL,updated_at=now()
         WHERE tenant_id=$1 AND deletion_group_id=$2 AND is_deleted=true`,
