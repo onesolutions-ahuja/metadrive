@@ -114,7 +114,7 @@ test('Send Email reuses tenant SMTP service, never accepts client-supplied crede
   to:'client@example.com',subject:'Follow up',body:'Hello there'});
  assert.deepEqual(result,{status:'completed',recordId:parent});
  assert.deepEqual(sent[0],[tenant,actor,'Account',parent,'Email',configured,
-  'admin@example.com','client@example.com','Follow up','Hello there']);
+  'admin@example.com','client@example.com','Follow up','Hello there',undefined]);
  await assert.rejects(()=>runtime.execute(user,'Account',parent,'Email',{
   credentialId:'replacement',to:'client@example.com',subject:'Hi',body:'Hello'}),/Invalid email action input/);
  assert.equal(sent.length,1);
