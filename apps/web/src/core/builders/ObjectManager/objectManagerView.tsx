@@ -16,6 +16,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
 import CustomMetadataManager from './CustomMetadataManager';
+const MatchingRulesPanel = React.lazy(() => import('./MatchingRulesPanel'));
 import * as React from 'react';
 const DeclarativeRulesPanel=React.lazy(()=>import('./DeclarativeRulesPanel'));
 import { createPortal } from 'react-dom';
@@ -1459,6 +1460,7 @@ function ObjectManager({
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
     if (selectedSetting === 'Validation Rules') return <React.Suspense fallback={<p>Loading rules…</p>}><DeclarativeRulesPanel objectApi={object.apiName} fields={draft.fields} objects={objects} /></React.Suspense>;
+    if (selectedSetting === 'Matching Rules') return <React.Suspense fallback={<p>Loading matching rules…</p>}><MatchingRulesPanel object={draft} /></React.Suspense>;
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
     if (selectedSetting === 'Record Types') return renderRecordTypes();
     if (selectedSetting === 'Compact Layouts') return renderCompactLayout();
