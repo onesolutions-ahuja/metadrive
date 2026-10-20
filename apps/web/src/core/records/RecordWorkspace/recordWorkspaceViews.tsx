@@ -348,11 +348,13 @@ function RecordWorkspace({
     if(!object || !window.confirm('Restore this deleted record and its dependent detail records?'))return;
     setRecycleBusy(true);setRecycleError('');
     try {
-      await apiRequest('/recycle-bin/records/'+encodeURIComponent(object.apiName)+'/'+encodeURIComponent(id)+'/restore',
+      const recovered=await apiRequest<{restored:number;unresolvedLookupLinks:number}>('/recycle-bin/records/'+encodeURIComponent(object.apiName)+'/'+encodeURIComponent(id)+'/restore',
         {method:'POST'});
       await loadRecycleBin(recycleOffset);
       setRefreshKey(value=>value+1);
-      setListNotice('Record restored from the Recycle Bin.');
+      setListNotice(recovered.unresolvedLookupLinks>0
+        ? `Record restored. ${recovered.unresolvedLookupLinks} lookup link(s) require permission or field review.`
+        : 'Record restored from the Recycle Bin.');
     } catch(error){
       setRecycleError(error instanceof Error ? error.message : 'Unable to restore record');
     } finally {setRecycleBusy(false);}
