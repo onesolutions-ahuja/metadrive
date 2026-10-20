@@ -19,6 +19,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
 import SchemaBuilder from '../../builders/SchemaBuilder/SchemaBuilder';
 import * as React from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
+import TenantMediaPicker from '../../builders/ComponentProperties/TenantMediaPicker';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -553,7 +554,8 @@ export function RecordFormDialog({
       ? 10 ** (Number(numericFormat[1]) - Number(numericFormat[2])) - 10 ** -Number(numericFormat[2])
       : undefined;
     const textMaximum = field.dataType.match(/^Text\((\d+)\)$/)?.[1];
-    return <label className="form-label" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
+    return <div className="form-label" key={field.apiName}>
+      <label htmlFor={common.id}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</label>
       <input className="form-control" {...common} type={type}
         min={numericMaximum === undefined ? undefined : -numericMaximum}
         max={numericMaximum}
@@ -561,8 +563,13 @@ export function RecordFormDialog({
         maxLength={textMaximum ? Number(textMaximum) : field.dataType === 'Text' ? 255 : undefined}
         value={value}
         onChange={(event) => onChange(field.apiName, type === 'number' ? (event.target.value === '' ? '' : Number(event.target.value)) : event.target.value)} />
+      {type==='text' && <details className="component-optional-settings">
+        <summary className="properties-help">Use tenant image asset</summary>
+        <TenantMediaPicker value={typeof value==='string'?value:''}
+          onChange={next=>onChange(field.apiName,next)} disabled={common.disabled}/>
+      </details>}
       {helpText}
-    </label>;
+    </div>;
   };
   return <div className={embedded ? "record-form-inline" : "record-form-backdrop"} role="presentation" onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !saving) onClose(); }}>
     <section className="record-form-dialog surface" role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby="record-form-title" onKeyDown={(event) => { if (event.key === 'Escape' && !saving && !lookupDialogField) onClose(); }}>

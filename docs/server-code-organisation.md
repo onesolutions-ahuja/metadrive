@@ -17,6 +17,7 @@ The approved Core is exactly the following forty-six modules in `apps/server/src
 `flow-scalar-runtime.ts`, `flow-error-runtime.ts`, `flow-execution-context.ts`,
 `auto-number-format.ts`, `record-file-service.ts`, `rich-text.ts`,
 `flow-assignment-runtime.ts`, `flow-screen-choice-runtime.ts`,
+`flow-execution-requests.ts`, `tenant-media-service.ts`,
 `flow-http-mapping.ts`, `flow-integration-connection.ts`,
 `platform-event-runtime.ts`,
 `field-type-migration.ts`, `encrypted-field.ts`, and

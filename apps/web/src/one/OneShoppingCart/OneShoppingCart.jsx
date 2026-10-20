@@ -533,6 +533,52 @@ function ShoppingCartTill({ props }) {
         .filter((item) => item.quantity > 0),
     );
   };
+  const resetCustomer = () => {
+    if (busy || paymentStatus === "pending" || !sessionReady) return;
+
+    request.current = "";
+    setCart([]);
+    setPaymentStatus("");
+    setStatusMessage("");
+    setError("");
+    setSearch("");
+    setSelectedCategory("");
+    publish([], "basket");
+    if (props.pageSessionKey && typeof window !== "undefined") {
+      const newSession = crypto.randomUUID();
+      try {
+        window.sessionStorage.setItem(
+          "metadrive-page-session:" + props.pageSessionKey, newSession);
+      } catch { /* Session storage is optional in restrictive kiosk browsers. */ }
+      window.dispatchEvent(new CustomEvent("metadrive:page-flow-mutated",{
+        detail:{pageSessionKey:props.pageSessionKey,sessionId:newSession}
+      }));
+    }
+  };
+  const nextCustomer=()=> {
+    if(paymentStatus !== "complete")return;
+    resetCustomer();
+  };
+  React.useEffect(() => {
+    const seconds=Number(props.inactivityResetSeconds);
+    if (!Number.isSafeInteger(seconds)||seconds<30||seconds>3600
+      ||typeof window==="undefined")return undefined;
+    if (!cart.length && paymentStatus !== "complete")return undefined;
+    if (busy || paymentStatus === "pending")return undefined;
+    let timer;
+    const resetTimer=()=>{
+      window.clearTimeout(timer);
+      timer=window.setTimeout(()=>resetCustomer(),seconds*1000);
+    };
+    resetTimer();
+    for(const name of ["pointerdown","keydown","touchstart"])
+      window.addEventListener(name,resetTimer,{passive:true});
+    return () => {
+      window.clearTimeout(timer);
+      for(const name of ["pointerdown","keydown","touchstart"])
+        window.removeEventListener(name,resetTimer);
+    };
+  },[props.inactivityResetSeconds,cart.length,paymentStatus,busy,sessionReady]);
   const checkoutValue = (items) => {
     request.current = crypto.randomUUID();
     return {
@@ -876,6 +922,10 @@ function ShoppingCartTill({ props }) {
               <span>{currency(vat, props.currencyCode)}</span>
             </div>
           )}
+          {paymentStatus === "complete" && <button className="one-btn one-btn--primary"
+            type="button" onClick={nextCustomer}>
+            {props.nextTransactionLabel || "Start new order"}
+          </button>}
           {statusMessage && <p role="status">{statusMessage}</p>}
           {error && <p role="alert">{error}</p>}
           <button

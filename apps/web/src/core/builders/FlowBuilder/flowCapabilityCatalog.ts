@@ -24,3 +24,11 @@ export function flowElementAvailable(catalog:FlowCapabilityCatalog|null,type:str
     &&!(flowType==='Record-Triggered Flow'&&runWhen==='before-save'
       &&!element.beforeSaveAllowed));
 }
+
+/** The toolbox must never offer an element marked editing-only in SQL.
+ * Imported, published elements can still be inspected by flowElementAvailable. */
+export function flowElementInToolbox(catalog:FlowCapabilityCatalog|null,type:string,
+  flowType:string,runWhen:unknown):boolean {
+  return Boolean(catalog?.elements.find(item=>item.type===type)?.builderEnabled
+    &&flowElementAvailable(catalog,type,flowType,runWhen));
+}

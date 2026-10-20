@@ -55,6 +55,19 @@ function validateImageDimensions(type:string,data:Buffer) {
     ||dimensions[0]*dimensions[1]>40_000_000)
     throw new Error('Invalid inline image dimensions');
 }
+/** Shared validated image contract for tenant assets and record-inline images. */
+export function validateTenantImage(contentType:string,contentBase64:string,maxBytes=maxFileBytes) {
+  const signature=signatures[contentType];
+  if(!signature||contentBase64.length===0
+    ||contentBase64.length>Math.ceil(maxBytes/3)*4)
+    throw new Error('Invalid image format or size');
+  const content=Buffer.from(contentBase64,'base64');
+  if(content.length===0||content.length>maxBytes
+    ||content.toString('base64')!==contentBase64||!signature(content))
+    throw new Error('Invalid image content for its declared format');
+  validateImageDimensions(contentType,content);
+  return content;
+}
 type FileRow={
   id:string;object_api:string;record_id:string;field_api:string;content_type:string;
   content:Buffer;name:string;byte_size:number;checksum:string

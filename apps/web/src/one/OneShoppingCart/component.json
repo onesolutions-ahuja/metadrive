@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 9,
+  "version": 11,
   "scope": "platform-core",
   "jsxFile": "one/OneShoppingCart/OneShoppingCart.jsx",
   "cssFile": "one/OneShoppingCart/OneShoppingCart.css",
@@ -353,6 +353,20 @@
       "kind": "TEXT",
       "displayOrder": 840,
       "defaultValue": ""
+    },
+    {
+      "propertyKey": "nextTransactionLabel",
+      "label": "Next customer button label",
+      "kind": "TEXT",
+      "defaultValue": "Start new order",
+      "displayOrder": 988
+    },
+    {
+      "propertyKey": "inactivityResetSeconds",
+      "label": "Reset abandoned customer session after seconds (0 = disabled, 30-3600)",
+      "kind": "NUMBER",
+      "defaultValue": 0,
+      "displayOrder": 990
     }
   ]
 }

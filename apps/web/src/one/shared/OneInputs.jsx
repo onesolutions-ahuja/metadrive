@@ -1,8 +1,12 @@
 import {componentAppearance} from './componentAppearance.js';
 export function css(p) { return componentAppearance(p, 'inputs'); }
 export function fire(p, event, value) {
+  // A metadata-bound change is one logical event. The page runtime supplies
+  // both callbacks, but invoking both would start the same Flow twice.
+  if (event === "change" && p.actionFlows?.change && typeof p.onAction === "function")
+    return p.onAction({ event, value });
   if (typeof p.onChange === "function") p.onChange(value);
-  if (typeof p.onAction === "function") p.onAction({ event, value });
+  if (typeof p.onAction === "function") return p.onAction({ event, value });
 }
 export const list = (v) =>
   Array.isArray(v)

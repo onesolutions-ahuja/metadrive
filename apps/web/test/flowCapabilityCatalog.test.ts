@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {flowCreateOptions,flowElementAvailable,type FlowCapabilityCatalog} from '../src/core/builders/FlowBuilder/flowCapabilityCatalog';
+import {flowCreateOptions,flowElementAvailable,flowElementInToolbox,type FlowCapabilityCatalog} from '../src/core/builders/FlowBuilder/flowCapabilityCatalog';
 
 const migration=readFileSync(new URL('../../server/src/system-support/migrations/20261112-flow-capability-registry.sql',import.meta.url),'utf8');
 const permitted=['Screen Flow','Autolaunched Flow','Record-Triggered Flow'];
@@ -20,6 +20,12 @@ const catalog:FlowCapabilityCatalog={registryVersion:1,
 test('capability metadata gates unsupported UI options without hiding execution metadata',()=>{
  assert.equal(flowCreateOptions(catalog).length,2);
  assert.equal(flowElementAvailable(catalog,'Get Records','Autolaunched Flow','after-save'),false);
+ assert.equal(flowElementInToolbox(catalog,'Get Records','Autolaunched Flow','after-save'),false);
+ assert.equal(flowElementInToolbox(catalog,'Assignment','Autolaunched Flow','after-save'),true);
+ const imported={...catalog,elements:catalog.elements.map(item=>item.type==='Get Records'
+   ?{...item,builderFlowTypes:['Autolaunched Flow']}:item)};
+ assert.equal(flowElementAvailable(imported,'Get Records','Autolaunched Flow','after-save'),true);
+ assert.equal(flowElementInToolbox(imported,'Get Records','Autolaunched Flow','after-save'),false);
  assert.equal(flowElementAvailable(catalog,'Assignment','Record-Triggered Flow','before-save'),true);
  assert.equal(flowElementAvailable(null,'Assignment','Autolaunched Flow','after-save'),false);
  assert.equal(flowElementAvailable(catalog,'Unexpected','Screen Flow','after-save'),false);

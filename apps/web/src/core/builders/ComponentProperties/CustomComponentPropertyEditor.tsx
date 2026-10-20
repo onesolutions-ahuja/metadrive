@@ -1,6 +1,7 @@
 import {metadataReference,metadataSelection,metadataFieldObject} from '../../metadata/Definitions/metadataReferences';
 import { useState } from 'react';
 import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
+import TenantMediaPicker from './TenantMediaPicker';
 import type { ObjectMetadata,FlowDefinitionMetadata } from '../../metadata/Definitions/metadata';
 import { sortComponentSettings, validateComponentSetting, type ComponentSettingDefinition } from '../../components/Properties/componentSettingDefinitions';
 import {
@@ -66,7 +67,7 @@ export default function CustomComponentPropertyEditor({
           {definition?.kind === 'OBJECT_FIELD' ? <label className="form-label" htmlFor={id}>{label}
             <select id={id} className="form-control" disabled={disabled} value={metadataSelection(boundObject?.fields??[],value)?.apiName??String(value??'')}
               onChange={event=>{const field=boundObject?.fields.find(f=>f.apiName===event.target.value);update(name,field?.id?metadataReference(field.id):event.target.value);}}>
-              <option value="">Select field…</option>{boundObject?.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+              <option value="">Select field…</option>{(name==='optionValueFieldApiName'||name==='recordValueFieldApiName') && <option value="Id">Record ID</option>}{boundObject?.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
             </select></label> : definition?.kind === 'FLOW' ? <label className="form-label" htmlFor={id}>{label}
             <select id={id} className="form-control" disabled={disabled} value={metadataSelection(flows,value)?.apiName??String(value??'')}
               onChange={event=>{const flow=flows.find(f=>f.apiName===event.target.value);update(name,flow?.id?metadataReference(flow.id):event.target.value);}}>
@@ -76,6 +77,9 @@ export default function CustomComponentPropertyEditor({
               {!definition.required && <option value="">None</option>}
               {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
             </select></label> :
+          definition?.kind === 'IMAGE' ? <div className="form-label"><label>{label}</label>
+            <TenantMediaPicker value={String(value??'')} disabled={disabled}
+              onChange={next=>update(name,next)}/></div> :
           definition?.kind === 'BOOLEAN' || typeof value === 'boolean'
             ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value === true}
                 onChange={(event) => update(name, event.target.checked)} />{label}</label>

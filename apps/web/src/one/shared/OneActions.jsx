@@ -20,8 +20,10 @@ export function value(o) {
     : o;
 }
 export function fire(p, event, v) {
+  if (event === "change" && p.actionFlows?.change && typeof p.onAction === "function")
+    return p.onAction({ event, value: v });
   if (typeof p.onAction === "function") p.onAction({ event, value: v });
-  if (event === "change" && typeof p.onChange === "function") p.onChange(v);
+  if (event === "change" && typeof p.onChange === "function") return p.onChange(v);
 }
 export function useOneActions(p) {
   const kind = p.kind || "Button",
