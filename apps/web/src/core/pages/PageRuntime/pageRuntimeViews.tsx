@@ -90,7 +90,8 @@ import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, 
 import {GlobalRecordSearch} from '../../../one/OneGlobalRecordSearch/GlobalRecordSearch';
 import {RecordObjectPicker} from '../../../one/OneRecordObjectPicker/RecordObjectPicker';
 import {useDismissOnOutside} from '../../accessibility/Dismiss/useDismissOnOutside';
-import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
+import { pageIsAvailableInApp } from './pageActionRouting';
+import {executeOpenPageActionNode} from './OpenPageActionNode';
 import ApprovalProcessManager from '../../automation/ApprovalProcessManager/ApprovalProcessManager';
 import { standardPageComponents } from '../../components/Catalog/index';
 import EmbeddedDashboard from '../EmbeddedDashboard/EmbeddedDashboard';
@@ -490,12 +491,9 @@ function MetadataBoundPageComponent({
       return {updated:true};
     }
     if (binding.actionType === 'Navigate') {
-      const target = resolvePageActionRoute(binding, {
-        objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
-      });
-      // Server endpoints enforce the final object and page authorization checks.
-      onNavigate(target);
-      return { navigated: true };
+      return executeOpenPageActionNode({binding,context:{
+        objects,apps,pages,currentAppId,defaultObjectApiName:objectApiName
+      },onNavigate});
     }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName && flow.status === 'Active');
