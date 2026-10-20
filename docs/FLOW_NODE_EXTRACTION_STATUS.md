@@ -16,7 +16,9 @@ It does not claim a newly supported Flow capability.
 - `SortCollectionNode.ts`
 - `FilterCollectionNode.ts`
 - `TransformNode.ts`
+- `CountCollectionNode.ts`
 - `WaitPauseNode.ts`
+- `ResumeEventNode.ts`
 - `ScreenElementNode.ts`
 - `SubflowNode.ts`
 - `CustomErrorNode.ts`
@@ -30,12 +32,14 @@ Shared, non-node modules under `nodes/` are `NodeContext.ts`,
 `DataActionNodes.ts`. The last is a narrow compatibility dispatcher,
 not a second Record Engine. Existing import paths remain compatibility exports.
 
-## Five requested names requiring separate capability decisions
+## Three requested names requiring separate capability decisions
+
+`CountCollectionNode.ts` is now an executable bounded collection-count operation.
+`ResumeEventNode.ts` extracts the existing durable-job resume path without making it a graph element.
+
 
 | Proposed file | Existing runtime ownership / reason not extracted |
 | --- | --- |
-| `CountCollectionNode.ts` | The existing `COLLECTIONCOUNT` expression function is supported, but a separate executable Flow element with this node type is not registered. Adding one requires metadata capability, validation, authoring and execution tests. |
-| `ResumeEventNode.ts` | A queued `flow.resume` job resumes persisted interviews through the durable Flow/job runtime. It is **not** an authored Flow graph element. Extracting it as a node would blur scheduling and graph execution boundaries. |
 | `ActionButtonNode.ts` | Button components/events live in the shared Component/Action systems, not in the SQL Flow graph runtime. A button may invoke a Flow without becoming a new Flow node type. |
 | `OpenPageActionNode.ts` | Navigation is a browser Page/Action runtime behaviour, not a server-side Flow element; invoking it needs an explicit published UI/action contract. |
 | `CustomActionBridgeNode.ts` | No generic, authorised arbitrary-code bridge is registered. Implementing one requires an approved extension contract, tenant-scoped RBAC, isolation, auditing and packaging. |
