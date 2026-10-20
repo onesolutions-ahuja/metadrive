@@ -1,3 +1,4 @@
+import {readRollupSummaryField} from '../field-engine/types/RollupSummaryField.js';
 import {validateLookupField} from '../field-engine/types/LookupField.js';
 import {normalizeNumberField} from '../field-engine/types/NumberField.js';
 import {normalizeCheckboxField} from '../field-engine/types/CheckboxField.js';
@@ -458,11 +459,9 @@ export class RecordEngine {
       if(!row)continue;
       if(field.data_type==='encryptedtext')record[field.api_name]=null;
       else if(field.data_type==='reference')record[field.api_name]=row.reference_record_id;
-      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='date')
-        record[field.api_name]=row.value_date;
-      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='datetime')
-        record[field.api_name]=row.value_datetime===null?null:new Date(row.value_datetime).toISOString();
-      else if(['number','currency','percent','rollup'].includes(field.data_type))
+      else if(field.data_type==='rollup')
+        record[field.api_name]=readRollupSummaryField(field.rollup_source_data_type,row.value_date,row.value_datetime,row.value_number);
+      else if(['number','currency','percent'].includes(field.data_type))
         record[field.api_name]=row.value_number===null?null:Number(row.value_number);
       else if(field.data_type==='boolean')record[field.api_name]=row.value_boolean;
       else if(field.data_type==='date')record[field.api_name]=row.value_date;
