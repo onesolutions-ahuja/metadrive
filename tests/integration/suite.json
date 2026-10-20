@@ -17,6 +17,7 @@
     "apps/server/test/system/flow-record-query.test.ts",
     "apps/server/test/system/flow-record-triggers.test.ts",
     "apps/server/test/system/flow-subscription-runtime.test.ts",
+    "apps/server/test/system/object-engine-modules.test.ts",
     "apps/server/test/system/openapi-external-service.test.ts",
     "apps/server/test/system/outbound-webhook.test.ts",
     "apps/server/test/system/platform-event-dispatcher.test.ts",
