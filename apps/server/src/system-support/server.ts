@@ -156,7 +156,7 @@ export function createSystemServer(db:SqlPersistence) {
       await namedCredentials.enqueueFlowEmail(client,tenantId,userId,flowId,version,runId,nodeId,step,
         message.credentialId,message.from,message.recipients,message.subject,message.body);
     });
-  const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows);
+  const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows,namedCredentials);
   const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
     async(client,tenantId,userId,flowApi,version,runId,scheduledAt,step,appApiName)=>{
       await flowJobs.enqueue(tenantId,'flow.resume',{
