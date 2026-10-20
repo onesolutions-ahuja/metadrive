@@ -1057,6 +1057,19 @@ function ObjectManager({
                 </div>
                 <PlatformPageSlot slotKey="field-object-09"><label className="form-label">URL<input className="form-control" value={link.url} onChange={(event) => updateCustomLink(selectedLayout, link.id, { url: event.target.value })} placeholder="https://example.com/{!Record.Id}" /></label></PlatformPageSlot>
                 <label className="checkbox-row"><input type="checkbox" checked={link.openInNewWindow} onChange={(event) => updateCustomLink(selectedLayout, link.id, { openInNewWindow: event.target.checked })} />Open in new window</label>
+                <label className="form-label">Show only when record field equals
+                  <select className="form-control" aria-label={`Visibility field for ${link.label}`}
+                    value={link.visibleWhenField??''} onChange={event=>updateCustomLink(selectedLayout,link.id,{
+                      visibleWhenField:event.target.value||undefined,
+                      visibleWhenValue:event.target.value?(link.visibleWhenValue??''):undefined
+                    })}>
+                    <option value="">Always visible (subject to field permissions)</option>
+                    {draft.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+                  </select></label>
+                {link.visibleWhenField&&<label className="form-label">Equals value
+                  <input className="form-control" maxLength={256} value={link.visibleWhenValue??''}
+                    onChange={event=>updateCustomLink(selectedLayout,link.id,{visibleWhenValue:event.target.value})}/>
+                </label>}
               </div>)}
               <PlatformPageSlot slotKey="field-object-10"><label className="form-label">New Link Label<input className="form-control" value={customLinkLabel} onChange={(event) => setCustomLinkLabel(event.target.value)} /></label></PlatformPageSlot>
               <PlatformPageSlot slotKey="field-object-11"><label className="form-label">URL<input className="form-control" value={customLinkUrl} onChange={(event) => setCustomLinkUrl(event.target.value)} placeholder="https://example.com/{!Record.Id}" /></label></PlatformPageSlot>
