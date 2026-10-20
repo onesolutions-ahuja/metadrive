@@ -10,6 +10,7 @@ export const objectSettings = [
   'Custom Settings',
   'Fields & Relationships',
   'Validation Rules',
+  'Validation Rules',
   'Page Layouts',
   'Lightning Record Pages',
   'Buttons, Links, and Actions',
