@@ -1,3 +1,5 @@
+import {executeGetRecordsNode} from './GetRecordsNode.js';
+import {executeCreateRecordsNode} from './CreateRecordsNode.js';
 import {executeLoopNode} from './LoopNode.js';
 import type {PoolClient} from 'pg';
 import type {RecordEngine} from '../record-engine.js';
@@ -97,28 +99,7 @@ export function evaluateFlowCollectionStep(type:string,config:Record<string,unkn
 export async function executeFlowDataAction(context:Context):Promise<FlowActionResult> {
   const {tenantId,userId,client,node,records,recordQuery,vars,loops,evaluate,set}=context;
   const config=node.config;
-  if(node.type==='Get Records'){
-    const objectApi=String(config.object??'');
-    const conditions=conditionsFrom(config.conditions,evaluate);
-    const rawLimit=config.recordLimit??'1';
-    const limit=rawLimit==='all'?200:Number(rawLimit);
-    if(!Number.isSafeInteger(limit)||limit<1||limit>200)
-      throw new Error('Get Records limit must be between 1 and 200');
-    const output=typeof config.outputVariable==='string'&&config.outputVariable
-      ?config.outputVariable:'record'+node.id;
-    if(!apiName.test(output))throw new Error('Invalid Get Records output variable');
-    const found=await recordQuery.find(tenantId,userId,objectApi,conditions,
-      typeof config.conditionLogic==='string'?config.conditionLogic:undefined,
-      {sortField:typeof config.sortField==='string'&&config.sortField?config.sortField:undefined,
-        sortOrder:typeof config.sortOrder==='string'?config.sortOrder:undefined,limit},client);
-    const selectedFields=Array.isArray(config.fields)
-      ?new Set(config.fields.filter((field):field is string=>typeof field==='string')):undefined;
-    const projected=found.map(record=>!selectedFields?record:Object.fromEntries(Object.entries(record)
-      .filter(([field])=>['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
-        ||selectedFields.has(field))));
-    vars[output]=limit===1?projected[0]??null:projected;
-    return {handled:true};
-  }
+  if(node.type==='Get Records')return executeGetRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Update Records'||node.type==='Delete Records'){
     const objectApi=String(config.object??'');
     if(!apiName.test(objectApi))throw new Error('Invalid record mutation Object');
@@ -173,47 +154,6 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
       vars[String(config.collection??'')],evaluate);
     return {handled:true};
   }
-  if(node.type==='Create Records'||node.type==='CreateRecord'){
-    const objectApi=String(config.object??config.objectApi??'');
-    if(!apiName.test(objectApi))throw new Error('Invalid Flow Object');
-    if(config.recordSource==='collection'){
-      const source=recordValues(vars[String(config.collection??'')]);
-      const created:Record<string,unknown>[]=[];
-      for(const item of source){
-        const fields:Record<string,unknown>={};
-        if(Object.keys(item).filter(field=>field!=='Id').length>100)
-          throw new Error('Create Records collection items may contain at most 100 fields');
-        for(const [field,value] of Object.entries(item)){
-          if(field==='Id')continue;
-          if(!apiName.test(field)||!scalar(value))
-            throw new Error('Invalid Create Records collection field: '+field);
-          fields[field]=value;
-        }
-        const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
-        created.push({...fields,Id:id});
-      }
-      if(typeof config.resultVariable==='string'&&config.resultVariable)
-        vars[config.resultVariable]=created;
-    }else{
-      const fields:Record<string,unknown>={};
-      const assignments=Array.isArray(config.fieldValues)?config.fieldValues:[];
-      if(assignments.length<1||assignments.length>100)
-        throw new Error('Create Records requires between 1 and 100 field assignments');
-      for(const item of assignments as Array<Record<string,unknown>>){
-        const field=String(item.field??item.apiName??'');
-        if(!apiName.test(field))throw new Error('Invalid Flow Field');
-        const value=evaluate(item.value??null);
-        if(!scalar(value))throw new Error('Create Records values must be scalar');
-        fields[field]=value;
-      }
-      const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
-      // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
-      // The optional scalar resultVariable retains its existing Id-only contract.
-      vars['record'+node.id]={...fields,Id:id};
-      if(typeof config.resultVariable==='string'&&config.resultVariable)
-        set(config.resultVariable,id);
-    }
-    return {handled:true,clearHistory:true};
-  }
+  if(node.type==='Create Records'||node.type==='CreateRecord')return executeCreateRecordsNode({...context,conditionsFrom,recordValues,scalar});
   return {handled:false};
 }
