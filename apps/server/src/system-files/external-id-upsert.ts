@@ -37,11 +37,11 @@ export class ExternalIdUpsert {
    if(rows.length){
     await this.rbac.require(tenantId,userId,objectApi,'edit');
     await this.rbac.requireRecord(tenantId,userId,objectApi,rows[0].id,'edit');
-    await this.records.updateInTransaction(client,tenantId,userId,objectApi,rows[0].id,payload);
+    await this.records.updateWithTriggersInTransaction(client,tenantId,userId,objectApi,rows[0].id,payload);
     return {id:rows[0].id,created:false};
    }
    await this.rbac.require(tenantId,userId,objectApi,'create');
-   const id=await this.records.createInTransaction(client,tenantId,userId,objectApi,payload);
+   const id=await this.records.createWithTriggersInTransaction(client,tenantId,userId,objectApi,payload);
    return {id,created:true};
   });
  }
