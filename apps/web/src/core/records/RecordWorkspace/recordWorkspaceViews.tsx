@@ -324,10 +324,18 @@ function RecordWorkspace({
   const [recycleError, setRecycleError] = useState('');
   const [recycleRows, setRecycleRows] = useState<Array<{Id:string;DeletedAt:string;DeletedBy:string}>>([]);
   const [recycleTotal, setRecycleTotal] = useState(0);
+  const [retentionDays, setRetentionDays] = useState(15);
+  const [automaticPurgeEnabled, setAutomaticPurgeEnabled] = useState(false);
+  const [canConfigureRetention, setCanConfigureRetention] = useState(false);
   const [recycleOffset, setRecycleOffset] = useState(0);
   const loadRecycleBin = async (offset=0) => {
     if(!object || object.apiName==='User') return;
     setRecycleOpen(true);setRecycleBusy(true);setRecycleError('');
+    try {
+      const policy=await apiRequest<{retentionDays:number;automaticPurgeEnabled:boolean}>('/recycle-bin/retention');
+      setRetentionDays(policy.retentionDays);setAutomaticPurgeEnabled(policy.automaticPurgeEnabled);
+      setCanConfigureRetention(true);
+    }catch{setCanConfigureRetention(false);}
     try {
       const data=await apiRequest<{records:Array<{Id:string;DeletedAt:string;DeletedBy:string}>;total:number}>(
         '/recycle-bin/records/'+encodeURIComponent(object.apiName)+'?limit=25&offset='+offset);
@@ -348,6 +356,28 @@ function RecordWorkspace({
     } catch(error){
       setRecycleError(error instanceof Error ? error.message : 'Unable to restore record');
     } finally {setRecycleBusy(false);}
+  };
+
+  const saveRetention = async () => {
+    if(!window.confirm('Update tenant-wide record retention? Automatic purge permanently deletes expired records, their activities, Chatter and completed approvals.'))return;
+    setRecycleBusy(true);setRecycleError('');
+    try {
+      await apiRequest('/recycle-bin/retention',{method:'PUT',
+        body:JSON.stringify({retentionDays,automaticPurgeEnabled})});
+      setListNotice('Tenant record retention policy saved and audited.');
+    }catch(error){setRecycleError(error instanceof Error?error.message:'Unable to update retention');}
+    finally{setRecycleBusy(false);}
+  };
+  const permanentlyPurge = async (id:string) => {
+    if(!object||!window.confirm('PERMANENTLY delete this expired record, its detail records and associated activities, Chatter and completed approvals? This cannot be undone.'))return;
+    setRecycleBusy(true);setRecycleError('');
+    try{
+      await apiRequest('/recycle-bin/records/'+encodeURIComponent(object.apiName)+'/'+encodeURIComponent(id)+'/purge',
+        {method:'DELETE'});
+      await loadRecycleBin(recycleOffset);
+      setListNotice('Expired record and its deletion group permanently purged.');
+    }catch(error){setRecycleError(error instanceof Error?error.message:'Unable to purge record');}
+    finally{setRecycleBusy(false);}
   };
 
   const [offlineOwner, setOfflineOwner] = useState<OfflineQueueOwner | null>(null);
@@ -1553,14 +1583,27 @@ function RecordWorkspace({
           <button type="button" className="btn" onClick={() => setRecycleOpen(false)}>Close</button>
         </div>
       </div>
-      {recycleError && <div className="records-message" role="alert">{recycleError}</div>}
+      {canConfigureRetention && <div className="records-list-actions" style={{padding:'10px 0',gap:12,flexWrap:'wrap'}}>
+        <label>Keep records (days) <input className="form-control" type="number" min={1} max={3650}
+          value={retentionDays} onChange={event=>setRetentionDays(Number(event.target.value))}
+          aria-label="Record retention days" /></label>
+        <label className="checkbox-row"><input type="checkbox" checked={automaticPurgeEnabled}
+          onChange={event=>setAutomaticPurgeEnabled(event.target.checked)} />Automatic permanent purge (irreversible)</label>
+        <button className="btn" disabled={recycleBusy||retentionDays<1||retentionDays>3650||!Number.isInteger(retentionDays)}
+          onClick={() => void saveRetention()}>Save Retention</button>
+      </div>}
+      <small>Deleted records remain recoverable until permanently purged. Automatic purge is off by default.</small>
+      {recycleError && <div className="records-message" role="alert">{recycleError}</div>
       {recycleBusy && <div className="records-message" role="status">Loading Recycle Bin…</div>}
       {!recycleBusy && recycleRows.length===0 && !recycleError && <div className="records-empty">No deleted records.</div>}
       {recycleRows.length>0 && <div className="records-table-wrap"><table className="slds-table records-table">
         <thead><tr><th>Record ID</th><th>Deleted at</th><th>Deleted by</th><th>Action</th></tr></thead>
         <tbody>{recycleRows.map(item=><tr key={item.Id}><td><code>{item.Id}</code></td>
           <td>{new Date(item.DeletedAt).toLocaleString()}</td><td>{item.DeletedBy}</td>
-          <td><button className="btn" type="button" disabled={recycleBusy} onClick={() => void restoreRecord(item.Id)}>Restore</button></td>
+          <td><button className="btn" type="button" disabled={recycleBusy} onClick={() => void restoreRecord(item.Id)}>Restore</button>
+          {canConfigureRetention && Date.now()-new Date(item.DeletedAt).getTime()>=retentionDays*86400000
+            && <button className="btn btn-danger" type="button" disabled={recycleBusy}
+              onClick={() => void permanentlyPurge(item.Id)}>Purge expired</button>}</td>
         </tr>)}</tbody></table></div>}
       {recycleTotal>25 && <nav aria-label="Recycle Bin pagination" className="records-list-actions" style={{padding:12}}>
         <button className="btn" disabled={recycleBusy||recycleOffset===0} onClick={() => void loadRecycleBin(Math.max(0,recycleOffset-25))}>Previous</button>
