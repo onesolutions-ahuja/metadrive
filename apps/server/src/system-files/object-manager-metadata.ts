@@ -15,9 +15,9 @@ export type ObjectSettings = {
 export type FieldSet = {apiName:string;label:string;fieldApiNames:string[]};
 export type ObjectAction = {
   id:string;label:string;type:'Standard'|'Custom';enabled:boolean;
-  behavior?:'Set Field Value'|'Log Call'|'Run Flow'|'Create Related';
+  behavior?:'Set Field Value'|'Log Call'|'Run Flow'|'Create Related'|'Send Email';
   fieldApiName?:string;value?:string;targetObjectApi?:string;
-  relationshipFieldApi?:string;flowApiName?:string
+  relationshipFieldApi?:string;flowApiName?:string;credentialId?:string;fromEmail?:string
 };
 export type ObjectManagerConfiguration = {
   pluralLabel:string;
@@ -112,6 +112,14 @@ function validateActions(value:unknown,fields:Map<string,string>):ObjectAction[]
       return {id:action.id,label:action.label.trim(),type:'Custom' as const,enabled:action.enabled,
         behavior:'Run Flow' as const,flowApiName:action.flowApiName};
     }
+    if(action.behavior==='Send Email'){
+      if(typeof action.credentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(action.credentialId)
+        ||typeof action.fromEmail!=='string'||action.fromEmail.length>254
+        ||!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(action.fromEmail))
+        throw new Error('Email action requires a valid SMTP credential and sender');
+      return {id:action.id,label:action.label.trim(),type:'Custom' as const,enabled:action.enabled,
+        behavior:'Send Email' as const,credentialId:action.credentialId,fromEmail:action.fromEmail};
+    }
     if(action.behavior==='Create Related'){
       if(typeof action.targetObjectApi!=='string'||!apiPattern.test(action.targetObjectApi)
         ||typeof action.relationshipFieldApi!=='string'||!apiPattern.test(action.relationshipFieldApi))
@@ -161,9 +169,10 @@ export class ObjectManagerMetadataService {
     const actions=await this.db.query<{
       object_api:string;action_id:string;label:string;action_type:'Standard'|'Custom';enabled:boolean;
       behavior:string|null;field_api:string|null;value_text:string|null;sort_order:number;
-      target_object_api:string|null;relationship_field_api:string|null;flow_api_name:string|null
+      target_object_api:string|null;relationship_field_api:string|null;flow_api_name:string|null;
+      credential_id:string|null;from_email:string|null
     }>(`SELECT object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order,
-        target_object_api,relationship_field_api,flow_api_name FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
+        target_object_api,relationship_field_api,flow_api_name,credential_id,from_email FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
         ORDER BY object_api,sort_order,action_id`,[tenantId,objectApis]);
     const setsByObject=new Map<string,FieldSet[]>();
     for(const row of sets.rows){
@@ -182,7 +191,9 @@ export class ObjectManagerMetadataService {
         ...(row.behavior==='Log Call'?{behavior:'Log Call' as const,value:row.value_text??''}:{}),
         ...(row.behavior==='Run Flow'?{behavior:'Run Flow' as const,flowApiName:row.flow_api_name??''}:{}),
         ...(row.behavior==='Create Related'?{behavior:'Create Related' as const,
-          targetObjectApi:row.target_object_api??'',relationshipFieldApi:row.relationship_field_api??''}:{})});
+          targetObjectApi:row.target_object_api??'',relationshipFieldApi:row.relationship_field_api??''}:{}),
+        ...(row.behavior==='Send Email'?{behavior:'Send Email' as const,
+          credentialId:row.credential_id??'',fromEmail:row.from_email??''}:{})});
       actionsByObject.set(row.object_api,items);
     }
     const result=new Map<string,ObjectManagerConfiguration>();
@@ -233,6 +244,12 @@ export class ObjectManagerMetadataService {
     const fieldSets=validateFieldSets(input.fieldSets,fieldNames);
     const actions=validateActions(input.actions,fieldTypes);
     for(const action of actions){
+      if(action.behavior==='Send Email'){
+        const credential=await client.query(`SELECT 1 FROM md_named_credentials
+          WHERE tenant_id=$1 AND id=$2 AND enabled=true AND protocol='SMTP'`,
+          [tenantId,action.credentialId]);
+        if(!credential.rowCount)throw new Error('SMTP credential is unavailable');
+      }
       if(action.behavior==='Create Related'){
         const {rowCount}=await client.query(`SELECT 1 FROM md_field_definitions
           WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND related_object=$4
@@ -269,11 +286,12 @@ export class ObjectManagerMetadataService {
     for(const [index,action] of actions.entries())
       await client.query(`INSERT INTO md_object_actions
         (tenant_id,object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order,
-         target_object_api,relationship_field_api,flow_api_name)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+         target_object_api,relationship_field_api,flow_api_name,credential_id,from_email)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [tenantId,objectApi,action.id,action.label,action.type,action.enabled,
         action.behavior??null,action.fieldApiName??null,action.value??null,index,
-        action.targetObjectApi??null,action.relationshipFieldApi??null,action.flowApiName??null]);
+        action.targetObjectApi??null,action.relationshipFieldApi??null,action.flowApiName??null,
+        action.credentialId??null,action.fromEmail??null]);
     return {pluralLabel,description,helpText,settings,fieldSets,actions};
   }
 }
