@@ -3,7 +3,7 @@ import {apiRequest} from '../../authentication/Client/authClient';
 
 type Asset={id:string;name:string;contentType:string;size:number;assetRef:string};
 const safe=/^asset:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const maxBytes=1024*1024;
+const maxBytes=5*1024*1024;
 export default function TenantMediaPicker({value,onChange,disabled=false}:{
   value:string;onChange:(value:string)=>void;disabled?:boolean
 }) {
@@ -29,7 +29,7 @@ export default function TenantMediaPicker({value,onChange,disabled=false}:{
     if(!file)return;
     if(!['image/png','image/jpeg','image/webp','image/gif'].includes(file.type)
       ||!file.size||file.size>maxBytes){
-      setError('Choose a JPG, PNG, GIF or WebP image up to 1 MB.');return;
+      setError('Choose a JPG, PNG, GIF or WebP image up to 5 MB.');return;
     }
     setBusy(true);setError('');
     try{
