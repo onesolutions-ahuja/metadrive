@@ -285,7 +285,17 @@ function RecordWorkspace({
     </nav>;
   };
   const [customActionPendingId, setCustomActionPendingId] = useState('');
+  const [allowedActionIds,setAllowedActionIds] = useState<string[]>([]);
   const [customActionMessage, setCustomActionMessage] = useState('');
+  useEffect(()=>{
+    let mounted=true;
+    setAllowedActionIds([]);
+    if(route.kind!=='record-detail'||!record||record.Id!==route.recordId||!object)return;
+    void apiRequest<{actionIds:string[]}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions`)
+      .then(result=>{if(mounted)setAllowedActionIds(result.actionIds);})
+      .catch(()=>{if(mounted)setAllowedActionIds([]);});
+    return ()=>{mounted=false;};
+  },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTimestamp, setEditingTimestamp] = useState('');
@@ -886,6 +896,11 @@ function RecordWorkspace({
     setCustomActionPendingId(action.id);
     setCustomActionMessage('');
     try {
+      if(action.behavior==='Run Flow'){
+        const launch=await apiRequest<{flowApiName:string;inputs:Record<string,unknown>}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(action.id)}/flow-launch`);
+        onLaunchFlow(launch.flowApiName,launch.inputs);
+        return;
+      }
       const payload=action.behavior==='Log Call'
         ?{subject:action.value?.trim()||action.label}:{}; 
       const result=await apiRequest<{status:string}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(action.id)}/execute`,{
@@ -1489,6 +1504,7 @@ function RecordWorkspace({
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
             {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
+              &&allowedActionIds.includes(action.id)
               && (action.behavior==='Run Flow'||action.behavior==='Create Related'
                 || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
                   && (action.behavior==='Log Call'
