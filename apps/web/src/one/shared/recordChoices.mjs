@@ -1,9 +1,10 @@
 /** Generic no-code record choice projection. Record visibility is enforced upstream
  * by the tenant-aware Object runtime; this helper never retrieves records. */
 const name=/^[A-Za-z][A-Za-z0-9_]*$/;
-export function projectRecordChoices(records,labelField,valueField,priceField='') {
+export function projectRecordChoices(records,labelField,valueField,priceField='',imageField='') {
   if(!Array.isArray(records)||records.length>200||!name.test(labelField)
-    ||!name.test(valueField)||(priceField&&!name.test(priceField)))return [];
+    ||!name.test(valueField)||(priceField&&!name.test(priceField))
+    ||(imageField&&!name.test(imageField)))return [];
   const seen=new Set();
   return records.flatMap(record=>{
     if(!record||typeof record!=='object'||Array.isArray(record))return [];
@@ -14,7 +15,12 @@ export function projectRecordChoices(records,labelField,valueField,priceField=''
     if(!value||!label||seen.has(value))return [];
     seen.add(value);
     const price=priceField?record[priceField]:undefined;
-    return [{value,label,...(typeof price==='number'&&Number.isFinite(price)?{price}: {})}];
+    const image=imageField?record[imageField]:undefined;
+    return [{
+      value,label,
+      ...(typeof price==='number'&&Number.isFinite(price)?{price}: {}),
+      ...(typeof image==='string'&&(/^https:\/\//i.test(image)||/^asset:[0-9a-f-]{36}$/i.test(image))?{image}: {})
+    }];
   });
 }
 /** A bounded selection transition; the final transactional Flow repeats validation. */

@@ -1,4 +1,5 @@
 import {projectRecordChoices,toggleChoiceSelection} from "../shared/recordChoices.mjs";
+import OneTenantImage from "../shared/OneTenantImage.jsx";
 import {
   useOneInputs,
   css,
@@ -23,7 +24,8 @@ export default function OneChoice(props) {
     options: staticOptions,
   } = useOneInputs(p);
   const recordOptions=projectRecordChoices(p.records,p.optionLabelFieldApiName || "",
-    p.optionValueFieldApiName || "Id",p.optionPriceFieldApiName || "");
+    p.optionValueFieldApiName || "Id",p.optionPriceFieldApiName || "",
+    p.optionImageFieldApiName || "");
   const options=p.optionLabelFieldApiName ? recordOptions : staticOptions;
   const [selectionError,setSelectionError]=React.useState("");
   const maxSelections=Number(p.maxSelections);
@@ -31,10 +33,13 @@ export default function OneChoice(props) {
   const markLimited=()=>setSelectionError("You may choose at most "+maxSelections+" options.");
   const renderOptionLabel=(option)=>{
     if(typeof option.price!=="number")return option.label;
-    let price=String(option.price);
+    return option.label+" ("+formatOptionPrice(option.price)+")";
+  };
+  const formatOptionPrice=(value)=>{
+    let price=String(value);
     try{if(p.currencyCode)price=new Intl.NumberFormat(undefined,{style:"currency",
-      currency:p.currencyCode}).format(option.price);}catch{}
-    return option.label+" (+"+price+")";
+      currency:p.currencyCode}).format(value);}catch{}
+    return "+"+price;
   };
   const mode = p.mode || "select",
     chosen = Array.isArray(current)
@@ -42,6 +47,21 @@ export default function OneChoice(props) {
       : current == null
         ? ""
         : String(current);
+  const optionLayout = ["inline", "stacked", "cards"].includes(p.optionLayout)
+    ? p.optionLayout
+    : "inline";
+  const optionColumns = Math.max(1, Math.min(6, Number(p.optionColumns) || 2));
+  const optionMinHeight = Math.max(44, Math.min(240, Number(p.optionMinHeight) || 64));
+  const optionImageHeight = Math.max(32, Math.min(180, Number(p.optionImageHeight) || 64));
+  const optionImageFit = ["contain", "cover", "fill", "scale-down"].includes(p.optionImageFit)
+    ? p.optionImageFit
+    : "cover";
+  const optionStyle = {
+    "--one-choice-columns": optionColumns,
+    "--one-choice-min-height": optionMinHeight + "px",
+    "--one-choice-selected-bg": p.selectedOptionBackgroundColor || "color-mix(in srgb, var(--one-accent) 10%, white)",
+    "--one-choice-selected-fg": p.selectedOptionTextColor || "inherit",
+  };
   const toggle = (v) => {
     if (mode === "checkbox" || Array.isArray(chosen)) {
       const values = Array.isArray(chosen) ? chosen : [];
@@ -95,10 +115,20 @@ export default function OneChoice(props) {
   return (
     <fieldset {...root} style={{ ...root.style, border: 0, padding: 0 }}>
       <legend>{label}</legend>
-      <div className="one-row">
+      <div
+        className={"one-choice-options one-choice-options--" + optionLayout}
+        style={optionStyle}
+      >
         {options.map((o) => (
           <label
-            className={mode === "segmented" ? "one-btn" : "one-row"}
+            className={[
+              "one-choice-option",
+              mode === "segmented" ? "one-btn" : "",
+              optionLayout === "cards" ? "one-choice-option--card" : "",
+              (Array.isArray(chosen) ? chosen.includes(o.value) : chosen === o.value)
+                ? "one-choice-option--selected"
+                : "",
+            ].filter(Boolean).join(" ")}
             key={o.value}
           >
             <input
@@ -114,7 +144,20 @@ export default function OneChoice(props) {
               disabled={bounded && Array.isArray(chosen) && chosen.length>=maxSelections && !chosen.includes(o.value)}
               onChange={() => toggle(o.value)}
             />
-            {renderOptionLabel(o)}
+            {o.image && <OneTenantImage
+              src={o.image}
+              loadAsset={p.loadAsset}
+              alt=""
+              className="one-choice-option__image"
+              style={{
+                height: optionImageHeight,
+                objectFit: optionImageFit,
+              }}
+            />}
+            <span className="one-choice-option__label">{o.label}</span>
+            {typeof o.price === "number" && <small className="one-choice-option__price">
+              {formatOptionPrice(o.price)}
+            </small>}
           </label>
         ))}
       </div>

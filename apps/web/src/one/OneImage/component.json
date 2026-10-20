@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 4,
+  "version": 5,
   "scope": "platform-core",
   "jsxFile": "one/OneImage/OneImage.jsx",
   "cssFile": "one/OneImage/OneImage.css",
@@ -46,6 +46,38 @@
       "kind": "TEXT",
       "displayOrder": 310,
       "defaultValue": ""
+    },
+    {
+      "propertyKey": "imageHeight",
+      "label": "Image height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 320
+    },
+    {
+      "propertyKey": "imageFit",
+      "label": "Image fit",
+      "kind": "SELECT",
+      "displayOrder": 330,
+      "defaultValue": "contain",
+      "choices": [
+        { "key": "contain", "label": "Contain" },
+        { "key": "cover", "label": "Cover" },
+        { "key": "fill", "label": "Fill" },
+        { "key": "scale-down", "label": "Scale down" }
+      ]
+    },
+    {
+      "propertyKey": "imageAspectRatio",
+      "label": "Image aspect ratio",
+      "kind": "SELECT",
+      "displayOrder": 340,
+      "choices": [
+        { "key": "auto", "label": "Auto" },
+        { "key": "1/1", "label": "1:1" },
+        { "key": "4/3", "label": "4:3" },
+        { "key": "16/9", "label": "16:9" },
+        { "key": "3/4", "label": "3:4" }
+      ]
     }
   ]
 }

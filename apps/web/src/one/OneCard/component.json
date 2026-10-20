@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 5,
+  "version": 6,
   "scope": "platform-core",
   "jsxFile": "one/OneCard/OneCard.jsx",
   "cssFile": "one/OneCard/OneCard.css",
@@ -98,6 +98,19 @@
       "kind": "NUMBER",
       "defaultValue": 46,
       "displayOrder": 328
+    },
+    {
+      "propertyKey": "imageFit",
+      "label": "Banner image fit",
+      "kind": "SELECT",
+      "defaultValue": "contain",
+      "displayOrder": 328.5,
+      "choices": [
+        { "key": "contain", "label": "Contain" },
+        { "key": "cover", "label": "Cover" },
+        { "key": "fill", "label": "Fill" },
+        { "key": "scale-down", "label": "Scale down" }
+      ]
     },
     {
       "propertyKey": "showSurface",

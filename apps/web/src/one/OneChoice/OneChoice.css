@@ -1,1 +1,78 @@
 @import "../shared/one.css";
+
+.one-choice-options {
+  min-width: 0;
+}
+
+.one-choice-options--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--one-gap, 8px);
+}
+
+.one-choice-options--stacked {
+  display: flex;
+  flex-direction: column;
+  gap: var(--one-gap, 8px);
+}
+
+.one-choice-options--cards {
+  display: grid;
+  grid-template-columns: repeat(var(--one-choice-columns, 2), minmax(0, 1fr));
+  gap: var(--one-gap, 8px);
+}
+
+.one-choice-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--one-choice-min-height, 44px);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.one-choice-option--card {
+  box-sizing: border-box;
+  align-items: center;
+  min-height: var(--one-choice-min-height, 64px);
+  padding: 10px;
+  border: 1px solid var(--one-border);
+  border-radius: var(--one-radius, 12px);
+  background: var(--one-bg);
+  color: inherit;
+}
+
+.one-choice-option--card.one-choice-option--selected {
+  border-color: var(--one-accent);
+  background: var(--one-choice-selected-bg);
+  color: var(--one-choice-selected-fg);
+}
+
+.one-choice-option__image {
+  flex: 0 0 auto;
+  width: 72px;
+  max-width: 35%;
+  border-radius: 8px;
+}
+
+.one-choice-option--card .one-choice-option__image {
+  width: 100%;
+  max-width: 100%;
+}
+
+.one-choice-option__label {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.one-choice-option__price {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .one-choice-options--cards {
+    grid-template-columns: repeat(min(var(--one-choice-columns, 2), 2), minmax(0, 1fr));
+  }
+}

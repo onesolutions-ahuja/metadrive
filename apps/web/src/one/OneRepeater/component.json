@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 5,
+  "version": 6,
   "scope": "platform-core",
   "jsxFile": "one/OneRepeater/OneRepeater.jsx",
   "cssFile": "one/OneRepeater/OneRepeater.css",
@@ -95,6 +95,19 @@
       "kind": "OBJECT_FIELD",
       "defaultValue": "",
       "displayOrder": 352
+    },
+    {
+      "propertyKey": "imageFit",
+      "label": "Record image fit",
+      "kind": "SELECT",
+      "defaultValue": "contain",
+      "displayOrder": 352.5,
+      "choices": [
+        { "key": "contain", "label": "Contain" },
+        { "key": "cover", "label": "Cover" },
+        { "key": "fill", "label": "Fill" },
+        { "key": "scale-down", "label": "Scale down" }
+      ]
     },
     {
       "propertyKey": "recordSortFieldApiName",

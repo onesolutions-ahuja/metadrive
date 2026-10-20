@@ -58,8 +58,13 @@ test('opt-in visual properties remain on existing reusable component definitions
       'badgeFieldApiName','featuredFieldApiName','featuredColumnSpan','cardDensity',
       'cardPadding','cardRadius','cardMinHeight','cardBackgroundColor','cardBorderColor',
       'cardBorderWidth','cardShadow','cardHover','imageHeight','imageFit','imageAspectRatio'],
-    OneCard: ['imageSrc','imagePosition','imageWidthPercent','showSurface'],
-    OneOverlay: ['showSelectedRecord','selectedImageFieldApiName','confirmBehavior','cartTargetKey'],
+    OneChoice: ['optionImageFieldApiName','optionLayout','optionColumns','optionMinHeight',
+      'optionImageHeight','optionImageFit','selectedOptionBackgroundColor','selectedOptionTextColor'],
+    OneCard: ['imageSrc','imagePosition','imageWidthPercent','imageFit','showSurface'],
+    OneImage: ['imageHeight','imageFit','imageAspectRatio'],
+    OneRepeater: ['recordImageFieldApiName','imageFit'],
+    OneOverlay: ['showSelectedRecord','selectedImageFieldApiName','confirmBehavior','cartTargetKey',
+      'imageHeight','imageFit','imageAspectRatio'],
     OneShoppingCart: ['basketPresentation','basketTitle','checkoutLabel'],
   };
   for (const [apiName, fields] of Object.entries(required)) {
@@ -125,4 +130,29 @@ test('reusable item grid applies metadata-driven card and image presentation', a
   assert.match(html,/height:175px/);
   assert.match(html,/object-fit:cover/);
   assert.match(html,/aspect-ratio:4\/3/);
+});
+
+test('reusable Choice renders record-backed modifier image, upgrade price and card styling', async () => {
+  const definition = components.find(c => c.apiName === 'OneChoice');
+  const built = await buildBundledComponent(definition);
+  const context = {React,module:{exports:{}},Intl,Date,URL,crypto:globalThis.crypto};
+  vm.runInNewContext(built.compiledJs,context);
+  const html = renderToStaticMarkup(React.createElement(context.module.exports.default,{
+    kind:'Choice',label:'Choose a side',mode:'radio',optionLayout:'cards',
+    optionLabelFieldApiName:'Name',optionValueFieldApiName:'Id',
+    optionPriceFieldApiName:'Upcharge',optionImageFieldApiName:'ImageUrl',
+    optionImageHeight:72,optionImageFit:'cover',optionColumns:2,
+    currencyCode:'GBP',records:[{
+      Id:'fries',Name:'Large fries',Upcharge:0.5,
+      ImageUrl:'https://example.com/fries.jpg'
+    }]
+  }));
+  assert.match(html,/one-choice-options--cards/);
+  assert.match(html,/one-choice-option--card/);
+  assert.match(html,/Choose a side/);
+  assert.match(html,/Large fries/);
+  assert.match(html,/£0\.50/);
+  assert.match(html,/one-choice-option__image/);
+  assert.match(html,/object-fit:cover/);
+  assert.match(html,/--one-choice-columns:2/);
 });

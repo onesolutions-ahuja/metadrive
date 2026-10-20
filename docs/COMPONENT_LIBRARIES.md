@@ -74,6 +74,12 @@ The trusted ChatterInbox alias is hidden from new placements when its published
 canonical registration covers the same surfaces; saved references still resolve
 with their original defaults. Equal labels do not merge distinct registrations.
 
+Kiosk-relevant appearance and selection controls are declared on the reusable
+components that consume them: ItemGrid card/image presentation, Choice card
+layout and record-backed option images/prices, Overlay selected-image sizing,
+and image fitting on Card, Image and Repeater. These remain generic component
+properties; they do not add kiosk-specific runtime behavior.
+
 ## Packaging and validation
 
 `scripts/component-catalog.mjs` reads descriptors and bundles local One/SystemPanel

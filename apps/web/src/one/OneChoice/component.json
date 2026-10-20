@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 5,
+  "version": 6,
   "scope": "platform-core",
   "jsxFile": "one/OneChoice/OneChoice.jsx",
   "cssFile": "one/OneChoice/OneChoice.css",
@@ -91,6 +91,13 @@
       "defaultValue": ""
     },
     {
+      "propertyKey": "optionImageFieldApiName",
+      "label": "Optional option image field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 435,
+      "defaultValue": ""
+    },
+    {
       "propertyKey": "maxSelections",
       "label": "Maximum selected options (0 = unlimited)",
       "kind": "NUMBER",
@@ -124,6 +131,64 @@
       "kind": "TEXT",
       "defaultValue": "",
       "displayOrder": 480
+    },
+    {
+      "propertyKey": "optionLayout",
+      "label": "Option layout",
+      "kind": "SELECT",
+      "displayOrder": 490,
+      "defaultValue": "inline",
+      "choices": [
+        { "key": "inline", "label": "Inline" },
+        { "key": "stacked", "label": "Stacked" },
+        { "key": "cards", "label": "Cards" }
+      ]
+    },
+    {
+      "propertyKey": "optionColumns",
+      "label": "Option card columns",
+      "kind": "NUMBER",
+      "displayOrder": 500,
+      "defaultValue": 2
+    },
+    {
+      "propertyKey": "optionMinHeight",
+      "label": "Option touch target height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 510,
+      "defaultValue": 64
+    },
+    {
+      "propertyKey": "optionImageHeight",
+      "label": "Option image height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 520,
+      "defaultValue": 64
+    },
+    {
+      "propertyKey": "optionImageFit",
+      "label": "Option image fit",
+      "kind": "SELECT",
+      "displayOrder": 530,
+      "defaultValue": "cover",
+      "choices": [
+        { "key": "contain", "label": "Contain" },
+        { "key": "cover", "label": "Cover" },
+        { "key": "fill", "label": "Fill" },
+        { "key": "scale-down", "label": "Scale down" }
+      ]
+    },
+    {
+      "propertyKey": "selectedOptionBackgroundColor",
+      "label": "Selected option background",
+      "kind": "COLOR",
+      "displayOrder": 540
+    },
+    {
+      "propertyKey": "selectedOptionTextColor",
+      "label": "Selected option text colour",
+      "kind": "COLOR",
+      "displayOrder": 550
     },
     {
       "propertyKey": "relatedFilterKey",

@@ -100,7 +100,10 @@ export default function OneOverlay(props) {
               {p.showSelectedRecord === true && record && <section className="one-stack"
                 style={{flexDirection:"column",gap:12}}>
                 {typeof image==="string" && image && <OneTenantImage src={image} loadAsset={p.loadAsset}
-                  alt={title} style={{width:"100%",maxHeight:280,objectFit:p.imageFit||"contain"}} />}
+                  alt={title} style={{width:"100%",
+                    maxHeight:Math.max(80,Math.min(900,Number(p.imageHeight)||280)),
+                    objectFit:["contain","cover","fill","scale-down"].includes(p.imageFit)?p.imageFit:"contain",
+                    aspectRatio:["1/1","4/3","16/9","3/4"].includes(p.imageAspectRatio)?p.imageAspectRatio:undefined}} />}
                 <h3 className="one-heading">{title}</h3>
                 {description && <p>{description}</p>}
                 {priceLabel && <strong>{priceLabel}</strong>}
