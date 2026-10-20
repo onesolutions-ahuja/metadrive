@@ -44,8 +44,8 @@ test('Existing-product CSV import uses shared tenant-scoped update and history',
  assert.equal(h.writes.filter(sql=>sql.includes('md_record_history')).length,2);
  assert.ok(h.writes.every(sql=>!sql.includes('DROP TABLE')));
  assert.deepEqual(h.permissions,[
-  'Product.edit','Product.VAT_Applicable__c.edit',
-  'Product.edit','Product.VAT_Applicable__c.edit']);
+  'Product.edit','Product.VAT_Applicable__c.edit','Product.read',
+  'Product.edit','Product.VAT_Applicable__c.edit','Product.read']);
 });
 
 test('Import checks record visibility before business data writes',async()=>{
