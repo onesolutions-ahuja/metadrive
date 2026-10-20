@@ -1,0 +1,3 @@
+import SmartFieldInput from '../../../../one/OneSmartFieldInput/SmartFieldInput';
+import type {ObjectMetadata} from '../../../metadata/Definitions/metadata';
+export default function ExpressionPropertyEditor({id,value,disabled,objects,primaryObjectApiName,appObjectApiNames,onChange}:{id:string;value:string;disabled:boolean;objects:readonly ObjectMetadata[];primaryObjectApiName:string;appObjectApiNames:readonly string[];onChange:(value:string)=>void}){return <SmartFieldInput id={id} disabled={disabled} value={value} onChange={onChange} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} kind="formula" multiline={value.length>90}/>}
