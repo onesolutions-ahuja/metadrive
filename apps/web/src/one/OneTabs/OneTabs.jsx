@@ -26,11 +26,12 @@ export default function OneTabs(props) {
     align,
     base,
   } = useOneLayout(p);
+  const chipMode = p.tabStyle === "pill" || p.showPanel === false || p.wrapTabs === false || p.showAllTab === true;
   return (
     <div {...css}>
       <div className="one-tabs" role="tablist" aria-label={p.label || "Tabs"}
-        style={{display: "flex", flexWrap: p.wrapTabs === false ? "nowrap" : "wrap",
-          overflowX: p.wrapTabs === false ? "auto" : "visible", gap: Number(p.gap) >= 0 ? Number(p.gap) : 8}}>
+        style={chipMode ? {display: "flex", flexWrap: p.wrapTabs === false ? "nowrap" : "wrap",
+          overflowX: p.wrapTabs === false ? "auto" : "visible", gap: Number(p.gap) >= 0 ? Number(p.gap) : 8} : undefined}>
         {p.showAllTab === true && <button type="button" className="one-tab"
           role="tab" aria-selected={active === -1}
           onClick={() => {
