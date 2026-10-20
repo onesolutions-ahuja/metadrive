@@ -21,6 +21,45 @@ export class ObjectQuickActionRuntime {
   private readonly flows:FlowRuntime
  ){}
 
+ /** The browser only receives action identifiers it can currently execute. */
+ async available(actor:Actor,objectApi:string,recordId:string){
+  if(!objectName.test(objectApi)||!uuid.test(recordId))throw new Error('Invalid record request');
+  const tenant=actor.tenant_id,user=actor.user_id;
+  await this.rbac.require(tenant,user,objectApi,'read');
+  await this.rbac.requireRecord(tenant,user,objectApi,recordId,'read');
+  const {rows}=await this.db.query<{action_id:string;behavior:string;flow_api_name:string|null}>(`
+   SELECT action_id,behavior,flow_api_name FROM md_object_actions
+   WHERE tenant_id=$1 AND object_api=$2 AND action_type='Custom' AND enabled=true
+   ORDER BY sort_order,action_id`,[tenant,objectApi]);
+  const granted=await this.rbac.allowedMany(tenant,user,rows.map(row=>({
+   resource:'Action:'+objectApi+'.'+row.action_id,action:'execute'})));
+  const ids:string[]=[];
+  for(const [index,action] of rows.entries()){
+   if(!granted[index])continue;
+   if(action.behavior==='Run Flow'&&(!action.flow_api_name
+     ||!await this.rbac.allowed(tenant,user,'Flow:'+action.flow_api_name,'execute')))continue;
+   ids.push(action.action_id);
+  }
+  return {actionIds:ids};
+ }
+
+ async authorizeFlow(actor:Actor,objectApi:string,recordId:string,actionId:string){
+  if(!objectName.test(objectApi)||!uuid.test(recordId)||!actionName.test(actionId))
+   throw new Error('Invalid action request');
+  const tenant=actor.tenant_id,user=actor.user_id;
+  await this.rbac.require(tenant,user,objectApi,'read');
+  await this.rbac.requireRecord(tenant,user,objectApi,recordId,'read');
+  await this.rbac.require(tenant,user,'Action:'+objectApi+'.'+actionId,'execute');
+  const {rows}=await this.db.query<{flow_api_name:string}>(`SELECT flow_api_name
+   FROM md_object_actions WHERE tenant_id=$1 AND object_api=$2 AND action_id=$3
+    AND action_type='Custom' AND enabled=true AND behavior='Run Flow'`,
+   [tenant,objectApi,actionId]);
+  const flowApiName=rows[0]?.flow_api_name;
+  if(!flowApiName)throw new Error('Quick action Flow is unavailable');
+  await this.rbac.require(tenant,user,'Flow:'+flowApiName,'execute');
+  return {flowApiName,inputs:{recordId,objectApiName:objectApi}};
+ }
+
  async execute(actor:Actor,objectApi:string,recordId:string,actionId:string,input:unknown){
   if(!objectName.test(objectApi)||!actionName.test(actionId)||!uuid.test(recordId))
    throw new Error('Invalid quick action request');
