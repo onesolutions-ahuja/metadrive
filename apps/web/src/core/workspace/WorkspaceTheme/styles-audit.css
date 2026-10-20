@@ -333,3 +333,118 @@
 @media(max-width:600px) {
   .lightning :is(.record-form-dialog,.palette-dialog) { border-radius:var(--md-radius-md); }
 }
+
+/* Phase 3: navigation hierarchy and discoverability; no route or RBAC changes. */
+.lightning .app-strip {
+  scrollbar-width:thin;
+  scroll-padding-inline:12px;
+  overscroll-behavior-x:contain;
+}
+.lightning .app-strip :is(button,a,[role="tab"]) {
+  min-height:40px;
+  flex-shrink:0;
+  white-space:nowrap;
+}
+.lightning .app-strip :is(button,a,[role="tab"]):focus-visible,
+.lightning .setup-sidebar .tree-item:focus-visible,
+.lightning :is(.object-breadcrumb,.record-breadcrumb) :is(button,a):focus-visible {
+  outline:2px solid var(--md-primary,var(--focus));
+  outline-offset:2px;
+}
+.lightning .setup-sidebar .tree-item {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:40px;
+  border-radius:6px;
+  overflow-wrap:anywhere;
+}
+.lightning .setup-sidebar .tree-item.selected {
+  box-shadow:inset 3px 0 var(--md-primary,var(--brand));
+}
+.lightning :is(.object-breadcrumb,.record-breadcrumb) {
+  min-width:0;
+  flex-wrap:wrap;
+  row-gap:4px;
+  line-height:1.5;
+}
+.lightning :is(.object-breadcrumb,.record-breadcrumb) :is(button,a) {
+  min-height:32px;
+  border-radius:4px;
+  overflow-wrap:anywhere;
+}
+.lightning .palette-trigger:focus-visible,
+.lightning .palette-results > button:focus-visible,
+.lightning .profile-menu-panel button:focus-visible {
+  outline:2px solid var(--md-primary,var(--focus));
+  outline-offset:2px;
+}
+.lightning .palette-results > button {
+  min-height:44px;
+  border-radius:8px;
+}
+.lightning .profile-menu-panel {
+  max-height:min(75dvh,560px);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+@media (max-width:600px) {
+  .lightning .app-strip { gap:8px; scroll-snap-type:x proximity; }
+  .lightning .app-strip :is(button,a,[role="tab"]) { min-height:44px; scroll-snap-align:start; }
+  .lightning .palette-backdrop { padding:calc(12px + env(safe-area-inset-top,0px)) 12px 12px; }
+  .lightning .palette-dialog { max-height:calc(100dvh - 32px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)); }
+  .lightning .palette-results > button { min-height:48px; }
+  .lightning :is(.object-breadcrumb,.record-breadcrumb) :is(button,a) { min-height:40px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .lightning .app-strip { scroll-behavior:auto; }
+}
+
+/* Phase 3 continuation — accessible workspace menus and responsive navigation. */
+.lightning :is(.app-strip,.setup-sidebar,.palette-results,.profile-menu-panel) :is(button,a,[role="menuitem"],[role="option"]) {
+  -webkit-tap-highlight-color:transparent;
+}
+.lightning :is(.app-strip,.setup-sidebar) :is([aria-current="page"],[aria-selected="true"]) {
+  font-weight:700;
+}
+.lightning .setup-sidebar .tree-item {
+  min-width:0;
+  white-space:normal;
+}
+.lightning .setup-sidebar .tree-item span {
+  min-width:0;
+  text-overflow:ellipsis;
+}
+.lightning .palette-results {
+  min-height:0;
+  overscroll-behavior:contain;
+}
+.lightning .palette-results > button {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  text-align:left;
+  overflow-wrap:anywhere;
+}
+.lightning .profile-menu-panel {
+  scrollbar-width:thin;
+  border-radius:var(--md-radius-md,8px);
+}
+.lightning .profile-menu-panel :is(button,a) {
+  min-height:44px;
+  text-align:left;
+}
+.lightning :is(.object-breadcrumb,.record-breadcrumb) {
+  overflow-wrap:anywhere;
+}
+@media (max-width:768px) {
+  .lightning .salesforce-header { min-width:0; }
+  .lightning .salesforce-header :is(.global-search,.header-tools) { min-width:0; }
+  .lightning .palette-dialog { width:min(680px,100%); }
+  .lightning .profile-menu-panel { max-width:calc(100vw - 24px); }
+}
+@media (max-width:600px) {
+  .lightning .palette-results { padding:8px; }
+  .lightning .palette-results > button { white-space:normal; }
+  .lightning .app-strip { -webkit-overflow-scrolling:touch; }
+}
