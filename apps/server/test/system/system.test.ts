@@ -562,7 +562,7 @@ test('AppExchange catalog uses SQL tenant installations and entitlements',async(
  }} as unknown as SqlPersistence;
  const value=await new AppRuntime(db).marketplace('tenant');
  assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
-   CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
+   Description__c:'',CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
 });
 
 test('Flow deactivation changes SQL state only for caller tenant and requires OneEngine manage',async()=>{
@@ -866,21 +866,27 @@ test('Flow interview cancellation rejects unauthorised or malformed requests',as
 
 test('App removal clears installation and home bindings and cancels pending jobs',async()=>{
  const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
- const sql:string[]=[];
+ const queries:Array<{sql:string;args:unknown[]}>= [];
  const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
    run({query:async(query:string,args:unknown[])=>{
-     sql.push(query);
-     assert.deepEqual(args,['tenant','MarketplaceApp']);
+     queries.push({sql:query,args});
      assert.ok(!query.includes('md_records'));
      assert.ok(!query.includes('md_record_values'));
+     if(query.includes('SELECT a.id,a.api_name FROM md_apps'))
+       return {rowCount:1,rows:[{id:'app-id',api_name:'MarketplaceApp'}]};
+     if(query.includes('FROM md_app_package_dependencies d'))
+       return {rowCount:0,rows:[]};
      return {rowCount:1,rows:[]};
    }})
  } as unknown as SqlPersistence;
  await new AppRuntime(db).uninstall('tenant','MarketplaceApp');
- assert.equal(sql.length,3);
- assert.ok(sql.some(query=>query.includes('md_durable_jobs')&&query.includes("status='cancelled'")));
- assert.ok(sql.some(query=>query.includes('md_app_installations')));
- assert.ok(sql.some(query=>query.includes('md_app_home_pages')));
+ assert.deepEqual(queries[0].args,['tenant:app-lifecycle']);
+ assert.deepEqual(queries[1].args,['tenant','MarketplaceApp']);
+ assert.deepEqual(queries[2].args,['tenant','app-id']);
+ assert.deepEqual(queries[3].args,['tenant','MarketplaceApp','MarketplaceApp']);
+ assert.ok(queries.some(({sql})=>sql.includes('md_durable_jobs')&&sql.includes("status='cancelled'")));
+ assert.ok(queries.some(({sql})=>sql.includes('DELETE FROM md_app_installations')));
+ assert.ok(queries.some(({sql})=>sql.includes('DELETE FROM md_app_home_pages')));
 });
 
 test('Tenant route aliases are revisioned and resolve only installed app targets',async()=>{
