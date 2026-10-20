@@ -68,7 +68,7 @@ test('lookup deletion restricts or clears with a recovery ledger',async()=>{
       return {rows:[],rowCount:1};
     }};
     const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
-    const rbac={require:async()=>{}} as unknown as RbacEngine;
+    const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
     return new RecordEngine(db,rbac);
   };
   await assert.rejects(()=>makeRecords('Restrict').remove('tenant','user','Parent__c',parentRecordId),
@@ -101,7 +101,7 @@ test('soft-deleting a master record cascades tombstones through detail records',
     return {rows:[],rowCount:1};
   }};
   const db={transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)} as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   await new RecordEngine(db,rbac).remove('tenant','user','Parent__c',parentRecordId);
   assert.deepEqual(deleted,[childRecordId,parentRecordId]);
 });
@@ -116,7 +116,7 @@ test('master-detail updates cannot reparent a child unless enabled',async()=>{
       return {rows:[{reference_record_id:'00000000-0000-4000-8000-000000000001'}],rowCount:1};
     throw new Error('Unexpected query '+sql);
   }} as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   await assert.rejects(()=>new RecordEngine(db,rbac).update('tenant','user','Child__c','00000000-0000-4000-8000-000000000003',{
     ParentId:'00000000-0000-4000-8000-000000000002'
   }),/does not allow reparenting/);
@@ -367,7 +367,7 @@ test('Time fields normalize values and Rich Text fields sanitize stored HTML',as
     },
     transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
   } as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   const records=new RecordEngine(db,rbac);
   await records.create('tenant','user','Note__c',{
     ReminderAt:'09:30',Summary:'<script>alert(1)</script><b>safe</b><img src=x onerror="alert(1)">'
@@ -435,7 +435,7 @@ test('multi-select picklist record writes maintain normalized child values',asyn
     },
     transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
   } as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   await new RecordEngine(db,rbac).create('tenant','user','Case__c',{Tags:'Urgent;Review'});
   const children=values.filter(call=>call.sql.includes('INSERT INTO md_record_multi_values'));
   assert.deepEqual(children.map(call=>call.args.slice(4)),[['Urgent',0],['Review',1]]);
@@ -462,7 +462,7 @@ test('Address fields validate and persist components as SQL columns',async()=>{
     },
     transaction:async(run:(c:typeof client)=>Promise<unknown>)=>run(client)
   } as unknown as SqlPersistence;
-  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const rbac={require:async()=>{},requireRecord:async()=>{}} as unknown as RbacEngine;
   const records=new RecordEngine(db,rbac);
   await records.create('tenant','user','Account__c',{
     BillingAddress:{street:'1 Main St',city:'Seattle',state:'WA',postalCode:'98101',country:'US'}
