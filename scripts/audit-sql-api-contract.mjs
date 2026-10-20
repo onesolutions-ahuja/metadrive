@@ -3,12 +3,14 @@ import path from 'node:path';
 const root='apps/web/src';
 const serverRoot='apps/server/src/system-support';
 const server=fs.readFileSync(path.join(serverRoot,'server.ts'),'utf8');
-const dynamic=fs.readFileSync(path.join(serverRoot,'dynamic-api-routes.ts'),'utf8');
+const dynamic=['ObjectApiController.ts','MetadataApiController.ts','FlowApiController.ts','PageApiController.ts']
+ .map(name=>fs.readFileSync(path.join('apps/server/src/api',name),'utf8')).join('\n');
 const files=[];
 function walk(dir,target){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p,target);else if(/\.tsx?$/.test(p))target.push(p);}}
 walk(root,files);
 const serverFiles=[];
 walk(serverRoot,serverFiles);
+walk('apps/server/src/api',serverFiles);
 const routes=serverFiles.flatMap(file=>{const source=fs.readFileSync(file,'utf8');return [...source.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]\/api([^'"]+)['"]/g)].map(m=>({method:m[1].toUpperCase(),path:m[2]}));});
 for(const file of serverFiles){
  const source=fs.readFileSync(file,'utf8');
