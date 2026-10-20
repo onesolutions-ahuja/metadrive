@@ -819,7 +819,7 @@ test('Record update in Flow transaction applies tenant, record, and field permis
  const calls:Array<{sql:string;args:unknown[]}>=[],checks:string[]=[];
  const tenant='tenant-a',user='actor',recordId='11111111-1111-4111-8111-111111111111';
  const client={query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
   calls.push({sql,args});
   if(sql.includes('FROM md_field_definitions'))return {rows:[{api_name:'Taxable',data_type:'boolean',related_object:null,required:false,max_length:null}],rowCount:1};
   if(sql.includes('FROM md_records WHERE'))return {rows:[{updated_at:new Date()}],rowCount:1};
@@ -930,7 +930,7 @@ test('Tenant route aliases are revisioned and resolve only installed app targets
 test('SQL picklist field creation persists validated options and rejects invalid values',async()=>{
   const writes:Array<{sql:string;args:unknown[]}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     writes.push({sql,args});
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes("data_type='autonumber'")||sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
@@ -1100,7 +1100,7 @@ test('dependent picklist values are enforced during record creation',async()=>{
   ];
   const insertValues:Array<{field:string;value:string|null}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:definitions.length};
     if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'New'},{value:'Qualified'}],rowCount:2};
@@ -1143,7 +1143,7 @@ test('numeric fields round to their configured scale before saving',async()=>{
     auto_number_format:null
   }];
   const client={query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:1};
     if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
@@ -1210,7 +1210,7 @@ test('phone fields accept formatted numbers and reject malformed input',async()=
 test('auto-number fields substitute both sequence and year tokens',async()=>{
   let saved:string|undefined;
   const client={query:async(sql:string,args:unknown[])=>{
-   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))return {rows:[],rowCount:0};
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:[{
       api_name:'Number',data_type:'autonumber',related_object:null,required:true,max_length:null,
