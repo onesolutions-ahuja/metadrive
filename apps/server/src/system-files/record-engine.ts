@@ -1,3 +1,4 @@
+import {requiresUniqueValue} from '../business-rule-engine/UniqueConstraintManager.js';
 import {registeredRelationships} from '../relationship-engine/RelationshipRegistry.js';
 import {assertDeletionAllowed} from '../relationship-engine/ReferentialIntegrityGuard.js';
 import {assertLookupTargetExists} from '../relationship-engine/LookupResolver.js';
@@ -398,7 +399,7 @@ export class RecordEngine {
       if(field.data_type==='formula'||field.data_type==='autonumber'||field.data_type==='rollup')
         throw new Error('Field is read-only: '+key);
       await this.rbac.require(tenantId,userId,objectApi+'.'+key,creating?'create':'edit');
-      const metadata={is_unique:field.is_unique||field.external_id,case_sensitive:field.case_sensitive};
+      const metadata={is_unique:requiresUniqueValue(field),case_sensitive:field.case_sensitive};
       if(value===null) {
         if(field.required&&!deferRequired)throw new Error('Required field cannot be null: '+key);
         prepared.set(key,{value_text:null,reference_record_id:null,
@@ -685,7 +686,7 @@ export class RecordEngine {
       if(!sequence)throw new Error('Unable to allocate auto-number value');
       const value=formatAutoNumberValue(field.auto_number_format??'{000000}',Number(sequence));
       prepared.set(field.api_name,{value_text:value,reference_record_id:null,
-        is_unique:field.is_unique||field.external_id,case_sensitive:field.case_sensitive});
+        is_unique:requiresUniqueValue(field),case_sensitive:field.case_sensitive});
     }
     for(const [field,value] of prepared){if(field.startsWith('__'))continue;await client.query(
       `INSERT INTO md_record_values
