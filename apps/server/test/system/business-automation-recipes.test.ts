@@ -10,7 +10,7 @@ test('assignment recipe uses shared record update engine and remains a draft',()
  assert.equal(flow.status,'Draft');
  assert.equal(flow.flowType,'Record-Triggered Flow');
  assert.equal(flow.elements[1].type,'Update Records');
- assert.equal(flow.elements[1].config.fieldValues?.[0].field,'OwnerId');
+ assert.equal((flow.elements[1].config.fieldValues as Array<{field:string}>)[0].field,'OwnerId');
  assert.equal(flow.elements[1].config.recordId,'{!$Record.Id}');
  assert.throws(()=>buildAutomationFlow({...common,kind:'Assignment',
   trigger:'created-or-updated',assigneeId:user}),/record creation/);
