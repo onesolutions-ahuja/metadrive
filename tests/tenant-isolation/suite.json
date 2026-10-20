@@ -1,0 +1,20 @@
+{
+  "category": "tenant-isolation",
+  "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
+  "command": "node scripts/run-test-suite.mjs tenant-isolation",
+  "tests": [
+    "apps/server/test/system/credential-rotation-permissions.test.ts",
+    "apps/server/test/system/dashboard-snapshot-rbac.test.ts",
+    "apps/server/test/system/durable-job-tenant-status.test.ts",
+    "apps/server/test/system/identity-session-policy.test.ts",
+    "apps/server/test/system/oneengine-identity.test.ts",
+    "apps/server/test/system/permission-set-administration.test.ts",
+    "apps/server/test/system/platform-tenant-service.test.ts",
+    "apps/server/test/system/security-governance.test.ts",
+    "apps/server/test/system/tenant-api-usage.test.ts",
+    "apps/server/test/system/tenant-developer-activation.test.ts",
+    "apps/server/test/system/tenant-media-service.test.ts",
+    "apps/server/test/system/tenant-recovery-security.test.ts",
+    "apps/server/test/system/typed-query-rbac.test.ts"
+  ]
+}
