@@ -29,6 +29,7 @@ const settingRouteNames: Record<string, string> = {
   'Custom Metadata Types': 'CustomMetadataTypes',
   'Custom Settings': 'CustomSettings',
   'Fields & Relationships': 'FieldsAndRelationships',
+  'Validation Rules': 'ValidationRules',
   'Page Layouts': 'PageLayouts',
   'Lightning Record Pages': 'LightningRecordPages',
   'Buttons, Links, and Actions': 'ButtonsLinksAndActions',
