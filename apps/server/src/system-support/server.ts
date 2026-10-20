@@ -1733,7 +1733,7 @@ export async function startSystemServer() {
   purgeTimer.unref();
   const calloutDispatcher=new NamedCredentialService(db,new RbacEngine(db));
   const calloutTimer=setInterval(()=>{
-    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail()])
+    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),calloutDispatcher.dispatchOneQuickActionEmail()])
       .catch(error=>console.error('Durable outbound dispatch failed:',error));
   },1000);
   calloutTimer.unref();
