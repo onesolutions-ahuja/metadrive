@@ -53,7 +53,7 @@ export type AppRoute =
   | { kind: 'app-home'; appId: string }
   | { kind: 'app-page'; appId: string; pageApiName: string }
   | { kind: 'route-alias'; appId: string; slug: string }
-  | { kind: 'record-list'; objectApiName: string; appId?: string }
+  | { kind: 'record-list'; objectApiName: string; appId?: string; relatedCreation?: {sourceObjectApi: string; sourceRecordId: string; actionId: string} }
   | { kind: 'record-detail'; objectApiName: string; recordId: string; appId?: string };
 
 export function parseAppRoute(pathname: string, search = ''): AppRoute {
@@ -99,7 +99,16 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
       return { kind: 'setup', workspace };
     }
     if (segments.length === 3 && segments[0] === 'o' && segments[2] === 'list') {
-      return { kind: 'record-list', objectApiName: decodeURIComponent(segments[1]), appId };
+      const params=new URLSearchParams(search);
+      const sourceObjectApi=params.get('sourceObjectApi'),sourceRecordId=params.get('sourceRecordId'),
+        actionId=params.get('quickActionId');
+      const relatedCreation=sourceObjectApi&&sourceRecordId&&actionId
+        &&/^[A-Za-z][A-Za-z0-9_]*$/.test(sourceObjectApi)
+        &&/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(sourceRecordId)
+        &&/^[A-Za-z][A-Za-z0-9_-]*$/.test(actionId)
+        ?{sourceObjectApi,sourceRecordId,actionId}:undefined;
+      return { kind:'record-list',objectApiName:decodeURIComponent(segments[1]),appId,
+        ...(relatedCreation?{relatedCreation}:{}) };
     }
     if (segments.length === 4 && segments[0] === 'r' && segments[3] === 'view') {
       return {
@@ -142,6 +151,11 @@ export function appRoutePathWithoutBase(route: AppRoute): string {
   if (route.kind === 'record-list') {
     const query = new URLSearchParams({ filterName: `All${route.objectApiName}s` });
     if (route.appId) query.set('appId', route.appId);
+    if (route.relatedCreation) {
+      query.set('sourceObjectApi',route.relatedCreation.sourceObjectApi);
+      query.set('sourceRecordId',route.relatedCreation.sourceRecordId);
+      query.set('quickActionId',route.relatedCreation.actionId);
+    }
     return `/une/o/${encodeURIComponent(route.objectApiName)}/list?${query.toString()}`;
   }
   if (route.kind === 'record-detail') {
