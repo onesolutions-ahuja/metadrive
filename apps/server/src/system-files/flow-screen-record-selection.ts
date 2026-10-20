@@ -2,6 +2,17 @@
  * Screens receive only collections explicitly bound to Data Table fields; submitted IDs
  * are resolved to typed Record Collections from server-held records, never client objects.
  */
+/** Correctable screen submission error: a transactional rollback must leave the
+ * caller's interview pending so they can change the selection and submit again.
+ * Authorization errors from the record engine deliberately do not use this class.
+ */
+export class ScreenSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ScreenSelectionError';
+  }
+}
+
 export type FlowScreenRecord = Record<string, unknown>;
 export type FlowScreenResource = { name: string; type: string; dataType: string };
 export type FlowScreenField = Record<string, unknown>;
@@ -74,36 +85,36 @@ export async function acceptScreenRecordSelection(
     && item.type === 'Record Collection');
   if (!multi && !destination) return false;
   if (!destination || !identifier.test(destination.dataType))
-    throw new Error('Screen selected rows require a typed Record Collection resource: ' + key);
+    throw new ScreenSelectionError('Screen selected rows require a typed Record Collection resource: ' + key);
   if (!multi && Array.isArray(value))
-    throw new Error('Single-select Screen field cannot accept multiple records: ' + key);
+    throw new ScreenSelectionError('Single-select Screen field cannot accept multiple records: ' + key);
   if (!Array.isArray(value) && typeof value !== 'string' && value !== null
     && value !== undefined)
-    throw new Error('Invalid Screen selection: ' + key);
+    throw new ScreenSelectionError('Invalid Screen selection: ' + key);
   const ids = selectedIds(value);
   if (Array.isArray(value) && ids.length !== value.length)
-    throw new Error('Invalid Screen selection entries: ' + key);
+    throw new ScreenSelectionError('Invalid Screen selection entries: ' + key);
   if (ids.length > 200 || new Set(ids).size !== ids.length
     || ids.some(id => !recordId.test(id)))
-    throw new Error('Invalid or duplicate Screen selected record IDs: ' + key);
+    throw new ScreenSelectionError('Invalid or duplicate Screen selected record IDs: ' + key);
   const min = Math.max(field.required === true ? 1 : 0,
     typeof field.minimumSelections === 'number' ? field.minimumSelections : 0);
   const max = typeof field.maximumSelections === 'number' && field.maximumSelections > 0
     ? field.maximumSelections : 200;
   if (ids.length < min || ids.length > max || (!multi && ids.length > 1))
-    throw new Error('Screen selection count is outside the configured limits: ' + key);
+    throw new ScreenSelectionError('Screen selection count is outside the configured limits: ' + key);
   let records: FlowScreenRecord[];
   if (type === 'Data Table') {
     const source = field.collection;
     if (typeof source !== 'string' || source === output || !resources.some(item =>
       item.name === source && item.type === 'Record Collection'
       && item.dataType === destination.dataType) || !Array.isArray(vars[source]))
-      throw new Error('Screen source collection is unavailable or has an incompatible Object: ' + key);
+      throw new ScreenSelectionError('Screen source collection is unavailable or has an incompatible Object: ' + key);
     const available = new Map((vars[source] as unknown[]).filter(visibleRecord)
       .map(item => [item.Id as string, item]));
     for (const id of ids) {
       if (!available.has(id))
-        throw new Error('Screen selection is not in the permitted record collection: ' + key);
+        throw new ScreenSelectionError('Screen selection is not in the permitted record collection: ' + key);
     }
     // Recheck record and field permissions at submission time: a record may have
     // changed or been revoked since Get Records originally populated the screen.
@@ -111,7 +122,7 @@ export async function acceptScreenRecordSelection(
     for (const id of ids) records.push(await readRecord(destination.dataType, id));
   } else {
     if (field.objectApiName !== destination.dataType)
-      throw new Error('Screen selected rows Object does not match the lookup: ' + key);
+      throw new ScreenSelectionError('Screen selected rows Object does not match the lookup: ' + key);
     records = [];
     for (const id of ids) records.push(await readRecord(destination.dataType, id));
   }
