@@ -15,7 +15,9 @@ export type ObjectSettings = {
 export type FieldSet = {apiName:string;label:string;fieldApiNames:string[]};
 export type ObjectAction = {
   id:string;label:string;type:'Standard'|'Custom';enabled:boolean;
-  behavior?:'Set Field Value';fieldApiName?:string;value?:string
+  behavior?:'Set Field Value'|'Log Call'|'Run Flow'|'Create Related';
+  fieldApiName?:string;value?:string;targetObjectApi?:string;
+  relationshipFieldApi?:string;flowApiName?:string
 };
 export type ObjectManagerConfiguration = {
   pluralLabel:string;
@@ -98,6 +100,26 @@ function validateActions(value:unknown,fields:Map<string,string>):ObjectAction[]
     ids.add(action.id.toLowerCase());labels.add(action.label.trim().toLowerCase());
     if(action.type==='Standard')
       return {id:action.id,label:action.label.trim(),type:'Standard' as const,enabled:action.enabled};
+    if(action.behavior==='Log Call'){
+      if(action.value!==undefined&&(typeof action.value!=='string'||action.value.length>200))
+        throw new Error('Invalid quick action call subject');
+      return {id:action.id,label:action.label.trim(),type:'Custom' as const,enabled:action.enabled,
+        behavior:'Log Call' as const,value:typeof action.value==='string'?action.value:''};
+    }
+    if(action.behavior==='Run Flow'){
+      if(typeof action.flowApiName!=='string'||!apiPattern.test(action.flowApiName))
+        throw new Error('Invalid quick action Flow');
+      return {id:action.id,label:action.label.trim(),type:'Custom' as const,enabled:action.enabled,
+        behavior:'Run Flow' as const,flowApiName:action.flowApiName};
+    }
+    if(action.behavior==='Create Related'){
+      if(typeof action.targetObjectApi!=='string'||!apiPattern.test(action.targetObjectApi)
+        ||typeof action.relationshipFieldApi!=='string'||!apiPattern.test(action.relationshipFieldApi))
+        throw new Error('Invalid create-related action');
+      return {id:action.id,label:action.label.trim(),type:'Custom' as const,enabled:action.enabled,
+        behavior:'Create Related' as const,targetObjectApi:action.targetObjectApi,
+        relationshipFieldApi:action.relationshipFieldApi};
+    }
     const fieldApiName=action.fieldApiName;
     const dataType=typeof fieldApiName==='string'?fields.get(fieldApiName):undefined;
     if(typeof fieldApiName!=='string'||action.behavior!=='Set Field Value'||!dataType
@@ -138,9 +160,10 @@ export class ObjectManagerMetadataService {
       [tenantId,objectApis]);
     const actions=await this.db.query<{
       object_api:string;action_id:string;label:string;action_type:'Standard'|'Custom';enabled:boolean;
-      behavior:string|null;field_api:string|null;value_text:string|null;sort_order:number
-    }>(`SELECT object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order
-        FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
+      behavior:string|null;field_api:string|null;value_text:string|null;sort_order:number;
+      target_object_api:string|null;relationship_field_api:string|null;flow_api_name:string|null
+    }>(`SELECT object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order,
+        target_object_api,relationship_field_api,flow_api_name FROM md_object_actions WHERE tenant_id=$1 AND object_api=ANY($2::text[])
         ORDER BY object_api,sort_order,action_id`,[tenantId,objectApis]);
     const setsByObject=new Map<string,FieldSet[]>();
     for(const row of sets.rows){
@@ -155,7 +178,11 @@ export class ObjectManagerMetadataService {
       const items=actionsByObject.get(row.object_api)??[];
       items.push({id:row.action_id,label:row.label,type:row.action_type,enabled:row.enabled,
         ...(row.behavior==='Set Field Value'?{behavior:'Set Field Value' as const,
-          fieldApiName:row.field_api??undefined,value:row.value_text??''}:{})});
+          fieldApiName:row.field_api??undefined,value:row.value_text??''}:{}),
+        ...(row.behavior==='Log Call'?{behavior:'Log Call' as const,value:row.value_text??''}:{}),
+        ...(row.behavior==='Run Flow'?{behavior:'Run Flow' as const,flowApiName:row.flow_api_name??''}:{}),
+        ...(row.behavior==='Create Related'?{behavior:'Create Related' as const,
+          targetObjectApi:row.target_object_api??'',relationshipFieldApi:row.relationship_field_api??''}:{})});
       actionsByObject.set(row.object_api,items);
     }
     const result=new Map<string,ObjectManagerConfiguration>();
@@ -205,6 +232,15 @@ export class ObjectManagerMetadataService {
       throw new Error('The Name field uses Auto Number; change its field type to select Text record names');
     const fieldSets=validateFieldSets(input.fieldSets,fieldNames);
     const actions=validateActions(input.actions,fieldTypes);
+    for(const action of actions){
+      if(action.behavior==='Create Related'){
+        const {rowCount}=await client.query(`SELECT 1 FROM md_field_definitions
+          WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND related_object=$4
+            AND data_type='reference' AND deleted_at IS NULL`,
+          [tenantId,action.targetObjectApi,action.relationshipFieldApi,objectApi]);
+        if(!rowCount)throw new Error('Create-related action requires a valid child relationship');
+      }
+    }
     await client.query(`INSERT INTO md_object_manager_settings
         (tenant_id,object_api,plural_label,description,help_text,allow_reports,allow_activities,track_field_history,
          allow_in_chatter,allow_search,deployment_status,record_name_type,record_name_format)
@@ -232,10 +268,12 @@ export class ObjectManagerMetadataService {
     await client.query('DELETE FROM md_object_actions WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
     for(const [index,action] of actions.entries())
       await client.query(`INSERT INTO md_object_actions
-        (tenant_id,object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        (tenant_id,object_api,action_id,label,action_type,enabled,behavior,field_api,value_text,sort_order,
+         target_object_api,relationship_field_api,flow_api_name)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [tenantId,objectApi,action.id,action.label,action.type,action.enabled,
-        action.behavior??null,action.fieldApiName??null,action.value??null,index]);
+        action.behavior??null,action.fieldApiName??null,action.value??null,index,
+        action.targetObjectApi??null,action.relationshipFieldApi??null,action.flowApiName??null]);
     return {pluralLabel,description,helpText,settings,fieldSets,actions};
   }
 }
