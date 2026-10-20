@@ -9,6 +9,7 @@ export const objectSettings = [
   'Custom Metadata Types',
   'Custom Settings',
   'Fields & Relationships',
+  'Validation Rules',
   'Page Layouts',
   'Lightning Record Pages',
   'Buttons, Links, and Actions',
