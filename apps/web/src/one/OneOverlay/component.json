@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 3,
+  "version": 6,
   "scope": "platform-core",
   "jsxFile": "one/OneOverlay/OneOverlay.jsx",
   "cssFile": "one/OneOverlay/OneOverlay.css",
@@ -81,6 +81,83 @@
       "kind": "BOOLEAN",
       "defaultValue": false,
       "displayOrder": 340
+    },
+    {
+      "propertyKey": "showSelectedRecord",
+      "label": "Display currently selected record",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 400
+    },
+    {
+      "propertyKey": "selectedTitleFieldApiName",
+      "label": "Selected record title field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 410
+    },
+    {
+      "propertyKey": "selectedImageFieldApiName",
+      "label": "Selected record image field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 420
+    },
+    {
+      "propertyKey": "selectedDescriptionFieldApiName",
+      "label": "Selected record description field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 430
+    },
+    {
+      "propertyKey": "selectedPriceFieldApiName",
+      "label": "Selected record price field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 440
+    },
+    {
+      "propertyKey": "currencyCode",
+      "label": "Selected record price currency",
+      "kind": "TEXT",
+      "defaultValue": "GBP",
+      "displayOrder": 450
+    },
+    {
+      "propertyKey": "cartTargetKey",
+      "label": "Shared cart target key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 460
+    },
+    {
+      "propertyKey": "confirmBehavior",
+      "label": "Confirm action",
+      "kind": "SELECT",
+      "defaultValue": "none",
+      "displayOrder": 470,
+      "choices": [
+        {
+          "key": "none",
+          "label": "none"
+        },
+        {
+          "key": "add",
+          "label": "add"
+        },
+        {
+          "key": "flow",
+          "label": "flow"
+        }
+      ]
+    },
+    {
+      "propertyKey": "confirmLabel",
+      "label": "Confirm button text",
+      "kind": "TEXT",
+      "defaultValue": "Add to basket",
+      "displayOrder": 480
     }
   ]
 }

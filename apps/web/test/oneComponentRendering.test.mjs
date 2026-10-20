@@ -46,3 +46,55 @@ test('shared appearance preserves each original family, including numeric and th
   const cases = JSON.parse(await readFile(new URL('./fixtures/one-appearance.json', import.meta.url), 'utf8'));
   for (const item of cases) assert.deepEqual(JSON.parse(JSON.stringify(componentAppearance(item.props, item.profile))), item.expected);
 });
+
+
+test('opt-in visual properties remain on existing reusable component definitions', async () => {
+  const map = new Map(components.map(c => [c.apiName, c]));
+  const required = {
+    OneRepeater: ['recordImageFieldApiName','recordSortFieldApiName','recordActiveFieldApiName',
+      'recordLayout','recordItemMinHeight','selectedItemBackgroundColor','showAllItem'],
+    OneTabs: ['showPanel','tabStyle','showAllTab','relatedFilterKey','relatedFieldApiName'],
+    OneItemGrid: ['showHeading','recordSortFieldApiName','recordActiveFieldApiName',
+      'badgeFieldApiName','featuredFieldApiName','featuredColumnSpan'],
+    OneCard: ['imageSrc','imagePosition','imageWidthPercent','showSurface'],
+    OneOverlay: ['showSelectedRecord','selectedImageFieldApiName','confirmBehavior','cartTargetKey'],
+    OneShoppingCart: ['basketPresentation','basketTitle','checkoutLabel'],
+  };
+  for (const [apiName, fields] of Object.entries(required)) {
+    const definition = map.get(apiName);
+    assert.ok(definition, apiName + ' reuses the existing library identity');
+    const keys = new Set(definition.propertyDefinitions.map(p => p.propertyKey));
+    for (const field of fields) assert.ok(keys.has(field), apiName + ' exposes '+field);
+  }
+});
+
+test('reusable record tabs can render chips without a content panel', async () => {
+  const definition = components.find(c => c.apiName === 'OneTabs');
+  const built = await buildBundledComponent(definition);
+  const context = {React,module:{exports:{}},Intl,Date,URL,crypto:globalThis.crypto};
+  vm.runInNewContext(built.compiledJs,context);
+  const html = renderToStaticMarkup(React.createElement(context.module.exports.default,
+    {kind:'Tabs',tabs:'Burgers,Chicken',tabStyle:'pill',showPanel:false,showAllTab:true}));
+  assert.match(html,/role="tablist"/);
+  assert.match(html,/Burgers/);
+  assert.match(html,/Chicken/);
+  assert.doesNotMatch(html,/role="tabpanel"/);
+});
+
+test('reusable item grid renders product imagery, names, prices and badges', async () => {
+  const definition = components.find(c => c.apiName === 'OneItemGrid');
+  const built = await buildBundledComponent(definition);
+  const context = {React,module:{exports:{}},Intl,Date,URL,crypto:globalThis.crypto};
+  vm.runInNewContext(built.compiledJs,context);
+  const html = renderToStaticMarkup(React.createElement(context.module.exports.default,{
+    kind:'ItemGrid',showHeading:false, titleFieldApiName:'Name',imageFieldApiName:'ImageUrl',
+    priceFieldApiName:'Price',currencyCode:'GBP',badgeFieldApiName:'Badge',featuredFieldApiName:'Featured',
+    featuredColumnSpan:2,records:[{Id:'x',Name:'Example burger',Price:4.5,Badge:'Popular',Featured:true,
+      ImageUrl:'https://example.com/test.jpg'}]
+  }));
+  assert.match(html,/Example burger/);
+  assert.match(html,/Popular/);
+  assert.match(html,/md-product-image/);
+  assert.match(html,/span 2/);
+  assert.doesNotMatch(html,/<h3/);
+});

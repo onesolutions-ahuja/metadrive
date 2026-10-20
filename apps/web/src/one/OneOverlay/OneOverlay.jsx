@@ -1,4 +1,5 @@
 import { useOneLayout, options, shared, fire } from "../shared/OneLayout.jsx";
+import OneTenantImage from "../shared/OneTenantImage.jsx";
 
 export default function OneOverlay(props) {
   const p = { ...props, kind: props.kind || "Overlay" };
@@ -26,6 +27,7 @@ export default function OneOverlay(props) {
     align,
     base,
   } = useOneLayout(p);
+  const [selectedRecordId,setSelectedRecordId] = React.useState("");
   // The same session-scoped selection event used by reusable navigation/grids.
   React.useEffect(() => {
     if (!p.pageSessionKey || !p.openOnFilterKey || typeof window==="undefined") return;
@@ -33,11 +35,24 @@ export default function OneOverlay(props) {
       const detail=event.detail;
       if(detail?.pageSessionKey!==p.pageSessionKey
         ||detail?.filterKey!==p.openOnFilterKey)return;
+      setSelectedRecordId(String(detail.recordId || detail.value || ""));
       setOpen(Boolean(detail.value || detail.recordId));
     };
     window.addEventListener("metadrive:page-filter-selected",selected);
     return () => window.removeEventListener("metadrive:page-filter-selected",selected);
   },[p.pageSessionKey,p.openOnFilterKey,setOpen]);
+  const record = Array.isArray(p.records)
+    ? p.records.find(r=>String(r.Id??r.id??"")===selectedRecordId) : null;
+  const safeField = field => typeof field==="string" && /^[A-Za-z][A-Za-z0-9_]*$/.test(field) ? field : "";
+  const fieldValue = field => record?.[safeField(field)] ?? "";
+  const title = String(fieldValue(p.selectedTitleFieldApiName) || p.title || "Details");
+  const image = fieldValue(p.selectedImageFieldApiName);
+  const description = String(fieldValue(p.selectedDescriptionFieldApiName)||"");
+  const selectedPrice = fieldValue(p.selectedPriceFieldApiName);
+  let priceLabel = "";
+  try { if(p.selectedPriceFieldApiName && p.currencyCode && selectedPrice!=="")
+    priceLabel = new Intl.NumberFormat(undefined,{style:"currency",currency:p.currencyCode}).format(Number(selectedPrice));
+  } catch { priceLabel = ""; }
   const close=()=>{
     setOpen(false);
     if(p.openOnFilterKey && p.pageSessionKey && typeof window!=="undefined")
@@ -82,7 +97,26 @@ export default function OneOverlay(props) {
               </button>
             </div>
             <div style={{ paddingTop: 12 }}>
-              {children || p.description || "Content"}
+              {p.showSelectedRecord === true && record && <section className="one-stack"
+                style={{flexDirection:"column",gap:12}}>
+                {typeof image==="string" && image && <OneTenantImage src={image} loadAsset={p.loadAsset}
+                  alt={title} style={{width:"100%",maxHeight:280,objectFit:p.imageFit||"contain"}} />}
+                <h3 className="one-heading">{title}</h3>
+                {description && <p>{description}</p>}
+                {priceLabel && <strong>{priceLabel}</strong>}
+                {["add","flow"].includes(p.confirmBehavior) && <button type="button" className="one-btn one-btn--primary"
+                  onClick={() => {
+                    if (p.confirmBehavior==="add" && p.cartTargetKey && p.pageSessionKey && typeof window!=="undefined") {
+                      window.dispatchEvent(new CustomEvent("metadrive:page-cart-add",{
+                        detail:{pageSessionKey:p.pageSessionKey,cartTargetKey:p.cartTargetKey,record}
+                      }));
+                      close();
+                    } else if (p.confirmBehavior==="flow" && p.actionFlows?.confirm) {
+                      Promise.resolve(fire(p,"confirm",record)).then(close).catch(()=>{});
+                    }
+                  }}>{p.confirmLabel||"Add to basket"}</button>}
+              </section>}
+              {children || (p.showSelectedRecord === true ? null : p.description || "Content")}
             </div>
           </div>
         </div>

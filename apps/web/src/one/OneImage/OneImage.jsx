@@ -15,7 +15,9 @@ export default function OneImage(props) {
           alt={p.alt || p.label || ""}
           loading="lazy"
           className="one-file-preview"
-          style={{ width: "100%", objectFit: p.fit || "contain" }}
+          style={{width:"100%", objectFit:p.imageFit || p.fit || "contain",
+            height: Number(p.imageHeight) > 0 && Number(p.imageHeight) <= 900 ? Number(p.imageHeight) : undefined,
+            aspectRatio: ["auto","1/1","4/3","16/9","3/4"].includes(p.imageAspectRatio) ? p.imageAspectRatio : undefined}}
         />
       ) : (
         <div className="one-item one-empty">Image not configured</div>

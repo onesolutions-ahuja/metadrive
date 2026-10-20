@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 11,
+  "version": 12,
   "scope": "platform-core",
   "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
   "cssFile": "one/OneItemGrid/OneItemGrid.css",
@@ -151,6 +151,62 @@
       "kind": "OBJECT_FIELD",
       "defaultValue": "",
       "displayOrder": 730
+    },
+    {
+      "propertyKey": "showHeading",
+      "label": "Show gallery heading",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 310
+    },
+    {
+      "propertyKey": "recordSortFieldApiName",
+      "label": "Record display-order field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 315
+    },
+    {
+      "propertyKey": "recordActiveFieldApiName",
+      "label": "Active record field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 316
+    },
+    {
+      "propertyKey": "descriptionFieldApiName",
+      "label": "Card description field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 425
+    },
+    {
+      "propertyKey": "showDescription",
+      "label": "Show card description",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 426
+    },
+    {
+      "propertyKey": "badgeFieldApiName",
+      "label": "Product badge field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 427
+    },
+    {
+      "propertyKey": "featuredFieldApiName",
+      "label": "Featured record flag field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 428
+    },
+    {
+      "propertyKey": "featuredColumnSpan",
+      "label": "Featured tile width (columns)",
+      "kind": "NUMBER",
+      "defaultValue": 2,
+      "displayOrder": 429
     }
   ]
 }

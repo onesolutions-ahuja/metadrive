@@ -79,8 +79,17 @@ function ItemGrid({ p, rows }) {
   const titleField = String(p.titleFieldApiName || ""),
     imageField = String(p.imageFieldApiName || ""),
     priceField = String(p.priceFieldApiName || "");
+  const activeField = String(p.recordActiveFieldApiName || "").trim();
+  const sortField = String(p.recordSortFieldApiName || "").trim();
+  const featuredField = String(p.featuredFieldApiName || "").trim();
+  const descriptionField = String(p.descriptionFieldApiName || "").trim();
+  const badgeField = String(p.badgeFieldApiName || "").trim();
+  const safeField = (field) => !field || /^[A-Za-z][A-Za-z0-9_]*$/.test(field);
+  if (![activeField, sortField, featuredField, descriptionField, badgeField].every(safeField))
+    return <div role="alert">Choose valid display and sorting fields.</div>;
   const visibleRows = rows.filter(
     (row) =>
+      (!activeField || row?.[activeField] === true || row?.[activeField] === "true") &&
       matchesCategory(row) &&
       (!searchQuery ||
         searchFields.some((field) =>
@@ -89,6 +98,12 @@ function ItemGrid({ p, rows }) {
             .includes(searchQuery),
         )),
   );
+  if (sortField) visibleRows.sort((a,b) => {
+    const av=a?.[sortField], bv=b?.[sortField];
+    const na=Number(av), nb=Number(bv);
+    if (av!=null && bv!=null && Number.isFinite(na) && Number.isFinite(nb)) return na-nb;
+    return String(av??"").localeCompare(String(bv??""));
+  });
   let formatter;
   try {
     if (p.showPrice !== false) {
@@ -111,9 +126,9 @@ function ItemGrid({ p, rows }) {
       : view(value);
   return (
     <section>
-      <h3 className="one-heading" style={{ marginBottom: 12 }}>
+      {p.showHeading !== false && <h3 className="one-heading" style={{ marginBottom: 12 }}>
         {p.title || "Items"}
-      </h3>
+      </h3>}
       <div
         className="one-grid md-product-grid"
         style={{
@@ -128,9 +143,14 @@ function ItemGrid({ p, rows }) {
               typeof image === "string" && (/^https:\/\//i.test(image) || /^asset:[0-9a-f-]{36}$/i.test(image));
           const name = view(r?.[titleField] ?? ""),
             price = r?.[priceField];
+          const badge = badgeField ? String(r?.[badgeField] ?? "") : "";
+          const description = descriptionField ? String(r?.[descriptionField] ?? "") : "";
+          const isFeatured = featuredField && (r?.[featuredField] === true || r?.[featuredField] === "true");
+          const span = isFeatured ? Math.max(1, Math.min(count, Number(p.featuredColumnSpan) || 2)) : 1;
           return (
             <button
               className="one-item one-item--interactive md-product-card"
+              style={{gridColumn: span > 1 ? "span " + span : undefined}}
               key={r.Id ?? r.id ?? i}
               type="button"
               aria-label={(p.selectionBehavior === "select" ? "Select " : "Add ") + name}
@@ -180,9 +200,14 @@ function ItemGrid({ p, rows }) {
                   className="md-product-image"
                 />
               )}
+              {badge && <span className="md-product-badge" style={{display:"inline-block",
+                padding:"3px 8px",borderRadius:999,background:p.accentColor||"#E4002B",
+                color:"#fff",fontSize:"0.75em",fontWeight:700}}>{badge.slice(0,60)}</span>}
               {p.showTitle !== false && (
                 <strong className="md-product-name">{name}</strong>
               )}
+              {p.showDescription === true && description &&
+                <small className="one-muted md-product-description">{description.slice(0,220)}</small>}
               {p.showPrice !== false && price != null && (
                 <span className="md-product-price">{currency(price)}</span>
               )}

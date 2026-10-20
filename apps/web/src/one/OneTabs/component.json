@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 6,
+  "version": 7,
   "scope": "platform-core",
   "jsxFile": "one/OneTabs/OneTabs.jsx",
   "cssFile": "one/OneTabs/OneTabs.css",
@@ -67,6 +67,65 @@
       "kind": "TEXT",
       "defaultValue": "Id",
       "displayOrder": 355
+    },
+    {
+      "propertyKey": "showPanel",
+      "label": "Show tab content panel",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 380
+    },
+    {
+      "propertyKey": "tabStyle",
+      "label": "Tab display style",
+      "kind": "SELECT",
+      "defaultValue": "default",
+      "displayOrder": 381,
+      "choices": [
+        {
+          "key": "default",
+          "label": "default"
+        },
+        {
+          "key": "pill",
+          "label": "pill"
+        }
+      ]
+    },
+    {
+      "propertyKey": "showAllTab",
+      "label": "Show All tab",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 382
+    },
+    {
+      "propertyKey": "allTabLabel",
+      "label": "All tab label",
+      "kind": "TEXT",
+      "defaultValue": "All",
+      "displayOrder": 383
+    },
+    {
+      "propertyKey": "wrapTabs",
+      "label": "Wrap tabs onto new rows",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 384
+    },
+    {
+      "propertyKey": "relatedFilterKey",
+      "label": "Selected parent shared key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 720
+    },
+    {
+      "propertyKey": "relatedFieldApiName",
+      "label": "Lookup field linking tab to parent",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 730
     }
   ]
 }
