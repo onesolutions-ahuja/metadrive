@@ -110,7 +110,7 @@ try{
  assert.equal(usage.status,200,JSON.stringify(usage));
  assert.equal(usage.body?.usage?.counts?.records>=1,true);
  assert.equal(usage.body?.usage?.enforcement,'advisory_only');
- assert.equal(usage.body?.usage?.storageBytes,null);
+ assert.equal(typeof usage.body?.usage?.storageBytes,'number');
  const emptyDomains=await http('/tenant/domains',{token});
  assert.equal(emptyDomains.status,200,JSON.stringify(emptyDomains));
  const domain='dynamic-http-fixture.example.org';

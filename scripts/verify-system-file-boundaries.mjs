@@ -15,7 +15,7 @@ const expected=['sql-persistence.ts','object-definition.ts','authentication.ts',
  'flow-screen-choice-runtime.ts','flow-http-mapping.ts','flow-integration-connection.ts',
  'auto-number-format.ts','platform-event-runtime.ts','record-file-service.ts','rich-text.ts',
  'record-query.ts','field-type-migration.ts','encrypted-field.ts','object-metadata-history.ts',
- 'declarative-rules.ts'];
+ 'declarative-rules.ts','record-matching.ts','external-id-upsert.ts'];
 const allowed=new Set(expected);
 const forbidden=files.filter(f=>!f.isFile() || !allowed.has(f.name));
 if(forbidden.length){

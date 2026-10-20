@@ -1049,6 +1049,10 @@ export class ObjectDefinitionService {
       if(defaultRefs.rows.some(item=>flowFormulaReferences(item.expression).some(ref=>
         ref===fieldApi||ref===objectApi+'.'+fieldApi||ref==='$Record.'+fieldApi)))
         throw new Error('Field is referenced by a formula default');
+      const matchingRefs=await client.query(
+        'SELECT 1 FROM md_matching_rule_fields WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 LIMIT 1',
+        [tenantId,objectApi,fieldApi]);
+      if(matchingRefs.rowCount)throw new Error('Field is referenced by a matching rule');
       await client.query(`UPDATE md_field_definitions SET deleted_at=now()
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
         [tenantId,objectApi,fieldApi]);

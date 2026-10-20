@@ -3,6 +3,7 @@ import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import {formatAutoNumberValue} from './auto-number-format.js';
 import {DeclarativeRules} from './declarative-rules.js';
+import {RecordMatching} from './record-matching.js';
 import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
   type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
@@ -44,14 +45,28 @@ const roundDecimal=(value:number,scale:number)=>{
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
   private get declarativeRules(){return new DeclarativeRules(this.rbac);}
+  private get recordMatching(){return new RecordMatching(this.rbac);}
   private richTextFilePruner?:(
     client:PoolClient,tenantId:string,objectApi:string,recordId:string,fieldApi:string,html:string|null
   )=>Promise<void>;
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
     private readonly encryptedValueVault?:EncryptedValueVault) {}
   private async lockObjectForWrite(client:PoolClient,tenantId:string,objectApi:string) {
-    await client.query('SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
+    const active=await client.query(`SELECT 1 FROM md_matching_rules
+      WHERE tenant_id=$1 AND object_api=$2 AND active=true LIMIT 1`,[tenantId,objectApi]);
+    // Rules that prevent duplicates need serial writes. Other objects retain shared
+    // metadata-migration locks to avoid regressing generic CRUD concurrency.
+    await client.query(active.rowCount
+      ?'SELECT pg_advisory_xact_lock(hashtextextended($1,0))'
+      :'SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
       [`${tenantId}:${objectApi}`]);
+    if(!active.rowCount){
+      const now=await client.query(`SELECT 1 FROM md_matching_rules
+        WHERE tenant_id=$1 AND object_api=$2 AND active=true LIMIT 1`,[tenantId,objectApi]);
+      // A rule was activated while the writer awaited its shared lock.
+      // Retry with an exclusive lock rather than admitting concurrent duplicates.
+      if(now.rowCount)throw new Error('Matching rule configuration changed; retry record save');
+    }
   }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
     this.recordTrigger=handler;
@@ -712,11 +727,11 @@ export class RecordEngine {
     return this.createRecord(tenantId,userId,objectApi,values,false);
   }
   private async createRecord(tenantId:string,userId:string,objectApi:string,
-    values:Record<string,unknown>,isClone:boolean) {
+    values:Record<string,unknown>,isClone:boolean,existingClient?:PoolClient) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
-    // Reject invalid input before reserving a transaction connection.
-    await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,true);
-    return this.db.transaction(async client=>{
+    // External-ID upserts reuse the same before/after Flow contract inside their lock.
+    await this.prepare(tenantId,userId,objectApi,values,true,existingClient,undefined,true);
+    const save=async(client:PoolClient)=>{
       await this.lockObjectForWrite(client,tenantId,objectApi);
       const defaults=await this.fields(tenantId,objectApi,client);
       const literals=Object.fromEntries(defaults.filter(field=>field.default_value!==null)
@@ -730,13 +745,20 @@ export class RecordEngine {
       }
       const finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
       await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,rowValues);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
+      await this.recordMatching.save(client,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
         await this.recordTrigger(client,tenantId,userId,objectApi,'created',record,null,'after-save',isClone);
       }
       return id;
-    });
+    };
+    return existingClient?save(existingClient):this.db.transaction(save);
+  }
+  async createWithTriggersInTransaction(client:PoolClient,tenantId:string,userId:string,
+    objectApi:string,values:Record<string,unknown>) {
+    return this.createRecord(tenantId,userId,objectApi,values,false,client);
   }
   async clone(tenantId:string,userId:string,objectApi:string,sourceId:string) {
     if(objectApi==='User')throw new Error('User records cannot be cloned');
@@ -764,7 +786,10 @@ export class RecordEngine {
     const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
     await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
-    return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
+    const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,supplied);
+    const id=await this.insertPrepared(client,tenantId,userId,objectApi,prepared);
+    await this.recordMatching.save(client,tenantId,objectApi,id,matches);
+    return id;
   }
   /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
   async importRecords(tenantId:string,userId:string,objectApi:string,records:unknown) {
@@ -1283,8 +1308,12 @@ export class RecordEngine {
     values:Record<string,unknown>,ifUnmodifiedSince?:string) {
     return this.update(tenantId,userId,objectApi,id,values,ifUnmodifiedSince,client);
   }
+  async updateWithTriggersInTransaction(client:PoolClient,tenantId:string,userId:string,
+    objectApi:string,id:string,values:Record<string,unknown>) {
+    return this.update(tenantId,userId,objectApi,id,values,undefined,client,true);
+  }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
-    ifUnmodifiedSince?:string,client?:PoolClient) {
+    ifUnmodifiedSince?:string,client?:PoolClient,runTriggers=false) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
@@ -1375,9 +1404,42 @@ export class RecordEngine {
     if(client){
       let previous:Record<string,unknown>|undefined;
       const loadPrior=async()=>previous??(previous=await this.get(tenantId,userId,objectApi,id,client));
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,
-        async()=>({...await loadPrior(),...values}),loadPrior);
-      await write(client,prepared);
+      const prior=runTriggers?await loadPrior():null;
+      let writeValues=prepared;
+      if(runTriggers&&this.recordTrigger){
+        const proposed=await this.recordTrigger(client,tenantId,userId,objectApi,'updated',
+          {...prior,...values},prior,'before-save');
+        if(proposed){
+          const changed={...values};
+          for(const [field,value] of Object.entries(proposed))
+            if(!['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
+               &&!Object.is(value,prior?.[field]))changed[field]=value;
+          writeValues=await this.prepare(tenantId,userId,objectApi,changed,false,client,id);
+        }
+      }
+      const proposedValues={...(prior??{}),...values};
+      if(runTriggers){
+        const declaredTypes=new Map((await this.fields(tenantId,objectApi,client))
+          .map(field=>[field.api_name,field.data_type]));
+        for(const [field,value] of writeValues){
+          if(field.startsWith('__'))continue;
+          const type=declaredTypes.get(field);
+          proposedValues[field]=value.reference_record_id??(
+            type==='boolean'?value.value_boolean:
+            ['number','currency','percent'].includes(type??'')
+              ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
+              :value.value_text);
+        }
+      }
+      const snapshot=async()=>({...await loadPrior(),...proposedValues});
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,snapshot,loadPrior);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,snapshot,id);
+      await write(client,writeValues);
+      await this.recordMatching.save(client,tenantId,objectApi,id,matches);
+      if(runTriggers&&this.recordTrigger){
+        const record=await this.get(tenantId,userId,objectApi,id,client);
+        await this.recordTrigger(client,tenantId,userId,objectApi,'updated',record,prior,'after-save');
+      }
     }
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
@@ -1412,7 +1474,9 @@ export class RecordEngine {
             :value.value_text);
       }
       await this.declarativeRules.validate(transactionClient,tenantId,userId,objectApi,proposedValues,prior);
+      const matches=await this.recordMatching.check(transactionClient,tenantId,userId,objectApi,proposedValues,id);
       await write(transactionClient,finalPrepared);
+      await this.recordMatching.save(transactionClient,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,transactionClient);
         await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',record,prior,'after-save');

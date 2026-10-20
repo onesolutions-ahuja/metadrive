@@ -403,6 +403,7 @@ function RecordWorkspace({
   const layoutDevice = usePageLayoutDevice();
   const [records, setRecords] = useState<RecordData[]>([]);
   const [record, setRecord] = useState<RecordData | null>(null);
+  const [duplicateMatches,setDuplicateMatches]=useState<Array<{ruleApi:string;recordId:string}>>([]);
   const [activeLightningPage, setActiveLightningPage] = useState<LightningPageMetadata | null>(null);
   const [activeRuntimeTab, setActiveRuntimeTab] = useState('Related');
   const [recordActivities, setRecordActivities] = useState<RecordActivity[]>([]);
@@ -462,6 +463,17 @@ function RecordWorkspace({
       .then(result=>{if(mounted)setAllowedActionIds(result.actionIds);})
       .catch(()=>{if(mounted)setAllowedActionIds([]);});
     return ()=>{mounted=false;};
+  },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
+  useEffect(()=>{
+    let active=true;
+    setDuplicateMatches([]);
+    if(route.kind!=='record-detail'||!record||!object
+      ||record.Id!==route.recordId||object.apiName==='User')return;
+    void apiRequest<{duplicates:Array<{ruleApi:string;recordId:string}>}>(
+      `/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/duplicates`)
+      .then(result=>{if(active)setDuplicateMatches(result.duplicates);})
+      .catch(()=>{if(active)setDuplicateMatches([]);});
+    return ()=>{active=false};
   },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1695,6 +1707,14 @@ function RecordWorkspace({
           </div>
         </section>
         {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>}
+        {duplicateMatches.length>0 && <section className="records-message" role="status" aria-label="Potential duplicate records">
+          <strong>Potential duplicate records detected.</strong>
+          {duplicateMatches.map(match=><a key={match.ruleApi+':'+match.recordId}
+            href={appRoutePath({kind:'record-detail',objectApiName:object.apiName,recordId:match.recordId,appId:route.appId})}
+            onClick={event=>{event.preventDefault();onNavigate({kind:'record-detail',objectApiName:object.apiName,recordId:match.recordId,appId:route.appId});}}>
+            View matched record ({match.ruleApi})
+          </a>)}
+        </section>}
         {assignedPage && <div className="record-runtime-page" data-lightning-page={assignedPage.apiName}>
           {renderRuntimeRegion('header')}
           <div className={assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>

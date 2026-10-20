@@ -40,6 +40,9 @@ import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {GlobalValueSetService} from './global-value-set-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
+import {ExternalIdUpsert} from '../system-files/external-id-upsert.js';
+import {DuplicateMatchError} from '../system-files/record-matching.js';
+import {registerMatchingRoutes} from './matching-rule-routes.js';
 import {parseRecordCursor,parseRecordFilters} from '../system-files/record-query.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
@@ -152,6 +155,7 @@ export function createSystemServer(db:SqlPersistence) {
   const recordRetention=new RecordRetentionService(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac,namedCredentials);
+  const externalIdUpsert=new ExternalIdUpsert(db,rbac,records);
   const recordListViews=new RecordListViewService(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
   const collaboration=new RecordCollaborationService(db,rbac);
@@ -1708,6 +1712,13 @@ export function createSystemServer(db:SqlPersistence) {
       scope:view?.scope,cursor
     }));
   }));
+  app.patch('/api/records/:objectApi/external/:fieldApi/:externalValue',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid record values');
+    const result=await externalIdUpsert.execute(actor.tenant_id,actor.user_id,req.params.objectApi,
+      req.params.fieldApi,req.params.externalValue,req.body);
+    res.status(result.created?201:200).json({id:result.id,created:result.created,record:{Id:result.id}});
+  }));
   app.post('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
@@ -1804,19 +1815,22 @@ export function createSystemServer(db:SqlPersistence) {
   registerOpenApiExternalServiceRoutes(app,externalServices);
   registerDurableJobAdminRoutes(app,db,rbac);
   registerDeclarativeRuleRoutes(app,db,rbac);
+  registerMatchingRoutes(app,db,rbac);
   registerVersionedApiRoutes(app,records,definitions,rbac,db);
   registerPlatformEventStreamRoutes(app,db,rbac);
   registerOutboundWebhookRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
-    if(err instanceof DeclarativeRuleError)res.status(400).json({
+    if(err instanceof DuplicateMatchError)res.status(409).json({error:err.message,ruleApi:err.ruleApi,code:'DUPLICATE_RULE_BLOCKED'});
+    else if(err instanceof DeclarativeRuleError)res.status(400).json({
       error:err.message,ruleApi:err.ruleApi,
       errors:[{message:err.message,...(err.fieldApi?{fields:[err.fieldApi]}:{})}]
     });
     else if(err instanceof FlowCustomError)res.status(400).json({
       error:err.message,errors:[{message:err.message,...(err.fieldName?{fields:[err.fieldName]}:{})}]
     });
+    else if(err.message==='Matching rule configuration changed; retry record save')res.status(409).json({error:err.message});
     else if(err.message.startsWith('Rule revision conflict'))res.status(409).json({error:err.message});
     else if(err.message==='Unsupported REST API version'||err.message==='Query locator is not available to this session')
       res.status(404).json({error:err.message});
