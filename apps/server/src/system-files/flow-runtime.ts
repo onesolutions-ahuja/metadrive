@@ -1,3 +1,4 @@
+import {executeWaitPauseNode} from './nodes/WaitPauseNode.js';
 import {executeDecisionNode} from './nodes/DecisionNode.js';
 import {executeScreenElementNode} from './nodes/ScreenElementNode.js';
 import type { SqlPersistence } from './sql-persistence.js';
@@ -1025,19 +1026,13 @@ export class FlowRuntime {
           ?available.find(edge=>edge.label===selected||edge.label==='Default')
           :available.find(edge=>!edge.label||edge.label==='Default'||edge.label==='Next')??(available.length===1?available[0]:undefined);
         if(!next)throw new Error('Flow element has no supported outgoing connector');
-        if(node.type==='Wait'){
-          if((active.flow_type==='Record-Triggered Flow'
-            &&start[0].config.runWhen==='before-save')||!this.scheduleResume)
-            throw new Error('Wait requires a durable scheduler and is not supported in before-save Flows');
-          const waitUntil=resolveFlowWaitUntil(node.config);
-          await persistFlowInterviewPause(client,tenantId,runId,next.to,history,steps+1,
-            loopIndexes,vars,persistenceResources);
-          await client.query(`UPDATE md_flow_runs SET status='waiting',wait_until=$3,wait_kind='wait'
-            WHERE tenant_id=$1 AND id=$2 AND status='pending'`,[tenantId,runId,waitUntil]);
-          await this.scheduleResume(client,tenantId,userId,active.api_name,active.version,
-            runId,waitUntil,steps+1,typeof graph.appApiName==='string'?graph.appApiName:undefined);
-          return {interviewId:runId,status:'waiting',waitUntil:waitUntil.toISOString()};
-        }
+        if(node.type==='Wait')return executeWaitPauseNode({
+          client,tenantId,userId,runId,node,nextElement:next.to,history,steps,loopIndexes,vars,
+          persistenceResources,flowType:active.flow_type,runWhen:start[0].config.runWhen,
+          flowApi:active.api_name,version:active.version,
+          appApiName:typeof graph.appApiName==='string'?graph.appApiName:undefined,
+          scheduleResume:this.scheduleResume
+        });
         current=next.to;
       }
       throw new Error('Flow interview exceeded maximum steps');
