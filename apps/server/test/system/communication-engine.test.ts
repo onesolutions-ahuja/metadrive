@@ -9,7 +9,7 @@ const id='00000000-0000-4000-8000-000000000001';
 test('email dispatch safely renders, deduplicates and validates without delivery bypass',()=>{
  const message=prepareEmailDispatch({namedCredentialId:id,fromEmail:'from@example.com',recipients:'a@example.com;a@example.com,b@example.com',subject:'Hello',body:'Body'},v=>v);
  assert.deepEqual(message.recipients,['a@example.com','b@example.com']);
- assert.throws(()=>prepareEmailDispatch({...message,namedCredentialId:id,subject:'Injected\r\nBcc: x'},v=>v),/Invalid Flow email configuration/);
+ assert.throws(()=>prepareEmailDispatch({namedCredentialId:id,fromEmail:'from@example.com',recipients:'a@example.com',subject:'Injected\r\nBcc: x',body:'Body'},v=>v),/Invalid Flow email configuration/);
 });
 test('notification definitions and history stay tenant-scoped',async()=>{
  const seen:unknown[][]=[];
