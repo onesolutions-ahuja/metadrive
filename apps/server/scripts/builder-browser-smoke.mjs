@@ -332,6 +332,39 @@ try{
  assert.equal(await page.getByLabel('Description',{exact:true}).inputValue(),'Saved from the real browser');
  await page.screenshot({path:new URL('../artifacts/rbac-editor.png',import.meta.url).pathname});
  console.info('RBAC browser Save/refresh/SQL checks passed for profile creation and permission-set metadata');
+ // Phase 1: verify the actual Records browser can restore a SQL-tombstoned record
+ // and the tenant administrator can publish an audited retention policy.
+ const {ObjectDefinitionService}=await import(new URL('object-definition.js',built).href);
+ const recycleDefinition=await new ObjectDefinitionService(db).create(tenantId,'BrowserRecycle__c',
+  'Browser Recycle',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
+ assert.ok(recycleDefinition);
+ const recordEngine=new RecordEngine(db,rbac);
+ const recycleId=await recordEngine.create(tenantId,userId,'BrowserRecycle__c',{Name:'Browser recovery test'});
+ await recordEngine.remove(tenantId,userId,'BrowserRecycle__c',recycleId);
+ await page.goto(origin+'/une/o/BrowserRecycle__c/list',{waitUntil:'domcontentloaded'});
+ const recycleButton=page.getByRole('button',{name:'Recycle Bin',exact:true});
+ await recycleButton.waitFor({state:'visible',timeout:15000});
+ await recycleButton.click();
+ await page.getByRole('heading',{name:'Browser Recycle Recycle Bin'}).waitFor({timeout:12000});
+ await page.getByText(recycleId,{exact:true}).waitFor({timeout:12000});
+ await page.getByLabel('Record retention days').fill('30');
+ page.once('dialog',dialog=>void dialog.accept());
+ const policyResponse=page.waitForResponse(resp=>resp.url().endsWith('/api/recycle-bin/retention')
+   &&resp.request().method()==='PUT');
+ await page.getByRole('button',{name:'Save Retention'}).click();
+ assert.equal((await policyResponse).status(),200,'Browser retention policy save failed');
+ assert.equal((await db.query(
+  'SELECT retention_days FROM md_record_retention_settings WHERE tenant_id=$1',[tenantId]
+ )).rows[0].retention_days,30);
+ page.once('dialog',dialog=>void dialog.accept());
+ const restoreResponse=page.waitForResponse(resp=>resp.url().endsWith(
+  '/api/recycle-bin/records/BrowserRecycle__c/'+recycleId+'/restore'));
+ await page.getByRole('button',{name:'Restore',exact:true}).click();
+ assert.equal((await restoreResponse).status(),200,'Browser record recovery failed');
+ assert.equal((await recordEngine.get(tenantId,userId,'BrowserRecycle__c',recycleId)).Name,
+   'Browser recovery test');
+ await page.screenshot({path:new URL('../artifacts/recycle-bin.png',import.meta.url).pathname});
+ console.info('Browser Recycle Bin and policy editor restore/SQL checks passed');
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
