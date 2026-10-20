@@ -79,7 +79,12 @@ export function registerMatchingRoutes(app:Express,db:SqlPersistence,rbac:RbacEn
   await rbac.require(req.actor.tenant_id,req.actor.user_id,req.params.objectApi,'read');
   await rbac.requireRecord(req.actor.tenant_id,req.actor.user_id,req.params.objectApi,req.params.id,'read');
   const {rows}=await db.query(`SELECT d.rule_api AS "ruleApi",d.matched_record_id AS "recordId"
-   FROM md_duplicate_record_sets d WHERE d.tenant_id=$1 AND d.object_api=$2 AND d.record_id=$3
+   FROM md_duplicate_record_sets d
+   JOIN md_records r ON r.tenant_id=d.tenant_id AND r.object_api=d.object_api
+     AND r.id=d.matched_record_id AND r.is_deleted=false
+   JOIN md_matching_rules m ON m.tenant_id=d.tenant_id AND m.object_api=d.object_api
+     AND m.api_name=d.rule_api AND m.active=true
+   WHERE d.tenant_id=$1 AND d.object_api=$2 AND d.record_id=$3
    AND md_record_access($1,$4,d.matched_record_id,'read')
    ORDER BY d.created_at DESC LIMIT 100`,
    [req.actor.tenant_id,req.params.objectApi,req.params.id,req.actor.user_id]);
