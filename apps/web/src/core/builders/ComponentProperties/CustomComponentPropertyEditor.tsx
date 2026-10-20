@@ -1,6 +1,13 @@
+import BooleanPropertyEditor from './property-editors/BooleanPropertyEditor';
+import NumberPropertyEditor from './property-editors/NumberPropertyEditor';
+import PicklistPropertyEditor from './property-editors/PicklistPropertyEditor';
+import ObjectFieldMapPropertyEditor from './property-editors/ObjectFieldMapPropertyEditor';
+import ExpressionPropertyEditor from './property-editors/ExpressionPropertyEditor';
+import StringPropertyEditor from './property-editors/StringPropertyEditor';
+import EventPropertyEditor from './property-editors/EventPropertyEditor';
+import ResponsivePropertyEditor from './property-editors/ResponsivePropertyEditor';
 import {metadataReference,metadataSelection,metadataFieldObject} from '../../metadata/Definitions/metadataReferences';
 import { useState } from 'react';
-import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
 import TenantMediaPicker from './TenantMediaPicker';
 import type { ObjectMetadata,FlowDefinitionMetadata } from '../../metadata/Definitions/metadata';
 import { sortComponentSettings, validateComponentSetting, type ComponentSettingDefinition } from '../../components/Properties/componentSettingDefinitions';
@@ -64,43 +71,27 @@ export default function CustomComponentPropertyEditor({
         const id = `component-property-${name}`;
         const boundObject=metadataFieldObject(objects,{...properties,objectApiName:properties.objectApiName||primaryObjectApiName},name);
         return <div className="metadata-array-property" key={name}>
-          {definition?.kind === 'OBJECT_FIELD' ? <label className="form-label" htmlFor={id}>{label}
-            <select id={id} className="form-control" disabled={disabled} value={metadataSelection(boundObject?.fields??[],value)?.apiName??String(value??'')}
-              onChange={event=>{const field=boundObject?.fields.find(f=>f.apiName===event.target.value);update(name,field?.id?metadataReference(field.id):event.target.value);}}>
-              <option value="">Select field…</option>{(name==='optionValueFieldApiName'||name==='recordValueFieldApiName') && <option value="Id">Record ID</option>}{boundObject?.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-            </select></label> : definition?.kind === 'FLOW' ? <label className="form-label" htmlFor={id}>{label}
+          {definition?.kind === 'OBJECT_FIELD' ? <ObjectFieldMapPropertyEditor id={id} label={label} name={name} value={value} disabled={disabled} fields={boundObject?.fields??[]} onChange={next=>update(name,next)}/> : definition?.kind === 'FLOW' ? <label className="form-label" htmlFor={id}>{label}
             <select id={id} className="form-control" disabled={disabled} value={metadataSelection(flows,value)?.apiName??String(value??'')}
               onChange={event=>{const flow=flows.find(f=>f.apiName===event.target.value);update(name,flow?.id?metadataReference(flow.id):event.target.value);}}>
               <option value="">Select Flow…</option>{flows.map(flow=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-            </select></label> : definition?.kind === 'SELECT' && definition.choices ? <label className="form-label" htmlFor={id}>{label}
-            <select id={id} className="form-control" disabled={disabled} value={String(value)} onChange={event => update(name,event.target.value)}>
-              {!definition.required && <option value="">None</option>}
-              {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
-            </select></label> :
+            </select></label> : definition?.kind === 'SELECT' && definition.choices ? <PicklistPropertyEditor id={id} label={label} value={value} disabled={disabled} required={definition.required} choices={definition.choices} onChange={next=>update(name,next)}/> :
           definition?.kind === 'IMAGE' ? <div className="form-label"><label>{label}</label>
             <TenantMediaPicker value={String(value??'')} disabled={disabled}
               onChange={next=>update(name,next)}/></div> :
           definition?.kind === 'BOOLEAN' || typeof value === 'boolean'
-            ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value === true}
-                onChange={(event) => update(name, event.target.checked)} />{label}</label>
+            ? <BooleanPropertyEditor label={label} value={value} disabled={disabled} onChange={next=>update(name,next)}/>
             : definition?.kind === 'NUMBER' || definition?.kind === 'CURRENCY' || typeof value === 'number'
-              ? <label className="form-label" htmlFor={id}>{label}
-                  <input id={id} className="form-control" type="number" disabled={disabled}
-                    value={typeof value === 'number' && Number.isFinite(value) ? value : ''}
-                    onChange={(event) => event.target.value === '' ? remove(name) : update(name, Number(event.target.value))} />
-                </label>
-              : typeof value === 'string'
+              ? <NumberPropertyEditor id={id} label={label} value={value} disabled={disabled} onChange={next=>update(name,next)} onClear={()=>remove(name)}/> : typeof value === 'string'
                 ? <div className="form-label"><label htmlFor={id}>{label}</label>
-                    {definition?.kind === 'COLOR' || /color/i.test(name)
-                      ? <input id={id} className="form-control" disabled={disabled}
-                          type={/^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text'}
-                          value={value} onChange={event => update(name, event.target.value)} />
-                      : <SmartFieldInput id={id} disabled={disabled} value={value} onChange={next => update(name, next)}
-                          objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames}
-                          kind={/image|src/i.test(name) ? 'image' : /url|link/i.test(name) ? 'url' : /formula|expression/i.test(name) ? 'formula' : 'text'}
-                          multiline={/text|body|description|content|formula|expression/i.test(name) && value.length > 90} />}
-                  </div>
-                : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
+                    {/formula|expression/i.test(name)
+                      ? <ExpressionPropertyEditor id={id} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>
+                      : /^(on[A-Z]|event)/.test(name)
+                        ? <EventPropertyEditor id={id} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>
+                        : /mobile|tablet|desktop|responsive|breakpoint/i.test(name)
+                          ? <ResponsivePropertyEditor id={id} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>
+                          : <StringPropertyEditor id={id} name={name} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>}
+                  </div> : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
           {definition && !validateComponentSetting(definition,value) && <span className="auth-error">Invalid {label.toLowerCase()}</span>}
           <button className="btn btn-small" type="button" disabled={disabled || Boolean(definition?.required)}
             aria-label={`Remove ${label} property`} onClick={() => remove(name)}>Remove property</button>
