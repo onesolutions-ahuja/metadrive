@@ -26,8 +26,8 @@ const scalar=(value:unknown):value is string|number|boolean|null=>
 export class DeclarativeBusinessRules {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
 
-  private async fields(tenantId:string,objectApi:string,client:Pick<PoolClient,'query'>=this.db){
-    const {rows}=await client.query<FieldRow>(`
+  private async fields(tenantId:string,objectApi:string,client?:PoolClient){
+    const {rows}=await (client??this.db).query<FieldRow>(`
       SELECT api_name,data_type,default_value FROM md_field_definitions
       WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL`,[tenantId,objectApi]);
     return rows;
@@ -47,7 +47,7 @@ export class DeclarativeBusinessRules {
       const record=/^\$Record(?:__Prior)?\.([A-Za-z][A-Za-z0-9_]*)$/.exec(reference);
       if(record){
         const field=known.get(record[1]);
-        if(!field||field.data_type==='encryptedtext')
+        if(!field||['encryptedtext','formula','rollup'].includes(field.data_type))
           throw new Error('Invalid formula field reference: '+reference);
         continue;
       }
@@ -162,6 +162,15 @@ export class DeclarativeBusinessRules {
         AND (operations='Both' OR operations=$3)
       ORDER BY sort_order,rule_api`,[tenantId,objectApi,operation]);
     if(!rows.length)return;
+    // Fail closed if metadata changed after activation or the actor lacks field access.
+    const fields=await this.fields(tenantId,objectApi,client);
+    for(const rule of rows){
+      this.validateReferences(rule.expression,fields);
+      for(const ref of flowFormulaReferences(rule.expression)){
+        const match=/^\$Record(?:__Prior)?\.([A-Za-z][A-Za-z0-9_]*)$/.exec(ref);
+        if(match)await this.rbac.require(tenantId,userId,objectApi+'.'+match[1],'read');
+      }
+    }
     const actor=await this.actor(tenantId,userId,client);
     for(const rule of rows){
       const result=this.evaluate(rule.expression,current,prior,actor);
