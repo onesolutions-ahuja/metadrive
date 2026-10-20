@@ -497,3 +497,32 @@
 @media(prefers-reduced-motion:reduce) {
   .lightning .records-table-wrap { scroll-behavior:auto; }
 }
+
+/* Phase 4 — removable search/view chips and contextual selection feedback. */
+.lightning .records-active-filters,
+.lightning .records-selection-notice {
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+  padding:8px 16px;
+}
+.lightning .records-active-filters { border-top:1px solid var(--md-border); }
+.lightning .records-filter-chip {
+  display:inline-flex; align-items:center; min-height:36px;
+  max-width:100%; padding:6px 12px;
+  border:1px solid var(--md-border); border-radius:999px;
+  background:var(--md-canvas); color:var(--md-text);
+  font:inherit; font-size:var(--md-fs-sm); cursor:pointer;
+  overflow-wrap:anywhere; text-align:left;
+}
+.lightning .records-filter-chip:hover { border-color:var(--md-primary); }
+.lightning .records-filter-chip:focus-visible {
+  outline:2px solid var(--md-primary);outline-offset:2px;
+}
+.lightning .records-selection-notice {
+  justify-content:space-between;
+  background:var(--md-canvas);
+  border-block:1px solid var(--md-border);
+}
+.lightning .records-selection-notice .btn { min-height:36px; }
+@media (pointer:coarse) {
+  .lightning .records-filter-chip,.lightning .records-selection-notice .btn { min-height:44px; }
+}
