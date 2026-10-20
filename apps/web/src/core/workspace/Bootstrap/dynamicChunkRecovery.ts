@@ -10,7 +10,7 @@ const STORAGE_KEY = 'metadrive:missing-chunk-retry:v1';
 export function isMissingDynamicChunk(error: unknown): boolean {
   const message = typeof error === 'string' ? error
     : error instanceof Error ? error.message : '';
-  return /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|chunkloaderror|loading chunk .+ failed|failed to fetch.*\.(?:js|css)(?:\?|\b)|unable to preload css/i.test(message);
+  return /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed|chunkloaderror|loading chunk .+ failed|failed to fetch.*\.(?:js|css)(?:\?|\b)|unable to preload css|expected a javascript(?: module)?(?:-type)? script.*mime type|strict mime type checking is enforced for module scripts/i.test(message);
 }
 
 export function canAutoRecoverChunk(url: string, now: number, priorRetry = ''): boolean {
