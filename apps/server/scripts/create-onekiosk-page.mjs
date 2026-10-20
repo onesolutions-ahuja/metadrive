@@ -35,8 +35,9 @@ const name = 'Kiosk_Menu';
 // List existing tenant pages first. Do not infer absence from an error response.
 const existing = await json(`${base}/metadata/pages`, { headers });
 if (!Array.isArray(existing.pages)) throw new Error('Could not verify existing tenant pages');
-if (existing.pages.some(p => p.apiName === name)) {
-  console.log('Kiosk_Menu already exists; untouched');
+const present = existing.pages.find(p => p.apiName === name);
+if (present && (!Array.isArray(present.components) || present.components.length !== 0)) {
+  console.log('Kiosk_Menu already has components; preserved without changes');
   process.exit(0);
 }
 const objectName = env('ONEKIOSK_MENU_OBJECT_API');
@@ -62,6 +63,15 @@ const page = kioskMenuDraft({
   imageFieldApiName: optionalField('ONEKIOSK_IMAGE_FIELD_API'),
   categoryFieldApiName: optionalField('ONEKIOSK_CATEGORY_FIELD_API')
 });
+// Update only an existing empty draft with the same required page identity;
+ // optimistic revision protection prevents overwriting concurrent user edits.
+if (present) {
+  if (present.status !== 'Draft' || present.targetObject !== objectName ||
+      present.pageType !== 'App Page' || present.layoutMode !== 'free-canvas') {
+    throw new Error('Existing Kiosk_Menu metadata differs; refusing to modify it');
+  }
+  page.revision = present.revision;
+}
 const result = await json(`${base}/metadata/pages/${name}`, {
   method: 'PUT', headers, body: JSON.stringify(page)
 });
