@@ -19,7 +19,7 @@ export default function AppManagerList({apps, busy, onEdit, onClone}: Props) {
   return <section className="app-manager-list surface" aria-label="Existing applications">
     <div className="app-manager-list-head">
       <div><h2>Existing Apps <span>{apps.length}</span></h2>
-        <p>Select the pencil to edit an app or clone its configuration.</p>
+        <p>Select Edit to configure an app, or Clone to use its settings as a starting point.</p>
       </div>
       <label className="app-manager-list-search">
         <Search size={16} aria-hidden="true"/>
@@ -59,8 +59,9 @@ export default function AppManagerList({apps, busy, onEdit, onClone}: Props) {
         </tr>)}</tbody>
       </table>
     </div>
+    <p className="app-manager-list-result-count" role="status">{filtered.length} of {apps.length} apps shown</p>
     {!filtered.length && <div className="app-manager-list-empty">
-      {apps.length ? 'No apps match your search.' : 'No apps created yet. Select New App to get started.'}
+      {apps.length ? 'No apps match your search. Try a different name.' : 'No apps created yet. Select New App to get started.'}
     </div>}
   </section>;
 }
