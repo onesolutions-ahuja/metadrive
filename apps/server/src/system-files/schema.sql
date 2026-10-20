@@ -1364,7 +1364,7 @@ $$;
         AND target_object_api IS NULL AND relationship_field_api IS NULL)
        OR (behavior='Create Related' AND target_object_api IS NOT NULL
         AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL)
-     ))
+     )))
  );
  CREATE TABLE IF NOT EXISTS md_encrypted_field_access_audit (
    tenant_id uuid NOT NULL,
