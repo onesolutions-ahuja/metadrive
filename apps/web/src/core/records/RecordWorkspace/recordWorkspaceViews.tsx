@@ -2061,7 +2061,7 @@ function RecordWorkspace({
         <strong>{selectedRecordIds.length} selected</strong>
         <button type="button" className="btn" onClick={() => setSelectedRecordIds([])}>Clear selection</button>
       </div>}
-      {listNotice && <div className="records-notice" role="status">{listNotice}</div>
+      {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
       {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty records-empty-action"><strong>No {object.pluralLabel.toLocaleLowerCase()} found.</strong>{canCreate && <button className="btn btn-brand" type="button" onClick={openCreateForm}>New {object.label}</button>}</div>}
