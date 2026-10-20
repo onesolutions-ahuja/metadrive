@@ -90,7 +90,7 @@ export default function CustomComponentPropertyEditor({
                         ? <EventPropertyEditor id={id} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>
                         : /mobile|tablet|desktop|responsive|breakpoint/i.test(name)
                           ? <ResponsivePropertyEditor id={id} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>
-                          : <StringPropertyEditor id={id} name={name} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>}
+                          : <StringPropertyEditor id={id} name={name} isColor={definition?.kind==='COLOR'} value={value} disabled={disabled} objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames} onChange={next=>update(name,next)}/>}
                   </div> : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
           {definition && !validateComponentSetting(definition,value) && <span className="auth-error">Invalid {label.toLowerCase()}</span>}
           <button className="btn btn-small" type="button" disabled={disabled || Boolean(definition?.required)}
