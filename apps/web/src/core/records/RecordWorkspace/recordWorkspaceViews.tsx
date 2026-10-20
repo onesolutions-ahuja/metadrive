@@ -284,6 +284,10 @@ function RecordWorkspace({
       </div>
     </nav>;
   };
+  const [emailAction,setEmailAction] = useState<ObjectActionMetadata|null>(null);
+  const [emailTo,setEmailTo] = useState('');
+  const [emailSubject,setEmailSubject] = useState('');
+  const [emailBody,setEmailBody] = useState('');
   const [customActionPendingId, setCustomActionPendingId] = useState('');
   const [allowedActionIds,setAllowedActionIds] = useState<string[]>([]);
   const [customActionMessage, setCustomActionMessage] = useState('');
@@ -886,6 +890,10 @@ function RecordWorkspace({
   };
   const runCustomObjectAction = async (action: ObjectActionMetadata) => {
     if(!object||!record||!action.behavior)return;
+    if(action.behavior==='Send Email'){
+      setEmailAction(action);setEmailTo('');setEmailSubject('');setEmailBody('');
+      setCustomActionMessage('');return;
+    }
     if(action.behavior==='Create Related'){
       if(!action.targetObjectApi||!action.relationshipFieldApi)return;
       onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,
@@ -913,6 +921,20 @@ function RecordWorkspace({
     } finally {
       setCustomActionPendingId('');
     }
+  };
+  const sendQuickActionEmail=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    if(!emailAction||!object||!record)return;
+    setCustomActionPendingId(emailAction.id);setCustomActionMessage('');
+    try{
+      await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(emailAction.id)}/execute`,{
+        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody})
+      });
+      setCustomActionMessage('Email sent.');setEmailAction(null);
+      setEmailTo('');setEmailSubject('');setEmailBody('');
+    }catch(error){
+      setCustomActionMessage(error instanceof Error?error.message:'Unable to send email');
+    }finally{setCustomActionPendingId('');}
   };
   const deleteCurrentRecord = async () => {
     if (!object) return;
@@ -1504,7 +1526,7 @@ function RecordWorkspace({
             {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
               &&allowedActionIds.includes(action.id)
               && (!recordLayout || recordLayout.actions.includes(action.id))
-              && (action.behavior==='Run Flow'||action.behavior==='Create Related'
+              && (action.behavior==='Run Flow'||action.behavior==='Create Related'||action.behavior==='Send Email'
                 || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
                   && (action.behavior==='Log Call'
                     ||(action.behavior==='Set Field Value'&&Boolean(action.fieldApiName
@@ -1512,7 +1534,22 @@ function RecordWorkspace({
             ).map((action) => <button className="btn" key={action.id} disabled={Boolean(customActionPendingId)} onClick={() => void runCustomObjectAction(action)}>{customActionPendingId === action.id ? 'Running…' : action.label}</button>)}
           </div>
         </section>
-        {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>}
+        {emailAction&&<form className="record-fields-card surface" onSubmit={event=>void sendQuickActionEmail(event)}
+          aria-label="Send quick action email" style={{padding:16,marginTop:12}}>
+          <h2>{emailAction.label}</h2>
+          <p>The message is sent using the tenant's configured SMTP credential and requires Email permissions.</p>
+          <label>Recipient email<input type="email" className="form-control" required value={emailTo}
+            onChange={event=>setEmailTo(event.target.value)} autoComplete="off" maxLength={254}/></label>
+          <label>Subject<input className="form-control" required maxLength={300} value={emailSubject}
+            onChange={event=>setEmailSubject(event.target.value)}/></label>
+          <label>Message<textarea className="form-control" required maxLength={10000} rows={5}
+            value={emailBody} onChange={event=>setEmailBody(event.target.value)}/></label>
+          <div className="records-list-actions">
+            <button type="submit" className="btn btn-brand" disabled={Boolean(customActionPendingId)}>Send Email</button>
+            <button type="button" className="btn" onClick={()=>setEmailAction(null)} disabled={Boolean(customActionPendingId)}>Cancel</button>
+          </div>
+        </form>}
+        {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>
         {assignedPage && <div className="record-runtime-page" data-lightning-page={assignedPage.apiName}>
           {renderRuntimeRegion('header')}
           <div className={assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
