@@ -1346,6 +1346,11 @@ export class RecordEngine {
       if(root)throw new Error('Record not found');
       return;
     }
+    // Master-Detail cascade does not grant the actor privileges they do not hold.
+    if(!root){
+      await this.rbac.require(tenantId,userId,objectApi,'delete');
+      await this.rbac.requireRecord(tenantId,userId,objectApi,id,'delete');
+    }
     const affectedParents=await this.rollupParents(client,tenantId,objectApi,id);
     visiting.add(recordKey);
     const {rows:references}=await client.query<{
@@ -1477,6 +1482,12 @@ export class RecordEngine {
         SELECT id,object_api FROM md_records
         WHERE tenant_id=$1 AND deletion_group_id=$2 AND is_deleted=true
         ORDER BY object_api,id FOR UPDATE`,[tenantId,record.deletion_group_id]);
+      // Restore never bypasses Object and Record permissions for cascaded detail records.
+      for(const item of rows){
+        await this.rbac.require(tenantId,userId,item.object_api,'create');
+        await this.rbac.require(tenantId,userId,item.object_api,'delete');
+        await this.rbac.requireRecord(tenantId,userId,item.object_api,item.id,'delete');
+      }
       // A previously deleted master outside this group must not be resurrected implicitly.
       const external=await client.query(`
         SELECT 1 FROM md_record_values v
