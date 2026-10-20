@@ -18,7 +18,8 @@ import {FlowExecutionRequests} from './flow-execution-requests.js';
 import {persistFlowInterviewPause} from './flow-interview-persistence.js';
 import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import {executeFlowAction,submitFlowStageApproval,loadFlowUserResource} from './flow-action-runtime.js';
-import {createFlowCustomError} from './flow-error-runtime.js';
+import {executeCustomErrorNode} from './nodes/CustomErrorNode.js';
+import {executeRollbackRecordsNode} from './nodes/RollbackRecordsNode.js';
 import {cancelScheduledPathInterviews,deactivateFlowDefinition,
   syncFlowTriggerSubscription} from './flow-subscription-runtime.js';
 import {flowScalarText,isFlowScalar,parseFlowScalar,type FlowScalar} from './flow-scalar-runtime.js';
@@ -1069,11 +1070,9 @@ export class FlowRuntime {
           if(fault!==undefined){current=fault;history=[];continue;}
           history=[];
         }else if(node.type==='Custom Error'){
-          throw createFlowCustomError(node.config,reference=>resolveResource(reference));
+          executeCustomErrorNode(node.config,reference=>resolveResource(reference));
         }else if(node.type==='Roll Back Records'){
-          await client.query('ROLLBACK TO SAVEPOINT '+rollbackSavepoint);
-          await client.query('RELEASE SAVEPOINT '+rollbackSavepoint);
-          await client.query('SAVEPOINT '+rollbackSavepoint);
+          await executeRollbackRecordsNode(client,rollbackSavepoint);
         }else if(node.type!=='Start'&&node.type!=='Wait'){
           throw new Error('Unsupported Screen Flow action: '+node.type);
         }
