@@ -309,6 +309,24 @@ export function renderSetupShell(ctx: any) {
             canInstall={connectorRights.install}
             encryptionReady={namedCredentialsEncryptionReady}
             loadApps={loadConnectorMarketplaceApps}
+            canManageLicences={Boolean(connectorRights.licence)}
+            grantLicence={async(appKey:string)=>{
+              await apiRequest('/connector-apps/'+encodeURIComponent(appKey)+'/licence',{method:'POST',body:'{}'});
+            }}
+            installApp={async(appKey:string)=>{
+              await apiRequest('/apps/'+encodeURIComponent(appKey)+'/install',{method:'POST',body:'{}'});
+              const [installed,published]=await Promise.all([
+                apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps'),
+                apiRequest<{pages:LightningPageMetadata[]}>('/metadata/pages')]);
+              setApps(installed.apps);setPages(published.pages);
+            }}
+            uninstallApp={async(appKey:string)=>{
+              await apiRequest('/metadata/apps/'+encodeURIComponent(appKey),{method:'DELETE'});
+              const [installed,published]=await Promise.all([
+                apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps'),
+                apiRequest<{pages:LightningPageMetadata[]}>('/metadata/pages')]);
+              setApps(installed.apps);setPages(published.pages);
+            }}
             executeLifecycleFlow={async(flowName:string,appKey:string)=>{
               await executeConnectorAppLifecycleFlow(flowName,appKey);
               // Load authoritative tenant-scoped app and page metadata after lifecycle changes.
