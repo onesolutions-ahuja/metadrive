@@ -28,52 +28,57 @@ Using **only the authenticated browser builders** on a disposable tenant:
 10. Deactivate/uninstall optional modules and confirm that their runtime
     functionality stops, but tenant business records survive.
 
-## Proven source-code improvements in this branch
+## P0 implemented shared-platform capabilities
 
-- Generic Flow formula collection count/sum, limited to 200 record resources,
-  with strict numeric field checks and a unit test.
-- OneChoice can project permission-filtered records into visual choices with
-  configurable label, identity, price, max/min fields.
-- OneItemGrid supports explicit select/action mode without silently adding
-  products to the shopping cart; default behaviour remains unchanged.
-- OneOverlay can open from a same-page selection event; OneRepeater can
-  present records using metadata-selected fields.
-- All new instance property contracts are in the published One- descriptors.
-- CI metadata tests include the pure choice projection/selection tests.
+- Record Collection formulas `COLLECTIONCOUNT` and `COLLECTIONSUM` in the shared
+  Flow runtime, with bounded numeric validation and automated tests.
+- SQL-backed Flow capability catalogue and builder gating, with validated
+  Get/Update/Delete Records, collections, Transform and Subflow paths.
+- Configurable ItemGrid selection mode, record-backed bounded Choice,
+  related-record filtering, Repeater and selection-driven Overlay.
+- Tenant-owned protected image assets, Image property picker and published-page
+  media references.
+- Tenant/actor/Flow/request-ID execution deduplication and recovery, now storing
+  completed responses in relational property-path/value rows rather than JSONB.
+- Kiosk basket reset on completion and configurable inactivity; sticky/fixed
+  positioning and responsive layout metadata.
+- Safe published-app test from Page Builder; no unauthorised production
+  mutation inside preview.
+- Browser/SQL smoke checks for a restricted kiosk operator, asset access and
+  duplicate execution; OneEngine permission enforcement remains server-side.
 
-## Unresolved P0 release gates (do not claim ready)
+## P0 release evidence required
 
-1. **Kiosk identity:** implement and test a least-privilege, tenant-scoped
-   customer/device session and routing contract without exposing staff auth
-   or administrative APIs. A marketing/public route is not device auth.
-2. **Asset workflow:** browser-upload and select authorised branding/media,
-   enforce tenant ownership and safe image types/size, preserve file references,
-   and demonstrate the same assets on a published page.
-3. **Checkout:** verify idempotent server checkout, server-side price and
-   option revalidation, durable order creation, cancellation/failure recovery,
-   and safe simulated payment through existing Flows.
-4. **Builder previews:** interactive test on isolated disposable data so
-   Flow/navigation are verifiable without publishing. Never execute production
-   actions merely by turning on preview.
-5. **Visual related-record composition:** prove dynamically filtered
-   option groups, record-context propagation to nested components,
-   basket edit/remove flows, and min/max validation across navigation.
-6. **Flow capability parity:** run the actual database migration and verify
-   toolbox, editor, validator and executor for Get/Update/Delete Records,
-   Subflow, Filter, Sort, Transform and triggered Flow types.
-7. **Schema and lifecycle:** verify independent app seeding, SQL idempotency,
-   customisation preservation, RBAC and optional-app lazy loading.
-8. **No-code usability:** one independent browser operator must perform every
-   step with no JSON, JavaScript, SQL, manual URLs or developer console.
+1. `npm run check` and `npm run build` must pass for the **final commit**.
+2. PostgreSQL schema migrations must pass both fresh-tenant and upgrade paths,
+   including the replay-row migration `20261116` and no lost responses.
+3. SQL System Validation must pass RBAC, tenant isolation and browser smoke.
+4. Frontend visual contract must pass and optional component runtime must
+   remain lazy loaded.
+5. PR code must be reviewed and merged to `main` without bypassing branch policy.
+6. The separately authored browser-only acceptance task must then be executed
+   independently in a disposable tenant. See
+   `docs/COPILOT_KIOSK_BROWSER_ONLY_TASK.md`.
+
+## Not included in shared-platform P0 certification
+
+- Exact KFC pixel-level design and completed client journey: those require the
+  independent browser reconstruction, licensed assets and screen comparison.
+- An anonymous/unattended public-device pairing workflow: the P0 demo supports
+  a **restricted authenticated operator**. A production public kiosk must have
+  explicit device policy, session isolation and physical browser lockdown.
+- Real payment-provider approval and physical receipt hardware certification.
 
 ## Test commands
 
-- npm run check
-- npm run test:system --workspace apps/server
-- npm run test:metadata
-- npm run build
+```sh
+npm run check
+npm run test:system --workspace apps/server
+npm run test:metadata
+npm run build
+```
 
-Then run authenticated browser and PostgreSQL integration tests against a
-disposable tenant with independent kiosk/customer and administrative users.
-Code review and static checks cannot certify kiosk security, transactional
-checkout or pixel-level reference parity.
+Run the GitHub SQL System Validation workflow (real PostgreSQL, RBAC, migration
+rehearsal and Playwright smoke) and independently execute the no-code browser
+operator task. **Green static/CI tests prove the tested shared platform scope,
+not 100% customer visual parity.**
