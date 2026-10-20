@@ -1,3 +1,4 @@
+import {supportedFunctions} from '../expression-engine/FormulaFunctionRegistry.js';
 import {resolveFlowLocalDateTime} from './flow-wait-runtime.js';
 import {flowChoiceValues} from './flow-screen-choice-runtime.js';
 
@@ -88,18 +89,6 @@ export function isFormulaImageResult(value:unknown):value is FormulaImageResult 
     &&(value as FormulaImageResult).__formulaImage==='MetaDriveFormulaImage'
     &&typeof (value as FormulaImageResult).url==='string');
 }
-const supportedFunctions=new Set(['IF','IFERROR','AND','OR','NOT','XOR','ISBLANK','ISNULL','ISNUMBER',
-  'ISCHANGED','ISNEW','ISCLONE','PRIORVALUE',
-  'BLANKVALUE','NULLVALUE','TEXT','VALUE','LEN','COLLECTIONCOUNT','COLLECTIONSUM','ASCII','LOWER','UPPER','PROPER','TRIM',
-  'LEFT','RIGHT','MID','FIND','SUBSTITUTE','CONCATENATE','EXACT','CONTAINS','BEGINS',
-  'ISPICKVAL','INCLUDES','REPT','REVERSE','ENCODEURL','URLENCODE','URLDECODE',
-  'CHAR','INITCAP','LPAD','RPAD','REPLACE','CASESAFEID','T','IMAGE','CURRENCYRATE',
-  'ABS','ROUND','ROUNDUP','ROUNDDOWN','TRUNC','SIGN','MIN','MAX','MOD','SQRT','POWER',
-  'CEILING','FLOOR','MCEILING','MFLOOR','EXP','LN','LOG',
-  'CASE','DATE','DATEVALUE','DATETIMEVALUE','TODAY','NOW','DAY','MONTH','YEAR','HOUR',
-  'MINUTE','SECOND','WEEKDAY','ISOWEEK','ISOYEAR','ADDMONTHS','TIMEVALUE','TIMENOW','PI','SIN','COS','TAN',
-  'ASIN','ACOS','ATAN','ATAN2','SINH','COSH','TANH','DEGREES','RADIANS','TZOFFSET',
-  'GEOLOCATION','DISTANCE','VLOOKUP']);
 const text=(value:unknown):string=>value===null||value===undefined?''
   :isFormulaImageResult(value)?value.url:String(value);
 const truth=(value:unknown):boolean=>value===true||value===1||value==='true';
