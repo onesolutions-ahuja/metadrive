@@ -1,0 +1,27 @@
+{
+  "category": "integration",
+  "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
+  "command": "node scripts/run-test-suite.mjs integration",
+  "tests": [
+    "apps/server/test/system/dashboard-subscription-schedule.test.ts",
+    "apps/server/test/system/data-loader.test.ts",
+    "apps/server/test/system/durable-job-admin-routes.test.ts",
+    "apps/server/test/system/durable-job-recovery.test.ts",
+    "apps/server/test/system/durable-job-worker.test.ts",
+    "apps/server/test/system/external-id-upsert.test.ts",
+    "apps/server/test/system/flow-http-idempotency.test.ts",
+    "apps/server/test/system/flow-interview-http.test.ts",
+    "apps/server/test/system/flow-job-handler.test.ts",
+    "apps/server/test/system/flow-orchestration.test.ts",
+    "apps/server/test/system/flow-record-query.test.ts",
+    "apps/server/test/system/flow-record-triggers.test.ts",
+    "apps/server/test/system/flow-subscription-runtime.test.ts",
+    "apps/server/test/system/openapi-external-service.test.ts",
+    "apps/server/test/system/outbound-webhook.test.ts",
+    "apps/server/test/system/platform-event-dispatcher.test.ts",
+    "apps/server/test/system/platform-event-service.test.ts",
+    "apps/server/test/system/platform-event-stream.test.ts",
+    "apps/server/test/system/record-query.test.ts",
+    "apps/server/test/system/versioned-api-query.test.ts"
+  ]
+}
