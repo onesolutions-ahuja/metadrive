@@ -62,3 +62,69 @@
  .one-ui .one-btn,.md-chatter nav button{min-height:var(--md-control-touch)}
 }
 @media(forced-colors:active){.md-scroll-hint{mask-image:none}}
+
+/* Phase 2: reusable semantic visual language. Tenant overrides may change
+   colours without changing the meaning of a control or feedback state. */
+:root {
+  --md-text-strong:var(--md-text);
+  --md-text-secondary:var(--md-muted);
+  --md-surface-raised:var(--md-surface);
+  --md-surface-subtle:var(--md-canvas);
+  --md-border-subtle:var(--md-border);
+  --md-border-strong:#aebacc;
+  --md-focus-ring:var(--md-primary);
+  --md-primary-contrast:#fff;
+  --md-success-surface:#ecfdf3;
+  --md-warning-surface:#fff7ed;
+  --md-danger-surface:#fef3f2;
+  --md-shadow-sm:0 1px 3px rgb(15 23 42 / 8%);
+  --md-shadow-md:0 8px 24px rgb(15 23 42 / 12%);
+  --md-duration-fast:140ms;
+  --md-duration-normal:200ms;
+}
+.lightning .md-surface-card,
+.one-ui .md-surface-card {
+  color:var(--md-text);
+  background:var(--md-surface-raised);
+  border:1px solid var(--md-border-subtle);
+  border-radius:var(--md-radius-lg);
+  box-shadow:var(--md-shadow-sm);
+}
+.lightning .md-section-heading,
+.one-ui .md-section-heading {
+  color:var(--md-text-strong);
+  font-weight:var(--md-weight-semibold);
+  line-height:var(--md-leading-tight);
+}
+.lightning .md-secondary-text,
+.one-ui .md-secondary-text { color:var(--md-text-secondary); }
+.lightning .md-action-primary,
+.one-ui .md-action-primary {
+  background:var(--md-primary);
+  color:var(--md-primary-contrast);
+  border:1px solid transparent;
+  border-radius:var(--md-radius-md);
+  min-height:var(--md-control-height);
+  transition:background var(--md-duration-fast) ease;
+}
+.lightning .md-action-primary:hover,
+.one-ui .md-action-primary:hover { background:var(--md-primary-hover); }
+.lightning .md-action-primary:focus-visible,
+.one-ui .md-action-primary:focus-visible,
+.lightning .md-surface-card :is(button,a,input,select,textarea):focus-visible,
+.one-ui .md-surface-card :is(button,a,input,select,textarea):focus-visible {
+  outline:2px solid var(--md-focus-ring);
+  outline-offset:2px;
+}
+.lightning .md-feedback-success,
+.one-ui .md-feedback-success { background:var(--md-success-surface);color:var(--md-success); }
+.lightning .md-feedback-warning,
+.one-ui .md-feedback-warning { background:var(--md-warning-surface);color:var(--md-warning); }
+.lightning .md-feedback-danger,
+.one-ui .md-feedback-danger { background:var(--md-danger-surface);color:var(--md-danger); }
+@media (prefers-reduced-motion:reduce) {
+  .lightning .md-action-primary,.one-ui .md-action-primary { transition:none; }
+}
+@media (forced-colors:active) {
+  .lightning .md-action-primary,.one-ui .md-action-primary { border:1px solid ButtonText; }
+}

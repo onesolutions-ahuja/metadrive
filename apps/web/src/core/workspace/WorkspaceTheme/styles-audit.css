@@ -246,3 +246,90 @@
   .page-builder-layout :is(.component-option, .field-option) svg,
   .flow-builder .flow-element-option svg { opacity: 1; visibility: visible; }
 }
+
+/* Phase 2 — shared workspace visual polish. Preserve tenant-authored page styling. */
+.lightning :is(.section-heading,.page-heading,.records-page-heading,.object-titlebar) {
+  color:var(--md-text-strong);
+}
+.lightning :is(.section-heading,.page-heading,.records-page-heading) h1,
+.lightning :is(.section-heading,.page-heading,.records-page-heading) h2 {
+  line-height:var(--md-leading-tight);
+  letter-spacing:-.015em;
+}
+.lightning :is(.section-toolbar,.records-list-toolbar,.records-heading-actions) {
+  gap:var(--md-space-2);
+}
+.lightning :is(.setup-home,.records-page,.object-manager-layout) :is(.btn,.icon-button):focus-visible,
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(button,input,select,textarea):focus-visible {
+  outline:2px solid var(--md-focus-ring);
+  outline-offset:2px;
+}
+.lightning :is(.setup-home,.records-page,.object-manager-layout) :is(.btn,.icon-button) {
+  border-radius:var(--md-radius-md);
+}
+.lightning .records-table-wrap {
+  border-color:var(--md-border-subtle);
+  border-radius:var(--md-radius-lg);
+}
+.lightning .records-table th {
+  color:var(--md-text-strong);
+  background:var(--md-surface-subtle);
+  font-weight:var(--md-weight-semibold);
+}
+.lightning .records-table tbody tr:focus-within {
+  outline:2px solid var(--md-focus-ring);
+  outline-offset:-2px;
+}
+.lightning :is(.records-empty,.empty-state,.empty-list,.empty-tree) {
+  color:var(--md-text-secondary);
+  line-height:var(--md-leading-body);
+}
+.lightning :is(.records-message,.records-notice,.field-error) {
+  border-radius:var(--md-radius-md);
+}
+.lightning :is(.setup-home,.records-page,.object-manager-layout) :is(input,select,textarea) {
+  accent-color:var(--md-primary);
+}
+@media (hover:hover) {
+  .lightning .records-table tbody tr:hover { background:var(--md-surface-subtle); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .lightning :is(.setup-home,.records-page,.object-manager-layout) :is(.btn,.icon-button) {
+    transition:none;
+  }
+}
+
+/* Phase 2 — visual consistency in configuration panels and transient surfaces. */
+.lightning :is(.properties-panel,.component-panel,.flow-settings) {
+  color:var(--md-text);
+  border-color:var(--md-border-subtle);
+}
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(h2,h3,.properties-section-title) {
+  color:var(--md-text-strong);
+  font-weight:var(--md-weight-semibold);
+}
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(.form-label,label) {
+  line-height:var(--md-leading-body);
+}
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(input,select,textarea) {
+  border-radius:var(--md-radius-sm);
+  border-color:var(--md-border);
+  accent-color:var(--md-primary);
+}
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(button,[role="button"]) {
+  border-radius:var(--md-radius-md);
+}
+.lightning :is(.properties-panel,.component-panel,.flow-settings) :is(.properties-help,.palette-note) {
+  color:var(--md-text-secondary);
+}
+.lightning :is(.record-form-dialog,.palette-dialog) {
+  border-radius:var(--md-radius-lg);
+  box-shadow:var(--md-shadow-md);
+}
+.lightning :is(.record-form-dialog,.palette-dialog) :is(input,select,textarea):focus-visible {
+  outline:2px solid var(--md-focus-ring);
+  outline-offset:2px;
+}
+@media(max-width:600px) {
+  .lightning :is(.record-form-dialog,.palette-dialog) { border-radius:var(--md-radius-md); }
+}
