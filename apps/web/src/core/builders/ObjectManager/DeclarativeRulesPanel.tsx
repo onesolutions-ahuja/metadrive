@@ -16,6 +16,8 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
   const [formula,setFormula]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
+  const [history,setHistory]=useState<Array<Record<string,unknown>>>([]);
+  const [historyTarget,setHistoryTarget]=useState<{kind:'rule'|'default';apiName:string}|null>(null);
   const base='/metadata/objects/'+encodeURIComponent(objectApi);
   const reload=async()=>{
     const [r,d]=await Promise.all([
@@ -35,11 +37,12 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
     setDraft(initial);
     setTarget('');
     setFormula('');
+    setHistory([]);setHistoryTarget(null);
     return ()=>{active=false;};
   },[base]);
   const perform=async(action:()=>Promise<unknown>)=>{
     setBusy(true);setError('');
-    try{await action();await reload();}
+    try{await action();await reload();setDraft(initial);setHistoryTarget(null);setHistory([]);}
     catch(e){setError(e instanceof Error?e.message:'Unable to save rule');}
     finally{setBusy(false);}
   };
@@ -53,6 +56,16 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
         active:draft.active,sortOrder:draft.sortOrder,revision:draft.revision})
     });
   });
+  const loadHistory=async(kind:'rule'|'default',apiName:string)=>{
+    setBusy(true);setError('');
+    try{
+      const route=kind==='rule'?'validation-rules':'default-formulas';
+      const data=await apiRequest<{history:Array<Record<string,unknown>>}>(
+        base+'/'+route+'/'+encodeURIComponent(apiName)+'/history');
+      setHistory(data.history);setHistoryTarget({kind,apiName});
+    }catch(e){setError(e instanceof Error?e.message:'Unable to load history');}
+    finally{setBusy(false);}
+  };
   const writable=fields.filter(f=>!['Formula','Roll-Up Summary','Auto Number','AutoNumber',
     'Text (Encrypted)'].includes(f.dataType)&&!f.dataType.includes('Relationship'));
   return <section className="surface object-setting-surface">
@@ -68,10 +81,31 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
         <div className="toolbar-actions">
           <button type="button" className="btn" onClick={()=>setDraft(rule)}>Edit</button>
           <button type="button" className="btn" disabled={busy}
+            onClick={()=>void loadHistory('rule',rule.apiName)}>History</button>
+          <button type="button" className="btn" disabled={busy}
             onClick={()=>perform(()=>apiRequest(base+'/validation-rules/'+encodeURIComponent(rule.apiName),{method:'DELETE'}))}>Delete</button>
         </div>
       </div>)}
     </div>
+    {historyTarget&&<div className="metadata-card">
+      <h3>Saved versions: {historyTarget.apiName}</h3>
+      {history.length===0?<p>No earlier versions yet.</p>:history.map(version=>
+        <div className="field-selector-row" key={String(version.revision)}>
+          <span>Revision {String(version.revision)}</span>
+          <button type="button" className="btn" onClick={()=>{
+            if(historyTarget.kind==='rule'){
+              const current=rules.find(r=>r.apiName===historyTarget.apiName);
+              if(current)setDraft({...current,label:String(version.label),
+                expression:String(version.expression),errorMessage:String(version.errorMessage),
+                errorFieldApi:typeof version.errorFieldApi==='string'?version.errorFieldApi:null,
+                active:version.active===true,sortOrder:Number(version.sortOrder)});
+            }else{
+              setTarget(historyTarget.apiName);setFormula(String(version.expression));
+            }
+          }}>Use this version</button>
+        </div>)}
+      <button type="button" className="btn" onClick={()=>setHistoryTarget(null)}>Close history</button>
+    </div>}
     <div className="metadata-card">
       <h3>{rules.some(rule=>rule.apiName===draft.apiName)?'Edit rule':'New rule'}</h3>
       <label className="form-label">Rule API Name
@@ -113,6 +147,8 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
           <p className="permission-help">{item.expression}</p></div>
         <div className="toolbar-actions">
           <button type="button" className="btn" onClick={()=>{setTarget(item.fieldApi);setFormula(item.expression);}}>Edit</button>
+          <button type="button" className="btn" disabled={busy}
+            onClick={()=>void loadHistory('default',item.fieldApi)}>History</button>
           <button type="button" className="btn" disabled={busy}
             onClick={()=>perform(()=>apiRequest(base+'/default-formulas/'+encodeURIComponent(item.fieldApi),{method:'DELETE'}))}>Delete</button>
         </div>
