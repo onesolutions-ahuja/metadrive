@@ -1,4 +1,3 @@
-import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 
@@ -39,7 +38,7 @@ export class RecordRetentionService {
  /** The caller must be an authorized human or currently authorized opt-in owner. */
  async purge(tenantId:string,actorId:string,objectApi:string,rootId:string){
   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)
-    ||!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(rootId))
+    ||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rootId))
     throw new Error('Invalid purge target');
   await this.rbac.require(tenantId,actorId,'Security','manage');
   await this.rbac.require(tenantId,actorId,objectApi,'delete');
@@ -112,6 +111,10 @@ export class RecordRetentionService {
     VALUES($1,$2,$3,$4,$5,'purge')`,
     [tenantId,rootId,objectApi,group,actorId]);
    return {purged:rows.length};
+  }).catch((error:unknown)=>{
+   if(error&&typeof error==='object'&&'code' in error&&error.code==='23503')
+    throw new Error('Purge blocked: dependent business records need review');
+   throw error;
   });
  }
 
