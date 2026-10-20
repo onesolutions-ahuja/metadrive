@@ -321,7 +321,7 @@ export class RecordEngine {
           AND v.object_api=r.object_api AND v.field_api=$4
         LEFT JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
           AND f.api_name=v.field_api AND f.deleted_at IS NULL
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND r.is_deleted=false
           AND ${migrationMode?'true':"md_record_access($1,$5,r.id,'read')"}`,
       migrationMode?[tenantId,targetObject,recordId,fieldApi]:
         [tenantId,targetObject,recordId,fieldApi,userId]);
@@ -598,7 +598,7 @@ export class RecordEngine {
             if(previous.rows[0]?.reference_record_id&&previous.rows[0].reference_record_id!==value)
               throw new Error('Master-Detail relationship does not allow reparenting: '+key);
           }
-          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
             [tenantId,field.related_object,value]);
             if(!match.rowCount)throw new Error('Invalid relationship target: '+key); }
           text='';reference=value;break;
