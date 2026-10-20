@@ -28,28 +28,39 @@ export default function OneTabs(props) {
   } = useOneLayout(p);
   return (
     <div {...css}>
-      <div className="one-tabs" role="tablist" aria-label={p.label || "Tabs"}>
+      <div className="one-tabs" role="tablist" aria-label={p.label || "Tabs"}
+        style={{display: "flex", flexWrap: p.wrapTabs === false ? "nowrap" : "wrap",
+          overflowX: p.wrapTabs === false ? "auto" : "visible", gap: Number(p.gap) >= 0 ? Number(p.gap) : 8}}>
+        {p.showAllTab === true && <button type="button" className="one-tab"
+          role="tab" aria-selected={active === -1}
+          onClick={() => {
+            setActive(-1);
+            if (p.pageSessionKey && p.filterKey && typeof window !== "undefined")
+              window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected", {
+                detail:{pageSessionKey:p.pageSessionKey,filterKey:p.filterKey,value:"",recordId:"",label:p.allTabLabel||"All",
+                  sourceObjectApiName:p.objectApiName||""}
+              }));
+          }}
+          style={{borderRadius:p.tabStyle==="pill"?999:undefined,
+            backgroundColor:active===-1?(p.accentColor||"#E4002B"):undefined,
+            color:active===-1?"#FFFFFF":undefined}}>
+          {p.allTabLabel || "All"}
+        </button>}
         {tabs.map((name, i) => (
-          <button
-            type="button"
-            className="one-tab"
-            key={i}
-            role="tab"
-            aria-selected={active === i}
-            onClick={() => selectTab(name, i)}
-          >
+          <button type="button" className="one-tab" key={i} role="tab"
+            aria-selected={active === i} onClick={() => selectTab(name, i)}
+            style={{borderRadius:p.tabStyle==="pill"?999:undefined,
+              backgroundColor:active===i?(p.accentColor||"#E4002B"):undefined,
+              color:active===i?"#FFFFFF":undefined}}>
             {name}
           </button>
         ))}
       </div>
-      <div className="one-surface" role="tabpanel" style={{ marginTop: 8 }}>
+      {p.showPanel !== false && <div className="one-surface" role="tabpanel" style={{marginTop:8}}>
         {Array.isArray(children)
           ? children[active]
-          : (p.panels && p.panels[active]?.content) ||
-            children ||
-            tabs[active] ||
-            "No categories"}
-      </div>
+          : (p.panels && p.panels[active]?.content) || children || tabs[active] || "No categories"}
+      </div>}
     </div>
   );
 }
