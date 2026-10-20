@@ -20,7 +20,7 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
                 fields={(Array.isArray(flowRun.screen.config.fields) ? flowRun.screen.config.fields : []) as Array<Record<string, unknown>>}
                 libraryComponents={libraryComponents}
                 interviewId={flowRun.interviewId}
-                values={flowRun.values}
+                values={{...flowRun.screenResources,...flowRun.values}}
                 onValueChange={(name, value) => {
                   setFlowRunnerError('');
                   setFlowRun((current) => current ? { ...current, values: { ...current.values, [name]: value } } : current);
