@@ -27,17 +27,34 @@ export class ObjectQuickActionRuntime {
   const tenant=actor.tenant_id,user=actor.user_id;
   await this.rbac.require(tenant,user,objectApi,'read');
   await this.rbac.requireRecord(tenant,user,objectApi,recordId,'read');
-  const {rows}=await this.db.query<{action_id:string;behavior:string;flow_api_name:string|null}>(`
-   SELECT action_id,behavior,flow_api_name FROM md_object_actions
+  const {rows}=await this.db.query<{action_id:string;behavior:string;flow_api_name:string|null;
+    field_api:string|null;target_object_api:string|null;relationship_field_api:string|null}>(`
+   SELECT action_id,behavior,flow_api_name,field_api,target_object_api,relationship_field_api FROM md_object_actions
    WHERE tenant_id=$1 AND object_api=$2 AND action_type='Custom' AND enabled=true
    ORDER BY sort_order,action_id`,[tenant,objectApi]);
   const granted=await this.rbac.allowedMany(tenant,user,rows.map(row=>({
    resource:'Action:'+objectApi+'.'+row.action_id,action:'execute'})));
   const ids:string[]=[];
+  let canEditRecord:boolean|undefined;
   for(const [index,action] of rows.entries()){
    if(!granted[index])continue;
    if(action.behavior==='Run Flow'&&(!action.flow_api_name
      ||!await this.rbac.allowed(tenant,user,'Flow:'+action.flow_api_name,'execute')))continue;
+   if(action.behavior==='Set Field Value'||action.behavior==='Log Call'){
+    if(canEditRecord===undefined){
+     canEditRecord=await this.rbac.allowed(tenant,user,objectApi,'edit');
+     if(canEditRecord)try {
+      await this.rbac.requireRecord(tenant,user,objectApi,recordId,'edit');
+     }catch{canEditRecord=false;}
+    }
+    if(!canEditRecord)continue;
+    if(action.behavior==='Set Field Value'&&(!action.field_api
+      ||!await this.rbac.allowed(tenant,user,objectApi+'.'+action.field_api,'edit')))continue;
+   }
+   if(action.behavior==='Create Related'&&(!action.target_object_api||!action.relationship_field_api
+      ||!await this.rbac.allowed(tenant,user,action.target_object_api,'create')
+      ||!await this.rbac.allowed(tenant,user,
+        action.target_object_api+'.'+action.relationship_field_api,'create')))continue;
    ids.push(action.action_id);
   }
   return {actionIds:ids};
