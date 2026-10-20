@@ -1593,7 +1593,7 @@ function RecordWorkspace({
           onClick={() => void saveRetention()}>Save Retention</button>
       </div>}
       <small>Deleted records remain recoverable until permanently purged. Automatic purge is off by default.</small>
-      {recycleError && <div className="records-message" role="alert">{recycleError}</div>
+      {recycleError && <div className="records-message" role="alert">{recycleError}</div>}
       {recycleBusy && <div className="records-message" role="status">Loading Recycle Bin…</div>}
       {!recycleBusy && recycleRows.length===0 && !recycleError && <div className="records-empty">No deleted records.</div>}
       {recycleRows.length>0 && <div className="records-table-wrap"><table className="slds-table records-table">
