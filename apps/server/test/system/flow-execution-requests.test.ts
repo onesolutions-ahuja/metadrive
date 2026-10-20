@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {PoolClient} from 'pg';
 import {FlowExecutionRequests} from '../../src/system-files/flow-execution-requests.js';
 
 const tenant='00000000-0000-4000-8000-000000000001';
@@ -75,6 +76,24 @@ test('Nested Flow outputs replay without JSONB, preserving arrays and numeric ty
  assert.ok(f.state.responseRows.some(row=>row.property_path==='/result/outputs/lines/0/name'));
  assert.equal(f.state.responseRows.find(row=>row.property_path==='/result/outputs/totalMinor')?.value_kind,
    'number');
+});
+test('Paused Screen Flow writes completed replay atomically to the relational ledger',async()=>{
+ const seen:Array<{sql:string;args:unknown[]}>=[];
+ const client={query:async(sql:string,args:unknown[]=[])=>{
+   seen.push({sql,args});
+   if(sql.includes('UPDATE md_flow_execution_requests'))
+     return {rowCount:1,rows:[{actor_id:actor,flow_api:'Checkout',request_id:requestId}]};
+   if(sql.includes('INSERT INTO md_flow_execution_result_values'))
+     return {rowCount:1,rows:[]};
+   throw Error('Unexpected SQL '+sql);
+ }} as unknown as PoolClient;
+ await FlowExecutionRequests.completeRun(client,tenant,requestId,
+   {id:requestId,status:'completed',completed:true,outputs:{totalMinor:1399}});
+ assert.ok(seen[0].sql.includes("state='completed'"));
+ assert.ok(seen.some(row=>row.sql.includes('INSERT INTO md_flow_execution_result_values')
+   &&row.args[0]===tenant&&row.args[1]===actor&&row.args[2]==='Checkout'
+   &&row.args[4]==='/result/outputs/totalMinor'&&row.args[5]==='number'));
+ assert.ok(seen.every(row=>!row.sql.includes('result_payload')));
 });
 test('Only UUID request IDs activate the ledger',()=>{
  assert.equal(FlowExecutionRequests.key({} as Record<string,unknown>),null);
