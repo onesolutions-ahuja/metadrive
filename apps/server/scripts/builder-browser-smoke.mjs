@@ -75,7 +75,7 @@ try{
   httpOnly:true,sameSite:'Lax'}]);
  page=await context.newPage();
  const failures=[];
- page.on('pageerror',error=>failures.push(error.message));
+ page.on('pageerror',error=>{console.error('Browser JS exception:',error.stack??error.message);failures.push(error.message);});
  await page.goto(origin+'/une/setup/flow-builder',{waitUntil:'domcontentloaded'});
  await page.waitForTimeout(1100);
  const title=await page.title();
@@ -453,7 +453,6 @@ try{
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
 }catch(error){
  if(page){
-  console.error('Browser JavaScript errors:',failures.slice(-15));
   console.error('Browser failure URL:',page.url());
   console.error('Browser failure text:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000));
   await page.screenshot({path:new URL('../artifacts/rbac-failure.png',import.meta.url).pathname}).catch(()=>{});
