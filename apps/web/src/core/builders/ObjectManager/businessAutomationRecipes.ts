@@ -14,6 +14,8 @@ export function buildAutomationFlow(input:RecipeInput){
   ||input.label.length>160||input.conditions.length>20
   ||input.conditions.some(c=>!identifier.test(c.field)||!c.operator||c.value.length>512))
   throw Error('Invalid automation recipe');
+ if(input.kind==='Assignment'&&input.trigger!=='created')
+  throw Error('Owner assignment recipes must run on record creation to prevent recursive reassignment');
  const trigger=input.kind==='Escalation'?'created-or-updated':input.trigger;
  const startConfig={object:input.objectApi,trigger,runWhen:'after-save',
    entryConditions:input.conditions,conditionLogic:'All',triggerOrder:100};
@@ -46,6 +48,8 @@ export function buildAutomationFlow(input:RecipeInput){
    steps.push({id:2,type:'Action',label:'Escalation task',
      config:{actionType:'Create Task',objectApiName:input.objectApi,
        recordId:'{!$Record.Id}',subject:input.taskSubject}});
+   steps.push({id:4,type:'End',label:'Immediate path complete',config:{}});
+   connectors.push({id:'escalation-immediate',from:1,to:4,label:'Default',kind:'normal'});
    connectors.push({id:'escalation-scheduled',from:1,to:2,label:'Escalate',
      kind:'scheduled',scheduledPath:{timeSourceFieldApiName:input.dueField,
        offsetAmount:input.offsetAmount,offsetUnit:input.offsetUnit}});
