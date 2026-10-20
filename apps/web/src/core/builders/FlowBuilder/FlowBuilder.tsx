@@ -5,7 +5,7 @@ import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInser
 import {canBypassFlowElement,duplicateFlowGraphElement,flowGraphDiagnostics,retargetFlowGraphConnector} from './flowGraphOperations.mjs';
 import { formulaFunctions, formulaOperators } from './flowEditorCatalog';
 import { precedingFlowSteps } from './flowReferenceCatalog';
-import { flowCreateOptions, flowElementAvailable, type FlowCapabilityCatalog } from './flowCapabilityCatalog';
+import { flowCreateOptions, flowElementAvailable, flowElementInToolbox, type FlowCapabilityCatalog } from './flowCapabilityCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
@@ -163,6 +163,8 @@ export default function FlowBuilder({
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
     flowElementAvailable(capabilityCatalog, type, flow.flowType, flow.startConfig.runWhen);
+  const isToolboxElement = (type: string) =>
+    flowElementInToolbox(capabilityCatalog,type,flow.flowType,flow.startConfig.runWhen);
   const [resourceLabel, setResourceLabel] = useState('');
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
@@ -1454,7 +1456,7 @@ export default function FlowBuilder({
             </select>
           </label>}
           {toolboxGroups.map((group) => {
-            const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type));
+            const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isToolboxElement(item.type));
             return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" draggable
               aria-label={`Drag or add ${element.type}`}
               onDragStart={(event)=>{event.dataTransfer.effectAllowed='copy';
@@ -1470,7 +1472,7 @@ export default function FlowBuilder({
               setInsertionConnectorId('');
             }}><span>{element.icon}</span>{element.type}<Plus size={13} /></button>)}</div> : null;
           })}
-          {flowElementMetadata.filter((item) => item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type)).length === 0 && <p className="empty-list">No elements found.</p>}
+          {flowElementMetadata.filter((item) => item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isToolboxElement(item.type)).length === 0 && <p className="empty-list">No elements found.</p>}
         </> : <div className="resource-list">
           <div className="toolbox-group"><h3>Flows</h3>{flows.map((candidate) => <div className="flow-manager-row" key={candidate.apiName}><button className={`flow-manager-item ${flow.apiName === candidate.apiName ? 'active' : ''}`} onClick={() => onSelectFlow(candidate.apiName)}><span>{candidate.flowType}</span><strong>{candidate.label}</strong><small>{candidate.status} · v{candidate.versionNumber}</small></button><div className="flow-manager-actions"><button className="btn btn-small" aria-label={`Clone ${candidate.label}`} title="Clone flow" onClick={() => onCloneFlow(candidate)}><Copy size={13} />Clone</button>{candidate.status === 'Active' && <button className="btn btn-small" aria-label={`Deactivate ${candidate.label}`} onClick={() => onDeactivateFlow(candidate.apiName)}>Deactivate</button>}<button className="btn btn-small" aria-label={`Delete ${candidate.label}`} onClick={() => onDeleteFlow(candidate.apiName)}>Delete</button></div></div>)}</div>
           <div className="toolbox-group"><h3>Version History</h3>{flow.versions.length
