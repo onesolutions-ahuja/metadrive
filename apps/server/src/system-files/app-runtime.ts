@@ -212,6 +212,11 @@ export class AppRuntime {
         INSERT INTO md_app_installations(tenant_id,app_id) VALUES($1,$2)
         ON CONFLICT DO NOTHING
       `,[tenantId,app.id]);
+      if(published){
+        // Package seeder is imported only during selected-tenant installation, never on startup.
+        const {seedPublishedAppPackage}=await import('../app-seeders/published-app-package.js');
+        await seedPublishedAppPackage(client,tenantId,app.id,published.version);
+      }
       if(seed){
         const {seedAppPage}=await import('../system-support/app-page-seeder.js');
         await seedAppPage(client,tenantId,app.id,seed);
