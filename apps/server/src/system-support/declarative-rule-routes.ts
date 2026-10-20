@@ -116,6 +116,17 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
     });
     res.json({saved:true,revision});
   }));
+  app.get(base+'/validation-rules/:ruleApi/history',route(async(req,res)=>{
+    const a=await requireManage(req);
+    if(!api.test(req.params.ruleApi))throw new Error('Invalid rule API name');
+    const {rows}=await db.query(`SELECT revision,label,expression,
+      error_message AS "errorMessage",error_field_api AS "errorFieldApi",
+      active,sort_order AS "sortOrder",saved_at AS "savedAt"
+      FROM md_validation_rule_history
+      WHERE tenant_id=$1 AND object_api=$2 AND rule_api=$3 ORDER BY revision DESC`,
+      [a.tenant_id,req.params.objectApi,req.params.ruleApi]);
+    res.json({history:rows});
+  }));
   app.delete(base+'/validation-rules/:ruleApi',route(async(req,res)=>{
     const a=await requireManage(req);
     if(!api.test(req.params.ruleApi))throw new Error('Invalid rule API name');
@@ -168,6 +179,15 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
       return next;
     });
     res.json({saved:true,revision});
+  }));
+  app.get(base+'/default-formulas/:fieldApi/history',route(async(req,res)=>{
+    const a=await requireManage(req);
+    if(!api.test(req.params.fieldApi))throw new Error('Invalid field API name');
+    const {rows}=await db.query(`SELECT revision,expression,saved_at AS "savedAt"
+      FROM md_field_default_formula_history
+      WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 ORDER BY revision DESC`,
+      [a.tenant_id,req.params.objectApi,req.params.fieldApi]);
+    res.json({history:rows});
   }));
   app.delete(base+'/default-formulas/:fieldApi',route(async(req,res)=>{
     const a=await requireManage(req);
