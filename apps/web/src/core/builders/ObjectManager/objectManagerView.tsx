@@ -16,6 +16,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
 import CustomMetadataManager from './CustomMetadataManager';
+import DeclarativeRulesEditor from './DeclarativeRulesEditor';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -1316,6 +1317,8 @@ function ObjectManager({
     if (selectedSetting === 'Change History') return null;
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
+  if (selectedSetting === 'Validation Rules') return <DeclarativeRulesEditor objectApi={object.apiName}
+    fields={draft.fields} apiRequest={apiRequest} onNotify={onNotify} />;
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
     if (selectedSetting === 'Record Types') return renderRecordTypes();
     if (selectedSetting === 'Compact Layouts') return renderCompactLayout();
