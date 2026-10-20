@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS md_tenant_media_assets (
   tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
   name text NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
   content_type text NOT NULL CHECK (content_type IN ('image/jpeg','image/png','image/gif','image/webp')),
-  byte_size integer NOT NULL CHECK (byte_size BETWEEN 1 AND 1048576),
+  byte_size integer NOT NULL CHECK (byte_size BETWEEN 1 AND 5242880),
   checksum text NOT NULL CHECK (checksum ~ '^[0-9a-f]{64}$'),
   content bytea NOT NULL,
   created_by uuid NOT NULL,
