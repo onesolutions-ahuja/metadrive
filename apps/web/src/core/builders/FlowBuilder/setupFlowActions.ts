@@ -241,7 +241,7 @@ export function createSetupFlowActions(ctx: any) {
         if (interviewId && screen) {
           setFlowRun({
             interviewId, flowApiName: flowDebug.flow.apiName, screen,
-            values: { ...initialScreenValues(screen), ...(result.values as Record<string, unknown> | undefined) },
+            values: { ...initialScreenValues(screen), ...(result.values as Record<string, unknown> | undefined) }, screenResources: (result.screenResources as Record<string, unknown> | undefined) ?? {},
             outcomes: (result.outcomes as Array<{ name: string; label: string }> | undefined)
               ?? [{ name: 'Default', label: 'Next' }],
             canGoBack: false
@@ -339,13 +339,14 @@ export function createSetupFlowActions(ctx: any) {
       return;
     }
     try {
-      const result = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; values?: Record<string, unknown> }>(`/flows/${encodeURIComponent(selectedFlow.apiName)}/execute`, {
+      const result = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; values?: Record<string, unknown>; screenResources?: Record<string, unknown> }>(`/flows/${encodeURIComponent(selectedFlow.apiName)}/execute`, {
         method: 'POST',
         body: JSON.stringify(inputs)
       });
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
-        setFlowRun({ requestId:context.requestId,interviewId: result.interviewId, flowApiName: selectedFlow.apiName, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
+        setFlowRun({ requestId:context.requestId,interviewId: result.interviewId, flowApiName: selectedFlow.apiName, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
+          screenResources: result.screenResources ?? {}, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
         return;
       }
       if (result.interviewId) {
@@ -368,7 +369,7 @@ export function createSetupFlowActions(ctx: any) {
     try {
       const submitter = (event.nativeEvent as SubmitEvent).submitter;
       const selectedOutcome = submitter instanceof HTMLButtonElement ? submitter.value : '';
-      const result = await apiRequest<{ completed?: boolean; outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; canGoBack?: boolean; values?: Record<string, unknown> }>(`/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next`, {
+      const result = await apiRequest<{ completed?: boolean; outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; canGoBack?: boolean; values?: Record<string, unknown>; screenResources?: Record<string, unknown> }>(`/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next`, {
         method: 'POST',
         body: JSON.stringify({ values: flowRun.values, ...(selectedOutcome ? { outcome: selectedOutcome } : {}) })
       });
@@ -378,6 +379,7 @@ export function createSetupFlowActions(ctx: any) {
           requestId:flowRun.requestId,interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
           screen: result.screen,
           values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
+          screenResources: result.screenResources ?? {},
           outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
           canGoBack: result.canGoBack === true
         });
@@ -407,7 +409,7 @@ export function createSetupFlowActions(ctx: any) {
     if (!flowRun || !flowRun.canGoBack) return;
     setFlowRunnerSubmitting(true);
     try {
-      const result = await apiRequest<{ interviewId: string; screen: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; canGoBack?: boolean; values?: Record<string, unknown> }>(
+      const result = await apiRequest<{ interviewId: string; screen: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; canGoBack?: boolean; values?: Record<string, unknown>; screenResources?: Record<string, unknown> }>(
         `/flow-interviews/${encodeURIComponent(flowRun.interviewId)}/next`,
         { method: 'POST', body: JSON.stringify({ action: 'back' }) }
       );
@@ -415,6 +417,7 @@ export function createSetupFlowActions(ctx: any) {
         requestId:flowRun.requestId,interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
         screen: result.screen,
         values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
+          screenResources: result.screenResources ?? {},
         outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
         canGoBack: result.canGoBack === true
       });
