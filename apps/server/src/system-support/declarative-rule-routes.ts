@@ -56,7 +56,7 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
     const a=await requireManage(req);
     const {rows}=await db.query(
       `SELECT api_name AS "apiName",label,expression,error_message AS "errorMessage",
-       error_field_api AS "errorFieldApi",active,sort_order AS "sortOrder"
+       error_field_api AS "errorFieldApi",active,sort_order AS "sortOrder",revision
        FROM md_validation_rules WHERE tenant_id=$1 AND object_api=$2 ORDER BY sort_order,api_name`,
       [a.tenant_id,req.params.objectApi]);res.json({rules:rows});
   }));
@@ -84,16 +84,37 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
       [a.tenant_id,req.params.objectApi,unique]);
       if(found.rowCount!==unique.length)throw new Error('Invalid validation rule field reference');
     }
-    await db.query(`INSERT INTO md_validation_rules
-      (tenant_id,object_api,api_name,label,expression,error_message,error_field_api,active,sort_order)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT(tenant_id,object_api,api_name) DO UPDATE SET
-       label=EXCLUDED.label,expression=EXCLUDED.expression,error_message=EXCLUDED.error_message,
-       error_field_api=EXCLUDED.error_field_api,active=EXCLUDED.active,sort_order=EXCLUDED.sort_order,
-       updated_at=now()`,
-      [a.tenant_id,req.params.objectApi,req.params.ruleApi,rule.label.trim(),
-       rule.expression,rule.errorMessage.trim(),rule.errorFieldApi??null,
-       rule.active??false,rule.sortOrder??0]);res.json({saved:true});
+    const provided=rule.revision;
+    if(!Number.isSafeInteger(provided)||provided<0)
+      throw new Error('Invalid validation rule revision');
+    const revision=await db.transaction(async client=>{
+      const {rows:existing}=await client.query<{
+        revision:number;label:string;expression:string;error_message:string;
+        error_field_api:string|null;active:boolean;sort_order:number
+      }>(`SELECT revision,label,expression,error_message,error_field_api,active,sort_order
+        FROM md_validation_rules WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE`,
+        [a.tenant_id,req.params.objectApi,req.params.ruleApi]);
+      const current=existing[0];
+      if((current?.revision??0)!==provided)throw new Error('Rule revision conflict');
+      if(current)await client.query(`INSERT INTO md_validation_rule_history
+        (tenant_id,object_api,rule_api,revision,label,expression,error_message,error_field_api,active,sort_order)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [a.tenant_id,req.params.objectApi,req.params.ruleApi,current.revision,current.label,
+        current.expression,current.error_message,current.error_field_api,current.active,current.sort_order]);
+      const next=(current?.revision??0)+1;
+      await client.query(`INSERT INTO md_validation_rules
+        (tenant_id,object_api,api_name,label,expression,error_message,error_field_api,active,sort_order,revision)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        ON CONFLICT(tenant_id,object_api,api_name) DO UPDATE SET
+         label=EXCLUDED.label,expression=EXCLUDED.expression,error_message=EXCLUDED.error_message,
+         error_field_api=EXCLUDED.error_field_api,active=EXCLUDED.active,sort_order=EXCLUDED.sort_order,
+         revision=EXCLUDED.revision,updated_at=now()`,
+        [a.tenant_id,req.params.objectApi,req.params.ruleApi,rule.label.trim(),
+         rule.expression,rule.errorMessage.trim(),rule.errorFieldApi??null,
+         rule.active??false,rule.sortOrder??0,next]);
+      return next;
+    });
+    res.json({saved:true,revision});
   }));
   app.delete(base+'/validation-rules/:ruleApi',route(async(req,res)=>{
     const a=await requireManage(req);
@@ -103,7 +124,7 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
   }));
   app.get(base+'/default-formulas',route(async(req,res)=>{
     const a=await requireManage(req);
-    const {rows}=await db.query(`SELECT field_api AS "fieldApi",expression FROM md_field_default_formulas
+    const {rows}=await db.query(`SELECT field_api AS "fieldApi",expression,revision FROM md_field_default_formulas
       WHERE tenant_id=$1 AND object_api=$2 ORDER BY field_api`,[a.tenant_id,req.params.objectApi]);
     res.json({defaults:rows});
   }));
@@ -126,10 +147,27 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
     const references=flowFormulaReferences(expression);
     if(references.some(ref=>ref.startsWith('$Record__Prior')||ref==='ISNEW'))
       throw new Error('Invalid default formula reference');
-    await db.query(`INSERT INTO md_field_default_formulas(tenant_id,object_api,field_api,expression)
-      VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,object_api,field_api)
-      DO UPDATE SET expression=EXCLUDED.expression`,[a.tenant_id,req.params.objectApi,field,expression]);
-    res.json({saved:true});
+    const provided=req.body?.revision;
+    if(!Number.isSafeInteger(provided)||provided<0)
+      throw new Error('Invalid default formula revision');
+    const revision=await db.transaction(async client=>{
+      const {rows:existing}=await client.query<{revision:number;expression:string}>(`
+        SELECT revision,expression FROM md_field_default_formulas
+        WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 FOR UPDATE`,
+        [a.tenant_id,req.params.objectApi,field]);
+      const current=existing[0];
+      if((current?.revision??0)!==provided)throw new Error('Rule revision conflict');
+      if(current)await client.query(`INSERT INTO md_field_default_formula_history
+        (tenant_id,object_api,field_api,revision,expression) VALUES($1,$2,$3,$4,$5)`,
+        [a.tenant_id,req.params.objectApi,field,current.revision,current.expression]);
+      const next=(current?.revision??0)+1;
+      await client.query(`INSERT INTO md_field_default_formulas(tenant_id,object_api,field_api,expression,revision)
+        VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,object_api,field_api)
+        DO UPDATE SET expression=EXCLUDED.expression,revision=EXCLUDED.revision`,
+        [a.tenant_id,req.params.objectApi,field,expression,next]);
+      return next;
+    });
+    res.json({saved:true,revision});
   }));
   app.delete(base+'/default-formulas/:fieldApi',route(async(req,res)=>{
     const a=await requireManage(req);
