@@ -111,6 +111,58 @@ try{
  assert.deepEqual(status,{saved:200,started:200,completed:200,history:200,debug:200,archived:204},
   'Real browser builder save/Screen Flow API check: '+JSON.stringify(status));
 
+
+ // P0: exercise the actual SQL/HTTP contracts with a least-privilege kiosk user.
+ await db.query("INSERT INTO md_users(tenant_id,email,password_hash) VALUES($1,$2,$3)",[
+   tenantId,'kiosk-device@example.invalid',hash]);
+ const kioskTokens=await new AuthenticationService(db).signIn(
+   tenantId,'kiosk-device@example.invalid',password);
+ const http=async(token,path,method='GET',body)=>{
+   const response=await fetch('http://127.0.0.1:'+apiPort+'/api'+path,{
+     method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+     ...(body?{body:JSON.stringify(body)}:{})
+   });
+   return {status:response.status,data:await response.json().catch(()=>({}))};
+ };
+ assert.equal((await http(kioskTokens.accessToken,'/metadata/permissions')).status,403,
+   'Restricted kiosk actor accessed tenant administration');
+ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9SQCQAAAAASUVORK5CYII=';
+ const media=await http(tokens.accessToken,'/media-assets','POST',{
+   name:'demo-brand.png',contentType:'image/png',contentBase64:png
+ });
+ assert.equal(media.status,201,'Tenant asset upload failed: '+JSON.stringify(media));
+ assert.ok(/^asset:[0-9a-f-]{36}$/i.test(media.data.assetRef));
+ const loadedAsset=await http(tokens.accessToken,'/media-assets/'+media.data.id);
+ assert.equal(loadedAsset.status,200,'Tenant asset retrieval failed');
+ assert.equal(loadedAsset.data.contentBase64,png);
+ assert.equal((await http(kioskTokens.accessToken,'/media-assets/'+media.data.id)).status,403,
+   'Kiosk actor read private media without Files permission');
+ const checkoutApi='P0CheckoutReplay';
+ const graph={apiName:checkoutApi,label:'P0 Checkout Replay',flowType:'Autolaunched Flow',
+   status:'Active',triggerObject:null,startConfig:{},tests:[],versions:[],
+   resources:[{name:'requestId',label:'Request ID',type:'Variable',dataType:'Text',
+     isCollection:false,availableForInput:true,availableForOutput:true,value:''}],
+   elements:[{id:1,type:'Start',label:'Start',config:{}},
+     {id:2,type:'End',label:'End',config:{}}],
+   connectors:[{id:'s',from:1,to:2,kind:'normal',label:'Next'}]};
+ const savedCheckout=await http(tokens.accessToken,'/metadata/flows/'+checkoutApi,'PUT',graph);
+ assert.equal(savedCheckout.status,200,'Idempotent Flow metadata save failed: '+JSON.stringify(savedCheckout));
+ const requestId='00000000-0000-4000-8000-000000000999';
+ const initial=await http(tokens.accessToken,'/flows/'+checkoutApi+'/execute','POST',{requestId});
+ assert.equal(initial.status,200,'First checkout execution failed: '+JSON.stringify(initial));
+ const replay=await http(tokens.accessToken,'/flows/'+checkoutApi+'/execute','POST',{requestId});
+ assert.equal(replay.status,200,'Checkout replay failed: '+JSON.stringify(replay));
+ const result=await db.query(`
+   SELECT count(*)::int AS count FROM md_flow_runs r
+   JOIN md_flow_definitions f ON f.tenant_id=r.tenant_id AND f.id=r.flow_id
+   WHERE f.tenant_id=$1 AND f.api_name=$2`,[tenantId,checkoutApi]);
+ assert.equal(result.rows[0]?.count,1,'Duplicate checkout request created a second Flow run');
+ const mismatch=await http(tokens.accessToken,'/flows/'+checkoutApi+'/execute','POST',
+   {requestId,ChangedPrice:199});
+ assert.ok(mismatch.status>=400,'Replayed checkout request accepted altered inputs');
+ await http(tokens.accessToken,'/metadata/flows/'+checkoutApi,'DELETE');
+ console.info('P0 SQL media, restricted kiosk RBAC and idempotent Flow replay verified');
+
  const choicesResult=await page.evaluate(async token=>{
    const request=async(path,init={})=>{
      const response=await fetch('/api'+path,{
