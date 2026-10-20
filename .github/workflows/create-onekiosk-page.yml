@@ -1,0 +1,30 @@
+name: Create OneKiosk menu metadata (manual)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  create-page:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Create only missing Kiosk_Menu page
+        run: node --import tsx apps/server/scripts/create-onekiosk-page.mjs
+        env:
+          METADRIVE_API_BASE_URL: https://metadrive-production.up.railway.app/api
+          METADRIVE_TENANT_SLUG: ${{ secrets.METADRIVE_TENANT_SLUG }}
+          METADRIVE_LOGIN_EMAIL: ${{ secrets.METADRIVE_LOGIN_EMAIL }}
+          METADRIVE_LOGIN_PASSWORD: ${{ secrets.METADRIVE_LOGIN_PASSWORD }}
+          ONEKIOSK_MENU_OBJECT_API: ${{ vars.ONEKIOSK_MENU_OBJECT_API }}
+          ONEKIOSK_NAME_FIELD_API: ${{ vars.ONEKIOSK_NAME_FIELD_API }}
+          ONEKIOSK_PRICE_FIELD_API: ${{ vars.ONEKIOSK_PRICE_FIELD_API }}
+          ONEKIOSK_IMAGE_FIELD_API: ${{ vars.ONEKIOSK_IMAGE_FIELD_API }}
+          ONEKIOSK_CATEGORY_FIELD_API: ${{ vars.ONEKIOSK_CATEGORY_FIELD_API }}
+          ONEKIOSK_APPROVE_CREATE: Kiosk_Menu
