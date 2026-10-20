@@ -6,6 +6,7 @@ import AdminPropertyControl from '../../builders/AdminPropertyControl/AdminPrope
 import TenantDomains from '../TenantDomains/TenantDomains';
 import TenantRecoveryPanel from '../TenantRecoveryPanel/TenantRecoveryPanel';
 import TenantUsagePanel from '../TenantUsagePanel/TenantUsagePanel';
+import SeederManager from './SeederManager';
 import {PlatformPageSlot} from '../Workspace/PlatformPageSlot';
 
 export type TenantSummary = {
@@ -44,7 +45,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const [create, setCreate] = useState<TenantCreate>(emptyCreate);
   const [createKey, setCreateKey] = useState(() => crypto.randomUUID());
   const [showCreate, setShowCreate] = useState(false);
-  const [detailTab, setDetailTab] = useState<'details' | 'usage' | 'domains' | 'recovery'>('details');
+  const [detailTab, setDetailTab] = useState<'details' | 'usage' | 'domains' | 'recovery' | 'seeders'>('details');
   const [editDetails, setEditDetails] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -233,7 +234,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             onChange={value=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,[field.key]:value}));}}/>)}
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
-        </form> : selected ? <><div className="tenant-detail-tabs" role="tablist" aria-label="Tenant details sections">{([["details","Details"],["usage","Usage"],["domains","Domains"],["recovery","Recovery"]] as const).map(([id,label]) => <button type="button" key={id} role="tab" aria-selected={detailTab === id} className={detailTab === id ? "active" : ""} onClick={() => setDetailTab(id)}>{label}</button>)}</div>{detailTab === "details" && <form onSubmit={(event) => void saveTenant(event)}>
+        </form> : selected ? <><div className="tenant-detail-tabs" role="tablist" aria-label="Tenant details sections">{([["details","Details"],["usage","Usage"],["domains","Domains"],["recovery","Recovery"],["seeders","Seeders"]] as const).map(([id,label]) => <button type="button" key={id} role="tab" aria-selected={detailTab === id} className={detailTab === id ? "active" : ""} onClick={() => setDetailTab(id)}>{label}</button>)}</div>{detailTab === "details" && <form onSubmit={(event) => void saveTenant(event)}>
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
           <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
           {selected.developerAccount && <p className="tenant-help">Developer seeder: <strong>{selected.developerAccount.email}</strong> — {selected.developerAccount.activated ? 'Tenant activated' : 'Pending tenant activation'}. The tenant owns all access changes.</p>}
@@ -253,7 +254,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
           </section>
-        </form>}{detailTab === "usage" && <PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot>}{detailTab === "domains" && <PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}{detailTab === "recovery" && <PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}</> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+        </form>}{detailTab === "usage" && <PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot>}{detailTab === "domains" && <PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}{detailTab === "seeders" && <SeederManager request={request} tenantId={selected.tenantId} />}{detailTab === "recovery" && <PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}</> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section></PlatformPageSlot>
     </div>
   </div>;
