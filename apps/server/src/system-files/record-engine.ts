@@ -1,3 +1,9 @@
+import {validatePhoneField} from '../field-engine/types/PhoneField.js';
+import {validateEmailField} from '../field-engine/types/EmailField.js';
+import {validateUrlField} from '../field-engine/types/UrlField.js';
+import {normalizeTimeField} from '../field-engine/types/TimeField.js';
+import {normalizeDateField} from '../field-engine/types/DateField.js';
+import {normalizeDateTimeField} from '../field-engine/types/DateTimeField.js';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
@@ -565,13 +571,9 @@ export class RecordEngine {
           if(typeof value!=='string')throw new Error('Invalid text field: '+key);
           if(field.max_length!==null&&field.max_length!==undefined&&value.length>field.max_length)
             throw new Error('Invalid text length: '+key);
-          if(field.data_type==='phone'&&(value.length>40||!/\d/.test(value)
-            ||!/^\+?[0-9().\-\s]*(?:\s*(?:x|ext\.?|#)\s*\d+)?$/i.test(value)))
-            throw new Error('Invalid phone field: '+key);
-          if(field.data_type==='email'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
-            throw new Error('Invalid email field: '+key);
-          if(field.data_type==='url'&& !/^https?:\/\/[^\s]+$/i.test(value))
-            throw new Error('Invalid URL field: '+key);
+          if(field.data_type==='phone')validatePhoneField(value,key);
+          if(field.data_type==='email')validateEmailField(value,key);
+          if(field.data_type==='url')validateUrlField(value,key);
           if(['picklist','multipicklist'].includes(field.data_type)&&field.picklist_restricted!==false){
             const selected=field.data_type==='multipicklist'?value.split(';'):[value];
             if(new Set(selected).size!==selected.length||selected.some(item=>!item))
@@ -588,13 +590,8 @@ export class RecordEngine {
             text=encryptFieldValue(this.encryptedValueVault,tenantId,objectApi,key,value);
           }
           break;
-        case 'time': {
-          if(typeof value!=='string')throw new Error('Invalid time field: '+key);
-          const match=/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,3}))?)?$/.exec(value);
-          if(!match)throw new Error('Invalid time field: '+key);
-          text=`${match[1]}:${match[2]}:${match[3]??'00'}.${(match[4]??'').padEnd(3,'0')}`;
-          break;
-        }
+        case 'time':
+          text=normalizeTimeField(value,key);break;
         case 'currency':
         case 'percent':
         case 'number':
@@ -614,14 +611,9 @@ export class RecordEngine {
           if(typeof value!=='boolean')throw new Error('Invalid boolean field: '+key);
           text=String(value);break;
         case 'date':
-          if(typeof value!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)||
-             (!Number.isFinite(Date.parse(value+'T00:00:00.000Z')) || new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)!==value))
-            throw new Error('Invalid date field: '+key);
-          text=value;break;
+          text=normalizeDateField(value,key);break;
         case 'datetime':
-          if(typeof value!=='string'||!Number.isFinite(Date.parse(value))||!/Z$|[+-][0-9]{2}:[0-9]{2}$/.test(value))
-            throw new Error('Invalid datetime field: '+key);
-          text=new Date(value).toISOString();break;
+          text=normalizeDateTimeField(value,key);break;
         case 'reference':
           if(typeof value!=='string'||!uuid.test(value)||!field.related_object)throw new Error('Invalid relationship: '+key);
           if(recordId&&field.relationship_type==='Master-Detail'&&!field.allow_reparenting){
