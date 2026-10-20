@@ -1,3 +1,5 @@
+import {flowFormulaReferences} from '../expression-engine/FormulaDependencyGraph.js';
+export {flowFormulaReferences} from '../expression-engine/FormulaDependencyGraph.js';
 import {supportedFunctions} from '../expression-engine/FormulaFunctionRegistry.js';
 import {resolveFlowLocalDateTime} from './flow-wait-runtime.js';
 import {flowChoiceValues} from './flow-screen-choice-runtime.js';
@@ -571,17 +573,6 @@ const compatibleFormulaTypes=(left:FormulaValueType,right:FormulaValueType):Form
   if(formulaTextTypes.has(left)&&formulaTextTypes.has(right))return 'Text';
   return null;
 };
-export function flowFormulaReferences(expression:string):string[] {
-  const found=new Set<string>();
-  const visit=(node:Expression):void=>{
-    if(node.kind==='reference')found.add(node.value);
-    else if(node.kind==='unary')visit(node.value);
-    else if(node.kind==='binary'){visit(node.left);visit(node.right);}
-    else if(node.kind==='call')node.args.forEach(visit);
-  };
-  visit(new Parser(tokenize(expression)).parse());
-  return [...found];
-}
 export function inferFlowFormulaType(expression:string,resolve:FormulaTypeResolver):FormulaValueType {
   validateFlowFormula(expression);
   const infer=(node:Expression):FormulaValueType=>{
