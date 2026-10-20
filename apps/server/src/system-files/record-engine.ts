@@ -1238,8 +1238,10 @@ export class RecordEngine {
       await this.refreshRollups(transactionClient,tenantId,objectApi,affectedParents);
     };
     if(client){
-      const prior=await this.get(tenantId,userId,objectApi,id,client);
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,{...prior,...values},prior);
+      let previous:Record<string,unknown>|undefined;
+      const loadPrior=async()=>previous??(previous=await this.get(tenantId,userId,objectApi,id,client));
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,
+        async()=>({...await loadPrior(),...values}),loadPrior);
       await write(client,prepared);
     }
     else await this.db.transaction(async transactionClient=>{
