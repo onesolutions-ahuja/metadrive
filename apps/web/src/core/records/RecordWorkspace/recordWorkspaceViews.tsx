@@ -1,6 +1,7 @@
 import { RecordFormDialog } from '../RecordFormDialog/recordFormDialogView';
 import RichTextContent from './RichTextContent';
 import FormulaImageContent from './FormulaImageContent';
+import {resolveRecordCustomLink} from './recordCustomLinks';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
 import { initialScreenValues, screenFieldIsVisible } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
@@ -1832,8 +1833,14 @@ function RecordWorkspace({
             {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
             {canCreate&&object.apiName!=='User'&&<button className="btn" onClick={()=>void cloneCurrentRecord()}><Copy size={14}/>Clone</button>}
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
-            {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
-              target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
+            {(recordLayout?.customLinks ?? []).flatMap(link=>{
+              const readable=new Set(object.fields.filter(field=>
+                fieldAccess[`${object.apiName}.${field.apiName}`]?.read).map(field=>field.apiName));
+              const href=resolveRecordCustomLink(link.url,record,readable);
+              return href?[<a key={link.id} className="btn" href={href}
+                target={link.openInNewWindow?'_blank':undefined}
+                rel={link.openInNewWindow?'noopener noreferrer':undefined}>{link.label}</a>]:[];
+            })}
             {(object.actions ?? []).filter((action) => {
               if (action.type !== 'Custom' || !action.enabled || !allowedActionIds.includes(action.id)) return false;
               if (recordLayout && !recordLayout.actions.includes(action.id)) return false;
