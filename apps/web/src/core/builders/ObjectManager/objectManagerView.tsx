@@ -757,6 +757,11 @@ function ObjectManager({
       relatedLists: selected.includes(value) ? selected.filter((name) => name !== value) : [...selected, value]
     });
   };
+  const updateRelatedListSettings=(layout:PageLayoutMetadata,name:string,
+    update:NonNullable<PageLayoutMetadata['relatedListSettings']>[string])=>{
+    const existing=layout.relatedListSettings??{};
+    updateLayout(layout.id,{relatedListSettings:{...existing,[name]:{...existing[name],...update}}});
+  };
   const updateCustomLink = (layout: PageLayoutMetadata, linkId: string, update: Partial<PageLayoutCustomLinkMetadata>) => {
     updateLayout(layout.id, {
       customLinks: (layout.customLinks ?? []).map((link) => link.id === linkId ? { ...link, ...update } : link)
@@ -972,6 +977,69 @@ function ObjectManager({
                 option.value.toLocaleLowerCase() === name.toLocaleLowerCase() || option.alias.toLocaleLowerCase() === name.toLocaleLowerCase()
               )).map((name) => <label className="metadata-row" key={`unknown-${name}`}><span>Unavailable related list: {name}</span><input type="checkbox" checked onChange={() => updateLayout(selectedLayout.id, { relatedLists: selectedLayout.relatedLists.filter((item) => item !== name) })} /></label>)}
               {relatedListOptions.length === 0 && <p className="permission-help">No objects currently have a relationship to this object.</p>}
+              {normalizeRelatedLists(selectedLayout.relatedLists).map(name=>{
+                const child=objects.find(item=>item.fields.some(field=>field.relationship?.targetObject===draft.apiName
+                  &&field.relationship.childRelationshipName.toLocaleLowerCase()===name.toLocaleLowerCase()));
+                if(!child)return null;
+                const settings=selectedLayout.relatedListSettings?.[name]??{};
+                const columns=settings.columns??child.fields.filter(field=>
+                  !field.relationship||field.relationship.targetObject!==draft.apiName).slice(0,4).map(field=>field.apiName);
+                const set=(change:Parameters<typeof updateRelatedListSettings>[2])=>updateRelatedListSettings(selectedLayout,name,change);
+                return <div className="metadata-card" key={name}>
+                  <h4>{name} — Display &amp; Actions</h4>
+                  <label className="form-label">Visible columns</label>
+                  <FieldSelectorList fields={child.fields} selected={columns}
+                    onToggle={apiName=>set({columns:columns.includes(apiName)?columns.filter(x=>x!==apiName):[...columns,apiName].slice(0,12)})}
+                    onMove={(apiName,direction)=>{
+                      const list=[...columns],i=list.indexOf(apiName),j=i+direction;
+                      if(i>=0&&j>=0&&j<list.length){[list[i],list[j]]=[list[j],list[i]];set({columns:list});}
+                    }}/>
+                  <label className="form-label">Sort field
+                    <select className="form-control" aria-label={`Sort field for ${name}`}
+                      value={settings.sortField??''} onChange={event=>set({sortField:event.target.value||undefined})}>
+                      <option value="">Default order</option>
+                      {child.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+                    </select></label>
+                  <label className="form-label">Sort direction
+                    <select className="form-control" value={settings.sortDirection??'asc'}
+                      onChange={event=>set({sortDirection:event.target.value as 'asc'|'desc'})}>
+                      <option value="asc">Ascending</option><option value="desc">Descending</option>
+                    </select></label>
+                  <label className="form-label">Filter field
+                    <select className="form-control" aria-label={`Filter field for ${name}`}
+                      value={settings.filterField??''} onChange={event=>set({
+                        filterField:event.target.value||undefined,
+                        filterValue:event.target.value?(settings.filterValue??''):undefined
+                      })}>
+                      <option value="">No additional filter</option>
+                      {child.fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+                    </select></label>
+                  {settings.filterField&&<>
+                    <label className="form-label">Filter operator
+                      <select className="form-control" value={settings.filterOperator??'Equals'}
+                        onChange={event=>set({filterOperator:event.target.value as 'Equals'|'Includes'|'Excludes'})}>
+                        <option value="Equals">Equals</option>
+                        <option value="Includes">Includes (multi-select)</option>
+                        <option value="Excludes">Excludes (multi-select)</option>
+                      </select></label>
+                    <label className="form-label">Filter value
+                      <input className="form-control" maxLength={256} value={settings.filterValue??''}
+                        onChange={event=>set({filterValue:event.target.value})}/>
+                    </label>
+                  </>}
+                  <label className="form-label">Rows per page
+                    <select className="form-control" value={settings.pageSize??50}
+                      onChange={event=>set({pageSize:Number(event.target.value) as 10|25|50})}>
+                      <option value={10}>10</option><option value={25}>25</option><option value={50}>50</option>
+                    </select></label>
+                  <label className="checkbox-row"><input type="checkbox"
+                    checked={settings.showNewAction!==false}
+                    onChange={event=>set({showNewAction:event.target.checked})}/>Show related New action</label>
+                  <label className="checkbox-row"><input type="checkbox"
+                    checked={settings.showRowActions===true}
+                    onChange={event=>set({showRowActions:event.target.checked})}/>Show row Edit/Delete actions</label>
+                </div>;
+              })}
             </div>
             <div className="metadata-card"><h3>Page Actions</h3>{(['New', 'Edit', 'Delete'] as const).map((action) => <label className="metadata-row" key={action}><span>{action}</span><input type="checkbox" checked={selectedLayout.actions.includes(action)} onChange={() => updateLayout(selectedLayout.id, { actions: toggleField(selectedLayout.actions, action) })} /></label>)}
               {(draft.actions??[]).filter(action=>action.type==='Custom').map(action=><label className="metadata-row" key={action.id}>
