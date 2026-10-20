@@ -95,17 +95,20 @@ export async function acceptScreenRecordSelection(
   let records: FlowScreenRecord[];
   if (type === 'Data Table') {
     const source = field.collection;
-    if (typeof source !== 'string' || !resources.some(item =>
+    if (typeof source !== 'string' || source === output || !resources.some(item =>
       item.name === source && item.type === 'Record Collection'
       && item.dataType === destination.dataType) || !Array.isArray(vars[source]))
       throw new Error('Screen source collection is unavailable or has an incompatible Object: ' + key);
     const available = new Map((vars[source] as unknown[]).filter(visibleRecord)
       .map(item => [item.Id as string, item]));
-    records = ids.map(id => {
-      const found = available.get(id);
-      if (!found) throw new Error('Screen selection is not in the permitted record collection: ' + key);
-      return found;
-    });
+    for (const id of ids) {
+      if (!available.has(id))
+        throw new Error('Screen selection is not in the permitted record collection: ' + key);
+    }
+    // Recheck record and field permissions at submission time: a record may have
+    // changed or been revoked since Get Records originally populated the screen.
+    records = [];
+    for (const id of ids) records.push(await readRecord(destination.dataType, id));
   } else {
     if (field.objectApiName !== destination.dataType)
       throw new Error('Screen selected rows Object does not match the lookup: ' + key);
@@ -115,4 +118,54 @@ export async function acceptScreenRecordSelection(
   vars[output] = records;
   if (output !== key && !multi) vars[key] = ids[0] ?? '';
   return true;
+}
+
+/** Validate the visual Screen Flow binding at publish time, before an interview opens. */
+export function validateScreenRecordBindings(
+  screen: { config: Record<string, unknown> }, declared: FlowScreenResource[],
+  elements: Array<{ id?: unknown; type?: unknown; config?: unknown }>
+): string[] {
+  const issues: string[] = [];
+  const resources = [...declared];
+  for (const element of elements) {
+    if (element.type !== 'Get Records' || !element.config
+      || typeof element.config !== 'object' || Array.isArray(element.config)) continue;
+    const config = element.config as Record<string, unknown>;
+    const limit = config.recordLimit ?? 1;
+    if (limit !== 'all' && !(Number(limit) > 1)) continue;
+    const name = typeof config.outputVariable === 'string' && config.outputVariable
+      ? config.outputVariable : 'record' + String(element.id ?? '');
+    if (identifier.test(name) && typeof config.object === 'string'
+      && identifier.test(config.object) && !resources.some(item => item.name === name))
+      resources.push({ name, type: 'Record Collection', dataType: config.object });
+  }
+  for (const field of fields(screen)) {
+    if (field.type !== 'Data Table' && field.type !== 'Choice Lookup') continue;
+    const key = String(field.apiName ?? '');
+    const multi = field.type === 'Data Table'
+      ? field.multiselect === true : field.multipleSelections === true;
+    const output = typeof field.selectedRowsResource === 'string'
+      ? field.selectedRowsResource : '';
+    const min = field.minimumSelections ?? 0;
+    const max = field.maximumSelections ?? 0;
+    if (!Number.isInteger(min) || Number(min) < 0 || Number(min) > 200
+      || !Number.isInteger(max) || Number(max) < 0 || Number(max) > 200
+      || (max !== 0 && Number(min) > Number(max))
+      || (!multi && Number(min) > 1))
+      issues.push('Invalid Screen selection limits: ' + key);
+    if (multi && !output) issues.push('Screen multiple selection requires a selected rows Record Collection: ' + key);
+    if (!output) continue;
+    const destination = declared.find(item => item.name === output && item.type === 'Record Collection');
+    if (!destination) {
+      issues.push('Screen selected rows output must be a declared Record Collection: ' + key);
+      continue;
+    }
+    if (field.type === 'Data Table') {
+      const source = resources.find(item => item.name === field.collection && item.type === 'Record Collection');
+      if (!source || source.dataType !== destination.dataType || source.name === destination.name)
+        issues.push('Screen Data Table source and selected output must be separate matching Record Collections: ' + key);
+    } else if (field.objectApiName !== destination.dataType)
+      issues.push('Screen Choice Lookup Object must match selected rows output: ' + key);
+  }
+  return issues;
 }
