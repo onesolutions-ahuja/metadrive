@@ -80,11 +80,24 @@ export type PageLayoutCustomLinkMetadata = {
   openInNewWindow: boolean;
 };
 
+export type RelatedListSettingsMetadata = {
+  columns?: string[];
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+  filterField?: string;
+  filterValue?: string;
+  filterOperator?: 'Equals' | 'Includes' | 'Excludes';
+  pageSize?: 10 | 25 | 50;
+  showNewAction?: boolean;
+  showRowActions?: boolean;
+};
+
 export type PageLayoutMetadata = {
   id: string;
   label: string;
   sections: PageLayoutSectionMetadata[];
   relatedLists: string[];
+  relatedListSettings?: Record<string,RelatedListSettingsMetadata>;
   actions: string[];
   customLinks?: PageLayoutCustomLinkMetadata[];
 };
