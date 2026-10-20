@@ -1636,6 +1636,7 @@ export default function DashboardBuilder({
         </div>
         <div className="dashboard-sidebar-section">
           <div className="dashboard-panel-heading"><strong>Components</strong><CircleHelp size={14} /></div>
+          <p className="palette-note" role="note">Select a component to add it to the dashboard. Changes are not published until you publish.</p>
           <div className="dashboard-component-tools">
             <button disabled={!canEditCurrent || previewMode} onClick={() => addComponent('Metric')}><span className="dashboard-tool-icon metric-tool">#</span><span><b>Metric</b><small>Summarize a value</small></span><Plus size={14} /></button>
             <button disabled={!canEditCurrent || previewMode} onClick={() => addComponent('Chart')}><span className="dashboard-tool-icon chart-tool"><BarChart3 size={15} /></span><span><b>Chart</b><small>Visualize grouped data</small></span><Plus size={14} /></button>
