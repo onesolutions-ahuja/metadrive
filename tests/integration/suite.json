@@ -3,6 +3,7 @@
   "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
   "command": "node scripts/run-test-suite.mjs integration",
   "tests": [
+    "apps/server/test/system/communication-engine.test.ts",
     "apps/server/test/system/dashboard-subscription-schedule.test.ts",
     "apps/server/test/system/data-loader.test.ts",
     "apps/server/test/system/durable-job-admin-routes.test.ts",
