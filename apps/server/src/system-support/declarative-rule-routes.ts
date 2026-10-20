@@ -133,13 +133,16 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
   app.delete(base+'/validation-rules/:ruleApi',route(async(req,res)=>{
     const a=await requireManage(req);
     if(!api.test(req.params.ruleApi))throw new Error('Invalid rule API name');
+    const match=req.get('if-match');
+    const expected=match&&/^"\\d+"$/.test(match)?Number(match.slice(1,-1)):NaN;
+    if(!Number.isSafeInteger(expected)||expected<1)throw new Error('Invalid rule revision precondition');
     await db.transaction(async client=>{
       const {rows}=await client.query<{
         revision:number;label:string;expression:string;error_message:string;
         error_field_api:string|null;active:boolean;sort_order:number
       }>(`DELETE FROM md_validation_rules WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
-        RETURNING revision,label,expression,error_message,error_field_api,active,sort_order`,
-        [a.tenant_id,req.params.objectApi,req.params.ruleApi]);
+        AND revision=$4 RETURNING revision,label,expression,error_message,error_field_api,active,sort_order`,
+        [a.tenant_id,req.params.objectApi,req.params.ruleApi,expected]);
       if(rows[0])await client.query(`INSERT INTO md_validation_rule_history
         (tenant_id,object_api,rule_api,revision,label,expression,error_message,error_field_api,active,sort_order)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -211,10 +214,13 @@ export function registerDeclarativeRuleRoutes(app:Express,db:SqlPersistence,rbac
   app.delete(base+'/default-formulas/:fieldApi',route(async(req,res)=>{
     const a=await requireManage(req);
     if(!api.test(req.params.fieldApi))throw new Error('Invalid field API name');
+    const match=req.get('if-match');
+    const expected=match&&/^"\\d+"$/.test(match)?Number(match.slice(1,-1)):NaN;
+    if(!Number.isSafeInteger(expected)||expected<1)throw new Error('Invalid rule revision precondition');
     await db.transaction(async client=>{
       const {rows}=await client.query<{revision:number;expression:string}>(`
         DELETE FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3
-        RETURNING revision,expression`,[a.tenant_id,req.params.objectApi,req.params.fieldApi]);
+        AND revision=$4 RETURNING revision,expression`,[a.tenant_id,req.params.objectApi,req.params.fieldApi,expected]);
       if(rows[0])await client.query(`INSERT INTO md_field_default_formula_history
         (tenant_id,object_api,field_api,revision,expression) VALUES($1,$2,$3,$4,$5)`,
         [a.tenant_id,req.params.objectApi,req.params.fieldApi,rows[0].revision,rows[0].expression]);
