@@ -493,9 +493,12 @@ CREATE TABLE IF NOT EXISTS md_object_page_layout_links (
   open_in_new_window boolean NOT NULL DEFAULT false,
   visible_when_field text,
   visible_when_value text,
-  CONSTRAINT md_record_link_visibility_pair CHECK(
+  CONSTRAINT md_record_link_visibility_pair CHECK (
     (visible_when_field IS NULL AND visible_when_value IS NULL)
-    OR (visible_when_field ~ '^[A-Za-z][A-Za-z0-9_]*
+    OR (visible_when_field ~ '^[A-Za-z][A-Za-z0-9_]*$'
+      AND visible_when_value IS NOT NULL AND length(visible_when_value)<=256)),
+  sort_order integer NOT NULL,
+  PRIMARY KEY (tenant_id,object_api,layout_id,link_id),
   FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS md_object_page_layout_assignments (
