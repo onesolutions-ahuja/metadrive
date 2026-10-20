@@ -146,16 +146,24 @@
     overflow-y: auto;
     overscroll-behavior-y: contain;
   }
-  .page-builder-layout > .component-panel,
-  .page-builder-layout > .properties-panel {
+  .page-builder-layout > .component-panel {
     grid-column: 1 / -1;
-    display: block !important;
     min-width: 0;
-    max-height: min(45dvh, 420px);
+    max-height: min(30dvh, 260px);
     overflow: auto;
   }
-  .page-builder-layout > .properties-panel {
-    border-top: 1px solid var(--border);
+  /* Preserve the existing responsive-open inspector sheet and its toggle. */
+  .page-builder-layout > .properties-panel:not(.responsive-open) { display: none !important; }
+  .page-builder-layout > .properties-panel.responsive-open {
+    display: block !important;
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    width: min(360px, 92vw);
+    max-height: 100%;
+    overflow-y: auto;
+    z-index: 5;
+    box-shadow: -8px 0 24px rgb(0 0 0 / 18%);
   }
   .flow-builder .flow-workarea {
     grid-template-columns: minmax(0, 1fr) !important;
