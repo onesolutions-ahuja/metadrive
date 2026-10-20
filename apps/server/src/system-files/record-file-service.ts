@@ -56,13 +56,13 @@ function validateImageDimensions(type:string,data:Buffer) {
     throw new Error('Invalid inline image dimensions');
 }
 /** Shared validated image contract for tenant assets and record-inline images. */
-export function validateTenantImage(contentType:string,contentBase64:string) {
+export function validateTenantImage(contentType:string,contentBase64:string,maxBytes=maxFileBytes) {
   const signature=signatures[contentType];
   if(!signature||contentBase64.length===0
-    ||contentBase64.length>Math.ceil(maxFileBytes/3)*4)
+    ||contentBase64.length>Math.ceil(maxBytes/3)*4)
     throw new Error('Invalid image format or size');
   const content=Buffer.from(contentBase64,'base64');
-  if(content.length===0||content.length>maxFileBytes
+  if(content.length===0||content.length>maxBytes
     ||content.toString('base64')!==contentBase64||!signature(content))
     throw new Error('Invalid image content for its declared format');
   validateImageDimensions(contentType,content);
@@ -114,7 +114,7 @@ export class RecordFileService {
       input.fieldApi,'edit','create');
     const signature=signatures[input.contentType];
     if(!signature||input.contentBase64.length===0
-      ||input.contentBase64.length>Math.ceil(maxFileBytes/3)*4)
+      ||input.contentBase64.length>Math.ceil(maxBytes/3)*4)
       throw new Error('Invalid inline image format or size');
     const content=Buffer.from(input.contentBase64,'base64');
     if(content.length===0||content.length>maxFileBytes
