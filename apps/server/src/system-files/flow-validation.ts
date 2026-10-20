@@ -761,7 +761,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
  const addFields=(objectApi:string,value:unknown)=>{
   if(!Array.isArray(value))return;
   const known=fieldApis.get(objectApi)??new Set<string>();
-  for(const field of value)if(typeof field==='string')known.add(field);
+  for(const field of value)if(typeof field==='string'&&field.trim())known.add(field.trim());
   fieldApis.set(objectApi,known);
  };
  const addConditions=(objectApi:string,value:unknown)=>{
