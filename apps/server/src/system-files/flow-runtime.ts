@@ -1,3 +1,4 @@
+import {executeActionButtonNode} from './nodes/ActionButtonNode.js';
 import {executeWaitPauseNode} from './nodes/WaitPauseNode.js';
 import {executeDecisionNode} from './nodes/DecisionNode.js';
 import {executeScreenElementNode} from './nodes/ScreenElementNode.js';
@@ -1004,7 +1005,7 @@ export class FlowRuntime {
           }
           history=[];
         }else if(node.type==='Action'||node.type==='Publish Platform Event'){
-          const fault=await executeFlowAction({client,rbac:this.rbac!,tenantId,userId,
+          const fault=await executeActionButtonNode({client,rbac:this.rbac!,tenantId,userId,
             flowApi:active.api_name,config:node.type==='Publish Platform Event'?{...node.config,actionType:'Publish Platform Event'}:node.config,
             resolve:evaluate,variables:vars,records:this.records!,
             httpCallout:this.httpCallout,
