@@ -16,7 +16,7 @@ test('durable Flow dispatch requires valid licence expiry and current actor',()=
  const source=readFileSync(new URL('../../src/system-support/flow-job-handler.ts',import.meta.url),'utf8');
  assert.match(source,/JOIN md_tenants t ON t.id=u.tenant_id AND t.status='ACTIVE'/);
  assert.match(source,/u.tenant_id=\$1 AND u.id=\$2 AND u.enabled=true/);
- const entitlement=readFileSync(new URL('../../src/system-files/flow-validation.ts',import.meta.url),'utf8');
+ const entitlement=readFileSync(new URL('../../src/flow-engine/FlowValidator.ts',import.meta.url),'utf8');
  assert.match(entitlement,/e\.active=true/);
  assert.match(entitlement,/e\.expires_at IS NULL OR e\.expires_at>now\(\)/);
  assert.match(entitlement,/md_app_installations/);
