@@ -23,7 +23,7 @@ export class RecordMatching {
    const fields=columns.rows.filter(x=>x.rule_api===rule.api_name);
    if(!fields.length)continue;
    const clauses:string[]=[];
-   const params:unknown[]=[tenantId,objectApi,userId,excludeId??null];
+   const params:unknown[]=[tenantId,objectApi,excludeId??null];
    for(const field of fields){
     const value=values[field.field_api];
     if(value===null||value===undefined||typeof value!=='string'||!value.trim()){
@@ -41,7 +41,7 @@ export class RecordMatching {
    const filter=rule.match_mode==='All'?clauses.join(' AND '):'('+clauses.join(' OR ')+')';
    const records=await client.query<{id:string}>(`SELECT r.id FROM md_records r WHERE
      r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
-     AND ($4::uuid IS NULL OR r.id<>$4::uuid)
+     AND ($3::uuid IS NULL OR r.id<>$3::uuid)
      AND (${filter}) ORDER BY r.id LIMIT 20`,params);
    if(!records.rows.length)continue;
    if(rule.action==='Block')throw new DuplicateMatchError(rule.api_name);
