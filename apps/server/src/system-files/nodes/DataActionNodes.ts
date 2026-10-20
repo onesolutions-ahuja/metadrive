@@ -1,3 +1,4 @@
+import {executeLoopNode} from './LoopNode.js';
 import type {PoolClient} from 'pg';
 import type {RecordEngine} from '../record-engine.js';
 import type {FlowRecordQuery} from '../flow-record-query.js';
@@ -164,25 +165,7 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
     }
     return {handled:true,clearHistory:true};
   }
-  if(node.type==='Loop'){
-    const collection=vars[String(config.collection??'')];
-    if(!Array.isArray(collection)||collection.length>200)
-      throw new Error('Loop source must be a record collection of at most 200 records');
-    const direction=config.direction==='Last to first'?-1:1;
-    let index=loops.get(node.id);
-    if(index===undefined)index=direction===1?0:collection.length-1;
-    if(index<0||index>=collection.length){
-      loops.delete(node.id);
-      return {handled:true,selected:'After Last'};
-    }
-    const item=collection[index];
-    if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Loop items must be records');
-    if(typeof config.loopVariable!=='string'||!apiName.test(config.loopVariable))
-      throw new Error('Invalid Loop variable');
-    vars[config.loopVariable]=item;
-    loops.set(node.id,index+direction);
-    return {handled:true,selected:'For Each'};
-  }
+  if(node.type==='Loop')return executeLoopNode({node,vars,loops});
   if(node.type==='Collection Filter'||node.type==='Collection Sort'||node.type==='Transform'){
     const output=String(config.outputCollection??'');
     if(!apiName.test(output))throw new Error('Invalid collection output variable');
