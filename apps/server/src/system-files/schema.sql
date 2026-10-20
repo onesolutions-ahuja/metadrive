@@ -1692,7 +1692,6 @@ CREATE TABLE IF NOT EXISTS md_flow_execution_requests (
   input_hash text NOT NULL CHECK (input_hash ~ '^[0-9a-f]{64}$'),
   run_id uuid,
   state text NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','completed','failed')),
-  result_payload jsonb,
   error_code text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -1702,3 +1701,16 @@ CREATE TABLE IF NOT EXISTS md_flow_execution_requests (
 );
 CREATE INDEX IF NOT EXISTS md_flow_execution_requests_run
   ON md_flow_execution_requests(tenant_id,run_id) WHERE run_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS md_flow_execution_result_values (
+  tenant_id uuid NOT NULL,
+  actor_id uuid NOT NULL,
+  flow_api text NOT NULL,
+  request_id uuid NOT NULL,
+  property_path text NOT NULL CHECK(length(property_path) BETWEEN 1 AND 1024),
+  value_kind text NOT NULL CHECK(value_kind IN ('string','number','boolean','null','array','object')),
+  value_text text,
+  PRIMARY KEY(tenant_id,actor_id,flow_api,request_id,property_path),
+  FOREIGN KEY(tenant_id,actor_id,flow_api,request_id)
+    REFERENCES md_flow_execution_requests(tenant_id,actor_id,flow_api,request_id)
+    ON DELETE CASCADE
+);
