@@ -837,7 +837,8 @@ export class RecordEngine {
   }
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0,
     options:{sortField?:string;sortDirection?:'asc'|'desc';search?:string;filterField?:string;
-      filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes'}={}) {
+      filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes';
+      relatedField?:string;relatedId?:string}={}) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const definitions=await this.fields(tenantId,objectApi);
@@ -852,6 +853,13 @@ export class RecordEngine {
     };
     const sortField=fieldFor(options.sortField);
     const filterField=fieldFor(options.filterField);
+    if((options.relatedField===undefined)!==(options.relatedId===undefined))
+      throw new Error('Related list requires both relationship field and parent record');
+    const relatedField=fieldFor(options.relatedField);
+    if(relatedField&&(
+      relatedField.data_type!=='reference'||!relatedField.related_object||
+      !uuid.test(options.relatedId??'')))
+      throw new Error('Invalid related-list relationship');
     const search=options.search?.trim().slice(0,256)??'';
     const filterValue=options.filterValue;
     const filterOperator=options.filterOperator??'Equals';
@@ -878,6 +886,16 @@ export class RecordEngine {
     };
     if(sortField&&!await canRead(sortField.api_name))throw new Error('Field is not readable');
     if(filterField&&!await canRead(filterField.api_name))throw new Error('Field is not readable');
+    if(relatedField){
+      if(!await canRead(relatedField.api_name))throw new Error('Field is not readable');
+      const parentObject=relatedField.related_object!;
+      await this.rbac.require(tenantId,userId,parentObject,'read');
+      await this.rbac.requireRecord(tenantId,userId,parentObject,options.relatedId!,'read');
+      const parent=await this.db.query(
+        'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,parentObject,options.relatedId]);
+      if(!parent.rowCount)throw new Error('Related parent record not found');
+    }
     const searchFields:string[]=[];
     if(search)for(const field of definitions)
       if(!['formula','geolocation','address','encryptedtext'].includes(field.data_type)&&await canRead(field.api_name))
@@ -909,6 +927,956 @@ export class RecordEngine {
         WHERE fv.tenant_id=r.tenant_id AND fv.record_id=r.id AND fv.object_api=r.object_api
           AND fv.field_api=${fieldParam}
           AND COALESCE(fv.value_text,fv.reference_record_id::text)=${valueParam})`);
+    }
+    if(relatedField){
+      conditionParams.push(relatedField.api_name);
+      const relationshipParam='
+      const fieldsParam='$'+(3+conditionParams.length);
+      conditionParams.push(search);
+      const searchParam='$'+(3+conditionParams.length);
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_values qv
+        WHERE qv.tenant_id=r.tenant_id AND qv.record_id=r.id AND qv.object_api=r.object_api
+          AND qv.field_api=ANY(${fieldsParam}::text[])
+          AND strpos(lower(COALESCE(qv.value_text,qv.reference_record_id::text,'')),lower(${searchParam}))>0)`);
+    }
+    const where=predicates.length?' AND '+predicates.join(' AND '):'';
+    const count=await this.db.query<{total:string}>(`
+      SELECT count(*)::text AS total FROM md_records r
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+    `,[tenantId,objectApi,userId,...conditionParams]);
+    const params:unknown[]=[tenantId,objectApi,userId,...conditionParams];
+    let orderBy='r.created_at ASC,r.id ASC';
+    let sortSelection='NULL::text AS sort_value';
+    let resultOrder='r.created_at,r.id,v.field_api';
+    let sortJoin='';
+    if(sortField){
+      params.push(sortField.api_name);
+      sortJoin=`LEFT JOIN md_record_values sv ON sv.tenant_id=r.tenant_id AND sv.record_id=r.id
+        AND sv.object_api=r.object_api AND sv.field_api=$${params.length}`;
+      const direction=options.sortDirection==='desc'?'DESC':'ASC';
+      const sortType=sortField.data_type==='rollup'
+        ?sortField.rollup_source_data_type:sortField.data_type;
+      const sortValue=['number','currency','percent'].includes(String(sortType))
+        ?'sv.value_number'
+        :sortType==='date'?'sv.value_date'
+          :sortType==='datetime'?'sv.value_datetime'
+            :sortField.data_type==='reference'?'sv.reference_record_id::text'
+              :sortField.data_type==='boolean'?'sv.value_text'
+                :'lower(COALESCE(sv.value_text,sv.reference_record_id::text))';
+      sortSelection=`${sortValue} AS sort_value`;
+      orderBy=`${sortValue} ${direction} NULLS LAST,r.created_at ASC,r.id ASC`;
+      resultOrder=`r.sort_value ${direction} NULLS LAST,r.created_at ASC,r.id ASC,v.field_api`;
+    }
+    params.push(pageSize,start);
+    const limitParam=params.length-1,offsetParam=params.length;
+    const {rows}=await this.db.query<{
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
+    }>(`
+      WITH selected AS (
+        SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+          r.record_type_id,r.is_clone,${sortSelection}
+        FROM md_records r ${sortJoin}
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+        ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
+      )
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
+        v.field_api,v.value_text,v.reference_record_id,
+        v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+        v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,
+        v.address_country,f.data_type
+      FROM selected r
+      LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
+        AND EXISTS(SELECT 1 FROM md_field_definitions active_field
+          WHERE active_field.tenant_id=v.tenant_id AND active_field.object_api=v.object_api
+            AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
+      LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
+        AND f.deleted_at IS NULL
+      ORDER BY ${resultOrder}
+    `,params);
+    const collected=new Map<string,Record<string,unknown>>();
+    const allowed=new Map<string,boolean>();
+    for(const row of rows) {
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,
+        LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id,
+        __isClone:row.is_clone===true});
+      if(!row.field_api||row.field_api==='OwnerId')continue;
+      if(!allowed.has(row.field_api))allowed.set(row.field_api,await canRead(row.field_api));
+      if(!allowed.get(row.field_api))continue;
+      const value=row.reference_record_id??row.value_text;
+      collected.get(row.id)![row.field_api]=row.data_type==='geolocation'
+        ?row.geo_latitude===null&&row.geo_longitude===null?null:{latitude:row.geo_latitude,longitude:row.geo_longitude}
+        :row.data_type==='address'
+          ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
+            ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api,row.id,row.value_text)
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='date'
+          ?row.value_date
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='datetime'
+          ?row.value_datetime?new Date(row.value_datetime).toISOString():null
+        :value===null?null:
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??value):
+        row.data_type==='boolean'?(row.value_boolean??value==='true'):
+        row.data_type==='date'?(row.value_date??value):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
+    }
+    const records=[...collected.values()];
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId);
+      for(const record of records)
+        await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,undefined,false,formulaContext);
+    }
+    for(const record of records)delete record.__isClone;
+    return {records,total:Number(count.rows[0]?.total??0)};
+  }
+  /** Typed SQL filtering with existing Object, Field and Record authorization. */
+  async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50,direction:'asc'|'desc'='asc') {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string;rollup_source_type:string|null}>(`
+      SELECT f.data_type,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=f.tenant_id AND s.object_api=f.rollup_child_object
+           AND s.api_name=f.rollup_source_field AND s.deleted_at IS NULL) AS rollup_source_type
+      FROM md_field_definitions f
+      WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=$3`,
+      [tenantId,objectApi,fieldApi]);
+    const definition=fields[0];
+    const type=definition?.data_type==='rollup'?definition.rollup_source_type:definition?.data_type;
+    if(!type)throw new Error('Invalid typed filter field');
+    const columns:Record<string,string>={number:'value_number',currency:'value_number',
+      percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
+    const column=columns[type];
+    if(!column)throw new Error('Invalid typed filter field');
+    const casts:Record<string,string>={value_number:'numeric',value_date:'date',
+      value_datetime:'timestamptz',value_boolean:'boolean'};
+    if(column==='value_boolean' && operator!=='eq')throw new Error('Invalid boolean comparison');
+    const ops={eq:'=',lt:'<',lte:'<=',gt:'>',gte:'>='} as const;
+    const {rows}=await this.db.query<{id:string}>(`
+      SELECT r.id FROM md_records r JOIN md_record_values v
+        ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+        AND v.${column} ${ops[operator]} $4::${casts[column]}
+        AND md_record_access($1,$5,r.id,'read')
+      ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
+    `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
+    return rows.map(row=>row.id);
+  }
+
+  /** Numeric aggregation over only records visible to the actor. */
+  async aggregateNumeric(tenantId:string,userId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    if(!['number','currency','percent'].includes(fields[0]?.data_type??''))
+      throw new Error('Invalid numeric aggregate field');
+    const {rows}=await this.db.query<{count:string;sum:string|null;min:string|null;max:string|null;avg:string|null}>(`
+      SELECT count(v.value_number)::text AS count,sum(v.value_number)::text AS sum,
+        min(v.value_number)::text AS min,max(v.value_number)::text AS max,
+        avg(v.value_number)::text AS avg
+      FROM md_record_values v JOIN md_records r
+        ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+        AND md_record_access($1,$4,r.id,'read')`,
+      [tenantId,objectApi,fieldApi,userId]);
+    return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
+  }
+
+  /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
+  async get(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    if(!uuid.test(id))throw new Error('Invalid record ID');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    const query=client??this.db;
+    const {rows}=await query.query<{
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
+    }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+      r.record_type_id,r.is_clone,
+      v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+      v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country
+      FROM md_records r
+      LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+        AND EXISTS(SELECT 1 FROM md_field_definitions active_field
+          WHERE active_field.tenant_id=v.tenant_id AND active_field.object_api=v.object_api
+            AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
+      LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api
+        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
+    [tenantId,objectApi,id,userId]);
+    if(!rows.length)throw new Error('Record not found');
+    const record:Record<string,unknown>={
+      Id:rows[0].id,CreatedAt:rows[0].created_at,
+      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id,RecordTypeId:rows[0].record_type_id,
+      __isClone:rows[0].is_clone===true
+    };
+    const visible=rows.filter(row=>row.field_api!==null&&row.field_api!=='OwnerId');
+    const fields=visible.map(row=>row.field_api as string);
+    const access=await this.rbac.allowedMany(tenantId,userId,
+      fields.map(field=>({resource:objectApi+'.'+field,action:'read'})));
+    for(const [index,row] of visible.entries()){
+      if(!access[index])continue;
+      const val=row.reference_record_id??row.value_text;
+      record[row.field_api as string]=row.data_type==='geolocation'
+        ?row.geo_latitude===null&&row.geo_longitude===null?null:{latitude:row.geo_latitude,longitude:row.geo_longitude}
+        :row.data_type==='address'
+          ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
+            ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api as string,row.id,row.value_text)
+        :val===null?null:
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??val):
+        row.data_type==='boolean'?(row.value_boolean??val==='true'):
+        row.data_type==='date'?(row.value_date??val):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
+    }
+    const definitions=await this.fields(tenantId,objectApi,client);
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId,client);
+      await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,false,formulaContext);
+    }
+    delete record.__isClone;
+    return record;
+  }
+  async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
+    values:Record<string,unknown>,ifUnmodifiedSince?:string) {
+    return this.update(tenantId,userId,objectApi,id,values,ifUnmodifiedSince,client);
+  }
+  async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
+    ifUnmodifiedSince?:string,client?:PoolClient) {
+    if(!uuid.test(id))throw new Error('Invalid record ID');
+    const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
+    if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
+    await this.rbac.require(tenantId,userId,objectApi,'edit');
+    if(client)await this.lockObjectForWrite(client,tenantId,objectApi);
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client,id);
+    const write=async(transactionClient:PoolClient,writeValues:Map<string,Storable>)=>{
+      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!found.rowCount)throw new Error('Record not found');
+      if(checkDate&&new Date(found.rows[0].updated_at).getTime()>checkDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
+      const affectedParents=await this.rollupParents(transactionClient,tenantId,objectApi,id);
+      if(writeValues.has('__OwnerId__')){
+        const queue=writeValues.get('__OwnerQueue__')?.value_text==='true',owner=writeValues.get('__OwnerId__')?.value_text;
+        await transactionClient.query('UPDATE md_records SET owner_id=$4,owner_queue_id=$5 WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+          [tenantId,objectApi,id,queue?null:owner,queue?owner:null]);
+      }
+      if(writeValues.has('__RecordTypeId__'))await transactionClient.query(
+        'UPDATE md_records SET record_type_id=$4,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id,writeValues.get('__RecordTypeId__')?.value_text]);
+      else await transactionClient.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id]);
+      for(const [field,value] of writeValues){
+        if(field.startsWith('__'))continue;
+        const previous=await transactionClient.query<{value_text:string|null;reference_record_id:string|null;geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;address_state:string|null;address_postal_code:string|null;address_country:string|null}>(
+          'SELECT value_text,reference_record_id,geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
+          [tenantId,id,field]);
+        const before=previous.rows[0]?.reference_record_id??previous.rows[0]?.value_text
+          ??(previous.rows[0]?.geo_latitude!==null&&previous.rows[0]?.geo_latitude!==undefined
+            ?`${previous.rows[0].geo_latitude},${previous.rows[0].geo_longitude??''}`:null);
+        const after=value.reference_record_id??value.value_text
+          ??(value.geo_latitude!==undefined?`${value.geo_latitude??''},${value.geo_longitude??''}`:null);
+        const oldAddress=value.address_street!==undefined&&previous.rows[0]
+          ?[previous.rows[0].address_street,previous.rows[0].address_city,
+            previous.rows[0].address_state,previous.rows[0].address_postal_code,previous.rows[0].address_country].join('|')
+          :undefined;
+        const newAddress=value.address_street!==undefined?[value.address_street,value.address_city,
+          value.address_state,value.address_postal_code,value.address_country].join('|'):undefined;
+        if(before!==after||oldAddress!==newAddress)await transactionClient.query(
+          'INSERT INTO md_record_history(tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value) VALUES($1,$2,$3,$4,$5,$6,$7)',
+          [tenantId,id,objectApi,field,userId,oldAddress??before,newAddress??after]);
+      }
+      for(const [field,value] of writeValues){if(field.startsWith('__'))continue;await transactionClient.query(`
+        INSERT INTO md_record_values
+          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,
+           geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country,
+           value_number,value_date,value_datetime,value_boolean)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        ON CONFLICT (tenant_id,record_id,field_api)
+        DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id,
+          is_unique=EXCLUDED.is_unique,case_sensitive=EXCLUDED.case_sensitive,
+          geo_latitude=EXCLUDED.geo_latitude,geo_longitude=EXCLUDED.geo_longitude,
+          address_street=EXCLUDED.address_street,address_city=EXCLUDED.address_city,
+          address_state=EXCLUDED.address_state,address_postal_code=EXCLUDED.address_postal_code,
+          address_country=EXCLUDED.address_country,value_number=EXCLUDED.value_number,
+          value_date=EXCLUDED.value_date,value_datetime=EXCLUDED.value_datetime,
+          value_boolean=EXCLUDED.value_boolean
+      `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id,
+        value.is_unique,value.case_sensitive,value.geo_latitude??null,value.geo_longitude??null,
+        value.address_street??null,value.address_city??null,value.address_state??null,
+        value.address_postal_code??null,value.address_country??null,value.value_number??null,
+        value.value_date??null,value.value_datetime??null,value.value_boolean??null]);
+        if(value.multi_values){
+          await transactionClient.query('DELETE FROM md_record_multi_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
+            [tenantId,id,field]);
+          for(const [sortOrder,multiValue] of value.multi_values.entries())await transactionClient.query(
+            `INSERT INTO md_record_multi_values
+              (tenant_id,record_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5,$6)`,
+            [tenantId,id,objectApi,field,multiValue,sortOrder]);
+        }
+      }
+      if(this.richTextFilePruner){
+        const richTextFields=(await this.fields(tenantId,objectApi,transactionClient))
+          .filter(field=>field.data_type==='richtext'&&writeValues.has(field.api_name));
+        for(const field of richTextFields)
+          await this.richTextFilePruner(transactionClient,tenantId,objectApi,id,field.api_name,
+            writeValues.get(field.api_name)?.value_text??null);
+      }
+      const currentParents=await this.rollupParents(transactionClient,tenantId,objectApi,id);
+      for(const [parentObject,parentIds] of currentParents){
+        const affected=affectedParents.get(parentObject)??new Set<string>();
+        for(const parentId of parentIds)affected.add(parentId);
+        affectedParents.set(parentObject,affected);
+      }
+      await this.refreshRollups(transactionClient,tenantId,objectApi,affectedParents);
+    };
+    if(client)await write(client,prepared);
+    else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
+      const locked=await transactionClient.query(
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!locked.rowCount)throw new Error('Record not found');
+      const prior=await this.get(tenantId,userId,objectApi,id,transactionClient);
+      let finalPrepared=prepared;
+      finalPrepared=await this.prepare(tenantId,userId,objectApi,values,false,transactionClient,id);
+      if(this.recordTrigger){
+        const proposed=await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',
+          {...prior,...values},prior,'before-save');
+        if(proposed){
+          const changed={...values};
+          for(const [field,value] of Object.entries(proposed))
+            if(!['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
+              &&!Object.is(value,prior[field]))changed[field]=value;
+          finalPrepared=await this.prepare(tenantId,userId,objectApi,changed,false,transactionClient,id);
+        }
+      }
+      await write(transactionClient,finalPrepared);
+      if(this.recordTrigger){
+        const record=await this.get(tenantId,userId,objectApi,id,transactionClient);
+        await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',record,prior,'after-save');
+      }
+    });
+  }
+  async history(tenantId:string,userId:string,objectApi:string,id:string){
+    if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.requireRecord(tenantId,userId,objectApi,id,'read');
+    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+    if(!found.rowCount)throw new Error('Record not found');
+    const {rows}=await this.db.query<{id:string;field_api:string;changed_by:string;changed_at:Date;old_value:string|null;new_value:string|null}>(
+      'SELECT id,field_api,changed_by,changed_at,old_value,new_value FROM md_record_history WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 ORDER BY changed_at DESC,id DESC LIMIT 100',
+      [tenantId,objectApi,id]);
+    const readable=new Map<string,boolean>();
+    const history=[];
+    for(const row of rows){
+      if(!readable.has(row.field_api))readable.set(row.field_api,
+        await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
+      if(!readable.get(row.field_api))continue;
+      history.push({id:row.id,fieldApiName:row.field_api,changedBy:row.changed_by,
+        changedAt:new Date(row.changed_at).toISOString(),oldValue:row.old_value,newValue:row.new_value});
+    }
+    return {history};
+  }
+  /** Transfer record ownership without bypassing Object/Record permissions or tenant boundaries. */
+  async transferOwner(tenantId:string,userId:string,objectApi:string,id:string,ownerId:string,ifUnmodifiedSince?:string){
+    if(!uuid.test(id)||!uuid.test(ownerId)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+      throw new Error('Invalid record ownership');
+    await this.rbac.require(tenantId,userId,objectApi,'edit');
+    await this.rbac.require(tenantId,userId,objectApi+'.OwnerId','edit');
+    let revisionDate:Date|undefined;
+    if(ifUnmodifiedSince){
+      revisionDate=new Date(ifUnmodifiedSince);
+      if(!Number.isFinite(revisionDate.getTime()))throw new Error('Invalid record modification precondition');
+    }
+    return this.db.transaction(async client=>{
+      const target=await client.query<{id:string;queue:boolean}>("SELECT id,false AS queue FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true UNION ALL SELECT q.queue_id,true AS queue FROM md_queue_objects q WHERE q.tenant_id=$1 AND q.queue_id=$2 AND q.object_api=$3",[tenantId,ownerId,objectApi]);
+      if(!target.rowCount)throw new Error('Record owner not found');
+      const found=await client.query<{updated_at:Date}>(
+        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!found.rows[0])throw new Error('Record not found');
+      if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
+      const {rows}=await client.query<{owner_id:string;updated_at:Date}>(
+        'UPDATE md_records SET owner_id=$4,owner_queue_id=$5,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3 RETURNING COALESCE(owner_id,owner_queue_id) AS owner_id,updated_at',
+        [tenantId,objectApi,id,target.rows[0].queue?null:ownerId,target.rows[0].queue?ownerId:null]);
+      return {Id:id,OwnerId:rows[0].owner_id,LastModifiedDate:rows[0].updated_at};
+    });
+  }
+  private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
+    root:boolean,visiting:Set<string>){
+    await this.lockObjectForWrite(client,tenantId,objectApi);
+    const recordKey=JSON.stringify([objectApi,id]);
+    if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
+    const record=await client.query<{id:string}>(root
+      ?`SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3
+         AND md_record_access($1,$4,id,'delete') FOR UPDATE`
+      :'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
+    root?[tenantId,objectApi,id,userId]:[tenantId,objectApi,id]);
+    if(!record.rowCount){
+      if(root)throw new Error('Record not found');
+      return;
+    }
+    const affectedParents=await this.rollupParents(client,tenantId,objectApi,id);
+    visiting.add(recordKey);
+    const {rows:references}=await client.query<{
+      record_id:string;object_api:string;field_api:string;relationship_type:string;delete_behavior:string|null;required:boolean
+    }>(`SELECT r.id AS record_id,r.object_api,f.api_name AS field_api,
+        COALESCE(f.relationship_type,'Lookup') AS relationship_type,f.delete_behavior,f.required
+      FROM md_record_values v
+      JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id
+      JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
+        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+      WHERE v.tenant_id=$1 AND v.reference_record_id=$2 AND f.related_object=$3
+      ORDER BY f.relationship_type,r.object_api,r.id`,
+    [tenantId,id,objectApi]);
+    if(references.some(reference=>reference.relationship_type==='Lookup'
+      &&(reference.delete_behavior==='Restrict'||reference.required)))
+      throw new Error('Record delete restricted by a lookup relationship');
+    const cascaded=new Set<string>();
+    for(const reference of references){
+      if(reference.relationship_type!=='Master-Detail')continue;
+      const key=JSON.stringify([reference.object_api,reference.record_id]);
+      if(cascaded.has(key))continue;
+      cascaded.add(key);
+      await this.removeRecordTree(client,tenantId,userId,reference.object_api,reference.record_id,false,visiting);
+    }
+    for(const reference of references){
+      if(reference.relationship_type!=='Hierarchical'
+        &&!(reference.relationship_type==='Lookup'&&(reference.delete_behavior??'Clear')==='Clear'))continue;
+      const cleared=await client.query<{record_id:string;object_api:string;field_api:string}>(
+        `UPDATE md_record_values SET value_text=NULL,reference_record_id=NULL
+         WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3 AND reference_record_id=$4
+         RETURNING record_id,object_api,field_api`,
+        [tenantId,reference.record_id,reference.field_api,id]);
+      if(!cleared.rowCount)continue;
+      await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND id=$2',
+        [tenantId,reference.record_id]);
+      await client.query(`INSERT INTO md_record_history
+        (tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value)
+        VALUES($1,$2,$3,$4,$5,$6,NULL)`,
+      [tenantId,reference.record_id,reference.object_api,reference.field_api,userId,id]);
+    }
+    await client.query('DELETE FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+      [tenantId,objectApi,id]);
+    await this.refreshRollups(client,tenantId,objectApi,affectedParents);
+    visiting.delete(recordKey);
+  }
+  async remove(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    await this.rbac.require(tenantId,userId,objectApi,'delete');
+    if(client){
+      await this.lockObjectForWrite(client,tenantId,objectApi);
+      await this.removeRecordTree(client,tenantId,userId,objectApi,id,true,new Set());
+    }
+    else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
+      const locked=await transactionClient.query(
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'delete') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!locked.rowCount)throw new Error('Record not found');
+      const prior=this.recordTrigger
+        ?await this.get(tenantId,userId,objectApi,id,transactionClient):null;
+      await this.removeRecordTree(transactionClient,tenantId,userId,objectApi,id,true,new Set());
+      if(this.recordTrigger)
+        await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'deleted',prior,prior,'after-save');
+    });
+  }
+}
++(3+conditionParams.length);
+      conditionParams.push(options.relatedId!);
+      const parentParam='
+      const fieldsParam='$'+(3+conditionParams.length);
+      conditionParams.push(search);
+      const searchParam='$'+(3+conditionParams.length);
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_values qv
+        WHERE qv.tenant_id=r.tenant_id AND qv.record_id=r.id AND qv.object_api=r.object_api
+          AND qv.field_api=ANY(${fieldsParam}::text[])
+          AND strpos(lower(COALESCE(qv.value_text,qv.reference_record_id::text,'')),lower(${searchParam}))>0)`);
+    }
+    const where=predicates.length?' AND '+predicates.join(' AND '):'';
+    const count=await this.db.query<{total:string}>(`
+      SELECT count(*)::text AS total FROM md_records r
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+    `,[tenantId,objectApi,userId,...conditionParams]);
+    const params:unknown[]=[tenantId,objectApi,userId,...conditionParams];
+    let orderBy='r.created_at ASC,r.id ASC';
+    let sortSelection='NULL::text AS sort_value';
+    let resultOrder='r.created_at,r.id,v.field_api';
+    let sortJoin='';
+    if(sortField){
+      params.push(sortField.api_name);
+      sortJoin=`LEFT JOIN md_record_values sv ON sv.tenant_id=r.tenant_id AND sv.record_id=r.id
+        AND sv.object_api=r.object_api AND sv.field_api=$${params.length}`;
+      const direction=options.sortDirection==='desc'?'DESC':'ASC';
+      const sortType=sortField.data_type==='rollup'
+        ?sortField.rollup_source_data_type:sortField.data_type;
+      const sortValue=['number','currency','percent'].includes(String(sortType))
+        ?'sv.value_number'
+        :sortType==='date'?'sv.value_date'
+          :sortType==='datetime'?'sv.value_datetime'
+            :sortField.data_type==='reference'?'sv.reference_record_id::text'
+              :sortField.data_type==='boolean'?'sv.value_text'
+                :'lower(COALESCE(sv.value_text,sv.reference_record_id::text))';
+      sortSelection=`${sortValue} AS sort_value`;
+      orderBy=`${sortValue} ${direction} NULLS LAST,r.created_at ASC,r.id ASC`;
+      resultOrder=`r.sort_value ${direction} NULLS LAST,r.created_at ASC,r.id ASC,v.field_api`;
+    }
+    params.push(pageSize,start);
+    const limitParam=params.length-1,offsetParam=params.length;
+    const {rows}=await this.db.query<{
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
+    }>(`
+      WITH selected AS (
+        SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+          r.record_type_id,r.is_clone,${sortSelection}
+        FROM md_records r ${sortJoin}
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+        ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
+      )
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
+        v.field_api,v.value_text,v.reference_record_id,
+        v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+        v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,
+        v.address_country,f.data_type
+      FROM selected r
+      LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
+        AND EXISTS(SELECT 1 FROM md_field_definitions active_field
+          WHERE active_field.tenant_id=v.tenant_id AND active_field.object_api=v.object_api
+            AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
+      LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
+        AND f.deleted_at IS NULL
+      ORDER BY ${resultOrder}
+    `,params);
+    const collected=new Map<string,Record<string,unknown>>();
+    const allowed=new Map<string,boolean>();
+    for(const row of rows) {
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,
+        LastModifiedDate:row.updated_at,OwnerId:row.owner_id,RecordTypeId:row.record_type_id,
+        __isClone:row.is_clone===true});
+      if(!row.field_api||row.field_api==='OwnerId')continue;
+      if(!allowed.has(row.field_api))allowed.set(row.field_api,await canRead(row.field_api));
+      if(!allowed.get(row.field_api))continue;
+      const value=row.reference_record_id??row.value_text;
+      collected.get(row.id)![row.field_api]=row.data_type==='geolocation'
+        ?row.geo_latitude===null&&row.geo_longitude===null?null:{latitude:row.geo_latitude,longitude:row.geo_longitude}
+        :row.data_type==='address'
+          ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
+            ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api,row.id,row.value_text)
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='date'
+          ?row.value_date
+        :row.data_type==='rollup'&&byApi.get(row.field_api)?.rollup_source_data_type==='datetime'
+          ?row.value_datetime?new Date(row.value_datetime).toISOString():null
+        :value===null?null:
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??value):
+        row.data_type==='boolean'?(row.value_boolean??value==='true'):
+        row.data_type==='date'?(row.value_date??value):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():value):value;
+    }
+    const records=[...collected.values()];
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId);
+      for(const record of records)
+        await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,undefined,false,formulaContext);
+    }
+    for(const record of records)delete record.__isClone;
+    return {records,total:Number(count.rows[0]?.total??0)};
+  }
+  /** Typed SQL filtering with existing Object, Field and Record authorization. */
+  async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50,direction:'asc'|'desc'='asc') {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    if(direction!=='asc'&&direction!=='desc')throw new Error('Invalid sort direction');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string;rollup_source_type:string|null}>(`
+      SELECT f.data_type,
+        (SELECT s.data_type FROM md_field_definitions s
+         WHERE s.tenant_id=f.tenant_id AND s.object_api=f.rollup_child_object
+           AND s.api_name=f.rollup_source_field AND s.deleted_at IS NULL) AS rollup_source_type
+      FROM md_field_definitions f
+      WHERE f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=$3`,
+      [tenantId,objectApi,fieldApi]);
+    const definition=fields[0];
+    const type=definition?.data_type==='rollup'?definition.rollup_source_type:definition?.data_type;
+    if(!type)throw new Error('Invalid typed filter field');
+    const columns:Record<string,string>={number:'value_number',currency:'value_number',
+      percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
+    const column=columns[type];
+    if(!column)throw new Error('Invalid typed filter field');
+    const casts:Record<string,string>={value_number:'numeric',value_date:'date',
+      value_datetime:'timestamptz',value_boolean:'boolean'};
+    if(column==='value_boolean' && operator!=='eq')throw new Error('Invalid boolean comparison');
+    const ops={eq:'=',lt:'<',lte:'<=',gt:'>',gte:'>='} as const;
+    const {rows}=await this.db.query<{id:string}>(`
+      SELECT r.id FROM md_records r JOIN md_record_values v
+        ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+        AND v.${column} ${ops[operator]} $4::${casts[column]}
+        AND md_record_access($1,$5,r.id,'read')
+      ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
+    `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
+    return rows.map(row=>row.id);
+  }
+
+  /** Numeric aggregation over only records visible to the actor. */
+  async aggregateNumeric(tenantId:string,userId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    if(!['number','currency','percent'].includes(fields[0]?.data_type??''))
+      throw new Error('Invalid numeric aggregate field');
+    const {rows}=await this.db.query<{count:string;sum:string|null;min:string|null;max:string|null;avg:string|null}>(`
+      SELECT count(v.value_number)::text AS count,sum(v.value_number)::text AS sum,
+        min(v.value_number)::text AS min,max(v.value_number)::text AS max,
+        avg(v.value_number)::text AS avg
+      FROM md_record_values v JOIN md_records r
+        ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+        AND md_record_access($1,$4,r.id,'read')`,
+      [tenantId,objectApi,fieldApi,userId]);
+    return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
+  }
+
+  /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
+  async get(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    if(!uuid.test(id))throw new Error('Invalid record ID');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    const query=client??this.db;
+    const {rows}=await query.query<{
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;is_clone:boolean;
+      field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+      value_number:string|null;value_date:string|null;value_datetime:Date|null;value_boolean:boolean|null;
+      geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;
+      address_state:string|null;address_postal_code:string|null;address_country:string|null
+    }>(`SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+      r.record_type_id,r.is_clone,
+      v.field_api,v.value_text,v.reference_record_id,f.data_type,v.value_number,v.value_date,v.value_datetime,v.value_boolean,
+      v.geo_latitude,v.geo_longitude,v.address_street,v.address_city,v.address_state,v.address_postal_code,v.address_country
+      FROM md_records r
+      LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+        AND EXISTS(SELECT 1 FROM md_field_definitions active_field
+          WHERE active_field.tenant_id=v.tenant_id AND active_field.object_api=v.object_api
+            AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
+      LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api
+        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
+    [tenantId,objectApi,id,userId]);
+    if(!rows.length)throw new Error('Record not found');
+    const record:Record<string,unknown>={
+      Id:rows[0].id,CreatedAt:rows[0].created_at,
+      LastModifiedDate:rows[0].updated_at,OwnerId:rows[0].owner_id,RecordTypeId:rows[0].record_type_id,
+      __isClone:rows[0].is_clone===true
+    };
+    const visible=rows.filter(row=>row.field_api!==null&&row.field_api!=='OwnerId');
+    const fields=visible.map(row=>row.field_api as string);
+    const access=await this.rbac.allowedMany(tenantId,userId,
+      fields.map(field=>({resource:objectApi+'.'+field,action:'read'})));
+    for(const [index,row] of visible.entries()){
+      if(!access[index])continue;
+      const val=row.reference_record_id??row.value_text;
+      record[row.field_api as string]=row.data_type==='geolocation'
+        ?row.geo_latitude===null&&row.geo_longitude===null?null:{latitude:row.geo_latitude,longitude:row.geo_longitude}
+        :row.data_type==='address'
+          ?[row.address_street,row.address_city,row.address_state,row.address_postal_code,row.address_country].every(item=>item===null)
+            ?null:{street:row.address_street,city:row.address_city,state:row.address_state,postalCode:row.address_postal_code,country:row.address_country}
+        :row.data_type==='encryptedtext'
+          ?await this.outputFieldValue(tenantId,userId,objectApi,row.field_api as string,row.id,row.value_text)
+        :val===null?null:
+        ['number','currency','percent','rollup'].includes(String(row.data_type))?Number(row.value_number??val):
+        row.data_type==='boolean'?(row.value_boolean??val==='true'):
+        row.data_type==='date'?(row.value_date??val):
+        row.data_type==='datetime'?(row.value_datetime?new Date(row.value_datetime).toISOString():val):val;
+    }
+    const definitions=await this.fields(tenantId,objectApi,client);
+    if(definitions.some(field=>field.data_type==='formula')){
+      const formulaContext=await this.formulaContext(tenantId,userId,client);
+      await this.applyFormulaFields(tenantId,userId,objectApi,record,definitions,client,false,formulaContext);
+    }
+    delete record.__isClone;
+    return record;
+  }
+  async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
+    values:Record<string,unknown>,ifUnmodifiedSince?:string) {
+    return this.update(tenantId,userId,objectApi,id,values,ifUnmodifiedSince,client);
+  }
+  async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
+    ifUnmodifiedSince?:string,client?:PoolClient) {
+    if(!uuid.test(id))throw new Error('Invalid record ID');
+    const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
+    if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
+    await this.rbac.require(tenantId,userId,objectApi,'edit');
+    if(client)await this.lockObjectForWrite(client,tenantId,objectApi);
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client,id);
+    const write=async(transactionClient:PoolClient,writeValues:Map<string,Storable>)=>{
+      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!found.rowCount)throw new Error('Record not found');
+      if(checkDate&&new Date(found.rows[0].updated_at).getTime()>checkDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
+      const affectedParents=await this.rollupParents(transactionClient,tenantId,objectApi,id);
+      if(writeValues.has('__OwnerId__')){
+        const queue=writeValues.get('__OwnerQueue__')?.value_text==='true',owner=writeValues.get('__OwnerId__')?.value_text;
+        await transactionClient.query('UPDATE md_records SET owner_id=$4,owner_queue_id=$5 WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+          [tenantId,objectApi,id,queue?null:owner,queue?owner:null]);
+      }
+      if(writeValues.has('__RecordTypeId__'))await transactionClient.query(
+        'UPDATE md_records SET record_type_id=$4,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id,writeValues.get('__RecordTypeId__')?.value_text]);
+      else await transactionClient.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        [tenantId,objectApi,id]);
+      for(const [field,value] of writeValues){
+        if(field.startsWith('__'))continue;
+        const previous=await transactionClient.query<{value_text:string|null;reference_record_id:string|null;geo_latitude:number|null;geo_longitude:number|null;address_street:string|null;address_city:string|null;address_state:string|null;address_postal_code:string|null;address_country:string|null}>(
+          'SELECT value_text,reference_record_id,geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
+          [tenantId,id,field]);
+        const before=previous.rows[0]?.reference_record_id??previous.rows[0]?.value_text
+          ??(previous.rows[0]?.geo_latitude!==null&&previous.rows[0]?.geo_latitude!==undefined
+            ?`${previous.rows[0].geo_latitude},${previous.rows[0].geo_longitude??''}`:null);
+        const after=value.reference_record_id??value.value_text
+          ??(value.geo_latitude!==undefined?`${value.geo_latitude??''},${value.geo_longitude??''}`:null);
+        const oldAddress=value.address_street!==undefined&&previous.rows[0]
+          ?[previous.rows[0].address_street,previous.rows[0].address_city,
+            previous.rows[0].address_state,previous.rows[0].address_postal_code,previous.rows[0].address_country].join('|')
+          :undefined;
+        const newAddress=value.address_street!==undefined?[value.address_street,value.address_city,
+          value.address_state,value.address_postal_code,value.address_country].join('|'):undefined;
+        if(before!==after||oldAddress!==newAddress)await transactionClient.query(
+          'INSERT INTO md_record_history(tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value) VALUES($1,$2,$3,$4,$5,$6,$7)',
+          [tenantId,id,objectApi,field,userId,oldAddress??before,newAddress??after]);
+      }
+      for(const [field,value] of writeValues){if(field.startsWith('__'))continue;await transactionClient.query(`
+        INSERT INTO md_record_values
+          (tenant_id,record_id,object_api,field_api,value_text,reference_record_id,is_unique,case_sensitive,
+           geo_latitude,geo_longitude,address_street,address_city,address_state,address_postal_code,address_country,
+           value_number,value_date,value_datetime,value_boolean)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        ON CONFLICT (tenant_id,record_id,field_api)
+        DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id,
+          is_unique=EXCLUDED.is_unique,case_sensitive=EXCLUDED.case_sensitive,
+          geo_latitude=EXCLUDED.geo_latitude,geo_longitude=EXCLUDED.geo_longitude,
+          address_street=EXCLUDED.address_street,address_city=EXCLUDED.address_city,
+          address_state=EXCLUDED.address_state,address_postal_code=EXCLUDED.address_postal_code,
+          address_country=EXCLUDED.address_country,value_number=EXCLUDED.value_number,
+          value_date=EXCLUDED.value_date,value_datetime=EXCLUDED.value_datetime,
+          value_boolean=EXCLUDED.value_boolean
+      `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id,
+        value.is_unique,value.case_sensitive,value.geo_latitude??null,value.geo_longitude??null,
+        value.address_street??null,value.address_city??null,value.address_state??null,
+        value.address_postal_code??null,value.address_country??null,value.value_number??null,
+        value.value_date??null,value.value_datetime??null,value.value_boolean??null]);
+        if(value.multi_values){
+          await transactionClient.query('DELETE FROM md_record_multi_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
+            [tenantId,id,field]);
+          for(const [sortOrder,multiValue] of value.multi_values.entries())await transactionClient.query(
+            `INSERT INTO md_record_multi_values
+              (tenant_id,record_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5,$6)`,
+            [tenantId,id,objectApi,field,multiValue,sortOrder]);
+        }
+      }
+      if(this.richTextFilePruner){
+        const richTextFields=(await this.fields(tenantId,objectApi,transactionClient))
+          .filter(field=>field.data_type==='richtext'&&writeValues.has(field.api_name));
+        for(const field of richTextFields)
+          await this.richTextFilePruner(transactionClient,tenantId,objectApi,id,field.api_name,
+            writeValues.get(field.api_name)?.value_text??null);
+      }
+      const currentParents=await this.rollupParents(transactionClient,tenantId,objectApi,id);
+      for(const [parentObject,parentIds] of currentParents){
+        const affected=affectedParents.get(parentObject)??new Set<string>();
+        for(const parentId of parentIds)affected.add(parentId);
+        affectedParents.set(parentObject,affected);
+      }
+      await this.refreshRollups(transactionClient,tenantId,objectApi,affectedParents);
+    };
+    if(client)await write(client,prepared);
+    else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
+      const locked=await transactionClient.query(
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!locked.rowCount)throw new Error('Record not found');
+      const prior=await this.get(tenantId,userId,objectApi,id,transactionClient);
+      let finalPrepared=prepared;
+      finalPrepared=await this.prepare(tenantId,userId,objectApi,values,false,transactionClient,id);
+      if(this.recordTrigger){
+        const proposed=await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',
+          {...prior,...values},prior,'before-save');
+        if(proposed){
+          const changed={...values};
+          for(const [field,value] of Object.entries(proposed))
+            if(!['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
+              &&!Object.is(value,prior[field]))changed[field]=value;
+          finalPrepared=await this.prepare(tenantId,userId,objectApi,changed,false,transactionClient,id);
+        }
+      }
+      await write(transactionClient,finalPrepared);
+      if(this.recordTrigger){
+        const record=await this.get(tenantId,userId,objectApi,id,transactionClient);
+        await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'updated',record,prior,'after-save');
+      }
+    });
+  }
+  async history(tenantId:string,userId:string,objectApi:string,id:string){
+    if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.requireRecord(tenantId,userId,objectApi,id,'read');
+    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+    if(!found.rowCount)throw new Error('Record not found');
+    const {rows}=await this.db.query<{id:string;field_api:string;changed_by:string;changed_at:Date;old_value:string|null;new_value:string|null}>(
+      'SELECT id,field_api,changed_by,changed_at,old_value,new_value FROM md_record_history WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 ORDER BY changed_at DESC,id DESC LIMIT 100',
+      [tenantId,objectApi,id]);
+    const readable=new Map<string,boolean>();
+    const history=[];
+    for(const row of rows){
+      if(!readable.has(row.field_api))readable.set(row.field_api,
+        await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
+      if(!readable.get(row.field_api))continue;
+      history.push({id:row.id,fieldApiName:row.field_api,changedBy:row.changed_by,
+        changedAt:new Date(row.changed_at).toISOString(),oldValue:row.old_value,newValue:row.new_value});
+    }
+    return {history};
+  }
+  /** Transfer record ownership without bypassing Object/Record permissions or tenant boundaries. */
+  async transferOwner(tenantId:string,userId:string,objectApi:string,id:string,ownerId:string,ifUnmodifiedSince?:string){
+    if(!uuid.test(id)||!uuid.test(ownerId)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+      throw new Error('Invalid record ownership');
+    await this.rbac.require(tenantId,userId,objectApi,'edit');
+    await this.rbac.require(tenantId,userId,objectApi+'.OwnerId','edit');
+    let revisionDate:Date|undefined;
+    if(ifUnmodifiedSince){
+      revisionDate=new Date(ifUnmodifiedSince);
+      if(!Number.isFinite(revisionDate.getTime()))throw new Error('Invalid record modification precondition');
+    }
+    return this.db.transaction(async client=>{
+      const target=await client.query<{id:string;queue:boolean}>("SELECT id,false AS queue FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true UNION ALL SELECT q.queue_id,true AS queue FROM md_queue_objects q WHERE q.tenant_id=$1 AND q.queue_id=$2 AND q.object_api=$3",[tenantId,ownerId,objectApi]);
+      if(!target.rowCount)throw new Error('Record owner not found');
+      const found=await client.query<{updated_at:Date}>(
+        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!found.rows[0])throw new Error('Record not found');
+      if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
+      const {rows}=await client.query<{owner_id:string;updated_at:Date}>(
+        'UPDATE md_records SET owner_id=$4,owner_queue_id=$5,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3 RETURNING COALESCE(owner_id,owner_queue_id) AS owner_id,updated_at',
+        [tenantId,objectApi,id,target.rows[0].queue?null:ownerId,target.rows[0].queue?ownerId:null]);
+      return {Id:id,OwnerId:rows[0].owner_id,LastModifiedDate:rows[0].updated_at};
+    });
+  }
+  private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
+    root:boolean,visiting:Set<string>){
+    await this.lockObjectForWrite(client,tenantId,objectApi);
+    const recordKey=JSON.stringify([objectApi,id]);
+    if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
+    const record=await client.query<{id:string}>(root
+      ?`SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3
+         AND md_record_access($1,$4,id,'delete') FOR UPDATE`
+      :'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
+    root?[tenantId,objectApi,id,userId]:[tenantId,objectApi,id]);
+    if(!record.rowCount){
+      if(root)throw new Error('Record not found');
+      return;
+    }
+    const affectedParents=await this.rollupParents(client,tenantId,objectApi,id);
+    visiting.add(recordKey);
+    const {rows:references}=await client.query<{
+      record_id:string;object_api:string;field_api:string;relationship_type:string;delete_behavior:string|null;required:boolean
+    }>(`SELECT r.id AS record_id,r.object_api,f.api_name AS field_api,
+        COALESCE(f.relationship_type,'Lookup') AS relationship_type,f.delete_behavior,f.required
+      FROM md_record_values v
+      JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id
+      JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
+        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+      WHERE v.tenant_id=$1 AND v.reference_record_id=$2 AND f.related_object=$3
+      ORDER BY f.relationship_type,r.object_api,r.id`,
+    [tenantId,id,objectApi]);
+    if(references.some(reference=>reference.relationship_type==='Lookup'
+      &&(reference.delete_behavior==='Restrict'||reference.required)))
+      throw new Error('Record delete restricted by a lookup relationship');
+    const cascaded=new Set<string>();
+    for(const reference of references){
+      if(reference.relationship_type!=='Master-Detail')continue;
+      const key=JSON.stringify([reference.object_api,reference.record_id]);
+      if(cascaded.has(key))continue;
+      cascaded.add(key);
+      await this.removeRecordTree(client,tenantId,userId,reference.object_api,reference.record_id,false,visiting);
+    }
+    for(const reference of references){
+      if(reference.relationship_type!=='Hierarchical'
+        &&!(reference.relationship_type==='Lookup'&&(reference.delete_behavior??'Clear')==='Clear'))continue;
+      const cleared=await client.query<{record_id:string;object_api:string;field_api:string}>(
+        `UPDATE md_record_values SET value_text=NULL,reference_record_id=NULL
+         WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3 AND reference_record_id=$4
+         RETURNING record_id,object_api,field_api`,
+        [tenantId,reference.record_id,reference.field_api,id]);
+      if(!cleared.rowCount)continue;
+      await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND id=$2',
+        [tenantId,reference.record_id]);
+      await client.query(`INSERT INTO md_record_history
+        (tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value)
+        VALUES($1,$2,$3,$4,$5,$6,NULL)`,
+      [tenantId,reference.record_id,reference.object_api,reference.field_api,userId,id]);
+    }
+    await client.query('DELETE FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+      [tenantId,objectApi,id]);
+    await this.refreshRollups(client,tenantId,objectApi,affectedParents);
+    visiting.delete(recordKey);
+  }
+  async remove(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    await this.rbac.require(tenantId,userId,objectApi,'delete');
+    if(client){
+      await this.lockObjectForWrite(client,tenantId,objectApi);
+      await this.removeRecordTree(client,tenantId,userId,objectApi,id,true,new Set());
+    }
+    else await this.db.transaction(async transactionClient=>{
+      await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
+      const locked=await transactionClient.query(
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'delete') FOR UPDATE",
+        [tenantId,objectApi,id,userId]);
+      if(!locked.rowCount)throw new Error('Record not found');
+      const prior=this.recordTrigger
+        ?await this.get(tenantId,userId,objectApi,id,transactionClient):null;
+      await this.removeRecordTree(transactionClient,tenantId,userId,objectApi,id,true,new Set());
+      if(this.recordTrigger)
+        await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'deleted',prior,prior,'after-save');
+    });
+  }
+}
++(3+conditionParams.length);
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_values relation
+        WHERE relation.tenant_id=r.tenant_id AND relation.record_id=r.id
+          AND relation.object_api=r.object_api AND relation.field_api=${relationshipParam}
+          AND relation.reference_record_id=${parentParam}::uuid)`);
     }
     if(search){
       conditionParams.push(searchFields);
