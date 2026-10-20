@@ -151,12 +151,13 @@ export class ObjectQuickActionRuntime {
   if(action.behavior==='Send Email'){
    if(!this.namedCredentials||!action.credential_id||!action.from_email)
     throw new Error('Global email action is unavailable');
-   if(Object.keys(values).some(key=>!['to','subject','body'].includes(key))
+   if(Object.keys(values).some(key=>!['to','subject','body','requestKey'].includes(key))
      ||typeof values.to!=='string'||typeof values.subject!=='string'
      ||typeof values.body!=='string')throw new Error('Invalid global email input');
    await this.namedCredentials.sendQuickActionEmail(tenant,user,'Global','',actionId,
-     action.credential_id,action.from_email,values.to,values.subject,values.body);
-   return {status:'completed'};
+     action.credential_id,action.from_email,values.to,values.subject,values.body,
+     typeof values.requestKey==='string'?values.requestKey:undefined);
+   return {status:'queued'};
   }
   throw new Error('Unsupported global action');
  }
@@ -212,13 +213,14 @@ export class ObjectQuickActionRuntime {
   if(action.behavior==='Send Email'){
    if(!this.namedCredentials||!action.credential_id||!action.from_email)
     throw new Error('Quick Action email transport is unavailable');
-   if(Object.keys(values).some(key=>!['to','subject','body'].includes(key)))
+   if(Object.keys(values).some(key=>!['to','subject','body','requestKey'].includes(key)))
     throw new Error('Invalid email action input');
    if(typeof values.to!=='string'||typeof values.subject!=='string'
      ||typeof values.body!=='string')throw new Error('Email recipient, subject and body required');
    await this.namedCredentials.sendQuickActionEmail(tenantId,userId,objectApi,recordId,
-     actionId,action.credential_id,action.from_email,values.to,values.subject,values.body);
-   return {status:'completed',recordId};
+     actionId,action.credential_id,action.from_email,values.to,values.subject,values.body,
+     typeof values.requestKey==='string'?values.requestKey:undefined);
+   return {status:'queued',recordId};
   }
   if(action.behavior==='Run Flow'){
    if(!action.flow_api_name||!objectName.test(action.flow_api_name))
