@@ -119,7 +119,7 @@ export function kioskMenuDraft(deps: KioskMenuPageDependencies) {
           filterKey:'subcategory',accentColor:'#E4002B'
         })
       ] : [])
-
+    ]
   };
 }
 
