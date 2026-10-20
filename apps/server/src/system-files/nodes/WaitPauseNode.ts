@@ -1,3 +1,4 @@
+import {persistFlowInterviewPause} from '../flow-interview-persistence.js';
 type FlowWaitConfig=Record<string,unknown>;
 type ScheduledPathConfig={timeSourceFieldApiName:unknown;offsetAmount:unknown;offsetUnit:unknown};
 
@@ -80,4 +81,27 @@ export function resolveFlowScheduledPathAt(record:Record<string,unknown>,
  const due=source+amount*multiplier;
  if(!Number.isFinite(due))throw new Error('Scheduled Path time is outside the supported range');
  return new Date(Math.max(due,now.getTime()));
+}
+
+/** Persist a Wait node and schedule its durable continuation without changing tenant context. */
+export async function executeWaitPauseNode(input:{
+ client:import('pg').PoolClient;tenantId:string;userId:string;runId:string;
+ node:{config:Record<string,unknown>};nextElement:number;history:number[];
+ steps:number;loopIndexes:Map<number,number>;vars:Record<string,unknown>;
+ persistenceResources:Array<{name:string;type:string;dataType:string;value?:unknown}>;
+ flowType:string;runWhen:unknown;flowApi:string;version:number;appApiName?:string;
+ scheduleResume?:(client:import('pg').PoolClient,tenantId:string,userId:string,
+  flowApi:string,version:number,runId:string,scheduledAt:Date,step:number,appApiName?:string)=>Promise<void>;
+}):Promise<{interviewId:string;status:'waiting';waitUntil:string}>{
+ const {client,tenantId,userId,runId,node,nextElement,history,steps,loopIndexes,vars,persistenceResources,
+  flowType,runWhen,flowApi,version,appApiName,scheduleResume}=input;
+ if((flowType==='Record-Triggered Flow'&&runWhen==='before-save')||!scheduleResume)
+  throw new Error('Wait requires a durable scheduler and is not supported in before-save Flows');
+ const waitUntil=resolveFlowWaitUntil(node.config);
+ await persistFlowInterviewPause(client,tenantId,runId,nextElement,history,steps+1,
+  loopIndexes,vars,persistenceResources);
+ await client.query(`UPDATE md_flow_runs SET status='waiting',wait_until=$3,wait_kind='wait'
+  WHERE tenant_id=$1 AND id=$2 AND status='pending'`,[tenantId,runId,waitUntil]);
+ await scheduleResume(client,tenantId,userId,flowApi,version,runId,waitUntil,steps+1,appApiName);
+ return {interviewId:runId,status:'waiting',waitUntil:waitUntil.toISOString()};
 }
