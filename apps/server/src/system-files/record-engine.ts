@@ -1295,8 +1295,12 @@ export class RecordEngine {
     values:Record<string,unknown>,ifUnmodifiedSince?:string) {
     return this.update(tenantId,userId,objectApi,id,values,ifUnmodifiedSince,client);
   }
+  async updateWithTriggersInTransaction(client:PoolClient,tenantId:string,userId:string,
+    objectApi:string,id:string,values:Record<string,unknown>) {
+    return this.update(tenantId,userId,objectApi,id,values,undefined,client,true);
+  }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
-    ifUnmodifiedSince?:string,client?:PoolClient) {
+    ifUnmodifiedSince?:string,client?:PoolClient,runTriggers=false) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
@@ -1387,11 +1391,39 @@ export class RecordEngine {
     if(client){
       let previous:Record<string,unknown>|undefined;
       const loadPrior=async()=>previous??(previous=await this.get(tenantId,userId,objectApi,id,client));
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,
-        async()=>({...await loadPrior(),...values}),loadPrior);
-      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,{...await loadPrior(),...values},id);
-      await write(client,prepared);
+      const prior=await loadPrior();
+      let writeValues=prepared;
+      if(runTriggers&&this.recordTrigger){
+        const proposed=await this.recordTrigger(client,tenantId,userId,objectApi,'updated',
+          {...prior,...values},prior,'before-save');
+        if(proposed){
+          const changed={...values};
+          for(const [field,value] of Object.entries(proposed))
+            if(!['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
+               &&!Object.is(value,prior[field]))changed[field]=value;
+          writeValues=await this.prepare(tenantId,userId,objectApi,changed,false,client,id);
+        }
+      }
+      const proposedValues={...prior,...values};
+      const declaredTypes=new Map((await this.fields(tenantId,objectApi,client))
+        .map(field=>[field.api_name,field.data_type]));
+      for(const [field,value] of writeValues){
+        if(field.startsWith('__'))continue;
+        const type=declaredTypes.get(field);
+        proposedValues[field]=value.reference_record_id??(
+          type==='boolean'?value.value_boolean:
+          ['number','currency','percent'].includes(type??'')
+            ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
+            :value.value_text);
+      }
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,proposedValues,prior);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,proposedValues,id);
+      await write(client,writeValues);
       await this.recordMatching.save(client,tenantId,objectApi,id,matches);
+      if(runTriggers&&this.recordTrigger){
+        const record=await this.get(tenantId,userId,objectApi,id,client);
+        await this.recordTrigger(client,tenantId,userId,objectApi,'updated',record,prior,'after-save');
+      }
     }
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
