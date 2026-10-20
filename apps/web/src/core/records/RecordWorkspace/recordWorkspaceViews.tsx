@@ -903,12 +903,10 @@ function RecordWorkspace({
       }
       const payload=action.behavior==='Log Call'
         ?{subject:action.value?.trim()||action.label}:{}; 
-      const result=await apiRequest<{status:string}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(action.id)}/execute`,{
+      await apiRequest<{status:string}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(action.id)}/execute`,{
         method:'POST',body:JSON.stringify(payload)
       });
-      setCustomActionMessage(action.behavior==='Run Flow'&&result.status==='started'
-        ?`${action.label} started. Continue the Flow from its interview if input is required.`
-        :`${action.label} completed.`);
+      setCustomActionMessage(`${action.label} completed.`);
       setRefreshKey(current=>current+1);
     } catch (failure) {
       setCustomActionMessage(failure instanceof Error ? failure.message : `Unable to run ${action.label}`);
