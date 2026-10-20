@@ -930,7 +930,16 @@ export class RecordEngine {
     }
     if(relatedField){
       conditionParams.push(relatedField.api_name);
-      const relationshipParam='
+      const relationshipParam='$'+(3+conditionParams.length);
+      conditionParams.push(options.relatedId!);
+      const parentParam='$'+(3+conditionParams.length);
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_values relation
+        WHERE relation.tenant_id=r.tenant_id AND relation.record_id=r.id
+          AND relation.object_api=r.object_api AND relation.field_api=${relationshipParam}
+          AND relation.reference_record_id=${parentParam}::uuid)`);
+    }
+    if(search){
+      conditionParams.push(searchFields);
       const fieldsParam='$'+(3+conditionParams.length);
       conditionParams.push(search);
       const searchParam='$'+(3+conditionParams.length);
