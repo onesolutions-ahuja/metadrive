@@ -6,4 +6,4 @@ export const FileDefinition:FieldTypeDefinition=Object.freeze({
 });
 
 // File operations retain the shared SQL/RBAC-protected file service.
-export {RecordFileService,validateTenantImage} from '../../system-files/record-file-service.js';
+export async function loadFileFieldService(){return import('../../system-files/record-file-service.js');}
