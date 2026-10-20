@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 11,
+  "version": 12,
   "scope": "platform-core",
   "jsxFile": "one/OneShoppingCart/OneShoppingCart.jsx",
   "cssFile": "one/OneShoppingCart/OneShoppingCart.css",
@@ -367,6 +367,58 @@
       "kind": "NUMBER",
       "defaultValue": 0,
       "displayOrder": 990
+    },
+    {
+      "propertyKey": "basketPresentation",
+      "label": "Basket presentation",
+      "kind": "SELECT",
+      "defaultValue": "standard",
+      "displayOrder": 305,
+      "choices": [
+        {
+          "key": "standard",
+          "label": "standard"
+        },
+        {
+          "key": "footer",
+          "label": "footer"
+        }
+      ]
+    },
+    {
+      "propertyKey": "basketTitle",
+      "label": "Basket heading",
+      "kind": "TEXT",
+      "defaultValue": "Your Order",
+      "displayOrder": 306
+    },
+    {
+      "propertyKey": "checkoutLabel",
+      "label": "Checkout button label",
+      "kind": "TEXT",
+      "defaultValue": "Checkout",
+      "displayOrder": 307
+    },
+    {
+      "propertyKey": "emptyBasketText",
+      "label": "Empty basket message",
+      "kind": "TEXT",
+      "defaultValue": "Choose your food to start.",
+      "displayOrder": 308
+    },
+    {
+      "propertyKey": "totalLabel",
+      "label": "Basket total label",
+      "kind": "TEXT",
+      "defaultValue": "Total",
+      "displayOrder": 309
+    },
+    {
+      "propertyKey": "clearLabel",
+      "label": "Clear basket label",
+      "kind": "TEXT",
+      "defaultValue": "Clear basket",
+      "displayOrder": 311
     }
   ]
 }
