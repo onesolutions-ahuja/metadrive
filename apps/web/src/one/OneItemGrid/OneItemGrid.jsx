@@ -1,3 +1,4 @@
+import OneTenantImage from "../shared/OneTenantImage.jsx";
 import {
   css,
   records,
@@ -124,7 +125,7 @@ function ItemGrid({ p, rows }) {
         {visibleRows.map((r, i) => {
           const image = r?.[imageField],
             validImage =
-              typeof image === "string" && /^https:\/\//i.test(image);
+              typeof image === "string" && (/^https:\/\//i.test(image) || /^asset:[0-9a-f-]{36}$/i.test(image));
           const name = view(r?.[titleField] ?? ""),
             price = r?.[priceField];
           return (
@@ -132,13 +133,11 @@ function ItemGrid({ p, rows }) {
               className="one-item one-item--interactive md-product-card"
               key={r.Id ?? r.id ?? i}
               type="button"
-              aria-label={"Add " + name}
+              aria-label={(p.selectionBehavior === "select" ? "Select " : "Add ") + name}
               onClick={() => {
-                if (
-                  p.cartTargetKey &&
-                  p.pageSessionKey &&
-                  typeof window !== "undefined"
-                )
+                const behavior=p.selectionBehavior || "add";
+                if (behavior==="add" && p.cartTargetKey && p.pageSessionKey
+                  && typeof window !== "undefined")
                   window.dispatchEvent(
                     new CustomEvent("metadrive:page-cart-add", {
                       detail: {
@@ -148,13 +147,35 @@ function ItemGrid({ p, rows }) {
                       },
                     }),
                   );
+                if (behavior==="select" && p.pageSessionKey
+                  && typeof window !== "undefined")
+                  window.dispatchEvent(
+                    new CustomEvent("metadrive:page-filter-selected", {
+                      detail: {
+                        pageSessionKey:p.pageSessionKey,
+                        filterKey:p.selectionFilterKey||"selectedRecord",
+                        value:String(r.Id??r.id??""),
+                        recordId:String(r.Id??r.id??""),
+                        label:name,
+                        sourceObjectApiName:p.objectApiName||"",
+                      },
+                    }),
+                  );
+                if (behavior==="select" && p.pageSessionKey &&
+                  /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(p.selectionFilterKey||"selectedRecord")
+                  && typeof window!=="undefined")
+                  window.dispatchEvent(new CustomEvent("metadrive:page-local-state",{
+                    detail:{pageSessionKey:p.pageSessionKey,
+                      key:p.selectionFilterKey||"selectedRecord",value:String(r.Id??r.id??"")}
+                  }));
                 if (p.actionFlows?.itemSelect) fire(p, "itemSelect", r);
               }}
             >
               {p.showImage !== false && validImage && (
-                <img
+                <OneTenantImage
                   loading="lazy"
                   src={image}
+                  loadAsset={p.loadAsset}
                   alt={name}
                   className="md-product-image"
                 />

@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 2,
+  "version": 3,
   "scope": "platform-core",
   "jsxFile": "one/OneOverlay/OneOverlay.jsx",
   "cssFile": "one/OneOverlay/OneOverlay.css",
@@ -67,6 +67,20 @@
           "label": "Popover"
         }
       ]
+    },
+    {
+      "propertyKey": "openOnFilterKey",
+      "label": "Open when sibling selects a record (shared state key)",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 330
+    },
+    {
+      "propertyKey": "hideTrigger",
+      "label": "Hide standalone Open button",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 340
     }
   ]
 }
