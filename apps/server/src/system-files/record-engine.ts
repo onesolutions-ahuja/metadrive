@@ -712,8 +712,8 @@ export class RecordEngine {
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
           rowValues,null,'before-save',isClone)??rowValues;
       }
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
       const finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
@@ -746,8 +746,8 @@ export class RecordEngine {
         ?Number(field.default_value):field.data_type==='boolean'
           ?field.default_value==='true':field.default_value]));
     const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
-    await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
+    await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
   /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
