@@ -102,6 +102,7 @@ async function resolveTenant(db:SqlPersistence,req:Request,tenantSlug?:unknown) 
 export function createSystemServer(db:SqlPersistence) {
   const app=express();
   app.disable('x-powered-by');
+  app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
