@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 3,
+  "version": 4,
   "scope": "platform-core",
   "jsxFile": "one/OneImage/OneImage.jsx",
   "cssFile": "one/OneImage/OneImage.css",
