@@ -4,6 +4,7 @@ import {useState,useEffect,useRef} from 'react';
 // Load the browser API client only during the mounted effect, not on SSR import.
 import {presentPageRecords,type ChannelGrant} from '../../records/RecordWorkspace/recordPresentationAdapters';
 import {filterPageComponentRecords,pageComponentRecordQuery,bindPageStateProperties} from '../PageRuntime/pageComponentBindings';
+import {filterRelatedRecords} from '../PageRuntime/filterRelatedRecords.mjs';
 import {resolveMentionProperties} from '../../../one/OneSmartFieldInput/smartFieldMentions';
 import { explicitMentionRecordId, useRelationshipMentionContext } from '../../records/RecordFormDialog/useRelationshipMentionContext';
 import {resolvePageActionRoute} from '../PageRuntime/pageActionRouting';
@@ -132,7 +133,11 @@ export default function MetadataBoundPageComponent({
     const sync = (event: Event) => {
       const detail = (event as CustomEvent<{pageSessionKey:string;sessionId:string}>).detail;
       if (detail?.pageSessionKey !== pageSessionKey) return;
-      if (detail.sessionId && detail.sessionId !== sessionId) setSessionId(detail.sessionId);
+      if (detail.sessionId && detail.sessionId !== sessionId) {
+        setSessionId(detail.sessionId);
+        setSelectedCategories({});
+        setSelectedFilterRecords({});
+      }
       setRevision(value => value + 1);
     };
     window.addEventListener('metadrive:page-flow-mutated', sync);
@@ -167,7 +172,11 @@ export default function MetadataBoundPageComponent({
       .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     return () => {active = false;};
   }, [properties.channelAccessPath, properties.recordPresenterApiName, revision]);
-  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields,{pageState,recordId,sessionId});
+  const filteredRecords=filterPageComponentRecords(records,properties.filters,fields,{pageState,recordId,sessionId});
+  const relatedKey=String(properties.relatedFilterKey??'');
+  const relatedField=String(properties.relatedFieldApiName??'');
+  const parentId=relatedKey?selectedFilterRecords[relatedKey]?.recordId||pageState[relatedKey]:undefined;
+  const visibleRecords=relatedKey?filterRelatedRecords(filteredRecords,parentId,relatedField):filteredRecords;
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = bindPageStateProperties(resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName),pageState);
@@ -312,6 +321,9 @@ export default function MetadataBoundPageComponent({
       label: component.label, properties: resolvedProperties, pageState, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      loadAsset: (id:string) => /^[0-9a-f-]{36}$/i.test(id)
+        ? apiRequest<{contentType:string;contentBase64:string}>('/media-assets/'+id)
+        : Promise.reject(new Error('Invalid media asset ID')),
       loadCompanySettings: () => apiRequest('/metadata/currencies'),
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
