@@ -111,7 +111,7 @@ export default function OneRepeater(props) {
     <div {...root}>
       <div className="one-row" style={{justifyContent: "space-between"}}>
         <strong>{label}</strong>
-        <button className="one-btn" onClick={() => set([...rows, ""])}>+ Add</button>
+        <button className="one-btn" type="button" onClick={() => set([...rows, ""])}>+ Add</button>
       </div>
       <div className="one-stack" style={{flexDirection: "column", marginTop: 8}}>
         {rows.map((item,i) => (
