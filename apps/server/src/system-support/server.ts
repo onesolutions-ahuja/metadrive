@@ -37,6 +37,7 @@ import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
+import {registerDeclarativeBusinessRuleRoutes} from './declarative-business-rule-routes.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 
@@ -1538,6 +1539,7 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
   registerDynamicApiRoutes(app,db,rbac,records,flows);
+  registerDeclarativeBusinessRuleRoutes(app,db,rbac);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   registerDurableJobAdminRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
