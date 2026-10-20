@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {buildAutomationFlow,type RecipeInput} from '../../../web/src/core/builders/ObjectManager/businessAutomationRecipes.js';
+import {buildAutomationFlow} from '../../../web/src/core/builders/ObjectManager/businessAutomationRecipes.js';
+import {validateFlowDraft} from '../../src/system-files/flow-validation.js';
+import {withFlowCapabilities} from './flow-capability-test-helper.js';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 const user='00000000-0000-4000-8000-000000000001';
 const common={
  objectApi:'Ticket__c',apiName:'TicketAutomation',label:'Ticket Automation',
@@ -34,4 +38,22 @@ test('escalation recipe has an immediate path and a durable scheduled task',()=>
   timeSourceFieldApiName:'DueDate__c',offsetAmount:1,offsetUnit:'Days'});
  assert.throws(()=>buildAutomationFlow({...common,kind:'Escalation',
   dueField:'DueDate__c',offsetAmount:4000,offsetUnit:'Days',taskSubject:'Follow up'}),/offset/);
+});
+
+test('generated assignment and escalation graphs satisfy shared Flow schema',async()=>{
+ const db=withFlowCapabilities({query:async(sql:string)=>{
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{data_type:'date'}]};
+  if(sql.includes('FROM md_named_credentials'))return {rows:[{id:user}]};
+  return {rows:[]};
+ }} as unknown as SqlPersistence);
+ const rbac={require:async()=>undefined} as unknown as RbacEngine;
+ const recipes=[
+  buildAutomationFlow({...common,kind:'Assignment',assigneeId:user}),
+  buildAutomationFlow({...common,kind:'Escalation',dueField:'DueDate__c',
+   offsetAmount:1,offsetUnit:'Days',taskSubject:'Follow up'})
+ ];
+ for(const recipe of recipes){
+  const checked=await validateFlowDraft(rbac,'tenant',user,recipe.apiName,recipe,db);
+  assert.equal(checked.valid,true,checked.errors.join('; '));
+ }
 });
