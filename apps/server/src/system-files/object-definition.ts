@@ -1287,13 +1287,13 @@ export class ObjectDefinitionService {
       object_api:string;revision:number;sort_order:number;
       layout_id:string;label:string;section_id:string;columns:number;
       field_api:string;action_name:string;list_name:string;settings:unknown;
-      link_id:string;url:string;open_in_new_window:boolean;
+      link_id:string;url:string;open_in_new_window:boolean;visible_when_field:string|null;visible_when_value:string|null;
       profile_id:string;record_type_id:string;
     };
     const [versions,layouts,sections,fields,actions,related,links,assignments]=await Promise.all(
       names.map(name=>this.db.query<LayoutSqlRow>(`SELECT * FROM ${name} WHERE tenant_id=$1`,[tenantId])));
     type Layout={id:string;label:string;sections:{id:string;label:string;columns:1|2;fieldApiNames:string[]}[];
-      relatedLists:string[];relatedListSettings:Record<string,RelatedListSettings>;actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean}[]};
+      relatedLists:string[];relatedListSettings:Record<string,RelatedListSettings>;actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean;visibleWhenField?:string;visibleWhenValue?:string}[]};
     const byObject=new Map<string,{revision:number;pageLayouts:Layout[];pageLayoutAssignments:{profileId:string;recordTypeId:string;pageLayoutId:string}[]}>();
     const get=(name:string)=>{let value=byObject.get(name);if(!value){
       value={revision:0,pageLayouts:[],pageLayoutAssignments:[]};byObject.set(name,value);
@@ -1326,7 +1326,8 @@ export class ObjectDefinitionService {
     }
     for(const row of [...links.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
       indexed.get(key(row.object_api,row.layout_id))?.customLinks.push({
-        id:row.link_id,label:row.label,url:row.url,openInNewWindow:row.open_in_new_window
+        id:row.link_id,label:row.label,url:row.url,openInNewWindow:row.open_in_new_window,
+        ...(row.visible_when_field?{visibleWhenField:row.visible_when_field,visibleWhenValue:row.visible_when_value??''}:{})
       });
     for(const row of assignments.rows)get(row.object_api).pageLayoutAssignments.push({
       profileId:row.profile_id,recordTypeId:row.record_type_id,pageLayoutId:row.layout_id
@@ -1351,7 +1352,7 @@ export class ObjectDefinitionService {
       'SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL',[tenantId,objectApi]);
     const fieldNames=new Set(definedFields.map(row=>row.api_name));
     type SectionInput={id:string;label:string;columns:1|2;fieldApiNames:string[]};
-    type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean};
+    type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean;visibleWhenField?:string;visibleWhenValue?:string};
     type LayoutInput={id:string;label:string;sections:SectionInput[];actions:string[];relatedLists:string[];relatedListSettings:Record<string,RelatedListSettings>;customLinks:LinkInput[]};
     type AssignmentInput={profileId:string;recordTypeId:string;pageLayoutId:string};
     const normalized:LayoutInput[]=[];
@@ -1388,7 +1389,16 @@ export class ObjectDefinitionService {
           ||(!link.url.startsWith('https://')&&!/^\/(?!\/)/.test(link.url))
           ||typeof link.openInNewWindow!=='boolean')throw new Error('Invalid page layout link');
         linkIds.add(link.id);
-        customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow});
+        if(link.visibleWhenField!==undefined
+          &&(typeof link.visibleWhenField!=='string'
+            ||!fieldNames.has(link.visibleWhenField)
+            ||typeof link.visibleWhenValue!=='string'||link.visibleWhenValue.length>256))
+          throw new Error('Invalid custom link visibility condition');
+        if(link.visibleWhenValue!==undefined&&link.visibleWhenField===undefined)
+          throw new Error('Custom link visibility requires a field');
+        customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow,
+          ...(link.visibleWhenField?{visibleWhenField:link.visibleWhenField,
+            visibleWhenValue:link.visibleWhenValue??''}:{})});
       }
       const settings=validateRelatedListSettings(layout.relatedLists as string[],layout.relatedListSettings);
       normalized.push({id:layout.id,label:layout.label,sections,
@@ -1474,9 +1484,11 @@ export class ObjectDefinitionService {
           (tenant_id,object_api,layout_id,list_name,sort_order,settings) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
           [tenantId,objectApi,layout.id,name,j,JSON.stringify(layout.relatedListSettings[name]??{})]);
         for(const [j,link] of layout.customLinks.entries())await client.query(`INSERT INTO md_object_page_layout_links
-          (tenant_id,object_api,layout_id,link_id,label,url,open_in_new_window,sort_order)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [tenantId,objectApi,layout.id,link.id,link.label,link.url,link.openInNewWindow,j]);
+          (tenant_id,object_api,layout_id,link_id,label,url,open_in_new_window,sort_order,
+            visible_when_field,visible_when_value)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [tenantId,objectApi,layout.id,link.id,link.label,link.url,link.openInNewWindow,j,
+            link.visibleWhenField??null,link.visibleWhenField?(link.visibleWhenValue??''):null]);
       }
       for(const assignment of assigned)await client.query(`INSERT INTO md_object_page_layout_assignments
         (tenant_id,object_api,profile_id,record_type_id,layout_id) VALUES ($1,$2,$3,$4,$5)`,
