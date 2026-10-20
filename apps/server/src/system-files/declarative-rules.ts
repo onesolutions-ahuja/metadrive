@@ -86,13 +86,16 @@ export class DeclarativeRules {
     return values;
   }
   async validate(client:PoolClient,tenantId:string,userId:string,objectApi:string,
-    current:Values,prior:Values|null) {
+    current:Values|(()=>Promise<Values>),prior:Values|null|(()=>Promise<Values|null>)) {
     const {rows}=await client.query<Rule>(
       `SELECT api_name,expression,error_message,error_field_api FROM md_validation_rules
        WHERE tenant_id=$1 AND object_api=$2 AND active=true ORDER BY sort_order,api_name`,
       [tenantId,objectApi]);
+    if(!rows.length)return;
+    const currentValues=typeof current==='function'?await current():current;
+    const priorValues=typeof prior==='function'?await prior():prior;
     for(const rule of rows){
-      const ctx=await this.context(client,tenantId,userId,objectApi,current,prior,rule.expression);
+      const ctx=await this.context(client,tenantId,userId,objectApi,currentValues,priorValues,rule.expression);
       const invalid=evaluateFlowFormula(rule.expression,ctx.resolve,{timeZone:ctx.timeZone});
       if(typeof invalid!=='boolean')throw new Error('Validation rule must return Checkbox: '+rule.api_name);
       if(invalid)throw new DeclarativeRuleError(rule);
