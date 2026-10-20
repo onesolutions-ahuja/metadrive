@@ -1,0 +1,45 @@
+name: OneKiosk existing page parity (authenticated, one-time)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/onekiosk-parity-apply.yml
+      - apps/server/scripts/apply-onekiosk-parity.mjs
+permissions:
+  contents: read
+concurrency:
+  group: onekiosk-authenticated-page-update
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --check apps/server/scripts/apply-onekiosk-parity.mjs
+  apply:
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'apply OneKiosk parity metadata')
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Save existing Kiosk_Menu through tenant-authenticated MetaDrive APIs
+        run: node --import tsx apps/server/scripts/apply-onekiosk-parity.mjs
+        env:
+          METADRIVE_API_BASE_URL: https://metadrive-production.up.railway.app/api
+          METADRIVE_TENANT_SLUG: ${{ secrets.METADRIVE_TENANT_SLUG }}
+          METADRIVE_LOGIN_EMAIL: ${{ secrets.METADRIVE_LOGIN_EMAIL }}
+          METADRIVE_LOGIN_PASSWORD: ${{ secrets.METADRIVE_LOGIN_PASSWORD }}
+          ONEKIOSK_APPROVE_UPDATE: Kiosk_Menu
