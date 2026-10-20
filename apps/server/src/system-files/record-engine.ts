@@ -52,7 +52,13 @@ export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
     private readonly encryptedValueVault?:EncryptedValueVault) {}
   private async lockObjectForWrite(client:PoolClient,tenantId:string,objectApi:string) {
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    const active=await client.query(`SELECT 1 FROM md_matching_rules
+      WHERE tenant_id=$1 AND object_api=$2 AND active=true LIMIT 1`,[tenantId,objectApi]);
+    // Rules that prevent duplicates need serial writes. Other objects retain shared
+    // metadata-migration locks to avoid regressing generic CRUD concurrency.
+    await client.query(active.rowCount
+      ?'SELECT pg_advisory_xact_lock(hashtextextended($1,0))'
+      :'SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
       [`${tenantId}:${objectApi}`]);
   }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
