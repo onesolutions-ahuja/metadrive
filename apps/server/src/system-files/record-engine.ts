@@ -1397,7 +1397,7 @@ export class RecordEngine {
     if(client){
       let previous:Record<string,unknown>|undefined;
       const loadPrior=async()=>previous??(previous=await this.get(tenantId,userId,objectApi,id,client));
-      const prior=await loadPrior();
+      const prior=runTriggers?await loadPrior():null;
       let writeValues=prepared;
       if(runTriggers&&this.recordTrigger){
         const proposed=await this.recordTrigger(client,tenantId,userId,objectApi,'updated',
@@ -1406,24 +1406,27 @@ export class RecordEngine {
           const changed={...values};
           for(const [field,value] of Object.entries(proposed))
             if(!['Id','CreatedAt','LastModifiedDate','OwnerId','RecordTypeId'].includes(field)
-               &&!Object.is(value,prior[field]))changed[field]=value;
+               &&!Object.is(value,prior?.[field]))changed[field]=value;
           writeValues=await this.prepare(tenantId,userId,objectApi,changed,false,client,id);
         }
       }
-      const proposedValues={...prior,...values};
-      const declaredTypes=new Map((await this.fields(tenantId,objectApi,client))
-        .map(field=>[field.api_name,field.data_type]));
-      for(const [field,value] of writeValues){
-        if(field.startsWith('__'))continue;
-        const type=declaredTypes.get(field);
-        proposedValues[field]=value.reference_record_id??(
-          type==='boolean'?value.value_boolean:
-          ['number','currency','percent'].includes(type??'')
-            ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
-            :value.value_text);
+      const proposedValues={...(prior??{}),...values};
+      if(runTriggers){
+        const declaredTypes=new Map((await this.fields(tenantId,objectApi,client))
+          .map(field=>[field.api_name,field.data_type]));
+        for(const [field,value] of writeValues){
+          if(field.startsWith('__'))continue;
+          const type=declaredTypes.get(field);
+          proposedValues[field]=value.reference_record_id??(
+            type==='boolean'?value.value_boolean:
+            ['number','currency','percent'].includes(type??'')
+              ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
+              :value.value_text);
+        }
       }
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,proposedValues,prior);
-      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,proposedValues,id);
+      const snapshot=async()=>({...await loadPrior(),...proposedValues});
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,snapshot,loadPrior);
+      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,snapshot,id);
       await write(client,writeValues);
       await this.recordMatching.save(client,tenantId,objectApi,id,matches);
       if(runTriggers&&this.recordTrigger){
