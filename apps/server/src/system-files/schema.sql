@@ -686,12 +686,13 @@ ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_city text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_state text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_postal_code text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_country text;
+ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS record_is_deleted boolean NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS md_record_values_unique_ci
   ON md_record_values(tenant_id,object_api,field_api,lower(value_text))
-  WHERE is_unique AND NOT case_sensitive AND value_text IS NOT NULL;
+  WHERE is_unique AND NOT case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
 CREATE UNIQUE INDEX IF NOT EXISTS md_record_values_unique_cs
   ON md_record_values(tenant_id,object_api,field_api,value_text)
-  WHERE is_unique AND case_sensitive AND value_text IS NOT NULL;
+  WHERE is_unique AND case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
 CREATE TABLE IF NOT EXISTS md_record_multi_values (
   tenant_id uuid NOT NULL,
   record_id uuid NOT NULL,
