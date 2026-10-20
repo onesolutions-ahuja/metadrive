@@ -50,9 +50,9 @@ export default function OneTabs(props) {
         {tabs.map((name, i) => (
           <button type="button" className="one-tab" key={i} role="tab"
             aria-selected={active === i} onClick={() => selectTab(name, i)}
-            style={{borderRadius:p.tabStyle==="pill"?999:undefined,
+            style={p.tabStyle==="pill"?{borderRadius:999,
               backgroundColor:active===i?(p.accentColor||"#E4002B"):undefined,
-              color:active===i?"#FFFFFF":undefined}}>
+              color:active===i?"#FFFFFF":undefined}:undefined}>
             {name}
           </button>
         ))}
