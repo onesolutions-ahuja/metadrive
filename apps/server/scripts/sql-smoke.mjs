@@ -106,6 +106,67 @@ try{
 
  const {RecordEngine}=await import(new URL('record-engine.js',built).href);
  const records=new RecordEngine(db,new RbacEngine(db));
+
+ // Phase 1 actual PostgreSQL lifecycle/relationship contracts.
+ // No mocked query engine: exercise SQL constraints, record permissions and restoration.
+ const {RecordRetentionService}=await import(new URL('record-retention-service.js',support).href);
+ const retention=new RecordRetentionService(db,new RbacEngine(db));
+ const lifecycleAccount=await objects.create(tenantId,'LifecycleAccount__c','Lifecycle Account',[
+   {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:true}
+ ]);
+ const lifecycleDetail=await objects.create(tenantId,'LifecycleDetail__c','Lifecycle Detail',[
+   {apiName:'Name',label:'Name',dataType:'Text(80)',required:true},
+   {apiName:'AccountId',label:'Account',dataType:'Master-Detail(LifecycleAccount__c)',required:true,
+     relationship:{type:'Master-Detail',targetObject:'LifecycleAccount__c',
+      relationshipName:'Account',childRelationshipName:'Details'}}
+ ]);
+ assert.ok(lifecycleAccount&&lifecycleDetail);
+ const parent=await records.create(tenantId,userId,'LifecycleAccount__c',{Name:'Reusable unique'});
+ const otherParent=await records.create(tenantId,userId,'LifecycleAccount__c',{Name:'Other parent'});
+ const dependent=await records.create(tenantId,userId,'LifecycleDetail__c',
+   {Name:'Cascaded detail',AccountId:parent});
+ await records.create(tenantId,userId,'LifecycleDetail__c',{Name:'Other detail',AccountId:otherParent});
+ const linked=await records.list(tenantId,userId,'LifecycleDetail__c',50,0,
+   {relatedField:'AccountId',relatedId:parent});
+ assert.equal(linked.total,1,'related list must not include children of another parent');
+ assert.equal(linked.records[0].Id,dependent);
+
+ await db.query(`INSERT INTO md_record_activities(tenant_id,object_api,record_id,created_by,kind,subject)
+   VALUES($1,$2,$3,$4,'Task','Retained during recycle')`,
+   [tenantId,'LifecycleAccount__c',parent,userId]);
+ await records.remove(tenantId,userId,'LifecycleAccount__c',parent);
+ assert.equal((await records.list(tenantId,userId,'LifecycleDetail__c')).total,1,
+   'Master-Detail children must be hidden while recycled');
+ assert.equal((await records.recycleBin(tenantId,userId,'LifecycleAccount__c')).total,1);
+ await assert.rejects(()=>records.get(tenantId,userId,'LifecycleAccount__c',parent),
+   /Record not found/);
+ const replacement=await records.create(tenantId,userId,'LifecycleAccount__c',{Name:'Reusable unique'});
+ await assert.rejects(()=>records.restore(tenantId,userId,'LifecycleAccount__c',parent),
+   /duplicate key|unique/i,'restore must reject collisions with replacement records');
+ assert.equal((await records.recycleBin(tenantId,userId,'LifecycleAccount__c')).total,1,
+   'failed restore must roll back the full deletion group');
+ await records.update(tenantId,userId,'LifecycleAccount__c',replacement,{Name:'New unique name'});
+ const recovered=await records.restore(tenantId,userId,'LifecycleAccount__c',parent);
+ assert.equal(recovered.restored,2,'restore must include dependent Master-Detail records');
+ assert.equal((await records.list(tenantId,userId,'LifecycleDetail__c',50,0,
+   {relatedField:'AccountId',relatedId:parent})).total,1);
+ const retainedActivity=await db.query(
+  'SELECT 1 FROM md_record_activities WHERE tenant_id=$1 AND record_id=$2',
+  [tenantId,parent]);
+ assert.equal(retainedActivity.rowCount,1,'normal delete and restore must retain activities');
+ assert.deepEqual(await retention.get(tenantId,userId),
+   {retentionDays:15,automaticPurgeEnabled:false});
+ await retention.set(tenantId,userId,1,false);
+ await records.remove(tenantId,userId,'LifecycleAccount__c',replacement);
+ await db.query(`UPDATE md_records SET deleted_at=now()-interval '2 days'
+   WHERE tenant_id=$1 AND deletion_root_id=$2`,[tenantId,replacement]);
+ assert.deepEqual(await retention.purge(tenantId,userId,'LifecycleAccount__c',replacement),
+   {purged:1});
+ assert.equal((await db.query('SELECT 1 FROM md_records WHERE tenant_id=$1 AND id=$2',
+   [tenantId,replacement])).rowCount,0);
+ assert.equal((await retention.purgeExpired()).purged,0,
+   'opt-in retention scan must not delete without automatic-purge enablement');
+
  const flows=new FlowRuntime(db,new RbacEngine(db),records);
  const draft={apiName:'AuditCheckout',label:'Audit Checkout',flowType:'Screen Flow',
   status:'Draft',versionNumber:1,activeVersion:null,
