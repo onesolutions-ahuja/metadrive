@@ -1,3 +1,6 @@
+import {executeFilterCollectionNode} from './FilterCollectionNode.js';
+import {executeSortCollectionNode} from './SortCollectionNode.js';
+import {executeTransformNode} from './TransformNode.js';
 import {executeDeleteRecordsNode} from './DeleteRecordsNode.js';
 import {executeUpdateRecordsNode} from './UpdateRecordsNode.js';
 import {executeGetRecordsNode} from './GetRecordsNode.js';
@@ -51,51 +54,10 @@ function recordValues(value:unknown):Record<string,unknown>[] {
 /** Shared pure collection operations, used by both execution and read-only debug. */
 export function evaluateFlowCollectionStep(type:string,config:Record<string,unknown>,
   source:unknown,evaluate:(value:unknown)=>unknown):Record<string,unknown>[] {
-  const node={type};
-  let result:Record<string,unknown>[]=[];
   const records=recordValues(source);
-    if(node.type==='Collection Filter'){
-      const conditions=conditionsFrom(config.conditions,evaluate);
-      if(conditions.length===0)throw new Error('Collection Filter requires at least one condition');
-      const filtered=records.filter(item=>{
-        const rows=conditions.map(condition=>({...condition,
-          field:item[String(condition.field)]}));
-        return evaluateFlowDecisionOutcome(rows,
-          typeof config.conditionLogic==='string'?config.conditionLogic:undefined,value=>value);
-      });
-      result=filtered;
-    }else if(node.type==='Collection Sort'){
-      const field=String(config.sortField??'');
-      if(!apiName.test(field))throw new Error('Invalid Collection Sort field');
-      const direction=config.sortOrder==='Descending'?-1:1;
-      result=[...records].sort((left,right)=>{
-        const a=left[field],b=right[field];
-        if(a===b)return 0;
-        if(a===null||a===undefined)return 1;
-        if(b===null||b===undefined)return -1;
-        if(typeof a!==typeof b||!['string','number'].includes(typeof a))
-          throw new Error('Collection Sort values must be matching text or numbers');
-        return a<b?-direction:direction;
-      });
-    }else{
-      const mappings=Array.isArray(config.mappings)?config.mappings:[];
-      if(mappings.length<1||mappings.length>100)
-        throw new Error('Transform requires between 1 and 100 field mappings');
-      result=records.map(item=>{
-        const target:Record<string,unknown>={};
-        for(const mapping of mappings){
-          if(!mapping||typeof mapping!=='object'||Array.isArray(mapping))
-            throw new Error('Invalid Transform mapping');
-          const row=mapping as Record<string,unknown>;
-          if(typeof row.sourceField!=='string'||typeof row.targetField!=='string'
-            ||!apiName.test(row.sourceField)||!apiName.test(row.targetField))
-            throw new Error('Invalid Transform field mapping');
-          target[row.targetField]=item[row.sourceField]??null;
-        }
-        return target;
-      });
-    }
-    return result;
+  if(type==='Collection Filter')return executeFilterCollectionNode(config,records,evaluate,conditionsFrom);
+  if(type==='Collection Sort')return executeSortCollectionNode(config,records);
+  return executeTransformNode(config,records);
 }
 
 export async function executeFlowDataAction(context:Context):Promise<FlowActionResult> {
