@@ -16,6 +16,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
 import CustomMetadataManager from './CustomMetadataManager';
+const DeclarativeRulesManager = React.lazy(() => import('./DeclarativeRulesManager'));
 import * as React from 'react';
 const DeclarativeRulesPanel=React.lazy(()=>import('./DeclarativeRulesPanel'));
 import { createPortal } from 'react-dom';
@@ -1317,6 +1318,7 @@ function ObjectManager({
     if (selectedSetting === 'Change History') return null;
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
+    if (selectedSetting === 'Validation Rules') return <React.Suspense fallback={<p>Loading rule editor…</p>}><DeclarativeRulesManager objectApi={draft.apiName} fields={draft.fields} /></React.Suspense>;
     if (selectedSetting === 'Validation Rules') return <React.Suspense fallback={<p>Loading rules…</p>}><DeclarativeRulesPanel objectApi={object.apiName} fields={draft.fields} objects={objects} /></React.Suspense>;
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
     if (selectedSetting === 'Record Types') return renderRecordTypes();
