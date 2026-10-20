@@ -1833,7 +1833,7 @@ function RecordWorkspace({
             <button type="button" className="btn" onClick={()=>setEmailAction(null)} disabled={Boolean(customActionPendingId)}>Cancel</button>
           </div>
         </form>}
-        {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>
+        {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>}
         {duplicateMatches.length>0 && <section className="records-message" role="status" aria-label="Potential duplicate records">
           <strong>Potential duplicate records detected.</strong>
           {duplicateMatches.map(match=><a key={match.ruleApi+':'+match.recordId}
