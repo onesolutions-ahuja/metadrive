@@ -67,12 +67,13 @@ const seeds:Seed[]=[
  {id:'cart-objects',label:'Cart objects',description:'Cart and Cart Line',objects:cartObjects},
  {id:'product-image',label:'Product image field',description:'Adds Product.ImageUrl where missing',objects:[{apiName:'Product',label:'Product',fields:[{...PRODUCT_IMAGE_FIELD,apiName:PRODUCT_IMAGE_FIELD.apiName,label:PRODUCT_IMAGE_FIELD.label,dataType:PRODUCT_IMAGE_FIELD.dataType}]}]},
  {id:'onekiosk',label:'OneKiosk objects',description:'Menu, meal choices, basket sessions and orders, plus Product and Cart Line extensions',objects:[
+  ...cartObjects.map(o=>({...o,fields:[...o.fields,...(o.apiName==='CartLine'?[{apiName:'CartSession',label:'Cart Session',dataType:'reference',relatedObject:'CartSession'}]:[])]})),
   ...kioskObjects,
   {apiName:'Product',label:'Product',fields:[
+   {apiName:'ImageUrl',label:'Image URL',dataType:'text',maxLength:2048},
    {apiName:'MenuCategory',label:'Menu Category',dataType:'reference',relatedObject:'MenuCategory'},
    {apiName:'ProductType',label:'Product Type',dataType:'picklist'},
-   {apiName:'DisplayOrder',label:'Display Order',dataType:'number'}]},
-  {apiName:'CartLine',label:'Cart Line',fields:[{apiName:'CartSession',label:'Cart Session',dataType:'reference',relatedObject:'CartSession'}]}
+   {apiName:'DisplayOrder',label:'Display Order',dataType:'number'}]}
  ]}
 ];
 
