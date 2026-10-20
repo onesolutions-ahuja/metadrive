@@ -17,9 +17,13 @@ const expected=['sql-persistence.ts','object-definition.ts','authentication.ts',
  'record-query.ts','field-type-migration.ts','encrypted-field.ts','object-metadata-history.ts',
  'declarative-rules.ts','record-matching.ts','external-id-upsert.ts'];
 const allowed=new Set(expected);
-const forbidden=files.filter(f=>!f.isFile() || !allowed.has(f.name));
-if(forbidden.length){
- console.error('System runtime contains files outside the approved Core modules:',forbidden.map(f=>f.name));
+const nodeModules=new Set(['AssignmentNode.ts','DecisionNode.ts','WaitPauseNode.ts','LoopNode.ts','DataActionNodes.ts','NodeContext.ts','GetRecordsNode.ts','CreateRecordsNode.ts','RecordMutationTargets.ts','UpdateRecordsNode.ts','DeleteRecordsNode.ts','FilterCollectionNode.ts','SortCollectionNode.ts','TransformNode.ts','RollbackRecordsNode.ts','CustomErrorNode.ts','SubflowNode.ts','ScreenElementNode.ts','ActionNodeShared.ts','QuickActionNode.ts','PlatformEventPublishNode.ts','ActionEmailNode.ts','HttpCalloutNode.ts','CountCollectionNode.ts','ResumeEventNode.ts','ActionButtonNode.ts','CustomActionBridgeNode.ts']);
+const nodesDir=path.join(root,'nodes');
+const nodeEntries=fs.existsSync(nodesDir)?fs.readdirSync(nodesDir,{withFileTypes:true}):[];
+const invalidNodeEntries=nodeEntries.filter(entry=>!entry.isFile()||!nodeModules.has(entry.name));
+const forbidden=files.filter(f=>f.isDirectory()?f.name!=='nodes':!f.isFile()||!allowed.has(f.name));
+if(forbidden.length||invalidNodeEntries.length){
+ console.error('System runtime contains files outside the approved Core modules:',[...forbidden.map(f=>f.name),...invalidNodeEntries.map(f=>'nodes/'+f.name)]);
  process.exitCode=1;
 }
 const tests=fs.readdirSync('apps/server/test/system').filter(f=>f.endsWith('.test.ts'));

@@ -1,3 +1,7 @@
+import {executeActionButtonNode} from './nodes/ActionButtonNode.js';
+import {executeWaitPauseNode} from './nodes/WaitPauseNode.js';
+import {executeDecisionNode} from './nodes/DecisionNode.js';
+import {executeScreenElementNode} from './nodes/ScreenElementNode.js';
 import type { SqlPersistence } from './sql-persistence.js';
 import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 import type { RbacEngine } from './rbac-engine.js';
@@ -6,7 +10,7 @@ import {evaluateFlowDecisionComparison,evaluateFlowDecisionOutcome} from './flow
 import {FlowRecordQuery} from './flow-record-query.js';
 import {flowDebugResources,simulateFlowGraph} from './flow-debug-runtime.js';
 import {executeFlowDataAction} from './flow-data-actions.js';
-import {mapFlowHttpResponse,resolveFlowHttpCalloutKey} from './flow-http-mapping.js';
+import {executeHttpCalloutNode} from './nodes/HttpCalloutNode.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
 import {screenRecordPayload,acceptScreenRecordSelection,ScreenSelectionError} from './flow-screen-record-selection.js';
@@ -18,7 +22,8 @@ import {FlowExecutionRequests} from './flow-execution-requests.js';
 import {persistFlowInterviewPause} from './flow-interview-persistence.js';
 import {resolveFlowWaitUntil} from './flow-wait-runtime.js';
 import {executeFlowAction,submitFlowStageApproval,loadFlowUserResource} from './flow-action-runtime.js';
-import {createFlowCustomError} from './flow-error-runtime.js';
+import {executeCustomErrorNode} from './nodes/CustomErrorNode.js';
+import {executeRollbackRecordsNode} from './nodes/RollbackRecordsNode.js';
 import {cancelScheduledPathInterviews,deactivateFlowDefinition,
   syncFlowTriggerSubscription} from './flow-subscription-runtime.js';
 import {flowScalarText,isFlowScalar,parseFlowScalar,type FlowScalar} from './flow-scalar-runtime.js';
@@ -857,15 +862,10 @@ export class FlowRuntime {
         const node=byId.get(current);
         if(!node)throw new Error('Invalid Flow graph target');
         let selected:string|undefined;
-        if(node.type==='Screen'){
-          if(active.flow_type==='Record-Triggered Flow')
-            throw new Error('Record-Triggered Flows cannot pause at a Screen');
-          await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
-            loopIndexes,vars,persistenceResources);
-          const screenPayload=screenRecordPayload(node,vars,persistenceResources);
-          return {interviewId:runId,screen:hydrateFlowScreenChoices(node,resources),outcomes:this.screenOutcomes(node),
-            canGoBack:history.length>0,...screenPayload};
-        }
+        if(node.type==='Screen')return executeScreenElementNode({
+          client,tenantId,runId,current,history,steps,loopIndexes,vars,node,resources,persistenceResources,
+          flowType:active.flow_type,outcomes:this.screenOutcomes(node)
+        });
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now(),wait_until=NULL WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
           const resources=Array.isArray(graph.resources)
@@ -887,36 +887,7 @@ export class FlowRuntime {
         if(node.type==='Assignment'){
           executeFlowAssignment({node,resources:persistenceResources,vars,evaluate,set});
         }else if(node.type==='Decision'){
-          const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
-          const matches=(o:Record<string,unknown>)=>{
-            if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
-            const conditions=(o.conditions as Array<Record<string,unknown>>).map(condition=>{
-              const currentField=typeof condition.field==='string'
-                ?/^\{!\$Record\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(condition.field)?.[1]:undefined;
-              const triggerOperator=['ischanged','wasset'].includes(
-                String(condition.operator??'').trim().toLowerCase().replace(/[\s_-]+/g,''));
-              return active.flow_type==='Record-Triggered Flow'&&triggerOperator&&currentField
-                &&!Object.hasOwn(condition,'priorValue')
-                ?{...condition,priorValue:`{!$Record__Prior.${currentField}}`}:condition;
-            });
-            return evaluateFlowDecisionOutcome(
-              conditions,
-              typeof o.conditionLogic==='string'?o.conditionLogic:undefined,
-              evaluate,
-              value=>{
-                if(typeof value!=='string')return value!==undefined;
-                const reference=value.match(/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
-                  ??value.match(/^@([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
-                if(!reference)return true;
-                if(!Object.hasOwn(vars,reference[1]))return false;
-                if(!reference[2])return true;
-                const base=vars[reference[1]];
-                return Boolean(base&&typeof base==='object'&&!Array.isArray(base)
-                  &&Object.hasOwn(base,reference[2]));
-              });
-          };
-          const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
-          selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
+          selected=executeDecisionNode({node,flowType:active.flow_type,vars,evaluate});
         }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
           'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
           if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save'
@@ -971,36 +942,12 @@ export class FlowRuntime {
           }
           history=[];
         }else if(node.type==='HTTP Callout'){
-          if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
-          const asynchronous=node.config.deliveryMode==='DURABLE_ASYNC';
-          try {
-            const scalarVars=Object.fromEntries(Object.entries(vars).filter(
-              (entry):entry is [string,Scalar]=>scalar(entry[1])));
-            const stableKey=resolveFlowHttpCalloutKey(node.config.idempotencyKey,
-              runId+'-'+node.id,evaluate);
-            const response=await this.httpCallout(tenantId,userId,node.config,scalarVars,stableKey,
-              asynchronous?{client,runId,nodeId:current}:undefined);
-            if(!asynchronous){
-              if(node.config.statusVariable)set(node.config.statusVariable,response.status);
-              if(node.config.responseVariable)set(node.config.responseVariable,response.body);
-              if(node.config.responseMapping){
-                const mapped=mapFlowHttpResponse(node.config.responseMapping,response.body,
-                  resources.filter(item=>item.type==='Variable').map(item=>({
-                    name:item.name,dataType:item.dataType})));
-                for(const [name,value] of Object.entries(mapped))set(name,value);
-              }
-            }
-          }catch(error){
-            if(node.config.onError==='FAULT_PATH'){
-              const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
-              if(fault){
-                vars['$Flow.FaultMessage']=error instanceof Error?error.message:'Unknown Flow error';
-                vars['$Flow.FaultCode']=error instanceof Error?error.name:'UNKNOWN';
-                current=fault.to;history=[];continue;
-              }
-            }
-            if(node.config.onError!=='CONTINUE')throw error;
-          }
+          const fault=connectors.find(edge=>edge.from===current&&edge.kind==='fault');
+          const faultTo=await executeHttpCalloutNode({
+            transport:this.httpCallout,tenantId,userId,client,runId,node,current,vars,evaluate,set,
+            resources,faultTarget:fault?.to
+          });
+          if(faultTo!==undefined){current=faultTo;history=[];continue;}
           history=[];
         }else if(node.type==='Orchestration Stage'){
           if(active.flow_type!=='Flow Orchestration')
@@ -1058,7 +1005,7 @@ export class FlowRuntime {
           }
           history=[];
         }else if(node.type==='Action'||node.type==='Publish Platform Event'){
-          const fault=await executeFlowAction({client,rbac:this.rbac!,tenantId,userId,
+          const fault=await executeActionButtonNode({client,rbac:this.rbac!,tenantId,userId,
             flowApi:active.api_name,config:node.type==='Publish Platform Event'?{...node.config,actionType:'Publish Platform Event'}:node.config,
             resolve:evaluate,variables:vars,records:this.records!,
             httpCallout:this.httpCallout,
@@ -1069,11 +1016,9 @@ export class FlowRuntime {
           if(fault!==undefined){current=fault;history=[];continue;}
           history=[];
         }else if(node.type==='Custom Error'){
-          throw createFlowCustomError(node.config,reference=>resolveResource(reference));
+          executeCustomErrorNode(node.config,reference=>resolveResource(reference));
         }else if(node.type==='Roll Back Records'){
-          await client.query('ROLLBACK TO SAVEPOINT '+rollbackSavepoint);
-          await client.query('RELEASE SAVEPOINT '+rollbackSavepoint);
-          await client.query('SAVEPOINT '+rollbackSavepoint);
+          await executeRollbackRecordsNode(client,rollbackSavepoint);
         }else if(node.type!=='Start'&&node.type!=='Wait'){
           throw new Error('Unsupported Screen Flow action: '+node.type);
         }
@@ -1082,19 +1027,13 @@ export class FlowRuntime {
           ?available.find(edge=>edge.label===selected||edge.label==='Default')
           :available.find(edge=>!edge.label||edge.label==='Default'||edge.label==='Next')??(available.length===1?available[0]:undefined);
         if(!next)throw new Error('Flow element has no supported outgoing connector');
-        if(node.type==='Wait'){
-          if((active.flow_type==='Record-Triggered Flow'
-            &&start[0].config.runWhen==='before-save')||!this.scheduleResume)
-            throw new Error('Wait requires a durable scheduler and is not supported in before-save Flows');
-          const waitUntil=resolveFlowWaitUntil(node.config);
-          await persistFlowInterviewPause(client,tenantId,runId,next.to,history,steps+1,
-            loopIndexes,vars,persistenceResources);
-          await client.query(`UPDATE md_flow_runs SET status='waiting',wait_until=$3,wait_kind='wait'
-            WHERE tenant_id=$1 AND id=$2 AND status='pending'`,[tenantId,runId,waitUntil]);
-          await this.scheduleResume(client,tenantId,userId,active.api_name,active.version,
-            runId,waitUntil,steps+1,typeof graph.appApiName==='string'?graph.appApiName:undefined);
-          return {interviewId:runId,status:'waiting',waitUntil:waitUntil.toISOString()};
-        }
+        if(node.type==='Wait')return executeWaitPauseNode({
+          client,tenantId,userId,runId,node,nextElement:next.to,history,steps,loopIndexes,vars,
+          persistenceResources,flowType:active.flow_type,runWhen:start[0].config.runWhen,
+          flowApi:active.api_name,version:active.version,
+          appApiName:typeof graph.appApiName==='string'?graph.appApiName:undefined,
+          scheduleResume:this.scheduleResume
+        });
         current=next.to;
       }
       throw new Error('Flow interview exceeded maximum steps');
