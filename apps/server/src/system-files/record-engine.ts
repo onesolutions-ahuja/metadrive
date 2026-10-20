@@ -1,3 +1,4 @@
+import {validateLookupField} from '../field-engine/types/LookupField.js';
 import {normalizeNumberField} from '../field-engine/types/NumberField.js';
 import {normalizeCheckboxField} from '../field-engine/types/CheckboxField.js';
 import {validateTextField} from '../field-engine/types/TextField.js';
@@ -585,7 +586,7 @@ export class RecordEngine {
         case 'datetime':
           text=normalizeDateTimeField(value,key);break;
         case 'reference':
-          if(typeof value!=='string'||!uuid.test(value)||!field.related_object)throw new Error('Invalid relationship: '+key);
+          validateLookupField(value,key,field.related_object);
           if(recordId&&field.relationship_type==='Master-Detail'&&!field.allow_reparenting){
             const previous=await (client??this.db).query<{reference_record_id:string|null}>(
               'SELECT reference_record_id FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
