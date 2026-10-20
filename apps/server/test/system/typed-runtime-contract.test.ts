@@ -7,7 +7,7 @@ const record=readFileSync(new URL('../../src/system-files/record-engine.ts',impo
 const routes=readFileSync(new URL('../../src/system-support/dynamic-api-routes.ts',import.meta.url),'utf8');
 const worker=readFileSync(new URL('../../src/system-support/job-worker-entrypoint.ts',import.meta.url),'utf8');
 const handler=readFileSync(new URL('../../src/system-support/flow-job-handler.ts',import.meta.url),'utf8');
-const flowValidation=readFileSync(new URL('../../src/system-files/flow-validation.ts',import.meta.url),'utf8');
+const flowValidation=readFileSync(new URL('../../src/flow-engine/FlowValidator.ts',import.meta.url),'utf8');
 
 test('typed SQL migration has complete dollar-quoted functions and projections',()=>{
  assert.equal((migration.match(/\$\$/g)||[]).length,6);
