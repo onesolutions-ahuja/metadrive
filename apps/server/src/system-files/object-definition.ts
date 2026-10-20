@@ -1398,7 +1398,7 @@ export class ObjectDefinitionService {
           throw new Error('Custom link visibility requires a field');
         customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow,
           ...(link.visibleWhenField?{visibleWhenField:link.visibleWhenField,
-            visibleWhenValue:link.visibleWhenValue??''}:{})});
+            visibleWhenValue:typeof link.visibleWhenValue==='string'?link.visibleWhenValue:''}:{})});
       }
       const settings=validateRelatedListSettings(layout.relatedLists as string[],layout.relatedListSettings);
       normalized.push({id:layout.id,label:layout.label,sections,
