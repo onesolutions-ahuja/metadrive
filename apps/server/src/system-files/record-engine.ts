@@ -1514,6 +1514,10 @@ export class RecordEngine {
           [tenantId,link.source_record_id,link.source_object_api,link.field_api,
             link.target_record_id]);
         if(restored.rowCount){
+          await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+            [tenantId,link.source_object_api,link.source_record_id]);
+          const sourceParents=await this.rollupParents(client,tenantId,link.source_object_api,link.source_record_id);
+          await this.refreshRollups(client,tenantId,link.source_object_api,sourceParents);
           await client.query(`INSERT INTO md_record_history
             (tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value)
             VALUES($1,$2,$3,$4,$5,NULL,$6)`,
