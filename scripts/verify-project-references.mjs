@@ -28,7 +28,7 @@ function resolveImport(from, specifier) {
   const outputRoot = path.join(root, 'apps/server/dist-system');
   const relative = path.relative(outputRoot, base);
   if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
-    const source = path.join(root, 'apps/server/src', relative).replace(/\\.(?:js|mjs|cjs)$/, '');
+    const source = path.join(root, 'apps/server/src', relative).replace(/\.(?:js|mjs|cjs)$/, '');
     if (['.ts', '.tsx', '.mts', '.cts'].some(extension => fs.existsSync(source + extension))) return;
   }
   missing.push({ file: path.relative(root, from), target: specifier, type: 'module' });
