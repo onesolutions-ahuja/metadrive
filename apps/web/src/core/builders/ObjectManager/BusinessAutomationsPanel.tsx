@@ -12,15 +12,18 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const [users,setUsers]=useState<Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>>([]);
  const [credentials,setCredentials]=useState<Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>>([]);
+ const [flows,setFlows]=useState<Array<{apiName:string;label:string;flowType:string;status:string;triggerObject?:string}>>([]);
  useEffect(()=>{
    let active=true;
    void Promise.allSettled([
      apiRequest<{records:Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>}>('/records/User?limit=100'),
-     apiRequest<{credentials:Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>}>('/named-credentials')
+     apiRequest<{credentials:Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>}>('/named-credentials'),
+     apiRequest<{flows:Array<{apiName:string;label:string;flowType:string;status:string;triggerObject?:string}>}>('/metadata/flows')
    ]).then(results=>{
      if(!active)return;
      if(results[0].status==='fulfilled')setUsers(results[0].value.records);
      if(results[1].status==='fulfilled')setCredentials(results[1].value.credentials);
+     if(results[2].status==='fulfilled')setFlows(results[2].value.flows);
    });
    return()=>{active=false};
  },[]);
@@ -48,6 +51,17 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
    <p>Configure an assignment, automatic response or escalation using the shared Flow engine.
     Generated Flows remain drafts until validated and activated in Flow Builder.</p></div></div>
   {error&&<p role="alert">{error}</p>}
+  <div className="metadata-card"><h3>Existing record automations</h3>
+    <p>These are managed in the shared Flow Builder. Activation and deactivation retain Flow version history.</p>
+    {flows.filter(f=>f.flowType==='Record-Triggered Flow'&&f.triggerObject===object.apiName)
+      .map(flow=><div key={flow.apiName} className="metadata-row">
+      <span><strong>{flow.label}</strong><small>{flow.status} · {flow.apiName}</small></span>
+      <a className="btn" href={appRoutePath({kind:'setup',workspace:'flow-builder',resourceApiName:flow.apiName})}>Open in Flow Builder</a>
+      </div>)}
+    {flows.filter(f=>f.flowType==='Record-Triggered Flow'&&f.triggerObject===object.apiName).length===0
+     &&<p>No record-triggered Flows for this object.</p>}
+  </div>
+
   <label className="form-label">Automation type<select className="form-control" value={draft.kind}
    onChange={e=>setDraft({...empty(object.apiName),kind:e.target.value as AutomationKind})}>
    <option>Assignment</option><option>Auto Response</option><option>Escalation</option>
