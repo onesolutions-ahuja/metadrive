@@ -83,3 +83,12 @@ test('lookup and master-detail validation retains fail-closed contracts',()=>{
  assert.throws(()=>validateLookupField(id,'Parent',null),/Invalid relationship/);
  assert.throws(()=>assertMasterDetailReparenting(id,'00000000-0000-4000-8000-000000000002','Parent',false),/does not allow reparenting/);
 });
+
+import {readRollupSummaryField} from '../../src/field-engine/types/RollupSummaryField.js';
+
+test('rollup persisted display formats reuse shared SQL types',()=>{
+ assert.equal(readRollupSummaryField('date','2026-10-20',null,null),'2026-10-20');
+ assert.equal(readRollupSummaryField('datetime',null,'2026-10-20T12:00:00Z',null),'2026-10-20T12:00:00.000Z');
+ assert.equal(readRollupSummaryField('number',null,null,'123.45'),123.45);
+ assert.equal(readRollupSummaryField('number',null,null,null),null);
+});
