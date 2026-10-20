@@ -533,8 +533,9 @@ function ShoppingCartTill({ props }) {
         .filter((item) => item.quantity > 0),
     );
   };
-  const nextCustomer = () => {
-    if (busy || paymentStatus !== "complete" || !sessionReady) return;
+  const resetCustomer = () => {
+    if (busy || paymentStatus === "pending" || !sessionReady) return;
+
     request.current = "";
     setCart([]);
     setPaymentStatus("");
@@ -554,6 +555,30 @@ function ShoppingCartTill({ props }) {
       }));
     }
   };
+  const nextCustomer=()=> {
+    if(paymentStatus !== "complete")return;
+    resetCustomer();
+  };
+  React.useEffect(() => {
+    const seconds=Number(props.inactivityResetSeconds);
+    if (!Number.isSafeInteger(seconds)||seconds<30||seconds>3600
+      ||typeof window==="undefined")return undefined;
+    if (!cart.length && paymentStatus !== "complete")return undefined;
+    if (busy || paymentStatus === "pending")return undefined;
+    let timer;
+    const resetTimer=()=>{
+      window.clearTimeout(timer);
+      timer=window.setTimeout(()=>resetCustomer(),seconds*1000);
+    };
+    resetTimer();
+    for(const name of ["pointerdown","keydown","touchstart"])
+      window.addEventListener(name,resetTimer,{passive:true});
+    return () => {
+      window.clearTimeout(timer);
+      for(const name of ["pointerdown","keydown","touchstart"])
+        window.removeEventListener(name,resetTimer);
+    };
+  },[props.inactivityResetSeconds,cart.length,paymentStatus,busy,sessionReady]);
   const checkoutValue = (items) => {
     request.current = crypto.randomUUID();
     return {
