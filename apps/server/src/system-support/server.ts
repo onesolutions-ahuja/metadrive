@@ -1539,6 +1539,20 @@ export function createSystemServer(db:SqlPersistence) {
     res.json(await quickActions.authorizeFlow(req.actor!,req.params.objectApi,req.params.id,
       req.params.actionId));
   }));
+  app.get('/api/metadata/action-permission-options',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    const {rows}=await db.query<{resource:string;label:string}>(`
+      SELECT 'Action:'||object_api||'.'||action_id AS resource,
+        object_api||' · '||label AS label
+      FROM md_object_actions WHERE tenant_id=$1 AND enabled=true AND action_type='Custom'
+      UNION ALL
+      SELECT 'Action:Global.'||action_id, 'Global · '||label
+      FROM md_global_quick_actions WHERE tenant_id=$1 AND enabled=true
+      ORDER BY label`,[actor.tenant_id]);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({actions:rows});
+  }));
   app.get('/api/metadata/global-actions',route(async(req,res)=>{
     const actor=req.actor!;res.setHeader('Cache-Control','private, no-store');
     res.json(await globalQuickActionMetadata.list(actor.tenant_id,actor.user_id));
