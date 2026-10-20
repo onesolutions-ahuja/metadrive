@@ -1,13 +1,13 @@
 # Flow Engine module boundaries
 
 This is a behaviour-preserving structural extraction of existing MetaDrive Flow functionality.
-The published SQL Flow executor remains in `system-files/flow-runtime.ts` until its
-transactional execution method is safely split into smaller services. The large
-validation implementation similarly remains under `flow-validation.ts`.
+The published SQL Flow executor is implemented in `flow-engine/FlowEngineCore.ts`.
+Draft validation and entitlement logic live in `flow-engine/FlowValidator.ts`.
+Legacy `system-files` imports remain compatibility re-exports.
 
 ## Canonical target modules
 
-- `FlowEngineCore.ts`: canonical compatibility entry for SQL-backed `FlowRuntime`.
+- `FlowEngineCore.ts`: canonical implementation of the existing SQL-backed `FlowRuntime`.
 - `FlowParser.ts`: SQL-backed Flow capability catalogue and validated metadata loading.
 - `FlowValidator.ts`: single authoritative Flow draft validation and entitlement gates.
 - `FlowStateManager.ts`: persisted interview state and continuation snapshots.
@@ -26,13 +26,14 @@ validation implementation similarly remains under `flow-validation.ts`.
 Compatibility re-exports preserve existing module imports. Do not create separate
 SQL CRUD, Flow execution, or permission engines.
 
-## Deferred internal code splits
+## Internal module boundaries
 
-The large SQL `FlowRuntime` execution loop and `validateFlowDraft` remain
-in their existing, oversized legacy files. These are not yet fully modularized:
-a safe extraction requires preserving transaction savepoints, Flow pauses,
-side effects, RBAC, SQL metadata and published behaviour. This PR does not
-claim those internals are separately implemented by the new façades.
+`FlowEngineCore.ts` retains one SQL transaction-aware execution loop; this is intentional
+so fault paths, savepoints, durable continuation and published Flow semantics remain
+consistent. `FlowValidator.ts` retains a single shared draft validator rather than
+splitting validation into competing engines. The surrounding Flow state, debug,
+parser, variable, history, version and node responsibilities are separated and reused.
+Do not claim that moving a module alone changes its internal algorithms or complexity.
 
 ## Verification
 
