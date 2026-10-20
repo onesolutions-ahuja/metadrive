@@ -53,3 +53,20 @@ integration tests.
 This is a **draft PR** until all CI and remaining Phase 2 acceptance
 requirements pass. No part of the implementation should be reported as
 fully validated merely because it is committed.
+
+## Durable SMTP delivery (20261110)
+
+Object and global Send Email Quick Actions enqueue encrypted payloads into
+`md_quick_action_email_jobs` through the existing NamedCredentialService.
+The tenant/user-scoped `requestKey` deduplicates browser retries; reusing a
+key for a different email is rejected. The shared communication worker claims
+one job using SQL `FOR UPDATE SKIP LOCKED`, rechecks the tenant, live action,
+credential, actor and OneEngine permissions and sends through the existing
+SMTP transport. A crash or SMTP error after dispatch begins is quarantined as
+`DELIVERY_OUTCOME_UNKNOWN` rather than automatically retried, preventing
+uncontrolled duplicate side effects. Queue and delivery failures are audited.
+The browser says **queued**, not **sent**, until actual delivery is confirmed.
+The queue contains ciphertext, not plaintext recipient/message body.
+
+Phase 2 remains in review until fresh-install and upgraded SQL, all automated
+checks, Chromium E2E, optional app isolation and SMTP failure handling pass.
