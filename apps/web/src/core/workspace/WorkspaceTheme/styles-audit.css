@@ -526,3 +526,50 @@
 @media (pointer:coarse) {
   .lightning .records-filter-chip,.lightning .records-selection-notice .btn { min-height:44px; }
 }
+
+
+/* Phase 7 — final cross-workspace accessibility and interaction polish. */
+.lightning :is(button,a,input,select,textarea,[role="button"],[role="tab"],[role="menuitem"]):focus-visible {
+  outline:2px solid var(--md-primary,#1d4ed8);
+  outline-offset:3px;
+}
+.lightning :is(button,[role="button"]):disabled {
+  cursor:not-allowed;
+}
+.lightning :is(.records-empty,.empty-state,.dashboard-empty-state,.app-manager-list-empty,.page-nested-empty) {
+  overflow-wrap:anywhere;
+  line-height:1.55;
+}
+.lightning :is(.records-list-card,.metadata-card,.record-fields-card,.dashboard-empty-state) {
+  min-width:0;
+}
+.lightning :is(.records-table-wrap,.table-scroll,.app-manager-list-scroll) {
+  overscroll-behavior-x:contain;
+}
+.lightning :is(.records-table,.slds-table) :is(button,a):focus-visible {
+  position:relative;z-index:1;
+}
+@media (max-width:600px) {
+  .lightning :is(.toolbar-actions,.records-list-actions,.dashboard-heading-actions,.flow-toolbar-actions) {
+    row-gap:10px;
+  }
+  .lightning :is(.records-empty,.empty-state,.dashboard-empty-state) {
+    padding-inline:max(12px,env(safe-area-inset-left,0px)) max(12px,env(safe-area-inset-right,0px));
+  }
+}
+@media (prefers-reduced-motion:reduce) {
+  .lightning *, .lightning *::before, .lightning *::after {
+    scroll-behavior:auto !important;
+    animation-duration:0.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:0.01ms !important;
+  }
+}
+@media (forced-colors:active) {
+  .lightning :is(button,a,input,select,textarea):focus-visible {
+    outline:2px solid Highlight;
+  }
+  .lightning :is(.records-filter-chip,.records-selection-notice) {
+    border:1px solid CanvasText;
+  }
+}
