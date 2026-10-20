@@ -151,3 +151,41 @@ export function evaluateFlowDecisionComparison(actual: unknown, expected: unknow
   operator: unknown): boolean {
   return compare({ field: actual, value: expected, operator }, value => value, () => false);
 }
+
+/** Resolve the selected outcome of a Decision node, including record-trigger prior-value conditions. */
+export function executeDecisionNode(input:{
+ node:{id:number;config:Record<string,unknown>};flowType:string;
+ vars:Record<string,unknown>;evaluate:(value:unknown)=>unknown;
+}):string{
+ const {node,flowType,vars,evaluate}=input;
+          const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
+          const matches=(o:Record<string,unknown>)=>{
+            if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
+            const conditions=(o.conditions as Array<Record<string,unknown>>).map(condition=>{
+              const currentField=typeof condition.field==='string'
+                ?/^\{!\$Record\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(condition.field)?.[1]:undefined;
+              const triggerOperator=['ischanged','wasset'].includes(
+                String(condition.operator??'').trim().toLowerCase().replace(/[\s_-]+/g,''));
+              return flowType==='Record-Triggered Flow'&&triggerOperator&&currentField
+                &&!Object.hasOwn(condition,'priorValue')
+                ?{...condition,priorValue:`{!$Record__Prior.${currentField}}`}:condition;
+            });
+            return evaluateFlowDecisionOutcome(
+              conditions,
+              typeof o.conditionLogic==='string'?o.conditionLogic:undefined,
+              evaluate,
+              value=>{
+                if(typeof value!=='string')return value!==undefined;
+                const reference=value.match(/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
+                  ??value.match(/^@([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
+                if(!reference)return true;
+                if(!Object.hasOwn(vars,reference[1]))return false;
+                if(!reference[2])return true;
+                const base=vars[reference[1]];
+                return Boolean(base&&typeof base==='object'&&!Array.isArray(base)
+                  &&Object.hasOwn(base,reference[2]));
+              });
+          };
+          const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
+          return String(selectedOutcome?.label??selectedOutcome?.name??'Default');
+}
