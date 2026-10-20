@@ -78,6 +78,20 @@ export type PageLayoutCustomLinkMetadata = {
   label: string;
   url: string;
   openInNewWindow: boolean;
+  visibleWhenField?: string;
+  visibleWhenValue?: string;
+};
+
+export type RelatedListSettingsMetadata = {
+  columns?: string[];
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+  filterField?: string;
+  filterValue?: string;
+  filterOperator?: 'Equals' | 'Includes' | 'Excludes';
+  pageSize?: 10 | 25 | 50;
+  showNewAction?: boolean;
+  showRowActions?: boolean;
 };
 
 export type PageLayoutMetadata = {
@@ -85,6 +99,7 @@ export type PageLayoutMetadata = {
   label: string;
   sections: PageLayoutSectionMetadata[];
   relatedLists: string[];
+  relatedListSettings?: Record<string,RelatedListSettingsMetadata>;
   actions: string[];
   customLinks?: PageLayoutCustomLinkMetadata[];
 };

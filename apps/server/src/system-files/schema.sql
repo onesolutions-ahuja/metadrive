@@ -478,6 +478,7 @@ CREATE TABLE IF NOT EXISTS md_object_page_layout_related_lists (
   object_api text NOT NULL,
   layout_id text NOT NULL,
   list_name text NOT NULL CHECK (length(list_name) BETWEEN 1 AND 128),
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(settings)='object'),
   sort_order integer NOT NULL,
   PRIMARY KEY (tenant_id,object_api,layout_id,list_name),
   FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
@@ -490,6 +491,12 @@ CREATE TABLE IF NOT EXISTS md_object_page_layout_links (
   label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
   url text NOT NULL CHECK (length(url) BETWEEN 1 AND 2048),
   open_in_new_window boolean NOT NULL DEFAULT false,
+  visible_when_field text,
+  visible_when_value text,
+  CONSTRAINT md_record_link_visibility_pair CHECK (
+    (visible_when_field IS NULL AND visible_when_value IS NULL)
+    OR (visible_when_field ~ '^[A-Za-z][A-Za-z0-9_]*$'
+      AND visible_when_value IS NOT NULL AND length(visible_when_value)<=256)),
   sort_order integer NOT NULL,
   PRIMARY KEY (tenant_id,object_api,layout_id,link_id),
   FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE

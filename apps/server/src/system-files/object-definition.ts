@@ -323,6 +323,51 @@ const formulaTypeForField=(dataType:string,returnType:string|null,rollupSourceTy
     return 'Text';
   return null;
 };
+type RelatedListSettings={
+  columns?:string[];sortField?:string;sortDirection?:'asc'|'desc';
+  filterField?:string;filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes';
+  pageSize?:10|25|50;showNewAction?:boolean;showRowActions?:boolean
+};
+const relatedFieldPattern=/^[A-Za-z][A-Za-z0-9_]*$/;
+export function validateRelatedListSettings(names:string[],input:unknown):Record<string,RelatedListSettings>{
+  if(input===undefined)return {};
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid related list settings');
+  const values=input as Record<string,unknown>;
+  if(Object.keys(values).length>names.length)throw new Error('Unknown related list configuration');
+  const result:Record<string,RelatedListSettings>={};
+  for(const [name,raw] of Object.entries(values)){
+    if(!names.includes(name)||!raw||typeof raw!=='object'||Array.isArray(raw))
+      throw new Error('Unknown related list configuration');
+    const v=raw as Record<string,unknown>;
+    const allowed=['columns','sortField','sortDirection','filterField','filterValue',
+      'filterOperator','pageSize','showNewAction','showRowActions'];
+    if(Object.keys(v).some(key=>!allowed.includes(key)))throw new Error('Invalid related list property');
+    if(v.columns!==undefined&&(!Array.isArray(v.columns)||v.columns.length>12
+      ||new Set(v.columns).size!==v.columns.length
+      ||v.columns.some(x=>typeof x!=='string'||!relatedFieldPattern.test(x))))
+      throw new Error('Invalid related list columns');
+    for(const key of ['sortField','filterField']){
+      if(v[key]!==undefined&&(typeof v[key]!=='string'||!relatedFieldPattern.test(v[key])))
+        throw new Error('Invalid related list field');
+    }
+    if(v.sortDirection!==undefined&&!['asc','desc'].includes(String(v.sortDirection)))
+      throw new Error('Invalid related list sort direction');
+    if(v.filterOperator!==undefined&&!['Equals','Includes','Excludes'].includes(String(v.filterOperator)))
+      throw new Error('Invalid related list filter operator');
+    if(v.filterValue!==undefined&&(typeof v.filterValue!=='string'||v.filterValue.length>256))
+      throw new Error('Invalid related list filter value');
+    if((v.filterField===undefined)!==(v.filterValue===undefined))
+      throw new Error('Related list filter field and value must be set together');
+    if(v.pageSize!==undefined&&![10,25,50].includes(Number(v.pageSize)))
+      throw new Error('Invalid related list page size');
+    if((v.showNewAction!==undefined&&typeof v.showNewAction!=='boolean')
+      ||(v.showRowActions!==undefined&&typeof v.showRowActions!=='boolean'))
+      throw new Error('Invalid related list action visibility');
+    result[name]=v as RelatedListSettings;
+  }
+  return result;
+}
+
 export class ObjectDefinitionService {
   constructor(private readonly db:SqlPersistence,
     private readonly migrationRuntime:FieldTypeMigrationRuntime={}) {}
@@ -1241,14 +1286,14 @@ export class ObjectDefinitionService {
     type LayoutSqlRow={
       object_api:string;revision:number;sort_order:number;
       layout_id:string;label:string;section_id:string;columns:number;
-      field_api:string;action_name:string;list_name:string;
-      link_id:string;url:string;open_in_new_window:boolean;
+      field_api:string;action_name:string;list_name:string;settings:unknown;
+      link_id:string;url:string;open_in_new_window:boolean;visible_when_field:string|null;visible_when_value:string|null;
       profile_id:string;record_type_id:string;
     };
     const [versions,layouts,sections,fields,actions,related,links,assignments]=await Promise.all(
       names.map(name=>this.db.query<LayoutSqlRow>(`SELECT * FROM ${name} WHERE tenant_id=$1`,[tenantId])));
     type Layout={id:string;label:string;sections:{id:string;label:string;columns:1|2;fieldApiNames:string[]}[];
-      relatedLists:string[];actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean}[]};
+      relatedLists:string[];relatedListSettings:Record<string,RelatedListSettings>;actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean;visibleWhenField?:string;visibleWhenValue?:string}[]};
     const byObject=new Map<string,{revision:number;pageLayouts:Layout[];pageLayoutAssignments:{profileId:string;recordTypeId:string;pageLayoutId:string}[]}>();
     const get=(name:string)=>{let value=byObject.get(name);if(!value){
       value={revision:0,pageLayouts:[],pageLayoutAssignments:[]};byObject.set(name,value);
@@ -1258,7 +1303,7 @@ export class ObjectDefinitionService {
     const sectionIndex=new Map<string,Layout['sections'][number]>();
     const key=(...parts:string[])=>JSON.stringify(parts);
     for(const row of [...layouts.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order))){
-      const layout:Layout={id:row.layout_id,label:row.label,sections:[],relatedLists:[],actions:[],customLinks:[]};
+      const layout:Layout={id:row.layout_id,label:row.label,sections:[],relatedLists:[],relatedListSettings:{},actions:[],customLinks:[]};
       get(row.object_api).pageLayouts.push(layout);
       indexed.set(key(row.object_api,row.layout_id),layout);
     }
@@ -1272,11 +1317,17 @@ export class ObjectDefinitionService {
       sectionIndex.get(key(row.object_api,row.layout_id,row.section_id))?.fieldApiNames.push(row.field_api);
     for(const row of [...actions.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
       indexed.get(key(row.object_api,row.layout_id))?.actions.push(row.action_name);
-    for(const row of [...related.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
-      indexed.get(key(row.object_api,row.layout_id))?.relatedLists.push(row.list_name);
+    for(const row of [...related.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order))){
+      const layout=indexed.get(key(row.object_api,row.layout_id));
+      if(!layout)continue;
+      layout.relatedLists.push(row.list_name);
+      if(row.settings&&typeof row.settings==='object'&&!Array.isArray(row.settings)
+        &&Object.keys(row.settings).length)layout.relatedListSettings[row.list_name]=row.settings as RelatedListSettings;
+    }
     for(const row of [...links.rows].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)))
       indexed.get(key(row.object_api,row.layout_id))?.customLinks.push({
-        id:row.link_id,label:row.label,url:row.url,openInNewWindow:row.open_in_new_window
+        id:row.link_id,label:row.label,url:row.url,openInNewWindow:row.open_in_new_window,
+        ...(row.visible_when_field?{visibleWhenField:row.visible_when_field,visibleWhenValue:row.visible_when_value??''}:{})
       });
     for(const row of assignments.rows)get(row.object_api).pageLayoutAssignments.push({
       profileId:row.profile_id,recordTypeId:row.record_type_id,pageLayoutId:row.layout_id
@@ -1301,8 +1352,8 @@ export class ObjectDefinitionService {
       'SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL',[tenantId,objectApi]);
     const fieldNames=new Set(definedFields.map(row=>row.api_name));
     type SectionInput={id:string;label:string;columns:1|2;fieldApiNames:string[]};
-    type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean};
-    type LayoutInput={id:string;label:string;sections:SectionInput[];actions:string[];relatedLists:string[];customLinks:LinkInput[]};
+    type LinkInput={id:string;label:string;url:string;openInNewWindow:boolean;visibleWhenField?:string;visibleWhenValue?:string};
+    type LayoutInput={id:string;label:string;sections:SectionInput[];actions:string[];relatedLists:string[];relatedListSettings:Record<string,RelatedListSettings>;customLinks:LinkInput[]};
     type AssignmentInput={profileId:string;recordTypeId:string;pageLayoutId:string};
     const normalized:LayoutInput[]=[];
     const layoutIds=new Set<string>();
@@ -1338,10 +1389,21 @@ export class ObjectDefinitionService {
           ||(!link.url.startsWith('https://')&&!/^\/(?!\/)/.test(link.url))
           ||typeof link.openInNewWindow!=='boolean')throw new Error('Invalid page layout link');
         linkIds.add(link.id);
-        customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow});
+        if(link.visibleWhenField!==undefined
+          &&(typeof link.visibleWhenField!=='string'
+            ||!fieldNames.has(link.visibleWhenField)
+            ||typeof link.visibleWhenValue!=='string'||link.visibleWhenValue.length>256))
+          throw new Error('Invalid custom link visibility condition');
+        if(link.visibleWhenValue!==undefined&&link.visibleWhenField===undefined)
+          throw new Error('Custom link visibility requires a field');
+        customLinks.push({id:link.id,label:link.label,url:link.url,openInNewWindow:link.openInNewWindow,
+          ...(link.visibleWhenField?{visibleWhenField:link.visibleWhenField,
+            visibleWhenValue:typeof link.visibleWhenValue==='string'?link.visibleWhenValue:''}:{})});
       }
+      const settings=validateRelatedListSettings(layout.relatedLists as string[],layout.relatedListSettings);
       normalized.push({id:layout.id,label:layout.label,sections,
-        actions:layout.actions as string[],relatedLists:layout.relatedLists as string[],customLinks});
+        actions:layout.actions as string[],relatedLists:layout.relatedLists as string[],
+        relatedListSettings:settings,customLinks});
     }
 
     type RecordTypeInput={id:string;label:string;developerName:string;description:string;
@@ -1419,12 +1481,14 @@ export class ObjectDefinitionService {
           (tenant_id,object_api,layout_id,action_name,sort_order) VALUES ($1,$2,$3,$4,$5)`,
           [tenantId,objectApi,layout.id,action,j]);
         for(const [j,name] of layout.relatedLists.entries())await client.query(`INSERT INTO md_object_page_layout_related_lists
-          (tenant_id,object_api,layout_id,list_name,sort_order) VALUES ($1,$2,$3,$4,$5)`,
-          [tenantId,objectApi,layout.id,name,j]);
+          (tenant_id,object_api,layout_id,list_name,sort_order,settings) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+          [tenantId,objectApi,layout.id,name,j,JSON.stringify(layout.relatedListSettings[name]??{})]);
         for(const [j,link] of layout.customLinks.entries())await client.query(`INSERT INTO md_object_page_layout_links
-          (tenant_id,object_api,layout_id,link_id,label,url,open_in_new_window,sort_order)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [tenantId,objectApi,layout.id,link.id,link.label,link.url,link.openInNewWindow,j]);
+          (tenant_id,object_api,layout_id,link_id,label,url,open_in_new_window,sort_order,
+            visible_when_field,visible_when_value)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [tenantId,objectApi,layout.id,link.id,link.label,link.url,link.openInNewWindow,j,
+            link.visibleWhenField??null,link.visibleWhenField?(link.visibleWhenValue??''):null]);
       }
       for(const assignment of assigned)await client.query(`INSERT INTO md_object_page_layout_assignments
         (tenant_id,object_api,profile_id,record_type_id,layout_id) VALUES ($1,$2,$3,$4,$5)`,

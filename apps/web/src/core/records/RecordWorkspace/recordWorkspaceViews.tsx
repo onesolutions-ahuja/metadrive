@@ -1,6 +1,7 @@
 import { RecordFormDialog } from '../RecordFormDialog/recordFormDialogView';
 import RichTextContent from './RichTextContent';
 import FormulaImageContent from './FormulaImageContent';
+import {resolveRecordCustomLink} from './recordCustomLinks';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
 import { initialScreenValues, screenFieldIsVisible } from '../../automation/FlowScreen/flowScreenRuntimeUtils';
@@ -440,15 +441,19 @@ function RecordWorkspace({
     setRelatedOffsets((current) => ({ ...current, [name]: Math.max(0, offset) }));
   const renderRelatedPagination = (name: string, total: number, loaded: number) => {
     const offset = relatedOffsets[name] ?? 0;
+    const pageSize = object&&record
+      ? pageLayoutForRecord(object,String(record.RecordTypeId??defaultRecordTypeId),profileId)
+        ?.relatedListSettings?.[name]?.pageSize??50
+      : 50;
     if (total === 0) return null;
     return <nav aria-label={`${name} pagination`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: 12 }}>
       <span>{offset + 1}–{Math.min(offset + loaded, total)} of {total}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <button className="btn" disabled={offset === 0} onClick={() => changeRelatedPage(name, 0)}>First</button>
-        <button className="btn" disabled={offset === 0} onClick={() => changeRelatedPage(name, offset - 50)}>Previous</button>
-        <span>Page {Math.floor(offset / 50) + 1} of {Math.ceil(total / 50)}</span>
-        <button className="btn" disabled={offset + 50 >= total} onClick={() => changeRelatedPage(name, offset + 50)}>Next</button>
-        <button className="btn" disabled={offset + 50 >= total} onClick={() => changeRelatedPage(name, Math.floor((total - 1) / 50) * 50)}>Last</button>
+        <button className="btn" disabled={offset === 0} onClick={() => changeRelatedPage(name, offset - pageSize)}>Previous</button>
+        <span>Page {Math.floor(offset / pageSize) + 1} of {Math.ceil(total / pageSize)}</span>
+        <button className="btn" disabled={offset + pageSize >= total} onClick={() => changeRelatedPage(name, offset + pageSize)}>Next</button>
+        <button className="btn" disabled={offset + pageSize >= total} onClick={() => changeRelatedPage(name, Math.floor((total - 1) / pageSize) * pageSize)}>Last</button>
       </div>
     </nav>;
   };
@@ -826,9 +831,15 @@ function RecordWorkspace({
     setRelatedRecords({});
     const loadRelatedRecords = async () => {
       const results = await Promise.allSettled(relations.map(async ({ childObject, fieldApiName, relationshipName }) => {
+          const settings=layout?.relatedListSettings?.[relationshipName];
           const params = new URLSearchParams({
-            limit: '50', offset: String(relatedOffsets[relationshipName] ?? 0),
-            relatedField: fieldApiName, relatedId: record.Id
+            limit: String(settings?.pageSize??50), offset: String(relatedOffsets[relationshipName] ?? 0),
+            relatedField: fieldApiName, relatedId: record.Id,
+            ...(settings?.sortField?{sortField:settings.sortField,
+              sortDirection:settings.sortDirection??'asc'}:{}),
+            ...(settings?.filterField&&settings.filterValue!==undefined
+              ?{filterField:settings.filterField,filterValue:settings.filterValue,
+                filterOperator:settings.filterOperator??'Equals'}:{})
           });
           const payload = await apiRequest<{ records: RecordData[]; total: number }>(
             `/records/${encodeURIComponent(childObject.apiName)}?${params.toString()}`);
@@ -1586,18 +1597,40 @@ function RecordWorkspace({
       })?.[1];
       if (!related) return <section className="record-fields-card surface" key={relationshipName}><div className="record-fields-heading"><h2>{relationshipName}</h2></div><div className="records-empty">This related list is unavailable for this record.</div></section>;
       const childObject = objects.find((item) => item.apiName === related.objectApiName);
-      const displayFields = childObject?.fields.filter((field) => field.apiName !== related.fieldApiName
-        && fieldAccess[`${childObject.apiName}.${field.apiName}`]?.read
-        && related.records.some((item) => field.apiName in item)).slice(0, 4) ?? [];
+      const settings=recordLayout?.relatedListSettings?.[relationshipName];
+      const availableFields=childObject?.fields.filter(field=>field.apiName!==related.fieldApiName
+        && fieldAccess[`${childObject.apiName}.${field.apiName}`]?.read)??[];
+      const displayFields=settings?.columns
+        ?settings.columns.flatMap(name=>availableFields.find(field=>field.apiName===name)
+          ?[availableFields.find(field=>field.apiName===name)!]:[])
+        :availableFields.filter(field=>related.records.some(item=>field.apiName in item)).slice(0,4);
+      const newAction=(object.actions??[]).find(action=>action.enabled&&action.behavior==='Create Related'
+        &&action.targetObjectApi===childObject?.apiName&&action.relationshipFieldApi===related.fieldApiName
+        &&allowedActionIds.includes(action.id)
+        &&(!recordLayout||recordLayout.actions.includes(action.id)));
       return <section className="record-fields-card surface related-records-card" key={relationshipName}>
-        <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.total} record{related.total === 1 ? '' : 's'}</span></div>
+        <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.total} record{related.total === 1 ? '' : 's'}</span>
+          {settings?.showNewAction!==false&&newAction&&childObject&&<button type="button" className="btn"
+            onClick={()=>onNavigate({kind:'record-list',objectApiName:childObject.apiName,appId:route.appId,
+              relatedCreation:{sourceObjectApi:object.apiName,sourceRecordId:record.Id,actionId:newAction.id}})}>New</button>}
+        </div>
         {related.records.length === 0 ? <div className="records-empty">No related {childObject?.pluralLabel.toLocaleLowerCase() ?? 'records'}.</div>
-          : <div className="records-table-wrap" style={{ maxHeight: "65vh", overflow: "auto" }}><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
+          : <div className="records-table-wrap" style={{ maxHeight: "65vh", overflow: "auto" }}><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{settings?.showRowActions&&<th>Actions</th>}</tr></thead>
             <tbody>{related.records.map((child) => <tr key={child.Id}>{displayFields.map((field, index) => <td key={field.apiName}>
               {index === 0 && childObject
                 ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })}>{formatRecordValue(child[field.apiName] ?? child.Id)}</a>
                 : formatRecordValue(child[field.apiName])}
-            </td>)}</tr>)}</tbody></table></div>}
+            </td>)}{settings?.showRowActions&&childObject&&<td>
+              <button type="button" className="btn" onClick={()=>onNavigate({
+                kind:'record-detail',objectApiName:childObject.apiName,recordId:child.Id,appId:route.appId
+              })}>View / Edit</button>
+              <button type="button" className="btn btn-danger" onClick={()=>void(async()=>{
+                if(!window.confirm('Delete this related record? It can be restored from the Recycle Bin.'))return;
+                try{await apiRequest(`/records/${encodeURIComponent(childObject.apiName)}/${encodeURIComponent(child.Id)}`,{
+                  method:'DELETE'});setRefreshKey(current=>current+1);}
+                catch(error){setRelatedError(error instanceof Error?error.message:'Delete was not permitted');}
+              })()}>Delete</button>
+            </td>}</tr>)}</tbody></table></div>}
         {renderRelatedPagination(relationshipName, related.total, related.records.length)}
       </section>;
     };
@@ -1800,8 +1833,15 @@ function RecordWorkspace({
             {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
             {canCreate&&object.apiName!=='User'&&<button className="btn" onClick={()=>void cloneCurrentRecord()}><Copy size={14}/>Clone</button>}
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
-            {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
-              target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
+            {(recordLayout?.customLinks ?? []).flatMap(link=>{
+              const readable=new Set(object.fields.filter(field=>
+                fieldAccess[`${object.apiName}.${field.apiName}`]?.read).map(field=>field.apiName));
+              const href=resolveRecordCustomLink(link.url,record,readable,
+                {field:link.visibleWhenField,value:link.visibleWhenValue});
+              return href?[<a key={link.id} className="btn" href={href}
+                target={link.openInNewWindow?'_blank':undefined}
+                rel={link.openInNewWindow?'noopener noreferrer':undefined}>{link.label}</a>]:[];
+            })}
             {(object.actions ?? []).filter((action) => {
               if (action.type !== 'Custom' || !action.enabled || !allowedActionIds.includes(action.id)) return false;
               if (recordLayout && !recordLayout.actions.includes(action.id)) return false;
@@ -1890,24 +1930,7 @@ function RecordWorkspace({
               <td>{formatRecordValue(entry.oldValue)}</td><td>{formatRecordValue(entry.newValue)}</td>
             </tr>)}</tbody></table></div> : <div className="records-empty">No tracked field changes yet.</div>}
         </section>}
-        {!assignedPage && Object.entries(relatedRecords).map(([relationshipName, related]) => {
-            const childObject = objects.find((item) => item.apiName === related.objectApiName);
-            const displayFields = childObject?.fields.filter((field) => field.apiName !== related.fieldApiName
-              && fieldAccess[`${childObject.apiName}.${field.apiName}`]?.read
-              && related.records.some((item) => field.apiName in item)).slice(0, 4) ?? [];
-            return <section className="record-fields-card surface related-records-card" key={relationshipName}>
-              <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.total} record{related.total === 1 ? '' : 's'}</span></div>
-              {related.records.length === 0 ? <div className="records-empty">No related {childObject?.pluralLabel.toLocaleLowerCase() ?? 'records'}.</div>
-                : <div className="records-table-wrap" style={{ maxHeight: "65vh", overflow: "auto" }}><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
-                  <tbody>{related.records.map((child) => <tr key={child.Id}>{displayFields.map((field, index) => <td key={field.apiName}>
-                    {index === 0 && childObject
-                      ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })}>{formatRecordValue(child[field.apiName] ?? child.Id)}</a>
-                      : formatRecordValue(child[field.apiName])}
-                  </td>)}</tr>)}</tbody>
-                </table></div>}
-              {renderRelatedPagination(relationshipName, related.total, related.records.length)}
-            </section>;
-        })}
+        {!assignedPage && Object.keys(relatedRecords).map(renderRelatedList)}
         {relatedError && <div className="records-message surface" role="alert">{relatedError}</div>}
         {lookupError && <div className="records-message surface" role="alert">Some related record names could not be resolved: {lookupError}</div>}
       </>}
