@@ -50,3 +50,45 @@ test('extracted field validators preserve existing typed Record Engine rules',()
  assert.throws(()=>normalizeTimeField('25:01','Clock'),/Invalid time field/);
  assert.equal(normalizeDateTimeField('2026-10-20T10:00:00+01:00','When'),'2026-10-20T09:00:00.000Z');
 });
+
+import {normalizeCheckboxField} from '../../src/field-engine/types/CheckboxField.js';
+import {normalizeNumberField} from '../../src/field-engine/types/NumberField.js';
+import {validateTextField} from '../../src/field-engine/types/TextField.js';
+import {validatePicklistField} from '../../src/field-engine/types/PicklistField.js';
+import {validateMultiSelectPicklistField} from '../../src/field-engine/types/MultiSelectPicklistField.js';
+import {assertMasterDetailReparenting} from '../../src/field-engine/types/MasterDetailField.js';
+import {validateLookupField} from '../../src/field-engine/types/LookupField.js';
+
+test('numeric, boolean and text validation retains shared Record Engine rules',()=>{
+ assert.equal(normalizeNumberField(1.235,'Amount',5,2),'1.24');
+ assert.throws(()=>normalizeNumberField(Infinity,'Amount',null,null),/Invalid number field/);
+ assert.throws(()=>normalizeNumberField(12345,'Amount',3,0),/precision or scale/);
+ assert.equal(normalizeCheckboxField(false,'Flag'),'false');
+ assert.throws(()=>normalizeCheckboxField('false','Flag'),/Invalid boolean field/);
+ assert.doesNotThrow(()=>validateTextField('ok','Name',3));
+ assert.throws(()=>validateTextField('long','Name',3),/Invalid text length/);
+});
+
+test('picklist validators reject unregistered values and duplicate selections',async()=>{
+ const allowed=async()=>['Open','Closed'];
+ await validatePicklistField('Open','Status',allowed);
+ await assert.rejects(()=>validatePicklistField('Other','Status',allowed),/Invalid picklist value/);
+ await validateMultiSelectPicklistField('Open;Closed','Tags',allowed);
+ await assert.rejects(()=>validateMultiSelectPicklistField('Open;Open','Tags',allowed),/Invalid picklist value/);
+});
+
+test('lookup and master-detail validation retains fail-closed contracts',()=>{
+ const id='00000000-0000-4000-8000-000000000001';
+ validateLookupField(id,'Parent','Account');
+ assert.throws(()=>validateLookupField(id,'Parent',null),/Invalid relationship/);
+ assert.throws(()=>assertMasterDetailReparenting(id,'00000000-0000-4000-8000-000000000002','Parent',false),/does not allow reparenting/);
+});
+
+import {readRollupSummaryField} from '../../src/field-engine/types/RollupSummaryField.js';
+
+test('rollup persisted display formats reuse shared SQL types',()=>{
+ assert.equal(readRollupSummaryField('date','2026-10-20',null,null),'2026-10-20');
+ assert.equal(readRollupSummaryField('datetime',null,'2026-10-20T12:00:00Z',null),'2026-10-20T12:00:00.000Z');
+ assert.equal(readRollupSummaryField('number',null,null,'123.45'),123.45);
+ assert.equal(readRollupSummaryField('number',null,null,null),null);
+});

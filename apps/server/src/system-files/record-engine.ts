@@ -1,3 +1,11 @@
+import {readRollupSummaryField} from '../field-engine/types/RollupSummaryField.js';
+import {validateLookupField} from '../field-engine/types/LookupField.js';
+import {normalizeNumberField} from '../field-engine/types/NumberField.js';
+import {normalizeCheckboxField} from '../field-engine/types/CheckboxField.js';
+import {validateTextField} from '../field-engine/types/TextField.js';
+import {validatePicklistField} from '../field-engine/types/PicklistField.js';
+import {validateMultiSelectPicklistField} from '../field-engine/types/MultiSelectPicklistField.js';
+import {assertMasterDetailReparenting} from '../field-engine/types/MasterDetailField.js';
 import {validatePhoneField} from '../field-engine/types/PhoneField.js';
 import {validateEmailField} from '../field-engine/types/EmailField.js';
 import {validateUrlField} from '../field-engine/types/UrlField.js';
@@ -28,26 +36,7 @@ type RecordTriggerHandler=(
   phase?:'before-save'|'after-save',isClone?:boolean
 )=>Promise<Record<string,unknown>|void>;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const roundDecimal=(value:number,scale:number)=>{
-  const [mantissa,exponentText]=value.toString().toLowerCase().split('e');
-  const exponent=exponentText?Number(exponentText):0;
-  const negative=mantissa.startsWith('-');
-  const unsigned=negative?mantissa.slice(1):mantissa;
-  const [whole,fraction='']=unsigned.split('.');
-  let units=BigInt(whole+fraction);
-  const decimalShift=exponent-fraction.length+scale;
-  if(decimalShift>=0)units*=10n**BigInt(decimalShift);
-  else{
-    const divisor=10n**BigInt(-decimalShift);
-    const remainder=units%divisor;
-    units/=divisor;
-    if(remainder*2n>=divisor)units++;
-  }
-  const digits=units.toString().padStart(scale+1,'0');
-  const decimal=scale?`${digits.slice(0,-scale)}.${digits.slice(-scale)}`:digits;
-  const text=`${negative&&units!==0n?'-':''}${decimal}`;
-  return {text,value:Number(text),units};
-};
+
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
   private get declarativeRules(){return new DeclarativeRules(this.rbac);}
@@ -470,11 +459,9 @@ export class RecordEngine {
       if(!row)continue;
       if(field.data_type==='encryptedtext')record[field.api_name]=null;
       else if(field.data_type==='reference')record[field.api_name]=row.reference_record_id;
-      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='date')
-        record[field.api_name]=row.value_date;
-      else if(field.data_type==='rollup'&&field.rollup_source_data_type==='datetime')
-        record[field.api_name]=row.value_datetime===null?null:new Date(row.value_datetime).toISOString();
-      else if(['number','currency','percent','rollup'].includes(field.data_type))
+      else if(field.data_type==='rollup')
+        record[field.api_name]=readRollupSummaryField(field.rollup_source_data_type,row.value_date,row.value_datetime,row.value_number);
+      else if(['number','currency','percent'].includes(field.data_type))
         record[field.api_name]=row.value_number===null?null:Number(row.value_number);
       else if(field.data_type==='boolean')record[field.api_name]=row.value_boolean;
       else if(field.data_type==='date')record[field.api_name]=row.value_date;
@@ -568,19 +555,14 @@ export class RecordEngine {
         case 'encryptedtext':
         case 'picklist':
         case 'multipicklist':
-          if(typeof value!=='string')throw new Error('Invalid text field: '+key);
-          if(field.max_length!==null&&field.max_length!==undefined&&value.length>field.max_length)
-            throw new Error('Invalid text length: '+key);
+          validateTextField(value,key,field.max_length);
           if(field.data_type==='phone')validatePhoneField(value,key);
           if(field.data_type==='email')validateEmailField(value,key);
           if(field.data_type==='url')validateUrlField(value,key);
-          if(['picklist','multipicklist'].includes(field.data_type)&&field.picklist_restricted!==false){
-            const selected=field.data_type==='multipicklist'?value.split(';'):[value];
-            if(new Set(selected).size!==selected.length||selected.some(item=>!item))
-              throw new Error('Invalid picklist value: '+key);
-            const allowed=new Set(await this.picklistValues(tenantId,objectApi,key,client));
-            if(selected.some(item=>!allowed.has(item)))throw new Error('Invalid picklist value: '+key);
-          }
+          if(field.data_type==='picklist'&&field.picklist_restricted!==false)
+            await validatePicklistField(value,key,()=>this.picklistValues(tenantId,objectApi,key,client));
+          if(field.data_type==='multipicklist'&&field.picklist_restricted!==false)
+            await validateMultiSelectPicklistField(value,key,()=>this.picklistValues(tenantId,objectApi,key,client));
           text=field.data_type==='richtext'?sanitizeRichText(value):value;
           if(field.data_type==='richtext'&&field.max_length!==null&&field.max_length!==undefined
             &&text.length>field.max_length)
@@ -595,33 +577,20 @@ export class RecordEngine {
         case 'currency':
         case 'percent':
         case 'number':
-          if(typeof value!=='number'||!Number.isFinite(value))throw new Error('Invalid number field: '+key);
-          let normalized=value;
-          if(field.precision!==null&&field.precision!==undefined){
-            const scale=field.scale??0;
-            const rounded=roundDecimal(value,scale);
-            if(!Number.isFinite(rounded.value)||rounded.units>=10n**BigInt(field.precision))
-              throw new Error('Number exceeds field precision or scale: '+key);
-            normalized=rounded.value;
-            text=rounded.text;
-          } else text=String(value);
-          if(field.precision===null||field.precision===undefined)text=String(normalized);
-          break;
+          text=normalizeNumberField(value,key,field.precision,field.scale);break;
         case 'boolean':
-          if(typeof value!=='boolean')throw new Error('Invalid boolean field: '+key);
-          text=String(value);break;
+          text=normalizeCheckboxField(value,key);break;
         case 'date':
           text=normalizeDateField(value,key);break;
         case 'datetime':
           text=normalizeDateTimeField(value,key);break;
         case 'reference':
-          if(typeof value!=='string'||!uuid.test(value)||!field.related_object)throw new Error('Invalid relationship: '+key);
+          validateLookupField(value,key,field.related_object);
           if(recordId&&field.relationship_type==='Master-Detail'&&!field.allow_reparenting){
             const previous=await (client??this.db).query<{reference_record_id:string|null}>(
               'SELECT reference_record_id FROM md_record_values WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3',
               [tenantId,recordId,key]);
-            if(previous.rows[0]?.reference_record_id&&previous.rows[0].reference_record_id!==value)
-              throw new Error('Master-Detail relationship does not allow reparenting: '+key);
+            assertMasterDetailReparenting(previous.rows[0]?.reference_record_id,value,key,field.allow_reparenting);
           }
           { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
             [tenantId,field.related_object,value]);
