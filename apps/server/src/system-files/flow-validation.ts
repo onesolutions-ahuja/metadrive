@@ -885,7 +885,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     errors.push('Flow data action references an unavailable Object: '+objectApi);
   for(const [objectApi,fields] of fieldApis)
    for(const field of fields)
-    if(field!=='Id'&&!availableFields.get(objectApi)?.has(field))
+    if(!['Id','OwnerId','RecordTypeId'].includes(field)&&!availableFields.get(objectApi)?.has(field))
      errors.push('Flow data action references an unavailable field: '+objectApi+'.'+field);
  }
  if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
