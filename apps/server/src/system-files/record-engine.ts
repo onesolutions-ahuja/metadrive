@@ -1548,6 +1548,9 @@ export class RecordEngine {
       }
       // Keep unresolved recovery links for privileged/manual reconciliation.
       // Never discard them when a source Field or the user's edit rights have changed.
+      const outstanding=await client.query<{total:number}>(`SELECT count(*)::integer AS total
+        FROM md_deleted_lookup_links WHERE tenant_id=$1 AND deletion_group_id=$2`,
+        [tenantId,record.deletion_group_id]);
       for(const restored of rows){
         const parents=await this.rollupParents(client,tenantId,restored.object_api,restored.id);
         await this.refreshRollups(client,tenantId,restored.object_api,parents);
@@ -1556,7 +1559,7 @@ export class RecordEngine {
         (tenant_id,record_id,object_api,deletion_group_id,actor_id,operation)
         VALUES($1,$2,$3,$4,$5,'restore')`,
         [tenantId,id,objectApi,record.deletion_group_id,userId]);
-      return {restored:rows.length};
+      return {restored:rows.length,unresolvedLookupLinks:outstanding.rows[0]?.total??0};
     }).catch((error:unknown)=>{
       if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')
         throw new Error('Restore conflicts with an existing unique field value');
