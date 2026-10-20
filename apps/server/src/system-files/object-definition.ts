@@ -1036,6 +1036,19 @@ export class ObjectDefinitionService {
           AND formula_expression LIKE '%'||'@'||$2||'.'||$3||'%' LIMIT 1
       `,[tenantId,objectApi,fieldApi]);
       if(formulaUse.rowCount)throw new Error('Field is referenced by an active formula');
+      const validationRefs=await client.query<{expression:string;error_field_api:string|null}>(`
+        SELECT expression,error_field_api FROM md_validation_rules WHERE tenant_id=$1 AND object_api=$2
+      `,[tenantId,objectApi]);
+      if(validationRefs.rows.some(rule=>rule.error_field_api===fieldApi||
+        flowFormulaReferences(rule.expression).some(ref=>
+          ref===fieldApi||ref===objectApi+'.'+fieldApi||ref==='$Record.'+fieldApi||ref==='$Record__Prior.'+fieldApi)))
+        throw new Error('Field is referenced by a validation rule');
+      const defaultRefs=await client.query<{field_api:string;expression:string}>(`
+        SELECT field_api,expression FROM md_field_default_formulas WHERE tenant_id=$1 AND object_api=$2
+      `,[tenantId,objectApi]);
+      if(defaultRefs.rows.some(item=>flowFormulaReferences(item.expression).some(ref=>
+        ref===fieldApi||ref===objectApi+'.'+fieldApi||ref==='$Record.'+fieldApi)))
+        throw new Error('Field is referenced by a formula default');
       await client.query(`UPDATE md_field_definitions SET deleted_at=now()
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 AND deleted_at IS NULL`,
         [tenantId,objectApi,fieldApi]);

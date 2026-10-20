@@ -39,6 +39,8 @@ import {RecordRetentionService} from './record-retention-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
 import {TenantMediaService} from '../system-files/tenant-media-service.js';
 import {registerDynamicApiRoutes} from './dynamic-api-routes.js';
+import {registerDeclarativeRuleRoutes} from './declarative-rule-routes.js';
+import {DeclarativeRuleError} from '../system-files/declarative-rules.js';
 import {registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 
@@ -1598,11 +1600,17 @@ export function createSystemServer(db:SqlPersistence) {
   registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   registerDurableJobAdminRoutes(app,db,rbac);
+  registerDeclarativeRuleRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
-    if(err instanceof FlowCustomError)res.status(400).json({
+    if(err instanceof DeclarativeRuleError)res.status(400).json({
+      error:err.message,ruleApi:err.ruleApi,
+      errors:[{message:err.message,...(err.fieldApi?{fields:[err.fieldApi]}:{})}]
+    });
+    else if(err instanceof FlowCustomError)res.status(400).json({
       error:err.message,errors:[{message:err.message,...(err.fieldName?{fields:[err.fieldName]}:{})}]
     });
+    else if(err.message.startsWith('Rule revision conflict'))res.status(409).json({error:err.message});
     else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
     else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
