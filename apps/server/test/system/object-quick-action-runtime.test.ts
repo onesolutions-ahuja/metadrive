@@ -106,13 +106,13 @@ test('Send Email reuses tenant SMTP service, never accepts client-supplied crede
  const rbac={require:async(_t:string,_u:string,res:string)=>{
   if(res==='Action:Account.Email')return;
  },requireRecord:async()=>{}} as unknown as RbacEngine;
- const mail={sendQuickActionEmail:async(...args:unknown[])=>{sent.push(args);}}
-   as unknown as NamedCredentialService;
+ const mail=({sendQuickActionEmail:async(...args:unknown[])=>{sent.push(args);}}
+   as unknown as NamedCredentialService);
  const runtime=new ObjectQuickActionRuntime(db,rbac,{} as RecordEngine,
   {} as RecordCollaborationService,{} as FlowRuntime,mail);
  const result=await runtime.execute(user,'Account',parent,'Email',{
   to:'client@example.com',subject:'Follow up',body:'Hello there'});
- assert.deepEqual(result,{status:'completed',recordId:parent});
+ assert.deepEqual(result,{status:'queued',recordId:parent});
  assert.deepEqual(sent[0],[tenant,actor,'Account',parent,'Email',configured,
   'admin@example.com','client@example.com','Follow up','Hello there',undefined]);
  await assert.rejects(()=>runtime.execute(user,'Account',parent,'Email',{
