@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 4,
+  "version": 5,
   "scope": "platform-core",
   "jsxFile": "one/OneRepeater/OneRepeater.jsx",
   "cssFile": "one/OneRepeater/OneRepeater.css",
@@ -88,6 +88,83 @@
       "kind": "OBJECT_FIELD",
       "defaultValue": "",
       "displayOrder": 730
+    },
+    {
+      "propertyKey": "recordImageFieldApiName",
+      "label": "Record image field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 352
+    },
+    {
+      "propertyKey": "recordSortFieldApiName",
+      "label": "Record sort field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 353
+    },
+    {
+      "propertyKey": "recordActiveFieldApiName",
+      "label": "Record active field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 354
+    },
+    {
+      "propertyKey": "recordLayout",
+      "label": "Record display style",
+      "kind": "SELECT",
+      "defaultValue": "list",
+      "displayOrder": 355,
+      "choices": [
+        {
+          "key": "list",
+          "label": "list"
+        },
+        {
+          "key": "tile",
+          "label": "tile"
+        },
+        {
+          "key": "pill",
+          "label": "pill"
+        }
+      ]
+    },
+    {
+      "propertyKey": "recordItemMinHeight",
+      "label": "Minimum record tile height (px)",
+      "kind": "NUMBER",
+      "defaultValue": 76,
+      "displayOrder": 356
+    },
+    {
+      "propertyKey": "selectedItemBackgroundColor",
+      "label": "Selected tile background",
+      "kind": "COLOR",
+      "defaultValue": "#E4002B",
+      "displayOrder": 357
+    },
+    {
+      "propertyKey": "selectedItemTextColor",
+      "label": "Selected tile text colour",
+      "kind": "COLOR",
+      "defaultValue": "#FFFFFF",
+      "displayOrder": 358
+    },
+    {
+      "propertyKey": "showAllItem",
+      "label": "Show All choice",
+      "kind": "BOOLEAN",
+      "defaultValue": false,
+      "displayOrder": 359
+    },
+    {
+      "propertyKey": "allItemLabel",
+      "label": "All choice label",
+      "kind": "TEXT",
+      "defaultValue": "All",
+      "displayOrder": 361
     }
   ]
 }
