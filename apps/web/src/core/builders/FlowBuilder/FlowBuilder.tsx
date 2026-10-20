@@ -1592,7 +1592,7 @@ export default function FlowBuilder({
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isToolboxElement(item.type));
             return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" draggable
-              aria-label={`Drag or add ${element.type}`}
+              aria-label={`Click to add ${element.type}, or drag onto the canvas`}
               onDragStart={(event)=>{event.dataTransfer.effectAllowed='copy';
                 event.dataTransfer.setData('application/x-metadrive-flow-type',element.type);}}
               onClick={() => {
