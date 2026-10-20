@@ -58,7 +58,8 @@ export class DeclarativeRules {
     };
     return {resolve,timeZone:actor.time_zone};
   }
-  async defaults(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Values) {
+  async defaults(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Values,
+    literals:Values={}) {
     const {rows}=await client.query<{field_api:string;expression:string}>(
       `SELECT d.field_api,d.expression FROM md_field_default_formulas d
        JOIN md_field_definitions f ON f.tenant_id=d.tenant_id AND f.object_api=d.object_api
@@ -66,6 +67,8 @@ export class DeclarativeRules {
        WHERE d.tenant_id=$1 AND d.object_api=$2 ORDER BY d.field_api`,[tenantId,objectApi]);
     const pending=new Map(rows.filter(row=>values[row.field_api]===undefined)
       .map(row=>[row.field_api,row.expression]));
+    for(const [field,value] of Object.entries(literals))
+      if(values[field]===undefined&&!pending.has(field))values[field]=value;
     const visiting=new Set<string>();
     const resolveDefault=async (field:string):Promise<void>=>{
       if(!pending.has(field))return;
@@ -78,7 +81,11 @@ export class DeclarativeRules {
       }
       const ctx=await this.context(client,tenantId,userId,objectApi,values,null,expression);
       const result=evaluateFlowFormula(expression,ctx.resolve,{timeZone:ctx.timeZone});
-      if(result!==undefined)values[field]=result;
+      if(result!==undefined){
+        if(result!==null&&typeof result!=='string'&&typeof result!=='number'&&typeof result!=='boolean')
+          throw new Error('Invalid formula default result: '+field);
+        values[field]=result;
+      }
       pending.delete(field);
       visiting.delete(field);
     };
