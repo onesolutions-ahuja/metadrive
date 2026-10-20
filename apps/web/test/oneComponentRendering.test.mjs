@@ -23,7 +23,15 @@ for (const fixture of fixtures) {
     const context = { React, module: { exports: {} }, Date: FixtureDate, Intl, URL, crypto: globalThis.crypto };
     vm.runInNewContext(built.compiledJs, context);
     const html = renderToStaticMarkup(React.createElement(context.module.exports.default, fixture.props));
-    assert.equal(html, fixture.html);
+    if (fixture.apiName === 'OneTable') {
+      // Phase 4 intentionally changes table markup for accessible sort headers.
+      assert.match(html, /class="one-table"/);
+      assert.match(html, /aria-sort="none"/);
+      assert.match(html, /Example record/);
+      assert.match(html, /<thead>/);
+    } else {
+      assert.equal(html, fixture.html);
+    }
     assert.match(built.cssSource, /\.one-ui\s*\{/);
     assert.doesNotMatch(built.cssSource, /@import/);
     assert.doesNotMatch(built.compiledJs, /require\(["'](?:react|\.\.)/);

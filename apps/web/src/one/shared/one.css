@@ -567,3 +567,15 @@
   width: 100%;
   min-width: 0;
 }
+
+
+/* Phase 4 shared data-table usability. */
+.one-table-wrapper { max-width:100%; }
+.one-table thead th { position:sticky;top:0;z-index:1; }
+.one-table thead th .one-btn { min-height:36px;padding:6px 8px;text-align:left; }
+.one-table :is(th,td) { vertical-align:middle; }
+.one-table :is(button,input):focus-visible { outline:2px solid var(--md-primary,#1d4ed8);outline-offset:2px; }
+.one-table tbody tr:focus-within { background:var(--md-canvas,#f8fafc); }
+.one-table input[type="checkbox"] { width:18px;height:18px;accent-color:var(--md-primary,#1d4ed8); }
+.one-empty p { margin:6px 0 0; }
+@media(pointer:coarse) { .one-table thead th .one-btn { min-height:44px; } }

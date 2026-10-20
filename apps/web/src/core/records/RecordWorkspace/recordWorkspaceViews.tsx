@@ -2051,6 +2051,16 @@ function RecordWorkspace({
             }} />
         </div>
       </div>
+      {(Boolean(headerSearch) || activeListView) && <div className="records-active-filters" aria-label="Active list filters">
+        {Boolean(headerSearch) && <button type="button" className="records-filter-chip" aria-label="Clear search filter"
+          onClick={() => { setListOffset(0); onSearchChange(''); }}>Search: {headerSearch} ×</button>}
+        {activeListView && <button type="button" className="records-filter-chip" aria-label="Clear saved view"
+          onClick={() => { setActiveListView(null); setListOffset(0); setListSort(null); }}>View: {activeListView.label} ×</button>}
+      </div>}
+      {selectedRecordIds.length > 0 && <div className="records-selection-notice" role="status">
+        <strong>{selectedRecordIds.length} selected</strong>
+        <button type="button" className="btn" onClick={() => setSelectedRecordIds([])}>Clear selection</button>
+      </div>}
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
       {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
