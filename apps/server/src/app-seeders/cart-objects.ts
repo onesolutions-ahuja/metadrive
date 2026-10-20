@@ -21,6 +21,26 @@ export const CART_OBJECTS = [
     {apiName:'UnitPrice',label:'Unit Price',dataType:'number'},
     {apiName:'LineTotal',label:'Line Total',dataType:'number'},
     {apiName:'Status',label:'Status',dataType:'text'}
+  ]},
+  {apiName:'Order',label:'Order',fields:[
+    {apiName:'Name',label:'Name',dataType:'text'},
+    {apiName:'Cart',label:'Cart',dataType:'reference',relatedObject:'Cart'},
+    {apiName:'Customer',label:'Customer',dataType:'reference',relatedObject:'Customer'},
+    {apiName:'Status',label:'Status',dataType:'text'},
+    {apiName:'ServiceMode',label:'Service Mode',dataType:'text'},
+    {apiName:'Subtotal',label:'Subtotal',dataType:'number'},
+    {apiName:'Tax',label:'Tax',dataType:'number'},
+    {apiName:'Total',label:'Total',dataType:'number'},
+    {apiName:'OrderedAt',label:'Ordered At',dataType:'datetime'}
+  ]},
+  {apiName:'OrderLine',label:'Order Line',fields:[
+    {apiName:'Name',label:'Name',dataType:'text'},
+    {apiName:'Order',label:'Order',dataType:'reference',relatedObject:'Order'},
+    {apiName:'Product',label:'Product',dataType:'reference',relatedObject:'Product'},
+    {apiName:'Quantity',label:'Quantity',dataType:'number'},
+    {apiName:'UnitPrice',label:'Unit Price',dataType:'number'},
+    {apiName:'LineTotal',label:'Line Total',dataType:'number'},
+    {apiName:'Status',label:'Status',dataType:'text'}
   ]}
 ] as const;
 
