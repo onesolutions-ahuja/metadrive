@@ -4,7 +4,7 @@ import type {SqlPersistence} from './sql-persistence.js';
 import {validateTenantImage} from './record-file-service.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const limit=100*1024*1024;
+const limit=512*1024*1024;
 export class TenantMediaService {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
 
@@ -24,7 +24,7 @@ export class TenantMediaService {
       throw new Error('Invalid media asset upload');
     const name=input.name.replace(/[\\/\u0000-\u001f\u007f]/g,'_').trim().slice(0,255);
     if(!name)throw new Error('Invalid media asset name');
-    const content=validateTenantImage(input.contentType,input.contentBase64);
+    const content=validateTenantImage(input.contentType,input.contentBase64,5*1024*1024);
     const checksum=createHash('sha256').update(content).digest('hex');
     const result=await this.db.transaction(async client=>{
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
@@ -57,7 +57,7 @@ export class TenantMediaService {
       ||createHash('sha256').update(asset.content).digest('hex')!==asset.checksum)
       throw new Error('Media asset integrity check failed');
     // Reuse the same signature, dimensional and size checks as inline Record images.
-    validateTenantImage(asset.content_type,asset.content.toString('base64'));
+    validateTenantImage(asset.content_type,asset.content.toString('base64'),5*1024*1024);
     return {id,name:asset.name,contentType:asset.content_type,
       contentBase64:asset.content.toString('base64')};
   }
