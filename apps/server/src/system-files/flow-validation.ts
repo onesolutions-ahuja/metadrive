@@ -539,6 +539,68 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     if(properties.messageBody!==undefined
       &&(typeof properties.messageBody!=='string'||properties.messageBody.length>2000))
      errors.push('Custom Notification message must be at most 2000 characters');
+   }else if(properties.actionType==='External Service Action'){
+    const serviceApi=properties.externalServiceApiName;
+    const operationApi=properties.externalOperationApiName;
+    const credentialId=properties.namedCredentialId;
+    const inputs=properties.externalInputs;
+    if(typeof serviceApi!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(serviceApi)
+      ||typeof operationApi!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(operationApi))
+     errors.push('External Service Action requires a saved service and operation');
+    if(typeof credentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(credentialId))
+     errors.push('External Service Action requires an HTTPS Named Credential');
+    if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))
+     errors.push('External Service Action input mappings are invalid');
+    if(db&&typeof serviceApi==='string'&&/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(serviceApi)
+      &&typeof operationApi==='string'&&/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(operationApi)){
+     await rbac.require(tenantId,userId,'NamedCredential','read');
+     await rbac.require(tenantId,userId,'HTTPCallout','execute');
+     const {rows:operations}=await db.query<{operation_api:string;server_origin:string}>(`
+      SELECT o.operation_api,s.server_origin FROM md_external_service_operations o
+      JOIN md_external_services s ON s.tenant_id=o.tenant_id AND s.api_name=o.service_api
+      WHERE o.tenant_id=$1 AND o.service_api=$2 AND o.operation_api=$3`,
+      [tenantId,serviceApi,operationApi]);
+     if(!operations.length)errors.push('External Service operation is unavailable');
+     const {rows:required}=await db.query<{parameter_name:string;parameter_location:string}>(`
+      SELECT parameter_name,parameter_location FROM md_external_service_parameters
+      WHERE tenant_id=$1 AND service_api=$2 AND operation_api=$3 AND required=true`,
+      [tenantId,serviceApi,operationApi]);
+     if(inputs&&typeof inputs==='object'&&!Array.isArray(inputs)){
+      const mapped=inputs as Record<string,unknown>;
+      for(const parameter of required)if(typeof mapped[parameter.parameter_name]!=='string'
+        ||!String(mapped[parameter.parameter_name]).trim())
+       errors.push('External Service input is required: '+parameter.parameter_name);
+      const {rows:parameters}=await db.query<{parameter_name:string}>(`
+       SELECT parameter_name FROM md_external_service_parameters
+       WHERE tenant_id=$1 AND service_api=$2 AND operation_api=$3`,
+       [tenantId,serviceApi,operationApi]);
+      const allowed=new Set(parameters.map(parameter=>parameter.parameter_name));
+      for(const [name,value] of Object.entries(mapped))
+       if(!allowed.has(name)||typeof value!=='string'||value.length>8192)
+        errors.push('External Service input mapping is invalid: '+name);
+     }
+    }
+    if(typeof credentialId==='string'&&/^[0-9a-f-]{36}$/i.test(credentialId)&&db){
+     const {rows:credentials}=await db.query<{base_url:string}>(`
+      SELECT base_url FROM md_named_credentials
+      WHERE tenant_id=$1 AND id=$2 AND protocol='HTTPS' AND enabled=true`,
+      [tenantId,credentialId]);
+     if(!credentials.length)errors.push('External Service HTTPS credential is unavailable');
+     else if(typeof serviceApi==='string'&&typeof operationApi==='string'){
+      const {rows:service}=await db.query<{server_origin:string}>(`
+       SELECT s.server_origin FROM md_external_service_operations o
+       JOIN md_external_services s ON s.tenant_id=o.tenant_id AND s.api_name=o.service_api
+       WHERE o.tenant_id=$1 AND o.service_api=$2 AND o.operation_api=$3`,
+       [tenantId,serviceApi,operationApi]);
+      try{
+       const credentialUrl=new URL(credentials[0].base_url);
+       if(!service[0]||credentialUrl.protocol!=='https:'
+         ||credentialUrl.origin!==service[0].server_origin||credentialUrl.pathname!=='/'
+         ||credentialUrl.search||credentialUrl.hash||credentialUrl.username||credentialUrl.password)
+        errors.push('External Service HTTPS credential origin must match the imported API server');
+      }catch{errors.push('External Service HTTPS credential URL is invalid');}
+     }
+    }
    }else
     errors.push('Unsupported Flow action: '+String(properties.actionType??''));
   }
@@ -823,7 +885,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     errors.push('Flow data action references an unavailable Object: '+objectApi);
   for(const [objectApi,fields] of fieldApis)
    for(const field of fields)
-    if(field!=='Id'&&!availableFields.get(objectApi)?.has(field))
+    if(!['Id','OwnerId','RecordTypeId'].includes(field)&&!availableFields.get(objectApi)?.has(field))
      errors.push('Flow data action references an unavailable field: '+objectApi+'.'+field);
  }
  if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');

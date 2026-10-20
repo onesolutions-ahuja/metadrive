@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Save, Trash2, Plus, Lock, Unlock } from 'lucide-react';
 import SettingsViewRow from '../SettingsViewRow/SettingsViewRow';
+import TenantPasswordPolicy from './TenantPasswordPolicy';
+import TenantMfaControls from './TenantMfaControls';
+import TenantSessionControls from './TenantSessionControls';
+import TenantFederationControls from './TenantFederationControls';
 import {PlatformPageSlot} from '../../platform/Workspace/PlatformPageSlot';
 import type { CurrencySettingsMetadata } from '../../metadata/Definitions/metadata';
 
@@ -218,6 +222,7 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
     finally { setBusy(false); }
   };
   return <section className="surface permission-section">
+    <TenantPasswordPolicy request={apiRequest} canManage={canManage} />
     <h2>Tenant password recovery</h2>
     <p>Choose OTP or reset-link delivery, with editable templates and tenant-scoped SMTP. MFA is never bypassed.</p>
     {!ready && <p role="alert" className="permission-help">
@@ -325,31 +330,33 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
 }
 
 function TenantSecurityAudit() {
-  const [events, setEvents] = useState<Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }>>([]);
+  const [events, setEvents] = useState<Array<{ id: string; at: string; actorUserId: string | null; action: string; loginIdentifier?: string; sourceIp?: string; details?: Record<string, string> }>>([]);
   const [permitted, setPermitted] = useState(false);
   useEffect(() => {
     let active = true;
-    void apiRequest<{ events: Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }> }>('/auth/security-events?limit=50')
+    void apiRequest<{ events: Array<{ id: string; at: string; actorUserId: string | null; action: string; loginIdentifier?: string; sourceIp?: string; details?: Record<string, string> }> }>('/auth/security-events?limit=50')
       .then((response) => { if (active) { setEvents(response.events); setPermitted(true); } })
       .catch(() => { if (active) setPermitted(false); });
     return () => { active = false; };
   }, []);
   if (!permitted) return null;
   return <section className="surface permission-section">
-    <h2>Security activity</h2>
+    <h2>Login history and security activity</h2>
     <p>Recent tenant security events. Only authorized security administrators can view this history.</p>
     {!events.length ? <p>No security activity recorded.</p> :
       <ul>{events.map((event) => <li key={event.id}>
         <strong>{event.action}</strong> · {new Date(event.at).toLocaleString()}
+        {event.loginIdentifier ? ` · ${event.loginIdentifier}` : ''}
+        {event.sourceIp ? ` · ${event.sourceIp}` : ''}
         {event.details?.from && event.details?.to ? ' · ' + event.details.from + ' → ' + event.details.to : ''}
       </li>)}</ul>}
   </section>;
 }
 
 function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: () => void; canManage: boolean }) {
-  void onReauthenticate;
-  void canManage;
-  return null;
+  return <><TenantMfaControls request={apiRequest} canManage={canManage} onReauthenticate={onReauthenticate}/>
+    <TenantSessionControls request={apiRequest} canManage={canManage}/>
+    <TenantFederationControls request={apiRequest} canManage={canManage}/></>;
 }
 
 type CompanyProfile = {logoUrl?:string;legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};

@@ -32,7 +32,7 @@ export class TenantDeveloperService{
    throw Error('A strong password and fresh authenticator code are required');
   // The replay counter is consumed in SQL before any privileged identity change.
   await this.mfa.verifyFresh(tenant,actor,value.mfaCode);
-  const hash=await this.auth.hashPassword(value.password);
+  const hash=await this.auth.hashPassword(value.password,tenant);
   await this.db.transaction(async client=>{
    const {rows}=await client.query<{
     user_id:string;activated_at:Date|null;enabled:boolean
@@ -44,7 +44,7 @@ export class TenantDeveloperService{
    if(!account)throw Error('Tenant developer was not seeded');
    if(account.activated_at||account.enabled)throw Error('Developer account was already activated');
    if(account.user_id===actor)throw Error('Cannot activate own developer identity');
-   await client.query('UPDATE md_users SET password_hash=$3,enabled=true WHERE tenant_id=$1 AND id=$2',
+   await client.query('UPDATE md_users SET password_hash=$3,password_changed_at=now(),enabled=true WHERE tenant_id=$1 AND id=$2',
      [tenant,account.user_id,hash]);
    await client.query(`UPDATE md_tenant_developer_accounts
      SET activated_at=now(),activated_by=$2 WHERE tenant_id=$1`,[tenant,actor]);

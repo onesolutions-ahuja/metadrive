@@ -2,6 +2,7 @@
 // Tenant-scoped bootstrap: core metadata first, optional admin metadata afterwards.
 import { useEffect, useRef } from 'react';
 import { resolveSqlComponentLibrary } from '../../components/Registry/bundledRegistryClient';
+import { saveVerifiedMetadata, type MetadataPublicationResponse } from '../../metadata/Cache/verifiedMetadataCache';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 
 export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
@@ -9,7 +10,7 @@ export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): 
 }
 
 export function useSetupMetadata(ctx: any) {
-  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
   // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
   const analyticsLoads = useRef(new Set<string>());
@@ -247,6 +248,17 @@ export function useSetupMetadata(ctx: any) {
         setCanManageDashboards(dashboardPayload.canManageAll);
         setCanScheduleDashboards(dashboardPayload.canSchedule);
         setReports(reportPayload.reports);
+        const tenantId=sessionPayload.user.tenantId;
+        const userId=sessionPayload.user.id;
+        if(window.isSecureContext&&globalThis.indexedDB&&globalThis.crypto?.subtle
+          &&typeof tenantId==='string'&&typeof userId==='string'
+          &&sessionPayload.user.permissions.includes('metadata:read')){
+          void apiRequest<MetadataPublicationResponse>('/metadata/offline-publication')
+            .then(publication=>saveVerifiedMetadata(
+              {tenantId,userId},publication.content,publication.publication))
+            .catch((cause:unknown)=>setToast('Offline metadata publication unavailable: '
+              +(cause instanceof Error?cause.message:String(cause))));
+        }
         if (failures.length) setToast(`Some metadata could not load: ${failures.join('; ')}`);
       } catch (error) {
         // 401 / session expiry just returns to Login via metadrive:session-expired —

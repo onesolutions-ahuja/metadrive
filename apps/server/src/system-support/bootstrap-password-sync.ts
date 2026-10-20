@@ -42,7 +42,7 @@ export async function reconcileBootstrapPassword(
     if(!matched){
       const newHash=await auth.hashPassword(password);
       await client.query(
-        'UPDATE md_users SET password_hash=$1 WHERE tenant_id=$2 AND id=$3',
+        'UPDATE md_users SET password_hash=$1,password_changed_at=now() WHERE tenant_id=$2 AND id=$3',
         [newHash,user.tenant_id,user.id]);
       await client.query(
         'UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',

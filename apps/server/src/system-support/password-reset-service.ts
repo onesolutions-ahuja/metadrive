@@ -1,6 +1,7 @@
 import {createHash,randomBytes} from 'node:crypto';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {AuthenticationService} from '../system-files/authentication.js';
+import {checkPasswordHistory,retainPasswordHistory} from './password-policy-service.js';
 
 const digest=(s:string)=>createHash('sha256').update(s).digest('hex');
 const emailPattern=/^[^\s@]{1,64}@[^\s@]{1,189}$/;
@@ -67,21 +68,26 @@ export class PasswordResetService {
     throw new Error('Invalid or expired recovery token');
   const hash=await this.auth.hashPassword(password);
   await this.db.transaction(async client=>{
-   const {rows}=await client.query<{id:string;user_id:string}>(
-    `SELECT c.id,c.user_id FROM md_password_reset_challenges c
+   // Match password-change lock order before consuming any of this user's challenges.
+   await client.query('SELECT id FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND enabled=true FOR UPDATE',[tenantId,email]);
+   const {rows}=await client.query<{id:string;user_id:string;password_hash:string}>(
+    `SELECT c.id,c.user_id,u.password_hash FROM md_password_reset_challenges c
      JOIN md_users u ON u.tenant_id=c.tenant_id AND u.id=c.user_id
      WHERE c.tenant_id=$1 AND c.token_hash=$2 AND lower(u.email)=lower($3)
-       AND c.consumed_at IS NULL AND c.expires_at>now() AND u.enabled=true FOR UPDATE OF c`,
+       AND c.consumed_at IS NULL AND c.expires_at>now() AND u.enabled=true FOR UPDATE OF c,u`,
     [tenantId,digest(token),email]);
    const challenge=rows[0];
    if(!challenge)throw new Error('Invalid or expired recovery token');
-   await client.query('UPDATE md_users SET password_hash=$3 WHERE tenant_id=$1 AND id=$2',
+   const policy=await checkPasswordHistory(client,tenantId,challenge.user_id,password,challenge.password_hash,this.auth.verifyPassword.bind(this.auth));
+   await retainPasswordHistory(client,tenantId,challenge.user_id,challenge.password_hash,policy.history_count);
+   await client.query('UPDATE md_users SET password_hash=$3,password_changed_at=now(),failed_login_attempts=0 WHERE tenant_id=$1 AND id=$2',
     [tenantId,challenge.user_id,hash]);
    for(const table of ['md_sessions','md_refresh_sessions'])
     await client.query('UPDATE '+table+' SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',
      [tenantId,challenge.user_id]);
-   await client.query('UPDATE md_password_reset_challenges SET consumed_at=now() WHERE tenant_id=$1 AND id=$2',
-    [tenantId,challenge.id]);
+   await client.query('UPDATE md_password_reset_challenges SET consumed_at=now() WHERE tenant_id=$1 AND user_id=$2 AND consumed_at IS NULL',
+    [tenantId,challenge.user_id]);
+   await client.query('UPDATE md_mfa_login_challenges SET consumed_at=now() WHERE tenant_id=$1 AND user_id=$2 AND consumed_at IS NULL',[tenantId,challenge.user_id]);
    await client.query('INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$2,$3)',
     [tenantId,challenge.user_id,'PasswordResetCompleted']);
   });

@@ -55,7 +55,15 @@ export class SqlPersistence {
       'md_field_type_migration_rollup_filters');
     names.push('md_flow_email_jobs','md_record_files');
     names.push('md_tenant_automation_settings');
-    names.push('md_flow_execution_audit');
+    names.push('md_tenant_api_usage_daily');
+    names.push('md_metadata_package_installations','md_metadata_package_versions',
+      'md_metadata_package_components');
+    names.push('md_flow_execution_audit','md_validation_rules','md_field_default_formulas',
+      'md_validation_rule_history','md_field_default_formula_history','md_password_policies',
+      'md_password_history','md_session_policies','md_login_ip_ranges','md_login_hours',
+      'md_mfa_backup_codes','md_webauthn_credentials','md_webauthn_challenges',
+      'md_identity_providers','md_federated_identities','md_federation_requests',
+      'md_saml_request_ids','md_federation_tickets');
     const {rows}=await this.query<{table_name:string}>(
       'SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name=ANY($1::text[])',
       [names]);

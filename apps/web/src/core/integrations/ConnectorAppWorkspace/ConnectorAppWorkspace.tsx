@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck } from 'lucide-react';
 import NamedCredentials from '../NamedCredentials/NamedCredentials';
 import type { NamedCredentialMetadata } from '../../metadata/Definitions/metadata';
+import { appLicensed } from './appLicence';
+export { appLicensed } from './appLicence';
 
 export type ConnectorApp = {
   Id: string;
@@ -30,6 +32,8 @@ export type ConnectorApp = {
   TestMethod__c?: string;
   LicenceExpiresAt__c?: string;
   LicenceStatus__c?: string;
+  PackageVersion__c?: number;
+  InstalledPackageVersion__c?: number;
   AccessScope__c?: string;
 };
 export type CommunicationRow = { Id: string; [key: string]: unknown };
@@ -37,8 +41,6 @@ export type CommunicationPage = { records: CommunicationRow[]; total: number };
 export type ConnectorFlowSummary = { apiName: string; label: string; status: string; elements: Array<{type: string; config: Record<string, unknown>}> };
 export type CredentialInput = Parameters<Parameters<typeof NamedCredentials>[0]['onSave']>[0];
 
-const validUntil = (date?: string) => Boolean(date && Number.isFinite(Date.parse(date)) && Date.parse(date) > Date.now());
-export const appLicensed = (app: ConnectorApp) => Boolean(app.Installed__c && (validUntil(app.LicenceExpiresAt__c) || (app.TrialUsed__c && validUntil(app.TrialExpiresAt__c))));
 
 function configFields(metadata?: string): { values: Record<string, string>; labels: Record<string, string> } {
   try {

@@ -181,6 +181,7 @@ export type ObjectMetadata = {
     searchResults?: string[];
     lookupDialog?: string[];
     lookupPhoneDialog?: string[];
+    searchableFields?: Array<{fieldApiName:string;weight:'A'|'B'|'C'|'D'}>;
   };
   relatedLookupFilters?: RelatedLookupFilterMetadata[];
   relatedLookupFilterLogic?: Record<string, 'All' | 'Any'>;

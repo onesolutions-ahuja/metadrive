@@ -125,11 +125,15 @@ test('Records HTTP API returns the actual list rather than double-nested records
   const {createSystemServer}=await import('../../src/system-support/server.js');
   const db={
     query:async(sql:string)=>{
-      if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.startsWith('WITH active AS'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};
+      if(sql.startsWith('UPDATE md_sessions s SET last_seen_at'))return {rows:[{id:'session'}],rowCount:1};
+      if(sql.startsWith('UPDATE md_refresh_sessions r SET last_seen_at'))return {rows:[],rowCount:1};
       if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
       if(sql.includes('SELECT api_name,data_type,related_object'))return {rows:[]};
-      if(sql.includes('WITH selected AS'))return {rows:[]};
-      if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
+      if(sql.includes('md_metadata_package_components'))return {rows:[{retained:false}]};
+      if(sql.includes('INSERT INTO md_tenant_api_usage_daily'))return {rows:[],rowCount:1};
+      if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[{id:null,total_count:'0'}]};
       throw new Error('Unexpected SQL '+sql);
     }
   } as unknown as SqlPersistence;
@@ -141,8 +145,9 @@ test('Records HTTP API returns the actual list rather than double-nested records
     const response=await fetch(`http://127.0.0.1:${port}/api/records/Product__c`,{
       headers:{Authorization:'Bearer valid-token'}
     });
-    assert.equal(response.status,200);
-    assert.deepEqual(await response.json(),{records:[],total:0});
+    const body=await response.text();
+    assert.equal(response.status,200,body);
+    assert.deepEqual(JSON.parse(body),{records:[],total:0});
   } finally {
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
@@ -385,6 +390,7 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
+    if(sql.includes('INSERT INTO md_tenant_api_usage_daily'))return {rows:[],rowCount:1};
     assert.ok(sql.includes('md_rbac_decision'));
     assert.ok(sql.includes('md_rbac_decision'));
     assert.equal(params[1],'developer');
@@ -405,8 +411,11 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
 test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
   const {createSystemServer}=await import('../../src/system-support/server.js');
   const db={query:async(sql:string)=>{
-    if(sql.includes('FROM md_sessions s JOIN md_users'))
+    if(sql.startsWith('WITH active AS'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
+    if(sql.includes('md_login_boundary_allowed'))return {rows:[{allowed:true,trusted:false}]};
+    if(sql.startsWith('UPDATE md_sessions s SET last_seen_at'))return {rows:[{id:'session'}],rowCount:1};
+    if(sql.startsWith('UPDATE md_refresh_sessions r SET last_seen_at'))return {rows:[],rowCount:1};
     if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},{ordinal:2,allow_granted:true,deny_granted:false}]};
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
@@ -423,8 +432,9 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
     const response=await fetch('http://127.0.0.1:'+port+'/api/auth/me',{
       headers:{Authorization:'Bearer validtoken'}
     });
-    assert.equal(response.status,200);
-    const json=await response.json() as {user?:{id:string;permissions:string[]}};
+    const body=await response.text();
+    assert.equal(response.status,200,body);
+    const json=JSON.parse(body) as {user?:{id:string;permissions:string[]}};
     assert.equal(json.user?.id,'developer');
     assert.ok(json.user?.permissions.includes('metadata:read'));
   }finally {
@@ -475,6 +485,7 @@ test('Account password change checks old password and revokes sessions in the sa
      run({query:async(sql:string,args:unknown[]=[])=>{
        events.push(sql);
        assert.equal(args[0],'tenant');
+       if(sql.includes('FROM md_password_policies'))return {rows:[]};
        assert.equal(args[1],'user');
        if(sql.includes('SELECT password_hash'))return {rows:[{password_hash:existing}]};
        return {rows:[],rowCount:1};
@@ -562,7 +573,7 @@ test('AppExchange catalog uses SQL tenant installations and entitlements',async(
  }} as unknown as SqlPersistence;
  const value=await new AppRuntime(db).marketplace('tenant');
  assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
-   CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
+   Description__c:'',CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
 });
 
 test('Flow deactivation changes SQL state only for caller tenant and requires OneEngine manage',async()=>{
@@ -808,6 +819,7 @@ test('Record update in Flow transaction applies tenant, record, and field permis
  const calls:Array<{sql:string;args:unknown[]}>=[],checks:string[]=[];
  const tenant='tenant-a',user='actor',recordId='11111111-1111-4111-8111-111111111111';
  const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
   calls.push({sql,args});
   if(sql.includes('FROM md_field_definitions'))return {rows:[{api_name:'Taxable',data_type:'boolean',related_object:null,required:false,max_length:null}],rowCount:1};
   if(sql.includes('FROM md_records WHERE'))return {rows:[{updated_at:new Date()}],rowCount:1};
@@ -866,21 +878,27 @@ test('Flow interview cancellation rejects unauthorised or malformed requests',as
 
 test('App removal clears installation and home bindings and cancels pending jobs',async()=>{
  const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
- const sql:string[]=[];
+ const queries:Array<{sql:string;args:unknown[]}>= [];
  const db={transaction:async(run:(client:{query:(sql:string,args:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>
    run({query:async(query:string,args:unknown[])=>{
-     sql.push(query);
-     assert.deepEqual(args,['tenant','MarketplaceApp']);
+     queries.push({sql:query,args});
      assert.ok(!query.includes('md_records'));
      assert.ok(!query.includes('md_record_values'));
+     if(query.includes('SELECT a.id,a.api_name FROM md_apps'))
+       return {rowCount:1,rows:[{id:'app-id',api_name:'MarketplaceApp'}]};
+     if(query.includes('FROM md_app_package_dependencies d'))
+       return {rowCount:0,rows:[]};
      return {rowCount:1,rows:[]};
    }})
  } as unknown as SqlPersistence;
  await new AppRuntime(db).uninstall('tenant','MarketplaceApp');
- assert.equal(sql.length,3);
- assert.ok(sql.some(query=>query.includes('md_durable_jobs')&&query.includes("status='cancelled'")));
- assert.ok(sql.some(query=>query.includes('md_app_installations')));
- assert.ok(sql.some(query=>query.includes('md_app_home_pages')));
+ assert.deepEqual(queries[0].args,['tenant:app-lifecycle']);
+ assert.deepEqual(queries[1].args,['tenant','MarketplaceApp']);
+ assert.deepEqual(queries[2].args,['tenant','app-id']);
+ assert.deepEqual(queries[3].args,['tenant','MarketplaceApp','MarketplaceApp']);
+ assert.ok(queries.some(({sql})=>sql.includes('md_durable_jobs')&&sql.includes("status='cancelled'")));
+ assert.ok(queries.some(({sql})=>sql.includes('DELETE FROM md_app_installations')));
+ assert.ok(queries.some(({sql})=>sql.includes('DELETE FROM md_app_home_pages')));
 });
 
 test('Tenant route aliases are revisioned and resolve only installed app targets',async()=>{
@@ -912,6 +930,7 @@ test('Tenant route aliases are revisioned and resolve only installed app targets
 test('SQL picklist field creation persists validated options and rejects invalid values',async()=>{
   const writes:Array<{sql:string;args:unknown[]}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     writes.push({sql,args});
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes("data_type='autonumber'")||sql.includes("data_type='rollup'"))return {rows:[],rowCount:0};
@@ -1081,6 +1100,7 @@ test('dependent picklist values are enforced during record creation',async()=>{
   ];
   const insertValues:Array<{field:string;value:string|null}>= [];
   const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:definitions.length};
     if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'New'},{value:'Qualified'}],rowCount:2};
@@ -1123,6 +1143,7 @@ test('numeric fields round to their configured scale before saving',async()=>{
     auto_number_format:null
   }];
   const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:1};
     if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
@@ -1189,6 +1210,7 @@ test('phone fields accept formatted numbers and reject malformed input',async()=
 test('auto-number fields substitute both sequence and year tokens',async()=>{
   let saved:string|undefined;
   const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules')||sql.includes('FROM md_matching_rules'))return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:[{
       api_name:'Number',data_type:'autonumber',related_object:null,required:true,max_length:null,
@@ -1227,8 +1249,7 @@ test('numeric filters compare numeric values rather than their text representati
       precision:12,scale:2,is_unique:false,external_id:false,case_sensitive:false,default_value:null,
       auto_number_format:null
     }],rowCount:1};
-    if(sql.includes('count(*)::text'))return {rows:[{total:'0'}],rowCount:1};
-    if(sql.includes('WITH selected AS'))return {rows:[],rowCount:0};
+    if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[],rowCount:0};
     throw new Error('Unexpected query '+sql);
   }} as unknown as SqlPersistence;
   const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
@@ -1244,8 +1265,13 @@ test('Record list applies authorised sort, search and field filters before pagin
       {api_name:'Name',data_type:'text',related_object:null,required:false,max_length:80},
       {api_name:'Amount',data_type:'number',related_object:null,required:false,max_length:null}
     ]};
-    if(sql.includes('count(*)::text'))return {rows:[{total:'1'}]};
-    if(sql.includes('WITH selected AS'))return {rows:[]};
+    if(sql.includes('FROM md_search_layout_fields search_fields'))return {rows:[{field_api:'Name'}]};
+    if(sql.includes('WITH authorized AS MATERIALIZED'))return {rows:[{
+      id:null,total_count:'1',field_api:null,value_text:null,reference_record_id:null,
+      value_number:null,value_date:null,value_datetime:null,value_boolean:null,
+      geo_latitude:null,geo_longitude:null,address_street:null,address_city:null,address_state:null,
+      address_postal_code:null,address_country:null,data_type:null,
+    }]};
     throw new Error('Unexpected list query '+sql);
   }} as unknown as SqlPersistence;
   const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
@@ -1254,12 +1280,14 @@ test('Record list applies authorised sort, search and field filters before pagin
       sortField:'Amount',sortDirection:'desc',search:'Acme',filterField:'Name',filterValue:'Acme Ltd'
     });
   assert.deepEqual(result,{records:[],total:1});
-  const list=sqlCalls.find(item=>item.sql.includes('WITH selected AS'));
+  const list=sqlCalls.find(item=>item.sql.includes('WITH authorized AS MATERIALIZED'));
   assert.ok(list);
   assert.match(list.sql,/sv\.value_number DESC NULLS LAST/);
   assert.match(list.sql,/fv\.field_api=\$4/);
-  assert.match(list.sql,/strpos\(lower\(COALESCE\(qv\.value_text/);
-  assert.deepEqual(list.args.slice(-3),['Amount',25,0]);
+  assert.match(list.sql,/qv\.search_vector @@ websearch_to_tsquery/);
+  assert.equal((list.sql.match(/md_record_access\(/g)??[]).length,1);
+  assert.deepEqual(list.args.slice(-2),[25,0]);
+  assert.ok(list.args.includes('Amount'));
   assert.ok(list.args.includes('Acme Ltd'));
   assert.ok(list.args.includes('Acme'));
 });

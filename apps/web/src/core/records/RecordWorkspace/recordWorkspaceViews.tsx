@@ -193,8 +193,173 @@ type ChatterPost = {
   createdAt: string;
   comments: ChatterComment[];
 };
+type SavedRecordListView = {
+  id:string;label:string;visibility:'private'|'all'|'groups';scope:'my'|'all'|'my_team'|'queue';
+  columns:string[];filters:Array<{field:string;operator:string;value:string|string[]}>;
+  filter_logic:string;sort_field:string|null;sort_direction:'asc'|'desc';pinned:boolean;owner_id:string;
+  groupIds:string[];
+};
 
 export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined, RuntimeReportChart: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
+function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,legacyFilter,fields}:{
+  objectApi:string;defaultColumns:string[];selected:SavedRecordListView|null;
+  onSelect:(view:SavedRecordListView|null)=>void;
+  legacyFilter?:ObjectMetadata['listViewFilter'];
+  fields:FieldMetadata[];
+}) {
+  const [views,setViews]=useState<SavedRecordListView[]>([]);
+  const [scope,setScope]=useState<SavedRecordListView['scope']>('all');
+  const [visibility,setVisibility]=useState<SavedRecordListView['visibility']>('private');
+  const [groups,setGroups]=useState<Array<{id:string;label:string}>>([]);
+  const [groupIds,setGroupIds]=useState<string[]>([]);
+  const [viewColumns,setViewColumns]=useState(defaultColumns);
+  const [filters,setFilters]=useState<Array<{field:string;operator:string;value:string}>>(
+    legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
+      :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]);
+  const [filterLogic,setFilterLogic]=useState('');
+  const [error,setError]=useState('');
+  const filterableFields=fields.filter(field=>!field.formula
+    &&!['geolocation','address','encryptedtext'].includes(field.dataType.toLowerCase()));
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{views:SavedRecordListView[]}>(`/records/${encodeURIComponent(objectApi)}/list-views`)
+      .then(result=>{if(active)setViews(result.views);})
+      .catch(failure=>{if(active)setError(failure instanceof Error?failure.message:'Unable to load saved views');});
+    return ()=>{active=false;};
+  },[objectApi]);
+  useEffect(()=>{
+    setViewColumns(defaultColumns);
+    setFilters(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
+      :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]);
+    setFilterLogic('');
+  },[objectApi]);
+  useEffect(()=>{
+    if(visibility!=='groups')return;
+    let active=true;
+    void apiRequest<{groups:Array<{id:string;label:string}>}>(`/records/${encodeURIComponent(objectApi)}/list-view-groups`)
+      .then(result=>{if(active)setGroups(result.groups);})
+      .catch(failure=>{if(active)setError(failure instanceof Error?failure.message:'Unable to load sharing groups');});
+    return ()=>{active=false;};
+  },[objectApi,visibility]);
+  const save=async(update=false)=>{
+    const label=update&&selected?selected.label:window.prompt('Name this list view');
+    if(!label?.trim())return;
+    setError('');
+    try{
+      const payload={label,visibility,scope,columns:viewColumns,
+        groupIds:visibility==='groups'?groupIds:[],
+        filters:filters.map(filter=>({...filter,
+          value:filter.operator==='in'?filter.value.split(',').map(value=>value.trim()).filter(Boolean):filter.value})),
+        filterLogic,sortField:selected?.sort_field??undefined,sortDirection:selected?.sort_direction??'asc'};
+      const path=`/records/${encodeURIComponent(objectApi)}/list-views${update&&selected
+        ?`/${encodeURIComponent(selected.id)}`:''}`;
+      const result=await apiRequest<{view:SavedRecordListView}>(path,{
+        method:update?'PUT':'POST',body:JSON.stringify(payload)
+      });
+      setViews(current=>update
+        ?current.map(view=>view.id===result.view.id?result.view:view)
+        :[...current,result.view]);
+      onSelect(result.view);
+    }catch(failure){setError(failure instanceof Error?failure.message:'Unable to save list view');}
+  };
+  const setPinned=async()=>{
+    if(!selected)return;
+    setError('');
+    try{
+      await apiRequest(`/records/${encodeURIComponent(objectApi)}/list-views/${encodeURIComponent(selected.id)}/pin`,{
+        method:'PUT',body:JSON.stringify({pinned:!selected.pinned})
+      });
+      const next={...selected,pinned:!selected.pinned};
+      setViews(current=>current.map(view=>view.id===next.id?next:view));
+      onSelect(next);
+    }catch(failure){setError(failure instanceof Error?failure.message:'Unable to pin list view');}
+  };
+  const remove=async()=>{
+    if(!selected||selected.visibility!=='private'||!window.confirm(`Delete “${selected.label}”?`))return;
+    setError('');
+    try{
+      await apiRequest(`/records/${encodeURIComponent(objectApi)}/list-views/${encodeURIComponent(selected.id)}`,{method:'DELETE'});
+      setViews(current=>current.filter(view=>view.id!==selected.id));
+      setViewColumns(defaultColumns);
+      setFilters(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
+        :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]);
+      setFilterLogic('');
+      onSelect(null);
+    }catch(failure){setError(failure instanceof Error?failure.message:'Unable to delete list view');}
+  };
+  return <div className="records-list-view-picker" aria-label="Saved list views">
+    <select aria-label="Saved list view" value={selected?.id??''} onChange={event=>{
+      const view=views.find(item=>item.id===event.target.value)??null;
+      setScope(view?.scope??'all');setVisibility(view?.visibility??'private');
+      setGroupIds(view?.groupIds??[]);setViewColumns(view?.columns??defaultColumns);
+      setFilters(view?.filters.map(filter=>({...filter,value:Array.isArray(filter.value)?filter.value.join(', '):filter.value}))
+        ??(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
+          :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]));
+      setFilterLogic(view?.filter_logic??'');onSelect(view);
+    }}>
+      <option value="">Default list</option>
+      {views.map(view=><option key={view.id} value={view.id}>{view.pinned?'★ ':''}{view.label}</option>)}
+    </select>
+    <select aria-label="Saved view record scope" value={scope} onChange={event=>setScope(event.target.value as SavedRecordListView['scope'])}>
+      <option value="all">All accessible</option><option value="my">My records</option>
+      <option value="my_team">My team</option><option value="queue">Queues</option>
+    </select>
+    <select aria-label="Saved view visibility" value={visibility} onChange={event=>{
+      setVisibility(event.target.value as SavedRecordListView['visibility']);
+      if(event.target.value!=='groups')setGroupIds([]);
+    }}>
+      <option value="private">Only me</option><option value="all">Everyone</option><option value="groups">Selected groups</option>
+    </select>
+    {visibility==='groups'&&<fieldset><legend>Visible to groups</legend>
+      {groups.map(group=><label key={group.id}><input type="checkbox" checked={groupIds.includes(group.id)}
+        onChange={()=>setGroupIds(current=>current.includes(group.id)
+          ?current.filter(id=>id!==group.id):[...current,group.id])}/>{group.label}</label>)}
+    </fieldset>}
+    <fieldset><legend>View columns</legend>
+      {fields.map(field=><label key={field.apiName}><input type="checkbox" checked={viewColumns.includes(field.apiName)}
+        onChange={()=>setViewColumns(current=>current.includes(field.apiName)
+          ?current.filter(name=>name!==field.apiName):[...current,field.apiName])}/>{field.label}</label>)}
+    </fieldset>
+    <fieldset><legend>Filters</legend>
+      {filters.map((filter,index)=><div key={index}>
+        <select aria-label={`Filter ${index+1} field`} value={filter.field}
+          onChange={event=>setFilters(current=>current.map((item,itemIndex)=>itemIndex===index
+            ?{...item,field:event.target.value}:item))}>
+          <option value="">Select field</option>
+          {filterableFields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+        </select>
+        <select aria-label={`Filter ${index+1} operator`} value={filter.operator}
+          onChange={event=>setFilters(current=>current.map((item,itemIndex)=>itemIndex===index
+            ?{...item,operator:event.target.value}:item))}>
+          {['eq','ne','lt','lte','gt','gte','contains','startsWith','includes','excludes','in'].map(operator=>
+            <option key={operator} value={operator}>{operator}</option>)}
+        </select>
+        <input aria-label={`Filter ${index+1} value`} value={filter.value}
+          placeholder={filter.operator==='in'?'Comma-separated values':'Value'}
+          onChange={event=>setFilters(current=>current.map((item,itemIndex)=>itemIndex===index
+            ?{...item,value:event.target.value}:item))}/>
+        <button type="button" className="btn" aria-label={`Remove filter ${index+1}`}
+          onClick={()=>{setFilters(current=>current.filter((_,itemIndex)=>itemIndex!==index));setFilterLogic('');}}>Remove</button>
+      </div>)}
+      <button type="button" className="btn" disabled={filters.length>=20||filterableFields.length===0}
+        onClick={()=>{setFilters(current=>[...current,{field:filterableFields[0].apiName,operator:'eq',value:''}]);setFilterLogic('');}}>
+        Add filter
+      </button>
+      {filters.length>1&&<label>Filter logic
+        <input aria-label="Filter logic" value={filterLogic}
+          placeholder="1 AND (2 OR 3)" onChange={event=>setFilterLogic(event.target.value)}/>
+      </label>}
+    </fieldset>
+    <button type="button" className="btn" onClick={()=>void save()}>Save view</button>
+    {selected&&<button type="button" className="btn" onClick={()=>void save(true)}>Update view</button>}
+    {selected&&<button type="button" className="btn" aria-label={selected.pinned?'Unpin view':'Pin view'} onClick={()=>void setPinned()}>
+      {selected.pinned?'Unpin':'Pin'}
+    </button>}
+    {selected?.visibility==='private'&&<button type="button" className="btn" onClick={()=>void remove()}>Delete view</button>}
+    {error&&<span role="alert">{error}</span>}
+  </div>;
+}
+
 function RecordWorkspace({
   route,
   objects,
@@ -238,6 +403,7 @@ function RecordWorkspace({
   const layoutDevice = usePageLayoutDevice();
   const [records, setRecords] = useState<RecordData[]>([]);
   const [record, setRecord] = useState<RecordData | null>(null);
+  const [duplicateMatches,setDuplicateMatches]=useState<Array<{ruleApi:string;recordId:string}>>([]);
   const [activeLightningPage, setActiveLightningPage] = useState<LightningPageMetadata | null>(null);
   const [activeRuntimeTab, setActiveRuntimeTab] = useState('Related');
   const [recordActivities, setRecordActivities] = useState<RecordActivity[]>([]);
@@ -260,8 +426,10 @@ function RecordWorkspace({
   const search = headerSearch;
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [listOffset, setListOffset] = useState(0);
+  const listCursors=useRef<Record<number,string>>({});
   const [listTotal, setListTotal] = useState(0);
   const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
+  const [activeListView,setActiveListView]=useState<SavedRecordListView|null>(null);
   const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -312,12 +480,28 @@ function RecordWorkspace({
       .catch(()=>{if(mounted)setAllowedActionIds([]);});
     return ()=>{mounted=false;};
   },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
+  useEffect(()=>{
+    let active=true;
+    setDuplicateMatches([]);
+    if(route.kind!=='record-detail'||!record||!object
+      ||record.Id!==route.recordId||object.apiName==='User')return;
+    void apiRequest<{duplicates:Array<{ruleApi:string;recordId:string}>}>(
+      `/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/duplicates`)
+      .then(result=>{if(active)setDuplicateMatches(result.duplicates);})
+      .catch(()=>{if(active)setDuplicateMatches([]);});
+    return ()=>{active=false};
+  },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTimestamp, setEditingTimestamp] = useState('');
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [lookupRecords, setLookupRecords] = useState<Record<string, RecordData[]>>({});
   const [lookupError, setLookupError] = useState('');
+  const searchLookupRecords=useCallback(async(targetObject:string,term:string)=>{
+    const params=new URLSearchParams({search:term,limit:'20',offset:'0'});
+    const result=await apiRequest<{records:RecordData[]}>(`/records/${encodeURIComponent(targetObject)}?${params}`);
+    return result.records;
+  },[]);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
@@ -549,6 +733,10 @@ function RecordWorkspace({
     setSelectedRecordIds([]);
     setListNotice('');
   }, [object?.apiName]);
+  useEffect(()=>{setActiveListView(null);setListOffset(0);},[object?.apiName]);
+  useEffect(()=>{
+    listCursors.current={};
+  },[route.objectApiName,debouncedSearch,listSort?.field,listSort?.direction,activeListView?.id,refreshKey]);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateFormFactor = () => setFormFactor(media.matches ? 'Phone' : 'Desktop');
@@ -572,6 +760,8 @@ function RecordWorkspace({
           const params = new URLSearchParams({
             limit: String(listPageSize),
             offset: String(listOffset),
+            ...(listCursors.current[listOffset]?{cursor:listCursors.current[listOffset]}:{}),
+            ...(activeListView?{viewId:activeListView.id}:{}),
             ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
             ...(debouncedSearch ? { search: debouncedSearch } : {}),
             ...(object?.listViewFilter ? {
@@ -580,11 +770,12 @@ function RecordWorkspace({
               ...(object.listViewFilter.operator ? { filterOperator: object.listViewFilter.operator } : {})
             } : {})
           });
-          const payload = await apiRequest<{ records: RecordData[]; total: number }>(
+          const payload = await apiRequest<{ records: RecordData[]; total: number; nextCursor?:string }>(
             `/records/${encodeURIComponent(route.objectApiName)}?${params.toString()}`);
           if (active) {
             setRecords(payload.records);
             setListTotal(payload.total);
+            if(payload.nextCursor)listCursors.current[listOffset+listPageSize]=payload.nextCursor;
           }
         } else {
           const recordQuery = new URLSearchParams({
@@ -610,7 +801,7 @@ function RecordWorkspace({
     };
     void loadRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction,activeListView?.id]);
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
       setRelatedRecords({});
@@ -704,7 +895,8 @@ function RecordWorkspace({
       try {
         const relationships = [...new Set(object.fields.flatMap((field) => field.relationship ? [field.relationship.targetObject] : []))];
         const results = await Promise.allSettled(relationships.map(async (targetObject) => {
-          const payload = await apiRequest<{ records: RecordData[] }>(`/records/${encodeURIComponent(targetObject)}`);
+          const payload = await apiRequest<{ records: RecordData[] }>(
+            `/records/${encodeURIComponent(targetObject)}?limit=50&offset=0`);
           return [targetObject, payload.records] as const;
         }));
         const pairs = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
@@ -1291,7 +1483,8 @@ function RecordWorkspace({
       // Use the same authorised, metadata-filtered Records API as the list.
       // Fetch in bounded pages; never bypass field/record RBAC or hydrate the
       // entire table into the live list view.
-      const fields = object.fields.filter((field) => fieldAccess[object.apiName+'.'+field.apiName]?.read);
+      const fields = object.fields.filter((field) => fieldAccess[object.apiName+'.'+field.apiName]?.read
+        && (!activeListView||activeListView.columns.includes(field.apiName)));
       const columns = ['Id', ...fields.map((field) => field.apiName).filter((name) => name !== 'Id')];
       const csvCell = (value: unknown): string => {
         let text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -1305,6 +1498,7 @@ function RecordWorkspace({
       do {
         const params = new URLSearchParams({
           limit: '200', offset: String(offset),
+          ...(activeListView?{viewId:activeListView.id}:{}),
           ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
           ...(debouncedSearch ? { search: debouncedSearch } : {}),
           ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
@@ -1349,7 +1543,8 @@ function RecordWorkspace({
     </div>
     <RecordFormDialog embedded object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
         fieldAccess={fieldAccess} userRoles={userRoles}
-        formValues={formValues} recordId={editingId} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
+        formValues={formValues} recordId={editingId} lookupRecords={lookupRecords}
+        searchLookupRecords={searchLookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
         actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
         onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />
@@ -1635,6 +1830,14 @@ function RecordWorkspace({
           </div>
         </form>}
         {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>
+        {duplicateMatches.length>0 && <section className="records-message" role="status" aria-label="Potential duplicate records">
+          <strong>Potential duplicate records detected.</strong>
+          {duplicateMatches.map(match=><a key={match.ruleApi+':'+match.recordId}
+            href={appRoutePath({kind:'record-detail',objectApiName:object.apiName,recordId:match.recordId,appId:route.appId})}
+            onClick={event=>{event.preventDefault();onNavigate({kind:'record-detail',objectApiName:object.apiName,recordId:match.recordId,appId:route.appId});}}>
+            View matched record ({match.ruleApi})
+          </a>)}
+        </section>}
         {assignedPage && <div className="record-runtime-page" data-lightning-page={assignedPage.apiName}>
           {renderRuntimeRegion('header')}
           <div className={assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
@@ -1712,10 +1915,14 @@ function RecordWorkspace({
   const visibleRecords = records; // Search and pagination are applied by the API.
   const configuredListFields = object.searchLayouts?.searchResults?.map((name) => object.fields.find((field) => field.apiName === name))
     .filter((field): field is FieldMetadata => Boolean(field && fieldAccess[`${object.apiName}.${field.apiName}`]?.read));
-  const listFields = hasConfiguredSearchResults
+  const defaultListFields = hasConfiguredSearchResults
     ? configuredListFields ?? []
     : [...readableFields].sort((left, right) => Number(right.apiName === 'Name') - Number(left.apiName === 'Name'))
       .filter((field) => records.length === 0 || records.some((item) => field.apiName in item));
+  const listFields = activeListView
+    ? activeListView.columns.map(name=>object.fields.find(field=>field.apiName===name))
+      .filter((field):field is FieldMetadata=>Boolean(field&&fieldAccess[`${object.apiName}.${field.apiName}`]?.read))
+    : defaultListFields;
   const selectableRecordIds = (canMassDelete || canBulkUpdate || canChangeOwner) ? visibleRecords.flatMap((item) => {
     const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
     const recordLayout = pageLayoutForRecord(object, recordTypeId, profileId);
@@ -1789,6 +1996,11 @@ function RecordWorkspace({
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
         <RecordsListSearchControls objects={navigableObjects} selected={object.apiName} label={object.pluralLabel} search={headerSearch} onObjectSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})} onSearchChange={(value) => {setListOffset(0);onSearchChange(value);}} />
+        <SavedRecordListViewPicker objectApi={object.apiName}
+          defaultColumns={defaultListFields.map(field=>field.apiName)}
+          fields={object.fields.filter(field=>fieldAccess[`${object.apiName}.${field.apiName}`]?.read)}
+          selected={activeListView} legacyFilter={object.listViewFilter}
+          onSelect={view=>{setActiveListView(view);setListSort(null);setListOffset(0);}} />
         <div className="records-list-actions">
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canDelete && object.apiName!=='User' && <button className="btn" onClick={() => void loadRecycleBin(0)}><Trash2 size={14}/>Recycle Bin</button>}

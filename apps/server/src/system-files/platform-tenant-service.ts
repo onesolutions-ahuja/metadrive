@@ -20,7 +20,7 @@ export class PlatformTenantService {
    ) AS authorised`,[tenantId,userId]);
   return rows[0]?.authorised===true;
  }
- async getSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings') {
+ async getSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings'|'business-calendar'|'offline-briefcase') {
   await this.rbac.require(tenantId,userId,'TenantSettings','read');
   const {rows}=await this.db.query<{properties:unknown}>(
     'SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key=$2',[tenantId,key]);
@@ -33,7 +33,7 @@ export class PlatformTenantService {
   }
   return rows[0]?.properties??null;
  }
- async saveSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings',payload:unknown) {
+ async saveSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings'|'business-calendar'|'offline-briefcase',payload:unknown) {
   await this.rbac.require(tenantId,userId,'TenantSettings','manage');
   if(!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('Invalid tenant settings');
   const data=payload as Record<string,unknown>;
@@ -72,6 +72,108 @@ export class PlatformTenantService {
     }
     if(!codes.has(data.corporateCurrency)||Object.keys(data).some(k=>!['corporateCurrency','standardVatRate','currencies'].includes(k)))
       throw new Error('Invalid currency settings');
+  } else if(key==='business-calendar') {
+   const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+   const dateValid=(value:unknown)=>{
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [year,month,day]=value.split('-').map(Number);
+    const date=new Date(Date.UTC(year,month-1,day));
+    return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day;
+   };
+   const fiscal=data.fiscalYearStart,weekly=data.weeklyHours,holidays=data.holidays;
+   if(!fiscal||typeof fiscal!=='object'||Array.isArray(fiscal)
+    ||!Number.isInteger((fiscal as Record<string,unknown>).month)
+    ||Number((fiscal as Record<string,unknown>).month)<1||Number((fiscal as Record<string,unknown>).month)>12
+    ||!Number.isInteger((fiscal as Record<string,unknown>).day)||Number((fiscal as Record<string,unknown>).day)<1
+    ||Number((fiscal as Record<string,unknown>).day)>new Date(Date.UTC(2000,
+      Number((fiscal as Record<string,unknown>).month),0)).getUTCDate()
+    ||typeof data.timezone!=='string'||data.timezone.length>100
+    ||!weekly||typeof weekly!=='object'||Array.isArray(weekly)
+    ||Object.keys(weekly as Record<string,unknown>).length!==days.length
+    ||days.some(day=>!Object.hasOwn(weekly as object,day))
+    ||!Array.isArray(holidays)||holidays.length>500
+    ||Object.keys(data).some(key=>!['fiscalYearStart','timezone','weeklyHours','holidays'].includes(key)))
+    throw new Error('Invalid business calendar settings');
+   try {new Intl.DateTimeFormat('en',{timeZone:data.timezone});}
+   catch {throw new Error('Invalid business calendar time zone');}
+   const normalizedDays:Record<string,{closed:boolean;open:string;close:string}>={};
+   for(const day of days){
+    const hours=(weekly as Record<string,unknown>)[day];
+    if(!hours||typeof hours!=='object'||Array.isArray(hours))throw new Error('Invalid business hours: '+day);
+    const value=hours as Record<string,unknown>;
+    if(typeof value.closed!=='boolean'||typeof value.open!=='string'||typeof value.close!=='string'
+      ||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value.open)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value.close)
+      ||Object.keys(value).some(key=>!['closed','open','close'].includes(key))
+      ||!value.closed&&value.open>=value.close)
+     throw new Error('Invalid business hours: '+day);
+    normalizedDays[day]={closed:value.closed,open:value.open,close:value.close};
+   }
+   const normalizedHolidays:Array<{date:string;label:string}>=[];
+   const holidayDates=new Set<string>();
+   for(const raw of holidays){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid holiday');
+    const holiday=raw as Record<string,unknown>;
+    if(!dateValid(holiday.date)||typeof holiday.label!=='string'||!holiday.label.trim()
+      ||holiday.label.length>120||Object.keys(holiday).some(key=>!['date','label'].includes(key))
+      ||holidayDates.has(holiday.date as string))throw new Error('Invalid holiday');
+    holidayDates.add(holiday.date as string);
+    normalizedHolidays.push({date:holiday.date as string,label:holiday.label.trim()});
+   }
+   const properties={
+    fiscalYearStart:{month:Number((fiscal as Record<string,unknown>).month),
+      day:Number((fiscal as Record<string,unknown>).day)},
+    timezone:data.timezone,weeklyHours:normalizedDays,
+    holidays:normalizedHolidays.sort((a,b)=>a.date.localeCompare(b.date))
+   };
+   return this.db.transaction(async client=>{
+    const {rows}=await client.query<{properties:Record<string,unknown>}>(`
+     INSERT INTO md_tenant_settings(tenant_id,setting_key,properties)
+     VALUES($1,'business-calendar',$2::jsonb)
+     ON CONFLICT(tenant_id,setting_key) DO UPDATE
+      SET properties=EXCLUDED.properties,revision=md_tenant_settings.revision+1,updated_at=now()
+     RETURNING properties`,[tenantId,JSON.stringify(properties)]);
+    await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+     VALUES($1,$2,'tenant.business-calendar.updated',$3::jsonb)`,
+    [tenantId,userId,JSON.stringify({timezone:properties.timezone,holidayCount:properties.holidays.length})]);
+    return rows[0].properties;
+   });
+  } else if(key==='offline-briefcase') {
+   const selections=data.selections;
+   if(!Array.isArray(selections)||selections.length>20
+    ||Object.keys(data).some(name=>name!=='selections'))
+    throw new Error('Invalid offline briefcase configuration');
+   const objectNames=new Set<string>();
+   let recordCount=0;
+   const normalized:Array<{objectApi:string;recordIds:string[]}>=[];
+   for(const raw of selections){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid offline briefcase selection');
+    const selection=raw as Record<string,unknown>;
+    if(typeof selection.objectApi!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(selection.objectApi)
+     ||objectNames.has(selection.objectApi)||!Array.isArray(selection.recordIds)
+     ||selection.recordIds.length<1||selection.recordIds.length>50
+     ||selection.recordIds.some(id=>typeof id!=='string'
+       ||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
+     ||new Set(selection.recordIds).size!==selection.recordIds.length
+     ||Object.keys(selection).some(name=>!['objectApi','recordIds'].includes(name)))
+     throw new Error('Invalid offline briefcase selection');
+    objectNames.add(selection.objectApi);
+    recordCount+=selection.recordIds.length;
+    if(recordCount>100)throw new Error('Offline briefcase cannot select more than 100 records');
+    normalized.push({objectApi:selection.objectApi,recordIds:selection.recordIds as string[]});
+   }
+   const properties={selections:normalized};
+   return this.db.transaction(async client=>{
+    const {rows}=await client.query<{properties:Record<string,unknown>}>(`
+     INSERT INTO md_tenant_settings(tenant_id,setting_key,properties)
+     VALUES($1,'offline-briefcase',$2::jsonb)
+     ON CONFLICT(tenant_id,setting_key) DO UPDATE
+      SET properties=EXCLUDED.properties,revision=md_tenant_settings.revision+1,updated_at=now()
+     RETURNING properties`,[tenantId,JSON.stringify(properties)]);
+    await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+     VALUES($1,$2,'tenant.offline-briefcase.updated',$3::jsonb)`,
+    [tenantId,userId,JSON.stringify({objects:normalized.map(item=>item.objectApi),recordCount})]);
+    return rows[0].properties;
+   });
   } else {
     if(typeof data.autoRetryFailedFlows!=='boolean'
        ||!Number.isInteger(data.maxRetryAttempts)||Number(data.maxRetryAttempts)<0||Number(data.maxRetryAttempts)>100

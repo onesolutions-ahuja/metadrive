@@ -8,6 +8,7 @@ import type {PlatformTenantService} from '../system-files/platform-tenant-servic
 
 type Actor={tenant_id:string;user_id:string};
 type Req=Request<Record<string,string>>&{actor?:Actor};
+type AuthenticatedUsageRequest=Request&{actor?:Actor};
 const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>
   (req:Request,res:Response,next:NextFunction)=>{
     // These routes use named parameters only; Express wildcard parameters are not registered here.
@@ -16,7 +17,7 @@ const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>
 const slug=/^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const hostname=/^(?=.{4,253}$)[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 const metrics=['users','records','objects','flows'] as const;
-type Metric=typeof metrics[number];
+type UsageMetric=typeof metrics[number]|'storage_bytes'|'api_requests_daily';
 type Counts=Record<string,number>;
 const validHost=(input:unknown):string=>{
   if(typeof input!=='string'||!hostname.test(input)||isIP(input)||
@@ -28,6 +29,22 @@ const mustActor=(req:Req):Actor=>{
   if(!req.actor?.tenant_id||!req.actor.user_id)throw new Error('Authenticated tenant required');
   return req.actor;
 };
+
+/** Count completed authenticated API requests without recording URLs or payloads. */
+export function countTenantApiRequests(db:SqlPersistence){
+ return (req:AuthenticatedUsageRequest,res:Response,next:NextFunction)=>{
+  const tenantId=req.actor?.tenant_id;
+  if(!tenantId||req.method==='OPTIONS'){next();return;}
+  res.once('finish',()=>{
+   void db.query(`INSERT INTO md_tenant_api_usage_daily(tenant_id,usage_date,request_count)
+    VALUES($1,CURRENT_DATE,1)
+    ON CONFLICT(tenant_id,usage_date) DO UPDATE
+     SET request_count=md_tenant_api_usage_daily.request_count+1`,[tenantId])
+    .catch(error=>console.error('Unable to record tenant API usage',error));
+  });
+  next();
+ };
+}
 
 /** Reusable tenant configuration endpoints: SQL counts, DNS proof, platform-only remote access. */
 export function registerTenantInspectionRoutes(app:Express,db:SqlPersistence,
@@ -89,13 +106,29 @@ export function registerTenantInspectionRoutes(app:Express,db:SqlPersistence,
       pendingApprovals:'pending_approvals',verifiedDomains:'verified_domains'};
     const counts:Counts={};
     for(const [name,key] of Object.entries(keys))counts[name]=Number(row[key]??0);
-    const {rows:limits}=await db.query<{metric:Metric;target_value:string}>(
-      'SELECT metric,target_value FROM md_tenant_usage_targets WHERE tenant_id=$1',[tenantId]);
-    const targets:Partial<Record<Metric,number>>={};
-    for(const limit of limits)targets[limit.metric]=Number(limit.target_value);
-    return {tenantId:name,status:row.status,sampledAt:new Date().toISOString(),counts,targets,
-      warnings:metrics.filter(key=>targets[key]!==undefined&&counts[key]>=targets[key]!),
-      enforcement:'advisory_only' as const,storageBytes:null};
+    const [{rows:limits},{rows:storageRows},{rows:apiRows}]=await Promise.all([
+      db.query<{metric:UsageMetric;target_value:string}>(
+        'SELECT metric,target_value FROM md_tenant_usage_targets WHERE tenant_id=$1',[tenantId]),
+      db.query<{storage_bytes:string}>(`SELECT
+        COALESCE((SELECT sum(pg_column_size(r)) FROM md_records r WHERE r.tenant_id=$1),0)
+        +COALESCE((SELECT sum(pg_column_size(v)) FROM md_record_values v WHERE v.tenant_id=$1),0)
+        +COALESCE((SELECT sum(f.byte_size) FROM md_record_files f WHERE f.tenant_id=$1),0)
+        AS storage_bytes`,[tenantId]),
+      db.query<{request_count:string}>(`SELECT COALESCE(sum(request_count),0)::text AS request_count
+        FROM md_tenant_api_usage_daily WHERE tenant_id=$1 AND usage_date=CURRENT_DATE`,[tenantId])
+    ]);
+    const usageTargets:Partial<Record<UsageMetric,number>>={};
+    for(const limit of limits)usageTargets[limit.metric]=Number(limit.target_value);
+    const storageBytes=Number(storageRows[0]?.storage_bytes??0);
+    const apiRequestsToday=Number(apiRows[0]?.request_count??0);
+    return {tenantId:name,status:row.status,sampledAt:new Date().toISOString(),counts,targets:usageTargets,
+      usageTargets,storageBytes,apiRequestsToday,
+      warnings:[
+       ...metrics.filter(key=>usageTargets[key]!==undefined&&counts[key]>=usageTargets[key]!),
+       ...(usageTargets.storage_bytes!==undefined&&storageBytes>=usageTargets.storage_bytes?['storage_bytes']:[]),
+       ...(usageTargets.api_requests_daily!==undefined&&apiRequestsToday>=usageTargets.api_requests_daily?['api_requests_daily']:[])
+      ],
+      enforcement:'advisory_only' as const};
   };
   const getUsage=(external:boolean)=>wrap(async(req,res)=>{
     res.setHeader('Cache-Control','private, no-store');
@@ -106,16 +139,17 @@ export function registerTenantInspectionRoutes(app:Express,db:SqlPersistence,
   app.patch('/api/platform/tenants/:slug/usage-targets',wrap(async(req,res)=>{
     const {actor,tenantId,slug:name}=await target(req,true,true),body=req.body;
     if(!body||typeof body!=='object'||Array.isArray(body)||
-      Object.keys(body).some(key=>!metrics.includes(key as Metric)))
+      Object.keys(body).some(key=>!['users','records','objects','flows','storage_bytes','api_requests_daily'].includes(key)))
       throw new Error('Invalid advisory usage targets');
-    const values=body as Record<string,unknown>;
-    for(const key of metrics){
+    const values=body as Record<UsageMetric,unknown>;
+    const allMetrics:UsageMetric[]=['users','records','objects','flows','storage_bytes','api_requests_daily'];
+    for(const key of allMetrics){
       const n=values[key]??null;
-      if(n!==null&&(!Number.isSafeInteger(n)||Number(n)<1||Number(n)>1000000000))
+      if(n!==null&&(!Number.isSafeInteger(n)||Number(n)<1||Number(n)>Number.MAX_SAFE_INTEGER))
         throw new Error('Invalid usage target: '+key);
     }
     await db.transaction(async client=>{
-      for(const metric of metrics){
+      for(const metric of allMetrics){
         const value=values[metric]??null;
         if(value===null)await client.query(
           'DELETE FROM md_tenant_usage_targets WHERE tenant_id=$1 AND metric=$2',

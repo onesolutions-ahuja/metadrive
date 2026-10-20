@@ -53,6 +53,8 @@ export class TenantProvisioning {
       const tenant=await client.query<{id:string}>(
         'INSERT INTO md_tenants (slug,name) VALUES ($1,$2) RETURNING id',[slug,name]);
       const tenantId=tenant.rows[0].id;
+      await client.query('INSERT INTO md_session_policies(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
+      await client.query('INSERT INTO md_password_policies(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
       await client.query('INSERT INTO md_tenant_domains (domain,tenant_id) VALUES ($1,$2)',[domain,tenantId]);
       const user=await client.query<{id:string}>(
         'INSERT INTO md_users (tenant_id,email,password_hash,display_name,enabled) VALUES ($1,$2,$3,$4,true) RETURNING id',
