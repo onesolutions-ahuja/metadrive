@@ -2,6 +2,7 @@ import type {SqlPersistence} from './sql-persistence.js';
 import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 import {formatAutoNumberValue} from './auto-number-format.js';
+import {DeclarativeRules} from './declarative-rules.js';
 import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
   type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
@@ -41,6 +42,7 @@ const roundDecimal=(value:number,scale:number)=>{
 };
 export class RecordEngine {
   private recordTrigger?:RecordTriggerHandler;
+  private get declarativeRules(){return new DeclarativeRules(this.rbac);}
   private richTextFilePruner?:(
     client:PoolClient,tenantId:string,objectApi:string,recordId:string,fieldApi:string,html:string|null
   )=>Promise<void>;
@@ -697,10 +699,10 @@ export class RecordEngine {
     values:Record<string,unknown>,isClone:boolean) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
     // Reject invalid input before reserving a transaction connection.
-    const prepared=await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,Boolean(this.recordTrigger));
+    await this.prepare(tenantId,userId,objectApi,values,true,undefined,undefined,true);
     return this.db.transaction(async client=>{
       await this.lockObjectForWrite(client,tenantId,objectApi);
-      let rowValues={...values};
+      let rowValues=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values});
       if(this.recordTrigger){
         const defaults=await this.fields(tenantId,objectApi,client);
         rowValues={...Object.fromEntries(defaults.filter(field=>field.default_value!==null)
@@ -710,8 +712,8 @@ export class RecordEngine {
         rowValues=await this.recordTrigger(client,tenantId,userId,objectApi,'created',
           rowValues,null,'before-save',isClone)??rowValues;
       }
-      let finalValues=prepared;
-      finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
+      const finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,client);
@@ -738,7 +740,9 @@ export class RecordEngine {
   async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
     await this.lockObjectForWrite(client,tenantId,objectApi);
-    const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
+    const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values});
+    await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
+    const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
   /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
@@ -1228,7 +1232,11 @@ export class RecordEngine {
       }
       await this.refreshRollups(transactionClient,tenantId,objectApi,affectedParents);
     };
-    if(client)await write(client,prepared);
+    if(client){
+      const prior=await this.get(tenantId,userId,objectApi,id,client);
+      await this.declarativeRules.validate(client,tenantId,userId,objectApi,{...prior,...values},prior);
+      await write(client,prepared);
+    }
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
@@ -1249,6 +1257,11 @@ export class RecordEngine {
           finalPrepared=await this.prepare(tenantId,userId,objectApi,changed,false,transactionClient,id);
         }
       }
+      const proposedValues={...prior,...values};
+      for(const [field,value] of finalPrepared){
+        if(!field.startsWith('__'))proposedValues[field]=value.reference_record_id??value.value_text;
+      }
+      await this.declarativeRules.validate(transactionClient,tenantId,userId,objectApi,proposedValues,prior);
       await write(transactionClient,finalPrepared);
       if(this.recordTrigger){
         const record=await this.get(tenantId,userId,objectApi,id,transactionClient);
