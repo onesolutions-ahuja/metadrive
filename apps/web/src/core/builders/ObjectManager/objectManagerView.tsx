@@ -17,6 +17,7 @@ import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
 import CustomMetadataManager from './CustomMetadataManager';
 import * as React from 'react';
+const DeclarativeRulesPanel=React.lazy(()=>import('./DeclarativeRulesPanel'));
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
@@ -1316,6 +1317,7 @@ function ObjectManager({
     if (selectedSetting === 'Change History') return null;
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
+    if (selectedSetting === 'Validation Rules') return <React.Suspense fallback={<p>Loading rules…</p>}><DeclarativeRulesPanel objectApi={object.apiName} fields={draft.fields} /></React.Suspense>;
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
     if (selectedSetting === 'Record Types') return renderRecordTypes();
     if (selectedSetting === 'Compact Layouts') return renderCompactLayout();
