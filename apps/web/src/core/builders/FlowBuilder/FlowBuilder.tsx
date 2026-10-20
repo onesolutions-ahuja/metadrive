@@ -932,6 +932,18 @@ export default function FlowBuilder({
     }
     if (selected.type === 'Screen') {
       const screenFields = rowsFrom(selected.config.fields);
+      const screenCollections = [
+        ...flow.resources.filter(resource => resource.type === 'Record Collection'),
+        ...flow.elements.filter(element => element.type === 'Get Records'
+          && (element.config.recordLimit === 'all' || Number(element.config.recordLimit ?? 1) > 1))
+          .flatMap(element => {
+            const objectApi = displayValue(element.config.object);
+            const name = displayValue(element.config.outputVariable) || 'record' + element.id;
+            return objectApi && !flow.resources.some(resource => resource.name === name)
+              ? [{name, label: name + ' (Get Records)', type: 'Record Collection', dataType: objectApi}]
+              : [];
+          })
+      ];
       const outcomes = screenOutcomesFrom(selected.config.outcomes);
       const updateOutcomes = (next: Array<{ name: string; label: string }>, renamed?: { from: string[]; to: string }) => onFlowChange({
         ...flow,
@@ -1040,16 +1052,36 @@ export default function FlowBuilder({
             </>}
           </>}
           {field.type === 'Data Table' && <>
-            <label className="form-label">Record Collection<select className="form-control" value={displayValue(field.collection)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, collection: event.target.value, columns: [] } : item))}><option value="">Select collection</option>{flow.resources.filter((resource) => resource.type === 'Record Collection').map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</select></label>
+            <label className="form-label">Record Collection<select className="form-control" value={displayValue(field.collection)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, collection: event.target.value, columns: [], selectedRowsResource: '' } : item))}><option value="">Select collection</option>{screenCollections.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</select></label>
             <label className="checkbox-row"><input type="checkbox" checked={field.multiselect === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, multiselect: event.target.checked } : item))} />Allow multiple row selection</label>
             {(() => {
-              const dataType = flow.resources.find((resource) => resource.name === field.collection)?.dataType;
+              const dataType = screenCollections.find((resource) => resource.name === field.collection)?.dataType;
               const tableObject = objects.find((object) => object.apiName === dataType);
               return tableObject ? <fieldset className="field-selector-list"><legend className="form-label">Displayed Columns</legend>{tableObject.fields.map((column) => {
                 const selectedColumns = Array.isArray(field.columns) ? field.columns.filter((item): item is string => typeof item === 'string') : [];
                 return <label className="checkbox-row" key={column.apiName}><input type="checkbox" checked={selectedColumns.includes(column.apiName)} onChange={() => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, columns: selectedColumns.includes(column.apiName) ? selectedColumns.filter((item) => item !== column.apiName) : [...selectedColumns, column.apiName] } : item))} />{column.label}</label>;
               })}</fieldset> : null;
             })()}
+          </>}
+          {['Data Table', 'Choice Lookup'].includes(String(field.type)) && <>
+            <label className="form-label">Selected Rows Output (Record Collection)<select className="form-control"
+              value={displayValue(field.selectedRowsResource)}
+              onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, selectedRowsResource: event.target.value } : item))}>
+              <option value="">Select a Record Collection output</option>
+              {flow.resources.filter((resource) => resource.type === 'Record Collection'
+                && resource.dataType === (field.type === 'Data Table'
+                  ? screenCollections.find(item => item.name === field.collection)?.dataType
+                  : field.objectApiName)).map((resource) =>
+                <option key={resource.name} value={resource.name}>{resource.label}</option>)}
+            </select></label>
+            <label className="form-label">Minimum Selections<input className="form-control" type="number" min={0} max={200}
+              value={typeof field.minimumSelections === 'number' ? field.minimumSelections : 0}
+              onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, minimumSelections: Number(event.target.value) } : item))} /></label>
+            <label className="form-label">Maximum Selections (0 = unlimited)<input className="form-control" type="number" min={0} max={200}
+              value={typeof field.maximumSelections === 'number' ? field.maximumSelections : 0}
+              onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, maximumSelections: Number(event.target.value) } : item))} /></label>
+            {(field.type === 'Data Table' ? field.multiselect === true : field.multipleSelections === true)
+              && !field.selectedRowsResource && <p className="properties-help">Multiple selection requires a typed Record Collection output. Create one in Manager and select it here.</p>}
           </>}
           {field.type === 'File Upload' && <>
             <label className="form-label">Maximum Files<input className="form-control" type="number" min={1} max={10} value={displayValue(field.maxFiles) || 1} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, maxFiles: Number(event.target.value) } : item))} /></label>
