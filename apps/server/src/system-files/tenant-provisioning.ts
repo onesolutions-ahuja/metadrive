@@ -2,6 +2,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
 import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
+import {seedCartObjects} from '../app-seeders/cart-objects.js';
 import {seedFreshBundledComponents} from '../app-seeders/bundled-components.js';
 import {seedFreshProductImageField} from '../app-seeders/product-image-field.js';
 
@@ -93,6 +94,7 @@ export class TenantProvisioning {
         [tenantId,permissionSet.rows[0].id]);
       // Fresh tenant catalog belongs to the same SQL transaction; business records are never seeded.
       await seedFreshCoreObjects(client,tenantId);
+      await seedCartObjects(client,tenantId);
       await seedFreshBundledComponents(client,tenantId);
       await seedFreshProductImageField(client,tenantId);
       if(authority){
