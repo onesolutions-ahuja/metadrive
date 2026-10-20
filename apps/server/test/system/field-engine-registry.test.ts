@@ -29,3 +29,24 @@ test('unknown metadata types fail closed and shared formatter preserves auto num
  assert.throws(()=>requireFieldType('unregistered-type'),/Unsupported field metadata type/);
  assert.equal(formatAutoNumberValue('INV-{0000}',23,2026),'INV-0023');
 });
+
+import {validateEmailField} from '../../src/field-engine/types/EmailField.js';
+import {validatePhoneField} from '../../src/field-engine/types/PhoneField.js';
+import {validateUrlField} from '../../src/field-engine/types/UrlField.js';
+import {normalizeDateField} from '../../src/field-engine/types/DateField.js';
+import {normalizeDateTimeField} from '../../src/field-engine/types/DateTimeField.js';
+import {normalizeTimeField} from '../../src/field-engine/types/TimeField.js';
+
+test('extracted field validators preserve existing typed Record Engine rules',()=>{
+ assert.doesNotThrow(()=>validateEmailField('user@example.org','Email'));
+ assert.throws(()=>validateEmailField('not-an-email','Email'),/Invalid email field/);
+ assert.doesNotThrow(()=>validatePhoneField('+44 20 1234 5678','Phone'));
+ assert.throws(()=>validatePhoneField('INVALID','Phone'),/Invalid phone field/);
+ assert.doesNotThrow(()=>validateUrlField('https://example.org','Website'));
+ assert.throws(()=>validateUrlField('ftp://example.org','Website'),/Invalid URL field/);
+ assert.equal(normalizeDateField('2026-10-20','Day'),'2026-10-20');
+ assert.throws(()=>normalizeDateField('2026-02-30','Day'),/Invalid date field/);
+ assert.equal(normalizeTimeField('09:05','Clock'),'09:05:00.000');
+ assert.throws(()=>normalizeTimeField('25:01','Clock'),/Invalid time field/);
+ assert.equal(normalizeDateTimeField('2026-10-20T10:00:00+01:00','When'),'2026-10-20T09:00:00.000Z');
+});
