@@ -1,3 +1,4 @@
+import {executeDecisionNode} from './nodes/DecisionNode.js';
 import {executeScreenElementNode} from './nodes/ScreenElementNode.js';
 import type { SqlPersistence } from './sql-persistence.js';
 import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
@@ -884,36 +885,7 @@ export class FlowRuntime {
         if(node.type==='Assignment'){
           executeFlowAssignment({node,resources:persistenceResources,vars,evaluate,set});
         }else if(node.type==='Decision'){
-          const outcomes=Array.isArray(node.config.outcomes)?node.config.outcomes as Array<Record<string,unknown>>:[];
-          const matches=(o:Record<string,unknown>)=>{
-            if(!Array.isArray(o.conditions)||!o.conditions.length)return false;
-            const conditions=(o.conditions as Array<Record<string,unknown>>).map(condition=>{
-              const currentField=typeof condition.field==='string'
-                ?/^\{!\$Record\.([A-Za-z][A-Za-z0-9_]*)\}$/.exec(condition.field)?.[1]:undefined;
-              const triggerOperator=['ischanged','wasset'].includes(
-                String(condition.operator??'').trim().toLowerCase().replace(/[\s_-]+/g,''));
-              return active.flow_type==='Record-Triggered Flow'&&triggerOperator&&currentField
-                &&!Object.hasOwn(condition,'priorValue')
-                ?{...condition,priorValue:`{!$Record__Prior.${currentField}}`}:condition;
-            });
-            return evaluateFlowDecisionOutcome(
-              conditions,
-              typeof o.conditionLogic==='string'?o.conditionLogic:undefined,
-              evaluate,
-              value=>{
-                if(typeof value!=='string')return value!==undefined;
-                const reference=value.match(/^\{!([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?\}$/)
-                  ??value.match(/^@([A-Za-z_$][A-Za-z0-9_$.]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/);
-                if(!reference)return true;
-                if(!Object.hasOwn(vars,reference[1]))return false;
-                if(!reference[2])return true;
-                const base=vars[reference[1]];
-                return Boolean(base&&typeof base==='object'&&!Array.isArray(base)
-                  &&Object.hasOwn(base,reference[2]));
-              });
-          };
-          const selectedOutcome=outcomes.find(o=>o.name!=='Default'&&matches(o));
-          selected=String(selectedOutcome?.label??selectedOutcome?.name??'Default');
+          selected=executeDecisionNode({node,flowType:active.flow_type,vars,evaluate});
         }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
           'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
           if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save'
