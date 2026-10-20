@@ -9,7 +9,7 @@ import {executeFlowDataAction} from './flow-data-actions.js';
 import {mapFlowHttpResponse,resolveFlowHttpCalloutKey} from './flow-http-mapping.js';
 import {executeFlowAssignment} from './flow-assignment-runtime.js';
 import {hydrateFlowScreenChoices} from './flow-screen-choice-runtime.js';
-import {screenRecordPayload,acceptScreenRecordSelection} from './flow-screen-record-selection.js';
+import {screenRecordPayload,acceptScreenRecordSelection,ScreenSelectionError} from './flow-screen-record-selection.js';
 import {evaluateFlowFormula,isFormulaImageResult} from './flow-formula-runtime.js';
 import {flowAppIsEntitled,validateFlowDraft} from './flow-validation.js';
 import {loadFlowCapabilityCatalog} from './flow-capability-catalog.js';
@@ -1105,7 +1105,8 @@ export class FlowRuntime {
       const message=error instanceof Error?error.message:'Unknown Flow failure';
       // Invalid Screen submissions are retriable client corrections. The
       // transaction has rolled back: keep the interview pending and editable.
-      if(/^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
+      if(error instanceof ScreenSelectionError
+        || /^(Required Screen field:|Invalid Screen field:|Invalid Screen outcome$)/.test(message))
         throw error;
       await this.db.query(
         "UPDATE md_flow_runs SET status='failed',error_code=$3,finished_at=now() WHERE tenant_id=$1 AND id=$2 AND status='pending'",
