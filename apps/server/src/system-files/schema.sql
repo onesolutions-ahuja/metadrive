@@ -478,6 +478,7 @@ CREATE TABLE IF NOT EXISTS md_object_page_layout_related_lists (
   object_api text NOT NULL,
   layout_id text NOT NULL,
   list_name text NOT NULL CHECK (length(list_name) BETWEEN 1 AND 128),
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(settings)='object'),
   sort_order integer NOT NULL,
   PRIMARY KEY (tenant_id,object_api,layout_id,list_name),
   FOREIGN KEY (tenant_id,object_api,layout_id) REFERENCES md_object_page_layouts(tenant_id,object_api,layout_id) ON DELETE CASCADE
