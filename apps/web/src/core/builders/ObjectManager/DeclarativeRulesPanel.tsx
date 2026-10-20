@@ -4,9 +4,9 @@ import type {ObjectMetadata} from '../../metadata/Definitions/metadata';
 import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
 
 type Field={apiName:string;label:string;dataType:string};
-type Rule={apiName:string;label:string;expression:string;errorMessage:string;errorFieldApi:string|null;active:boolean;sortOrder:number};
-type Default={fieldApi:string;expression:string};
-const initial:Rule={apiName:'',label:'',expression:'',errorMessage:'',errorFieldApi:null,active:false,sortOrder:0};
+type Rule={apiName:string;label:string;expression:string;errorMessage:string;errorFieldApi:string|null;active:boolean;sortOrder:number;revision:number};
+type Default={fieldApi:string;expression:string;revision:number};
+const initial:Rule={apiName:'',label:'',expression:'',errorMessage:'',errorFieldApi:null,active:false,sortOrder:0,revision:0};
 
 export default function DeclarativeRulesPanel({objectApi,fields,objects}:{objectApi:string;fields:Field[];objects:ObjectMetadata[]}) {
   const [rules,setRules]=useState<Rule[]>([]);
@@ -50,7 +50,7 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
       method:'PUT',
       body:JSON.stringify({label:draft.label,expression:draft.expression,
         errorMessage:draft.errorMessage,errorFieldApi:draft.errorFieldApi,
-        active:draft.active,sortOrder:draft.sortOrder})
+        active:draft.active,sortOrder:draft.sortOrder,revision:draft.revision})
     });
   });
   const writable=fields.filter(f=>!['Formula','Roll-Up Summary','Auto Number','AutoNumber',
@@ -128,7 +128,7 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
           primaryObjectApiName={objectApi} value={formula} onChange={setFormula}/></label>
       <button type="button" className="btn btn-brand" disabled={busy||!target||!formula.trim()}
         onClick={()=>perform(()=>apiRequest(base+'/default-formulas/'+encodeURIComponent(target),{
-          method:'PUT',body:JSON.stringify({expression:formula})}))}>Save default</button>
+          method:'PUT',body:JSON.stringify({expression:formula,revision:defaults.find(item=>item.fieldApi===target)?.revision??0})}))}>Save default</button>
     </div>
   </section>;
 }
