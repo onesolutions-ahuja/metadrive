@@ -32,6 +32,10 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
   setBusy(true);setError('');
   try{
    const payload=buildAutomationFlow({...draft,objectApi:object.apiName});
+   const validation=await apiRequest<{valid:boolean;errors?:string[]}>(
+     '/metadata/flows/'+encodeURIComponent(payload.apiName)+'/validate',
+     {method:'POST',body:JSON.stringify(payload)});
+   if(!validation.valid)throw Error((validation.errors??['Automation Flow validation failed']).join('; '));
    const response=await apiRequest<{flow:{apiName:string}}>(
      '/metadata/flows/'+encodeURIComponent(payload.apiName),
      {method:'PUT',body:JSON.stringify(payload)});
