@@ -12,6 +12,15 @@ export type KioskMenuPageDependencies = {
   priceFieldApiName: string;
   imageFieldApiName?: string;
   categoryFieldApiName?: string;
+  categoryObjectApiName?: string;
+  categoryNameFieldApiName?: string;
+  categoryImageFieldApiName?: string;
+  categoryOrderFieldApiName?: string;
+  categoryActiveFieldApiName?: string;
+  productSortFieldApiName?: string;
+  productDescriptionFieldApiName?: string;
+  logoAssetUri?: string;
+  promotionImageUri?: string;
 };
 
 const component = (
@@ -41,30 +50,76 @@ export function kioskMenuDraft(deps: KioskMenuPageDependencies) {
     devices: ['Desktop'],
     activationAssignments: [],
     components: [
-      component('kiosk_brand', 'OneText', 'Brand heading', 20, 22, 160, 94,
-        { text: 'ONE KIOSK' }),
-      component('kiosk_categories', 'OneNavigation', 'Category navigation', 12, 140, 176, 1390,
-        { kind: 'Navigation', orientation: 'vertical' }),
-      component('kiosk_heading', 'OneText', 'Menu heading', 224, 40, 816, 130,
-        { text: 'OUR MENU' }),
-      component('kiosk_products', 'OneItemGrid', 'Menu products', 220, 220, 836, 1430, {
-        kind: 'ItemGrid',
-        title: '',
-        titleFieldApiName: deps.nameFieldApiName,
-        priceFieldApiName: deps.priceFieldApiName,
-        imageFieldApiName: deps.imageFieldApiName ?? '',
-        categoryFieldApiName: deps.categoryFieldApiName ?? '',
-        currencyCode: 'GBP',
-        filterKey: 'category',
-        searchKey: 'catalogue',
-        selectionBehavior: 'select',
-        selectionFilterKey: 'selectedProduct'
+      component('kiosk_logo',deps.logoAssetUri?'OneImage':'OneText','Kiosk branding',24,28,205,132,
+        deps.logoAssetUri?{kind:'Image',src:deps.logoAssetUri,alt:'Restaurant logo',imageFit:'contain'}:
+          {kind:'Text',text:'ONE KIOSK',fontSize:34,fontWeight:'800'}),
+      component('kiosk_heading','OneText','Menu heading',266,56,780,88,
+        {kind:'Text',text:'OUR MENU',fontSize:48,fontWeight:'800',textColor:'#171717'}),
+      component('kiosk_subtitle','OneText','Menu introduction',266,145,620,50,
+        {kind:'Text',text:'Choose your favourites',fontSize:22}),
+      component('kiosk_offer','OneCard','Featured menu offer',265,280,785,230,
+        {kind:'Card',title:'BUILD YOUR OWN BUCKET',subtitle:'Your favourites, your way',
+          imageSrc:deps.promotionImageUri??'',imageAlt:'Featured food selection',
+          imagePosition:'right',imageWidthPercent:46,imageFit:'contain',
+          layoutContainer:true,theme:'light',accentColor:'#E4002B',radius:12}),
+      component('kiosk_products','OneItemGrid','Menu products',263,555,785,1065,{
+        kind:'ItemGrid',title:'',showHeading:false,objectApiName:deps.productObjectApiName,
+        titleFieldApiName:deps.nameFieldApiName,priceFieldApiName:deps.priceFieldApiName,
+        imageFieldApiName:deps.imageFieldApiName??'',
+        categoryFieldApiName:deps.categoryFieldApiName??'',
+        recordSortFieldApiName:deps.productSortFieldApiName??'',
+        descriptionFieldApiName:deps.productDescriptionFieldApiName??'',
+        currencyCode:'GBP',filterKey:'category',searchKey:'catalogue',
+        selectionBehavior:'select',selectionFilterKey:'selectedProduct',
+        desktopColumns:3,tabletColumns:2,mobileColumns:1,gap:12,
+        imageHeight:175,imageFit:'contain',imageAspectRatio:'1/1',
+        cardDensity:'image-focused',cardPadding:10,cardRadius:8,
+        cardBackgroundColor:'#FFFFFF',cardBorderColor:'#EAEAEA',
+        showImage:true,showPrice:true,showAddIcon:false
       }),
-      component('kiosk_cart', 'OneShoppingCart', 'Basket', 220, 1670, 836, 230, {
-        kind: 'ShoppingCart', viewMode: 'basket', title: 'Your Order',
-        currencyCode: 'GBP', showVatTotal: false
-      })
-    ]
+      component('kiosk_details','OneOverlay','Product details',263,625,785,100,{
+        kind:'Overlay',title:'Product details',openOnFilterKey:'selectedProduct',
+        hideTrigger:true,showSelectedRecord:true,objectApiName:deps.productObjectApiName,
+        selectedTitleFieldApiName:deps.nameFieldApiName,
+        selectedImageFieldApiName:deps.imageFieldApiName??'',
+        selectedPriceFieldApiName:deps.priceFieldApiName,
+        selectedDescriptionFieldApiName:deps.productDescriptionFieldApiName??'',
+        confirmBehavior:'add',confirmLabel:'ADD TO ORDER',
+        cartTargetKey:'kiosk_basket',currencyCode:'GBP',imageFit:'contain'
+      }),
+      component('kiosk_cart','OneShoppingCart','Bottom basket',263,1690,785,210,{
+        kind:'ShoppingCart',viewMode:'basket',basketPresentation:'footer',
+        basketTitle:'YOUR ORDER',checkoutLabel:'PLACE ORDER',totalLabel:'Total',
+        nameFieldApiName:deps.nameFieldApiName,priceFieldApiName:deps.priceFieldApiName,
+        cartTargetKey:'kiosk_basket',currencyCode:'GBP',showVatTotal:false,
+        theme:'light',accentColor:'#8BAC12',radius:10
+      }),
+      ...(deps.categoryObjectApiName ? [
+        component('kiosk_category_title','OneText','Navigation heading',20,188,212,60,
+          {kind:'Text',text:'EXPLORE MENU',fontSize:20,fontWeight:'800'}),
+        component('kiosk_categories','OneRepeater','Illustrated category navigation',
+          16,260,222,1390,{
+          kind:'Repeater',label:'',objectApiName:deps.categoryObjectApiName,
+          recordTitleFieldApiName:deps.categoryNameFieldApiName||'Name',
+          recordValueFieldApiName:'Id',
+          recordImageFieldApiName:deps.categoryImageFieldApiName||'',
+          recordSortFieldApiName:deps.categoryOrderFieldApiName||'',
+          recordActiveFieldApiName:deps.categoryActiveFieldApiName||'',
+          recordLayout:'tile',recordItemMinHeight:110,showAllItem:true,
+          selectedItemBackgroundColor:'#E4002B',selectedItemTextColor:'#FFFFFF',
+          showImage:true,imageFit:'contain',selectionFilterKey:'category',gap:10
+        }),
+        component('kiosk_subcategories','OneTabs','Subcategory filters',
+          265,200,785,65,{
+          kind:'Tabs',objectApiName:deps.categoryObjectApiName,dynamicTabs:true,
+          categoryFieldApiName:deps.categoryNameFieldApiName||'Name',
+          categoryValueFieldApiName:'Id',
+          relatedFilterKey:'category',relatedFieldApiName:'ParentCategory',
+          showPanel:false,tabStyle:'pill',showAllTab:true,wrapTabs:false,
+          filterKey:'subcategory',accentColor:'#E4002B'
+        })
+      ] : [])
+
   };
 }
 
