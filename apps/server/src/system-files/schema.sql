@@ -35,6 +35,28 @@ CREATE TABLE IF NOT EXISTS md_deleted_lookup_links(
 );
 CREATE INDEX IF NOT EXISTS md_deleted_lookup_links_target
  ON md_deleted_lookup_links(tenant_id,deletion_group_id,target_record_id);
+-- Automatic permanent purge is OFF unless explicitly enabled by an authorized tenant admin.
+CREATE TABLE IF NOT EXISTS md_record_retention_settings (
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id),
+ retention_days integer NOT NULL DEFAULT 15 CHECK(retention_days BETWEEN 1 AND 3650),
+ automatic_purge_enabled boolean NOT NULL DEFAULT false,
+ configured_by uuid,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,configured_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_record_retention_audit (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ actor_id uuid NOT NULL,
+ retention_days integer NOT NULL,
+ automatic_purge_enabled boolean NOT NULL,
+ changed_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,id),
+ FOREIGN KEY(tenant_id,actor_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_record_retention_audit_lookup
+ ON md_record_retention_audit(tenant_id,changed_at DESC);
+
 CREATE TABLE IF NOT EXISTS md_record_lifecycle_audit(
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
  id uuid NOT NULL DEFAULT gen_random_uuid(),
