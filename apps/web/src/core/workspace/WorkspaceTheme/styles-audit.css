@@ -526,3 +526,39 @@
 @media (pointer:coarse) {
   .lightning .records-filter-chip,.lightning .records-selection-notice .btn { min-height:44px; }
 }
+
+/* Phase 5: shared no-code builder affordances and editing clarity. */
+.lightning :is(.builder-titlebar,.builder-meta-bar,.dashboard-heading-actions) {
+  row-gap:8px;
+  min-width:0;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option) {
+  border-radius:var(--md-radius-md,8px);
+  transition:background-color 140ms ease,border-color 140ms ease;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option):focus-visible,
+.lightning :is(.canvas-drop-zone,.record-component,.page-region):focus-visible {
+  outline:2px solid var(--md-primary,#1d4ed8);
+  outline-offset:2px;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option):active {
+  background:var(--md-canvas,#f8fafc);
+}
+.lightning :is(.canvas-drop-zone,.record-component.drop-target) {
+  scroll-margin:24px;
+}
+.lightning :is(.canvas-drop-zone,.record-component.drop-target):focus-within {
+  border-color:var(--md-primary,#1d4ed8);
+  box-shadow:0 0 0 2px rgb(29 78 216 / 15%);
+}
+.lightning :is(.properties-panel,.flow-settings) :is(.properties-help,.settings-panel-copy) {
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+@media(pointer:coarse) {
+  .lightning :is(.component-option,.flow-element-option,.field-option) { min-height:44px; }
+  .lightning :is(.properties-panel,.flow-settings) :is(button,[role="button"]) { min-height:44px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .lightning :is(.component-option,.flow-element-option,.field-option) { transition:none; }
+}
