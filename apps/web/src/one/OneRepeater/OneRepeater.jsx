@@ -119,7 +119,7 @@ export default function OneRepeater(props) {
             <input className="one-control" style={{flex: 1}}
               value={typeof item === "string" ? item : JSON.stringify(item)}
               onChange={(e) => set(rows.map((r,j) => j === i ? e.target.value : r)}/>
-            <button className="one-btn" aria-label={"Remove row " + i}
+            <button className="one-btn" aria-label={"Remove row " + (i + 1)}
               onClick={() => set(rows.filter((_,j) => j !== i)}>×</button>
           </div>
         ))}
