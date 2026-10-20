@@ -1576,6 +1576,7 @@ export function createSystemServer(db:SqlPersistence) {
     else if(err instanceof FlowCustomError)res.status(400).json({
       error:err.message,errors:[{message:err.message,...(err.fieldName?{fields:[err.fieldName]}:{})}]
     });
+    else if(err.message.startsWith('Rule revision conflict'))res.status(409).json({error:err.message});
     else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
     else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
