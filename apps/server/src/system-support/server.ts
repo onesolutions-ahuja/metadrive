@@ -1528,6 +1528,15 @@ export function createSystemServer(db:SqlPersistence) {
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
     res.status(201).json({id,record:{Id:id}});
   }));
+  app.get('/api/records/:objectApi/:id/actions',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.available(req.actor!,req.params.objectApi,req.params.id));
+  }));
+  app.get('/api/records/:objectApi/:id/actions/:actionId/flow-launch',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.authorizeFlow(req.actor!,req.params.objectApi,req.params.id,
+      req.params.actionId));
+  }));
   app.post('/api/records/:objectApi/:id/actions/:actionId/execute',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
