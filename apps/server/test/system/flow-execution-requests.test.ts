@@ -20,6 +20,8 @@ function fixture(){
    if(sql.includes('SELECT input_hash,state'))return {rowCount:1,rows:[{
      input_hash:state.hash,state:state.status,run_id:state.runId
    }]};
+   if(sql.includes('SELECT state FROM md_flow_execution_requests'))
+     return {rowCount:1,rows:[{state:state.status}]};
    if(sql.includes('SELECT property_path,value_kind,value_text FROM md_flow_execution_result_values'))
      return {rowCount:state.responseRows.length,rows:state.responseRows};
    if(sql.includes('INSERT INTO md_flow_execution_result_values')){
@@ -76,6 +78,17 @@ test('Nested Flow outputs replay without JSONB, preserving arrays and numeric ty
  assert.ok(f.state.responseRows.some(row=>row.property_path==='/result/outputs/lines/0/name'));
  assert.equal(f.state.responseRows.find(row=>row.property_path==='/result/outputs/totalMinor')?.value_kind,
    'number');
+});
+test('Identical completed Flow response is idempotent but conflicting replay is denied',async()=>{
+ const f=fixture(),input={requestId,Quantity:2};
+ await f.client.claim(tenant,actor,'Checkout',requestId,input);
+ const result={id:requestId,status:'completed',completed:true,outputs:{Quantity:2}};
+ await f.client.completed(tenant,actor,'Checkout',requestId,result);
+ const before=f.state.responseRows.length;
+ await assert.doesNotReject(()=>f.client.completed(tenant,actor,'Checkout',requestId,result));
+ assert.equal(f.state.responseRows.length,before,'duplicate completion must not duplicate values');
+ await assert.rejects(()=>f.client.completed(tenant,actor,'Checkout',requestId,
+   {...result,outputs:{Quantity:3}}),/Conflicting completed Flow response/);
 });
 test('Paused Screen Flow writes completed replay atomically to the relational ledger',async()=>{
  const seen:Array<{sql:string;args:unknown[]}>=[];
