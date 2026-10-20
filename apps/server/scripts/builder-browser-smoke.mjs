@@ -41,6 +41,21 @@ try{
  `,[tenantId,userId]);
  const caseId=reviewCase.rows[0].id;
 
+ // Create lifecycle fixture before the browser authenticates and caches landing metadata.
+ const {ObjectDefinitionService:EarlyObjectDefinition}=await import(new URL('object-definition.js',built).href);
+ const EarlyRecordEngine=(await import(new URL('record-engine.js',built).href)).RecordEngine;
+ const EarlyRbacEngine=(await import(new URL('rbac-engine.js',built).href)).RbacEngine;
+ const recycleDefinition=await new EarlyObjectDefinition(db).create(tenantId,'BrowserRecycle__c',
+  'Browser Recycle',[{apiName:'Name',label:'Name',dataType:'Text(80)',required:true}]);
+ assert.ok(recycleDefinition);
+ await db.query(`INSERT INTO md_object_actions
+   (tenant_id,object_api,action_id,label,action_type,enabled,sort_order)
+   VALUES($1,'BrowserRecycle__c','Delete','Delete','Standard',true,0)
+   ON CONFLICT(tenant_id,object_api,action_id) DO NOTHING`,[tenantId]);
+ const recycleSetup=new EarlyRecordEngine(db,new EarlyRbacEngine(db));
+ const recycleId=await recycleSetup.create(tenantId,userId,'BrowserRecycle__c',{Name:'Browser recovery test'});
+ await recycleSetup.remove(tenantId,userId,'BrowserRecycle__c',recycleId);
+
  const tokens=await new AuthenticationService(db).signIn(tenantId,'developer@example.invalid',password);
  frontend=spawn('npm',['run','dev','--workspace','apps/web','--','--host','127.0.0.1','--port','4173'],{
   cwd:new URL('../../../',import.meta.url).pathname,
@@ -384,6 +399,33 @@ try{
  assert.equal(await page.getByLabel('Description',{exact:true}).inputValue(),'Saved from the real browser');
  await page.screenshot({path:new URL('../artifacts/rbac-editor.png',import.meta.url).pathname});
  console.info('RBAC browser Save/refresh/SQL checks passed for profile creation and permission-set metadata');
+ // Phase 1: verify the actual Records browser can restore a SQL-tombstoned record
+ // and the tenant administrator can publish an audited retention policy.
+ const recordEngine=new RecordEngine(db,rbac);
+ await page.goto(origin+'/une/o/BrowserRecycle__c/list',{waitUntil:'domcontentloaded'});
+ const recycleButton=page.getByRole('button',{name:'Recycle Bin',exact:true});
+ await recycleButton.waitFor({state:'visible',timeout:15000});
+ await recycleButton.click();
+ await page.getByRole('heading',{name:'Browser Recycle Recycle Bin'}).waitFor({timeout:12000});
+ await page.getByText(recycleId,{exact:true}).waitFor({timeout:12000});
+ await page.getByLabel('Record retention days').fill('30');
+ page.once('dialog',dialog=>void dialog.accept());
+ const policyResponse=page.waitForResponse(resp=>resp.url().endsWith('/api/recycle-bin/retention')
+   &&resp.request().method()==='PUT');
+ await page.getByRole('button',{name:'Save Retention'}).click();
+ assert.equal((await policyResponse).status(),200,'Browser retention policy save failed');
+ assert.equal((await db.query(
+  'SELECT retention_days FROM md_record_retention_settings WHERE tenant_id=$1',[tenantId]
+ )).rows[0].retention_days,30);
+ page.once('dialog',dialog=>void dialog.accept());
+ const restoreResponse=page.waitForResponse(resp=>resp.url().endsWith(
+  '/api/recycle-bin/records/BrowserRecycle__c/'+recycleId+'/restore'));
+ await page.getByRole('button',{name:'Restore',exact:true}).click();
+ assert.equal((await restoreResponse).status(),200,'Browser record recovery failed');
+ assert.equal((await recordEngine.get(tenantId,userId,'BrowserRecycle__c',recycleId)).Name,
+   'Browser recovery test');
+ await page.screenshot({path:new URL('../artifacts/recycle-bin.png',import.meta.url).pathname});
+ console.info('Browser Recycle Bin and policy editor restore/SQL checks passed');
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');

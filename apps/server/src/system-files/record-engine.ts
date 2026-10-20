@@ -243,7 +243,7 @@ export class RecordEngine {
             ON sv.tenant_id=c.tenant_id AND sv.record_id=c.id AND sv.object_api=c.object_api
               AND sv.field_api=$4
           ${filterJoins.join('\n')}
-          WHERE c.tenant_id=$1 AND c.object_api=$2 AND rel.reference_record_id=$5${filterPredicate}
+          WHERE c.tenant_id=$1 AND c.object_api=$2 AND c.is_deleted=false AND rel.reference_record_id=$5${filterPredicate}
         `,filterParams);
         const value=result.rows[0]?.value??(operation==='COUNT'||operation==='SUM'?'0':null);
         const numericValue=sourceType==='date'||sourceType==='datetime'?null:value;
@@ -321,7 +321,7 @@ export class RecordEngine {
           AND v.object_api=r.object_api AND v.field_api=$4
         LEFT JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
           AND f.api_name=v.field_api AND f.deleted_at IS NULL
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND r.is_deleted=false
           AND ${migrationMode?'true':"md_record_access($1,$5,r.id,'read')"}`,
       migrationMode?[tenantId,targetObject,recordId,fieldApi]:
         [tenantId,targetObject,recordId,fieldApi,userId]);
@@ -421,7 +421,7 @@ export class RecordEngine {
       WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.record_id=$3 AND f.deleted_at IS NULL`,
     [tenantId,objectApi,recordId]);
     const {rows:cloneRows}=await client.query<{is_clone:boolean}>(
-      'SELECT is_clone FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+      'SELECT is_clone FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
       [tenantId,objectApi,recordId]);
     const byApi=new Map(rows.map(row=>[row.field_api,row]));
     const record:Record<string,unknown>={Id:recordId,__isClone:cloneRows[0]?.is_clone===true};
@@ -462,7 +462,7 @@ export class RecordEngine {
     [tenantId,objectApi,fieldApi]);
     if(!field.rows[0])throw new Error('Roll-Up Summary definition is unavailable for migration');
     const records=await client.query<{id:string}>(
-      'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 ORDER BY id',
+      'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND is_deleted=false ORDER BY id',
       [tenantId,objectApi]);
     await this.refreshRollups(client,tenantId,field.rows[0].child_object,
       new Map([[objectApi,new Set(records.rows.map(row=>row.id))]]));
@@ -598,7 +598,7 @@ export class RecordEngine {
             if(previous.rows[0]?.reference_record_id&&previous.rows[0].reference_record_id!==value)
               throw new Error('Master-Detail relationship does not allow reparenting: '+key);
           }
-          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
             [tenantId,field.related_object,value]);
             if(!match.rowCount)throw new Error('Invalid relationship target: '+key); }
           text='';reference=value;break;
@@ -837,7 +837,8 @@ export class RecordEngine {
   }
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0,
     options:{sortField?:string;sortDirection?:'asc'|'desc';search?:string;filterField?:string;
-      filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes'}={}) {
+      filterValue?:string;filterOperator?:'Equals'|'Includes'|'Excludes';
+      relatedField?:string;relatedId?:string}={}) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const definitions=await this.fields(tenantId,objectApi);
@@ -852,6 +853,13 @@ export class RecordEngine {
     };
     const sortField=fieldFor(options.sortField);
     const filterField=fieldFor(options.filterField);
+    if((options.relatedField===undefined)!==(options.relatedId===undefined))
+      throw new Error('Related list requires both relationship field and parent record');
+    const relatedField=fieldFor(options.relatedField);
+    if(relatedField&&(
+      relatedField.data_type!=='reference'||!relatedField.related_object||
+      !uuid.test(options.relatedId??'')))
+      throw new Error('Invalid related-list relationship');
     const search=options.search?.trim().slice(0,256)??'';
     const filterValue=options.filterValue;
     const filterOperator=options.filterOperator??'Equals';
@@ -878,6 +886,16 @@ export class RecordEngine {
     };
     if(sortField&&!await canRead(sortField.api_name))throw new Error('Field is not readable');
     if(filterField&&!await canRead(filterField.api_name))throw new Error('Field is not readable');
+    if(relatedField){
+      if(!await canRead(relatedField.api_name))throw new Error('Field is not readable');
+      const parentObject=relatedField.related_object!;
+      await this.rbac.require(tenantId,userId,parentObject,'read');
+      await this.rbac.requireRecord(tenantId,userId,parentObject,options.relatedId!,'read');
+      const parent=await this.db.query(
+        'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
+        [tenantId,parentObject,options.relatedId]);
+      if(!parent.rowCount)throw new Error('Related parent record not found');
+    }
     const searchFields:string[]=[];
     if(search)for(const field of definitions)
       if(!['formula','geolocation','address','encryptedtext'].includes(field.data_type)&&await canRead(field.api_name))
@@ -910,6 +928,16 @@ export class RecordEngine {
           AND fv.field_api=${fieldParam}
           AND COALESCE(fv.value_text,fv.reference_record_id::text)=${valueParam})`);
     }
+    if(relatedField){
+      conditionParams.push(relatedField.api_name);
+      const relationshipParam='$'+(3+conditionParams.length);
+      conditionParams.push(options.relatedId!);
+      const parentParam='$'+(3+conditionParams.length);
+      predicates.push(`EXISTS(SELECT 1 FROM md_record_values relation
+        WHERE relation.tenant_id=r.tenant_id AND relation.record_id=r.id
+          AND relation.object_api=r.object_api AND relation.field_api=${relationshipParam}
+          AND relation.reference_record_id=${parentParam}::uuid)`);
+    }
     if(search){
       conditionParams.push(searchFields);
       const fieldsParam='$'+(3+conditionParams.length);
@@ -923,7 +951,7 @@ export class RecordEngine {
     const where=predicates.length?' AND '+predicates.join(' AND '):'';
     const count=await this.db.query<{total:string}>(`
       SELECT count(*)::text AS total FROM md_records r
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
     `,[tenantId,objectApi,userId,...conditionParams]);
     const params:unknown[]=[tenantId,objectApi,userId,...conditionParams];
     let orderBy='r.created_at ASC,r.id ASC';
@@ -961,7 +989,7 @@ export class RecordEngine {
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
           r.record_type_id,r.is_clone,${sortSelection}
         FROM md_records r ${sortJoin}
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
         ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
       )
       SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
@@ -1046,7 +1074,7 @@ export class RecordEngine {
     const {rows}=await this.db.query<{id:string}>(`
       SELECT r.id FROM md_records r JOIN md_record_values v
         ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND v.field_api=$3
         AND v.${column} ${ops[operator]} $4::${casts[column]}
         AND md_record_access($1,$5,r.id,'read')
       ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
@@ -1071,7 +1099,7 @@ export class RecordEngine {
         avg(v.value_number)::text AS avg
       FROM md_record_values v JOIN md_records r
         ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
-      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3 AND r.is_deleted=false
         AND md_record_access($1,$4,r.id,'read')`,
       [tenantId,objectApi,fieldApi,userId]);
     return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
@@ -1099,7 +1127,7 @@ export class RecordEngine {
             AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
       LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api
         AND f.api_name=v.field_api AND f.deleted_at IS NULL
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND r.is_deleted=false AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
     [tenantId,objectApi,id,userId]);
     if(!rows.length)throw new Error('Record not found');
     const record:Record<string,unknown>={
@@ -1148,7 +1176,7 @@ export class RecordEngine {
     if(client)await this.lockObjectForWrite(client,tenantId,objectApi);
     const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client,id);
     const write=async(transactionClient:PoolClient,writeValues:Map<string,Storable>)=>{
-      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rowCount)throw new Error('Record not found');
       if(checkDate&&new Date(found.rows[0].updated_at).getTime()>checkDate.getTime()+999)
@@ -1232,7 +1260,7 @@ export class RecordEngine {
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
-        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!locked.rowCount)throw new Error('Record not found');
       const prior=await this.get(tenantId,userId,objectApi,id,transactionClient);
@@ -1260,7 +1288,7 @@ export class RecordEngine {
     if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     await this.rbac.requireRecord(tenantId,userId,objectApi,id,'read');
-    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',[tenantId,objectApi,id]);
     if(!found.rowCount)throw new Error('Record not found');
     const {rows}=await this.db.query<{id:string;field_api:string;changed_by:string;changed_at:Date;old_value:string|null;new_value:string|null}>(
       'SELECT id,field_api,changed_by,changed_at,old_value,new_value FROM md_record_history WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 ORDER BY changed_at DESC,id DESC LIMIT 100',
@@ -1291,7 +1319,7 @@ export class RecordEngine {
       const target=await client.query<{id:string;queue:boolean}>("SELECT id,false AS queue FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true UNION ALL SELECT q.queue_id,true AS queue FROM md_queue_objects q WHERE q.tenant_id=$1 AND q.queue_id=$2 AND q.object_api=$3",[tenantId,ownerId,objectApi]);
       if(!target.rowCount)throw new Error('Record owner not found');
       const found=await client.query<{updated_at:Date}>(
-        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rows[0])throw new Error('Record not found');
       if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
@@ -1302,30 +1330,38 @@ export class RecordEngine {
       return {Id:id,OwnerId:rows[0].owner_id,LastModifiedDate:rows[0].updated_at};
     });
   }
+  /** Retain business records and their dependent SQL rows for recoverable deletion. */
   private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
-    root:boolean,visiting:Set<string>){
+    root:boolean,visiting:Set<string>,deletionGroupId:string,rootId:string){
     await this.lockObjectForWrite(client,tenantId,objectApi);
     const recordKey=JSON.stringify([objectApi,id]);
     if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
     const record=await client.query<{id:string}>(root
       ?`SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3
-         AND md_record_access($1,$4,id,'delete') FOR UPDATE`
-      :'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
+         AND is_deleted=false AND md_record_access($1,$4,id,'delete') FOR UPDATE`
+      :`SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3
+         AND is_deleted=false FOR UPDATE`,
     root?[tenantId,objectApi,id,userId]:[tenantId,objectApi,id]);
     if(!record.rowCount){
       if(root)throw new Error('Record not found');
       return;
     }
+    // Master-Detail cascade does not grant the actor privileges they do not hold.
+    if(!root){
+      await this.rbac.require(tenantId,userId,objectApi,'delete');
+      await this.rbac.requireRecord(tenantId,userId,objectApi,id,'delete');
+    }
     const affectedParents=await this.rollupParents(client,tenantId,objectApi,id);
     visiting.add(recordKey);
     const {rows:references}=await client.query<{
-      record_id:string;object_api:string;field_api:string;relationship_type:string;delete_behavior:string|null;required:boolean
+      record_id:string;object_api:string;field_api:string;relationship_type:string;
+      delete_behavior:string|null;required:boolean
     }>(`SELECT r.id AS record_id,r.object_api,f.api_name AS field_api,
         COALESCE(f.relationship_type,'Lookup') AS relationship_type,f.delete_behavior,f.required
       FROM md_record_values v
-      JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id
+      JOIN md_records r ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.is_deleted=false
       JOIN md_field_definitions f ON f.tenant_id=v.tenant_id AND f.object_api=v.object_api
-        AND f.api_name=v.field_api AND f.deleted_at IS NULL
+        AND f.api_name=v.field_api
       WHERE v.tenant_id=$1 AND v.reference_record_id=$2 AND f.related_object=$3
       ORDER BY f.relationship_type,r.object_api,r.id`,
     [tenantId,id,objectApi]);
@@ -1338,11 +1374,16 @@ export class RecordEngine {
       const key=JSON.stringify([reference.object_api,reference.record_id]);
       if(cascaded.has(key))continue;
       cascaded.add(key);
-      await this.removeRecordTree(client,tenantId,userId,reference.object_api,reference.record_id,false,visiting);
+      await this.removeRecordTree(client,tenantId,userId,reference.object_api,reference.record_id,
+        false,visiting,deletionGroupId,rootId);
     }
     for(const reference of references){
       if(reference.relationship_type!=='Hierarchical'
         &&!(reference.relationship_type==='Lookup'&&(reference.delete_behavior??'Clear')==='Clear'))continue;
+      await client.query(`INSERT INTO md_deleted_lookup_links
+        (tenant_id,deletion_group_id,source_record_id,source_object_api,field_api,target_record_id)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+      [tenantId,deletionGroupId,reference.record_id,reference.object_api,reference.field_api,id]);
       const cleared=await client.query<{record_id:string;object_api:string;field_api:string}>(
         `UPDATE md_record_values SET value_text=NULL,reference_record_id=NULL
          WHERE tenant_id=$1 AND record_id=$2 AND field_api=$3 AND reference_record_id=$4
@@ -1356,28 +1397,173 @@ export class RecordEngine {
         VALUES($1,$2,$3,$4,$5,$6,NULL)`,
       [tenantId,reference.record_id,reference.object_api,reference.field_api,userId,id]);
     }
-    await client.query('DELETE FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+    await client.query(`UPDATE md_record_values SET record_is_deleted=true
+      WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3`,
       [tenantId,objectApi,id]);
+    await client.query(`UPDATE md_records SET is_deleted=true,deleted_at=now(),deleted_by=$4,
+      deletion_group_id=$5,deletion_root_id=$6,updated_at=now()
+      WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false`,
+      [tenantId,objectApi,id,userId,deletionGroupId,rootId]);
     await this.refreshRollups(client,tenantId,objectApi,affectedParents);
     visiting.delete(recordKey);
   }
+
+  /** Object-level delete permission and record access are checked for the root. */
   async remove(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+      throw new Error('Invalid record reference');
     await this.rbac.require(tenantId,userId,objectApi,'delete');
-    if(client){
-      await this.lockObjectForWrite(client,tenantId,objectApi);
-      await this.removeRecordTree(client,tenantId,userId,objectApi,id,true,new Set());
-    }
-    else await this.db.transaction(async transactionClient=>{
+    const run=async(transactionClient:PoolClient)=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
-        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'delete') FOR UPDATE",
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'delete') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!locked.rowCount)throw new Error('Record not found');
       const prior=this.recordTrigger
         ?await this.get(tenantId,userId,objectApi,id,transactionClient):null;
-      await this.removeRecordTree(transactionClient,tenantId,userId,objectApi,id,true,new Set());
+      const group=await transactionClient.query<{id:string}>(
+        'SELECT gen_random_uuid()::text AS id');
+      const deletionGroupId=group.rows[0].id;
+      await this.removeRecordTree(transactionClient,tenantId,userId,objectApi,id,
+        true,new Set(),deletionGroupId,id);
+      await transactionClient.query(`INSERT INTO md_record_lifecycle_audit
+        (tenant_id,record_id,object_api,deletion_group_id,actor_id,operation)
+        VALUES($1,$2,$3,$4,$5,'delete')`,
+        [tenantId,id,objectApi,deletionGroupId,userId]);
       if(this.recordTrigger)
         await this.recordTrigger(transactionClient,tenantId,userId,objectApi,'deleted',prior,prior,'after-save');
+    };
+    if(client)await run(client);
+    else await this.db.transaction(run);
+  }
+
+  /** Deleted record metadata only; fields remain subject to normal Field permissions. */
+  async recycleBin(tenantId:string,userId:string,objectApi:string,limit=50,offset=0){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)
+      ||!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(offset)||offset<0)
+      throw new Error('Invalid Recycle Bin request');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi,'delete');
+    const count=await this.db.query<{total:string}>(`
+      SELECT count(*)::text AS total FROM md_records
+      WHERE tenant_id=$1 AND object_api=$2 AND is_deleted=true
+        AND deletion_root_id=id AND md_record_access($1,$3,id,'delete')`,
+      [tenantId,objectApi,userId]);
+    const {rows}=await this.db.query<{
+      id:string;deleted_at:Date;deleted_by:string;deletion_group_id:string
+    }>(`SELECT id,deleted_at,deleted_by,deletion_group_id FROM md_records
+      WHERE tenant_id=$1 AND object_api=$2 AND is_deleted=true
+        AND deletion_root_id=id AND md_record_access($1,$3,id,'delete')
+      ORDER BY deleted_at DESC,id LIMIT $4 OFFSET $5`,
+      [tenantId,objectApi,userId,limit,offset]);
+    return {records:rows.map(row=>({
+      Id:row.id,DeletedAt:new Date(row.deleted_at).toISOString(),
+      DeletedBy:row.deleted_by,DeletionGroupId:row.deletion_group_id
+    })),total:Number(count.rows[0]?.total??0)};
+  }
+
+  /** Recover the exact deletion group; never overwrite a subsequently edited lookup. */
+  async restore(tenantId:string,userId:string,objectApi:string,id:string){
+    if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+      throw new Error('Invalid record reference');
+    await this.rbac.require(tenantId,userId,objectApi,'create');
+    await this.rbac.require(tenantId,userId,objectApi,'delete');
+    return this.db.transaction(async client=>{
+      await this.lockObjectForWrite(client,tenantId,objectApi);
+      const root=await client.query<{deletion_group_id:string;deletion_root_id:string}>(`
+        SELECT deletion_group_id,deletion_root_id FROM md_records
+        WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=true
+          AND md_record_access($1,$4,id,'delete') FOR UPDATE`,
+        [tenantId,objectApi,id,userId]);
+      const record=root.rows[0];
+      if(!record)throw new Error('Deleted record not found or unavailable');
+      if(record.deletion_root_id!==id)throw new Error('Restore the deleted parent record');
+      const {rows}=await client.query<{id:string;object_api:string}>(`
+        SELECT id,object_api FROM md_records
+        WHERE tenant_id=$1 AND deletion_group_id=$2 AND is_deleted=true
+        ORDER BY object_api,id FOR UPDATE`,[tenantId,record.deletion_group_id]);
+      // Restore never bypasses Object and Record permissions for cascaded detail records.
+      for(const item of rows){
+        await this.rbac.require(tenantId,userId,item.object_api,'create');
+        await this.rbac.require(tenantId,userId,item.object_api,'delete');
+        await this.rbac.requireRecord(tenantId,userId,item.object_api,item.id,'delete');
+      }
+      // A previously deleted master outside this group must not be resurrected implicitly.
+      const external=await client.query(`
+        SELECT 1 FROM md_record_values v
+        JOIN md_field_definitions f ON f.tenant_id=v.tenant_id
+          AND f.object_api=v.object_api AND f.api_name=v.field_api
+          AND f.relationship_type='Master-Detail' AND f.deleted_at IS NULL
+        JOIN md_records parent ON parent.tenant_id=v.tenant_id AND parent.id=v.reference_record_id
+        WHERE v.tenant_id=$1 AND v.record_id=ANY($2::uuid[])
+          AND parent.is_deleted=true AND parent.deletion_group_id IS DISTINCT FROM $3::uuid
+        LIMIT 1`,[tenantId,rows.map(row=>row.id),record.deletion_group_id]);
+      if(external.rowCount)throw new Error('Restore the master record first');
+      await client.query(`UPDATE md_record_values v SET record_is_deleted=false
+        FROM md_records r
+        WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND
+          r.tenant_id=$1 AND r.deletion_group_id=$2 AND r.is_deleted=true`,
+        [tenantId,record.deletion_group_id]);
+      await client.query(`UPDATE md_records SET is_deleted=false,deleted_at=NULL,deleted_by=NULL,
+        deletion_group_id=NULL,deletion_root_id=NULL,updated_at=now()
+        WHERE tenant_id=$1 AND deletion_group_id=$2 AND is_deleted=true`,
+        [tenantId,record.deletion_group_id]);
+      const {rows:links}=await client.query<{
+        source_record_id:string;source_object_api:string;field_api:string;target_record_id:string
+      }>(`SELECT source_record_id,source_object_api,field_api,target_record_id
+        FROM md_deleted_lookup_links WHERE tenant_id=$1 AND deletion_group_id=$2`,
+        [tenantId,record.deletion_group_id]);
+      for(const link of links){
+        const resource=link.source_object_api+'.'+link.field_api;
+        if(!await this.rbac.allowed(tenantId,userId,link.source_object_api,'edit')
+          ||!await this.rbac.allowed(tenantId,userId,resource,'edit'))continue;
+        try {
+          await this.rbac.requireRecord(tenantId,userId,link.source_object_api,link.source_record_id,'edit');
+        } catch {continue;}
+        const restored=await client.query(`UPDATE md_record_values v
+          SET value_text='',reference_record_id=$5::uuid
+          FROM md_records source,md_records target,md_field_definitions field
+          WHERE v.tenant_id=$1 AND v.record_id=$2 AND v.object_api=$3 AND v.field_api=$4
+            AND v.reference_record_id IS NULL AND v.value_text IS NULL
+            AND source.tenant_id=v.tenant_id AND source.id=v.record_id AND source.is_deleted=false
+            AND target.tenant_id=v.tenant_id AND target.id=$5::uuid AND target.is_deleted=false
+            AND field.tenant_id=v.tenant_id AND field.object_api=v.object_api
+            AND field.api_name=v.field_api AND field.related_object=target.object_api
+            AND field.deleted_at IS NULL RETURNING v.record_id`,
+          [tenantId,link.source_record_id,link.source_object_api,link.field_api,
+            link.target_record_id]);
+        if(restored.rowCount){
+          await client.query(`DELETE FROM md_deleted_lookup_links
+            WHERE tenant_id=$1 AND deletion_group_id=$2 AND source_record_id=$3 AND field_api=$4`,
+            [tenantId,record.deletion_group_id,link.source_record_id,link.field_api]);
+          await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+            [tenantId,link.source_object_api,link.source_record_id]);
+          const sourceParents=await this.rollupParents(client,tenantId,link.source_object_api,link.source_record_id);
+          await this.refreshRollups(client,tenantId,link.source_object_api,sourceParents);
+          await client.query(`INSERT INTO md_record_history
+            (tenant_id,record_id,object_api,field_api,changed_by,old_value,new_value)
+            VALUES($1,$2,$3,$4,$5,NULL,$6)`,
+            [tenantId,link.source_record_id,link.source_object_api,link.field_api,userId,link.target_record_id]);
+        }
+      }
+      // Keep unresolved recovery links for privileged/manual reconciliation.
+      // Never discard them when a source Field or the user's edit rights have changed.
+      const outstanding=await client.query<{total:number}>(`SELECT count(*)::integer AS total
+        FROM md_deleted_lookup_links WHERE tenant_id=$1 AND deletion_group_id=$2`,
+        [tenantId,record.deletion_group_id]);
+      for(const restored of rows){
+        const parents=await this.rollupParents(client,tenantId,restored.object_api,restored.id);
+        await this.refreshRollups(client,tenantId,restored.object_api,parents);
+      }
+      await client.query(`INSERT INTO md_record_lifecycle_audit
+        (tenant_id,record_id,object_api,deletion_group_id,actor_id,operation)
+        VALUES($1,$2,$3,$4,$5,'restore')`,
+        [tenantId,id,objectApi,record.deletion_group_id,userId]);
+      return {restored:rows.length,unresolvedLookupLinks:outstanding.rows[0]?.total??0};
+    }).catch((error:unknown)=>{
+      if(error&&typeof error==='object'&&'code' in error&&error.code==='23505')
+        throw new Error('Restore conflicts with an existing unique field value');
+      throw error;
     });
   }
 }

@@ -157,7 +157,7 @@ export class FlowRecordQuery {
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
           r.record_type_id
         FROM md_records r
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')
           AND (${logic})
         ORDER BY ${sort} LIMIT $${params.length}
       )

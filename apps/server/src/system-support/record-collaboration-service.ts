@@ -19,7 +19,7 @@ export class RecordCollaborationService {
   if(!validObject.test(objectApi)||!validId.test(recordId))throw new Error('Invalid record reference');
   await this.rbac.require(actor.tenant_id,actor.user_id,objectApi,action);
   await this.rbac.requireRecord(actor.tenant_id,actor.user_id,objectApi,recordId,action);
-  const result=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+  const result=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
    [actor.tenant_id,objectApi,recordId]);
   if(!result.rowCount)throw new Error('Record not found');
  }

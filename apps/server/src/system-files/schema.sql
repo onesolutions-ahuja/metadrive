@@ -14,8 +14,60 @@ CREATE TABLE IF NOT EXISTS md_role_permission_sets (tenant_id uuid NOT NULL REFE
 CREATE TABLE IF NOT EXISTS md_permission_rules (tenant_id uuid NOT NULL REFERENCES md_tenants(id), permission_set_id uuid NOT NULL, FOREIGN KEY(tenant_id,permission_set_id) REFERENCES md_permission_sets(tenant_id,id), resource text NOT NULL, action text NOT NULL, effect text NOT NULL CHECK (effect IN ('allow','deny')), PRIMARY KEY(tenant_id,permission_set_id,resource,action));
 CREATE TABLE IF NOT EXISTS md_object_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, label text NOT NULL, is_system boolean NOT NULL DEFAULT false, UNIQUE(tenant_id,api_name));
 CREATE TABLE IF NOT EXISTS md_field_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), object_api text NOT NULL, api_name text NOT NULL, label text, data_type text NOT NULL, related_object text, max_length integer CHECK (max_length BETWEEN 1 AND 1000000), required boolean NOT NULL DEFAULT false, UNIQUE(tenant_id,object_api,api_name), UNIQUE(tenant_id,object_api,id), FOREIGN KEY(tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name), FOREIGN KEY(tenant_id,related_object) REFERENCES md_object_definitions(tenant_id,api_name));
-CREATE TABLE IF NOT EXISTS md_records (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), object_api text NOT NULL, is_clone boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(tenant_id,id), UNIQUE(tenant_id,id,object_api), FOREIGN KEY(tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name));
+CREATE TABLE IF NOT EXISTS md_records (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), object_api text NOT NULL, is_clone boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), is_deleted boolean NOT NULL DEFAULT false, deleted_at timestamptz, deleted_by uuid, deletion_group_id uuid, deletion_root_id uuid, UNIQUE(tenant_id,id), UNIQUE(tenant_id,id,object_api), FOREIGN KEY(tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name));
 CREATE TABLE IF NOT EXISTS md_record_values (tenant_id uuid NOT NULL REFERENCES md_tenants(id), record_id uuid NOT NULL, object_api text NOT NULL, field_api text NOT NULL, value_text text, reference_record_id uuid, PRIMARY KEY(tenant_id,record_id,field_api), FOREIGN KEY(tenant_id,record_id,object_api) REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE, FOREIGN KEY(tenant_id,object_api,field_api) REFERENCES md_field_definitions(tenant_id,object_api,api_name), FOREIGN KEY(tenant_id,reference_record_id) REFERENCES md_records(tenant_id,id));
+-- Recycle Bin storage is relational and tenant-scoped. Also maintained by the
+-- upgrade-safe 20261105 migration for existing installations.
+CREATE INDEX IF NOT EXISTS md_records_active_lookup
+ ON md_records(tenant_id,object_api,id) WHERE is_deleted=false;
+CREATE INDEX IF NOT EXISTS md_records_recycle_bin
+ ON md_records(tenant_id,object_api,deleted_at DESC,id) WHERE is_deleted=true;
+CREATE INDEX IF NOT EXISTS md_records_deletion_group
+ ON md_records(tenant_id,deletion_group_id) WHERE is_deleted=true;
+CREATE TABLE IF NOT EXISTS md_deleted_lookup_links(
+ tenant_id uuid NOT NULL, deletion_group_id uuid NOT NULL,
+ source_record_id uuid NOT NULL, source_object_api text NOT NULL,
+ field_api text NOT NULL, target_record_id uuid NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,deletion_group_id,source_record_id,field_api),
+ FOREIGN KEY(tenant_id,source_record_id,source_object_api)
+ REFERENCES md_records(tenant_id,id,object_api) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS md_deleted_lookup_links_target
+ ON md_deleted_lookup_links(tenant_id,deletion_group_id,target_record_id);
+-- Automatic permanent purge is OFF unless explicitly enabled by an authorized tenant admin.
+CREATE TABLE IF NOT EXISTS md_record_retention_settings (
+ tenant_id uuid PRIMARY KEY REFERENCES md_tenants(id),
+ retention_days integer NOT NULL DEFAULT 15 CHECK(retention_days BETWEEN 1 AND 3650),
+ automatic_purge_enabled boolean NOT NULL DEFAULT false,
+ configured_by uuid,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY(tenant_id,configured_by) REFERENCES md_users(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_record_retention_audit (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ actor_id uuid NOT NULL,
+ retention_days integer NOT NULL,
+ automatic_purge_enabled boolean NOT NULL,
+ changed_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,id),
+ FOREIGN KEY(tenant_id,actor_id) REFERENCES md_users(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_record_retention_audit_lookup
+ ON md_record_retention_audit(tenant_id,changed_at DESC);
+
+CREATE TABLE IF NOT EXISTS md_record_lifecycle_audit(
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ record_id uuid NOT NULL, object_api text NOT NULL, deletion_group_id uuid,
+ actor_id uuid NOT NULL,
+ operation text NOT NULL CHECK(operation IN ('delete','restore','purge')),
+ happened_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_record_lifecycle_audit_record
+ ON md_record_lifecycle_audit(tenant_id,object_api,record_id,happened_at DESC);
 CREATE TABLE IF NOT EXISTS md_component_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, renderer_key text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,api_name), UNIQUE(tenant_id,id));
 CREATE TABLE IF NOT EXISTS md_page_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, title text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,api_name), UNIQUE(tenant_id,id));
 CREATE TABLE IF NOT EXISTS md_page_components (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), page_id uuid NOT NULL, component_api text NOT NULL, FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id), FOREIGN KEY(tenant_id,component_api) REFERENCES md_component_definitions(tenant_id,api_name), slot text NOT NULL, sort_order integer NOT NULL DEFAULT 0);
@@ -656,12 +708,13 @@ ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_city text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_state text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_postal_code text;
 ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS address_country text;
+ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS record_is_deleted boolean NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS md_record_values_unique_ci
   ON md_record_values(tenant_id,object_api,field_api,lower(value_text))
-  WHERE is_unique AND NOT case_sensitive AND value_text IS NOT NULL;
+  WHERE is_unique AND NOT case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
 CREATE UNIQUE INDEX IF NOT EXISTS md_record_values_unique_cs
   ON md_record_values(tenant_id,object_api,field_api,value_text)
-  WHERE is_unique AND case_sensitive AND value_text IS NOT NULL;
+  WHERE is_unique AND case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
 CREATE TABLE IF NOT EXISTS md_record_multi_values (
   tenant_id uuid NOT NULL,
   record_id uuid NOT NULL,
@@ -1187,7 +1240,8 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT COALESCE((
  SELECT
  -- Object/record denies and restrictions also narrow ownership and broad grants.
- NOT (SELECT deny_granted FROM md_rbac_decision(t,u,'Record:'||rec.id::text,act))
+ (NOT rec.is_deleted OR act='delete')
+ AND NOT (SELECT deny_granted FROM md_rbac_decision(t,u,'Record:'||rec.id::text,act))
  AND md_rbac_allowed(t,u,rec.object_api,act)
  AND (rec.record_type_id IS NULL OR md_rbac_allowed(t,u,'RecordType:'||rec.object_api||'.'||rec.record_type_id,'read'))
  AND NOT EXISTS(SELECT 1 FROM md_record_policies rp WHERE rp.tenant_id=t AND rp.object_api=rec.object_api
