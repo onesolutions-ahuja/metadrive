@@ -333,6 +333,8 @@ test('Time fields normalize values and Rich Text fields sanitize stored HTML',as
       default_value:null,auto_number_format:null}
   ];
   const client={query:async(sql:string,args:unknown[])=>{
+   if(sql.includes('FROM md_field_default_formulas')||sql.includes('FROM md_validation_rules'))
+    return {rows:[],rowCount:0};
     if(sql.includes('pg_advisory_xact_lock_shared'))return {rows:[],rowCount:1};
     if(sql.includes('FROM md_field_definitions LEFT JOIN'))return {rows:definitions,rowCount:definitions.length};
     if(sql.includes('FROM md_object_record_types'))return {rows:[],rowCount:0};
