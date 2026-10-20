@@ -216,5 +216,28 @@ try{
   new Date(initial.LastModifiedDate).toISOString());
  const changedRecord=await records.get(tenantId,userId,'AuditItem__c',recordId);
  assert.equal(changedRecord.Name,'Edited');
- console.info('SQL system migrations, RBAC and metadata revision smoke: passed');
+ // Live PostgreSQL acceptance: declarative rule evaluation shares the existing record transaction.
+ await objects.addField(tenantId,'AuditItem__c','Code__c','Text(80)',undefined,'Code');
+ await db.query(`INSERT INTO md_field_default_formulas
+   (tenant_id,object_api,field_api,expression) VALUES($1,$2,$3,$4)`,
+   [tenantId,'AuditItem__c','Code__c','LOWER($Record.Name)']);
+ await db.query(`INSERT INTO md_validation_rules
+   (tenant_id,object_api,api_name,label,expression,error_message,error_field_api,active)
+   VALUES($1,$2,$3,$4,$5,$6,$7,true)`,
+   [tenantId,'AuditItem__c','NoBadName','Block bad names','BEGINS($Record.Name, "Bad")',
+     'Name cannot start with Bad','Name']);
+ const beforeInvalid=await db.query(`SELECT count(*)::integer AS total
+   FROM md_records WHERE tenant_id=$1 AND object_api=$2`,[tenantId,'AuditItem__c']);
+ await assert.rejects(()=>records.create(tenantId,userId,'AuditItem__c',{Name:'Bad record'}),
+   /Name cannot start with Bad/);
+ const afterInvalid=await db.query(`SELECT count(*)::integer AS total
+   FROM md_records WHERE tenant_id=$1 AND object_api=$2`,[tenantId,'AuditItem__c']);
+ assert.equal(afterInvalid.rows[0].total,beforeInvalid.rows[0].total,
+   'A failed validation rule must roll back the record save');
+ const calculatedId=await records.create(tenantId,userId,'AuditItem__c',{Name:'Validated'});
+ assert.equal((await records.get(tenantId,userId,'AuditItem__c',calculatedId)).Code__c,'validated');
+ await assert.rejects(()=>records.update(tenantId,userId,'AuditItem__c',calculatedId,{Name:'Bad update'}),
+   /Name cannot start with Bad/);
+ assert.equal((await records.get(tenantId,userId,'AuditItem__c',calculatedId)).Name,'Validated');
+ console.info('SQL system migrations, RBAC and declarative rule acceptance: passed');
 }finally{await db.close();}
