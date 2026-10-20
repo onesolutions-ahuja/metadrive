@@ -533,6 +533,27 @@ function ShoppingCartTill({ props }) {
         .filter((item) => item.quantity > 0),
     );
   };
+  const nextCustomer = () => {
+    if (busy || paymentStatus !== "complete" || !sessionReady) return;
+    request.current = "";
+    setCart([]);
+    setPaymentStatus("");
+    setStatusMessage("");
+    setError("");
+    setSearch("");
+    setSelectedCategory("");
+    publish([], "basket");
+    if (props.pageSessionKey && typeof window !== "undefined") {
+      const newSession = crypto.randomUUID();
+      try {
+        window.sessionStorage.setItem(
+          "metadrive-page-session:" + props.pageSessionKey, newSession);
+      } catch { /* Session storage is optional in restrictive kiosk browsers. */ }
+      window.dispatchEvent(new CustomEvent("metadrive:page-flow-mutated",{
+        detail:{pageSessionKey:props.pageSessionKey,sessionId:newSession}
+      }));
+    }
+  };
   const checkoutValue = (items) => {
     request.current = crypto.randomUUID();
     return {
@@ -876,6 +897,10 @@ function ShoppingCartTill({ props }) {
               <span>{currency(vat, props.currencyCode)}</span>
             </div>
           )}
+          {paymentStatus === "complete" && <button className="one-btn one-btn--primary"
+            type="button" onClick={nextCustomer}>
+            {props.nextTransactionLabel || "Start new order"}
+          </button>}
           {statusMessage && <p role="status">{statusMessage}</p>}
           {error && <p role="alert">{error}</p>}
           <button

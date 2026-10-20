@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 2,
+  "version": 4,
   "scope": "platform-core",
   "jsxFile": "one/OneRepeater/OneRepeater.jsx",
   "cssFile": "one/OneRepeater/OneRepeater.css",
@@ -39,6 +39,55 @@
       "kind": "TEXT",
       "displayOrder": 300,
       "defaultValue": "Items"
+    },
+    {
+      "propertyKey": "recordTitleFieldApiName",
+      "label": "Repeated record title field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 330
+    },
+    {
+      "propertyKey": "recordValueFieldApiName",
+      "label": "Repeated record identity field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "Id",
+      "displayOrder": 340
+    },
+    {
+      "propertyKey": "recordSubtitleFieldApiName",
+      "label": "Repeated record subtitle field",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 350
+    },
+    {
+      "propertyKey": "selectionFilterKey",
+      "label": "Optional shared selection key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 360
+    },
+    {
+      "propertyKey": "emptyText",
+      "label": "Empty records label",
+      "kind": "TEXT",
+      "defaultValue": "No records",
+      "displayOrder": 370
+    },
+    {
+      "propertyKey": "relatedFilterKey",
+      "label": "Selected parent shared key",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 720
+    },
+    {
+      "propertyKey": "relatedFieldApiName",
+      "label": "Lookup field linking record to selected parent",
+      "kind": "OBJECT_FIELD",
+      "defaultValue": "",
+      "displayOrder": 730
     }
   ]
 }

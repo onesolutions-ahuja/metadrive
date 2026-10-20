@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 9,
+  "version": 10,
   "scope": "platform-core",
   "jsxFile": "one/OneShoppingCart/OneShoppingCart.jsx",
   "cssFile": "one/OneShoppingCart/OneShoppingCart.css",
@@ -353,6 +353,13 @@
       "kind": "TEXT",
       "displayOrder": 840,
       "defaultValue": ""
+    },
+    {
+      "propertyKey": "nextTransactionLabel",
+      "label": "Next customer button label",
+      "kind": "TEXT",
+      "defaultValue": "Start new order",
+      "displayOrder": 988
     }
   ]
 }
