@@ -3,13 +3,15 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordCollaborationService} from './record-collaboration-service.js';
+import type {NamedCredentialService} from './named-credential-service.js';
 
 const objectName=/^[A-Za-z][A-Za-z0-9_]*$/;
 const actionName=/^[A-Za-z][A-Za-z0-9_-]{0,99}$/;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Actor={tenant_id:string;user_id:string};
 type ActionRow={behavior:string;field_api:string|null;value_text:string|null;
- target_object_api:string|null;relationship_field_api:string|null;flow_api_name:string|null};
+ target_object_api:string|null;relationship_field_api:string|null;flow_api_name:string|null;
+ credential_id:string|null;from_email:string|null};
 
 /** One server-side entrypoint for metadata-configured object quick actions. */
 export class ObjectQuickActionRuntime {
@@ -18,7 +20,8 @@ export class ObjectQuickActionRuntime {
   private readonly rbac:RbacEngine,
   private readonly records:RecordEngine,
   private readonly collaboration:RecordCollaborationService,
-  private readonly flows:FlowRuntime
+  private readonly flows:FlowRuntime,
+  private readonly namedCredentials?:NamedCredentialService
  ){}
 
  /** The browser only receives action identifiers it can currently execute. */
@@ -38,6 +41,8 @@ export class ObjectQuickActionRuntime {
   let canEditRecord:boolean|undefined;
   for(const [index,action] of rows.entries()){
    if(!granted[index])continue;
+   if(action.behavior==='Send Email'&&(!await this.rbac.allowed(tenant,user,'Email','send')
+     ||!await this.rbac.allowed(tenant,user,'NamedCredential','read')))continue;
    if(action.behavior==='Run Flow'&&(!action.flow_api_name
      ||!await this.rbac.allowed(tenant,user,'Flow:'+action.flow_api_name,'execute')))continue;
    if(action.behavior==='Set Field Value'||action.behavior==='Log Call'){
@@ -89,7 +94,7 @@ export class ObjectQuickActionRuntime {
   await this.rbac.requireRecord(tenantId,userId,objectApi,recordId,'read');
   await this.rbac.require(tenantId,userId,'Action:'+objectApi+'.'+actionId,'execute');
   const {rows}=await this.db.query<ActionRow>(`
-    SELECT behavior,field_api,value_text,target_object_api,relationship_field_api,flow_api_name
+    SELECT behavior,field_api,value_text,target_object_api,relationship_field_api,flow_api_name,credential_id,from_email
     FROM md_object_actions WHERE tenant_id=$1 AND object_api=$2 AND action_id=$3
       AND enabled=true AND action_type='Custom'`,[tenantId,objectApi,actionId]);
   const action=rows[0];
@@ -124,6 +129,17 @@ export class ObjectQuickActionRuntime {
    const id=await this.records.create(tenantId,userId,childObject,{
     ...values,[relationshipField]:recordId});
    return {status:'completed',recordId:id,objectApiName:childObject};
+  }
+  if(action.behavior==='Send Email'){
+   if(!this.namedCredentials||!action.credential_id||!action.from_email)
+    throw new Error('Quick Action email transport is unavailable');
+   if(Object.keys(values).some(key=>!['to','subject','body'].includes(key)))
+    throw new Error('Invalid email action input');
+   if(typeof values.to!=='string'||typeof values.subject!=='string'
+     ||typeof values.body!=='string')throw new Error('Email recipient, subject and body required');
+   await this.namedCredentials.sendQuickActionEmail(tenantId,userId,objectApi,recordId,
+     actionId,action.credential_id,action.from_email,values.to,values.subject,values.body);
+   return {status:'completed',recordId};
   }
   if(action.behavior==='Run Flow'){
    if(!action.flow_api_name||!objectName.test(action.flow_api_name))
