@@ -66,6 +66,7 @@ import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
+import {registerSeederManagerRoutes} from './seeder-manager-routes.js';
 import {assertMetadataPackageEditable,MetadataPackageService,registerMetadataPackageRoutes} from './metadata-package-service.js';
 import {OpenApiExternalService,registerOpenApiExternalServiceRoutes} from './openapi-external-service.js';
 
@@ -1874,6 +1875,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerMetadataPackageRoutes(app,metadataPackages);
   registerOpenApiExternalServiceRoutes(app,externalServices);
   registerDurableJobAdminRoutes(app,db,rbac);
+  registerSeederManagerRoutes(app,db,platformTenants);
   registerDeclarativeRuleRoutes(app,db,rbac);
   registerMatchingRoutes(app,db,rbac);
   registerVersionedApiRoutes(app,records,definitions,rbac,db);
