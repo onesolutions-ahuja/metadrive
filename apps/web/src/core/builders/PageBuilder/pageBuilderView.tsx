@@ -1226,6 +1226,7 @@ function PageBuilder({
       object: page.pageType === 'Record Page' ? targetObject : undefined,
       device,
       preview: true, previewOnly: true, pageSessionKey: (builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName,
+       loadAsset:(id:string)=>request<{contentType:string;contentBase64:string}>('/media-assets/'+id),
       disabled: !interactivePreview,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
@@ -1347,6 +1348,7 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device, previewOnly: true, pageSessionKey: (builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName,
+                       loadAsset:(id:string)=>request<{contentType:string;contentBase64:string}>('/media-assets/'+id),
                       children: nestedChildren,
                       ...(customDefinition.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
                     }} />
@@ -1462,6 +1464,14 @@ function PageBuilder({
           <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setPageSettingsOpen(true);setPropertiesPanelVisible(true)}}><Settings2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Fit canvas to view" title="Fit canvas" onClick={()=>setFitCanvas(v=>!v)}><Maximize2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Preview page" title="Preview in new window" onClick={openExternalPreview}><Eye size={17}/></button>
+          <button type="button" className="btn btn-small"
+            aria-label="Test published page in its assigned application" title="Runs the active page and real Flows. Use a disposable test tenant."
+            disabled={page.pageType!=='App Page' || page.status!=='Active' || !currentPageIsAssignedToBuilderApp || !builderAppApiName}
+            onClick={()=>{
+              const url=appRoutePath({kind:'app-page',appId:builderAppApiName,pageApiName:page.apiName});
+              const opened=window.open(url,'_blank','noopener,noreferrer');
+              if(!opened)onNotify('Allow popups to test the published page in the assigned application.');
+            }}><ExternalLink size={14}/> Test active app</button>
           <button type="button" className="icon-button subtle" aria-label="Save page" title="Save" disabled={saving} onClick={()=>void savePage()}><Save size={17}/></button>
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
