@@ -319,6 +319,36 @@ function RecordWorkspace({
   const [exportError, setExportError] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [listNotice, setListNotice] = useState('');
+  const [recycleOpen, setRecycleOpen] = useState(false);
+  const [recycleBusy, setRecycleBusy] = useState(false);
+  const [recycleError, setRecycleError] = useState('');
+  const [recycleRows, setRecycleRows] = useState<Array<{Id:string;DeletedAt:string;DeletedBy:string}>>([]);
+  const [recycleTotal, setRecycleTotal] = useState(0);
+  const [recycleOffset, setRecycleOffset] = useState(0);
+  const loadRecycleBin = async (offset=0) => {
+    if(!object || object.apiName==='User') return;
+    setRecycleOpen(true);setRecycleBusy(true);setRecycleError('');
+    try {
+      const data=await apiRequest<{records:Array<{Id:string;DeletedAt:string;DeletedBy:string}>;total:number}>(
+        '/recycle-bin/records/'+encodeURIComponent(object.apiName)+'?limit=25&offset='+offset);
+      setRecycleRows(data.records);setRecycleTotal(data.total);setRecycleOffset(offset);
+    } catch(error){
+      setRecycleError(error instanceof Error ? error.message : 'Unable to load Recycle Bin');
+    } finally {setRecycleBusy(false);}
+  };
+  const restoreRecord = async (id:string) => {
+    if(!object || !window.confirm('Restore this deleted record and its dependent detail records?'))return;
+    setRecycleBusy(true);setRecycleError('');
+    try {
+      await apiRequest('/recycle-bin/records/'+encodeURIComponent(object.apiName)+'/'+encodeURIComponent(id)+'/restore',
+        {method:'POST'});
+      await loadRecycleBin(recycleOffset);
+      setRefreshKey(value=>value+1);
+      setListNotice('Record restored from the Recycle Bin.');
+    } catch(error){
+      setRecycleError(error instanceof Error ? error.message : 'Unable to restore record');
+    } finally {setRecycleBusy(false);}
+  };
 
   const [offlineOwner, setOfflineOwner] = useState<OfflineQueueOwner | null>(null);
   const [offlineItems, setOfflineItems] = useState<OfflineRecordItem[]>([]);
@@ -1515,12 +1545,36 @@ function RecordWorkspace({
   return <div className="records-page">
     {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
     <RecordsListPageHeading label={object.pluralLabel} onRefresh={() => setRefreshKey((current) => current + 1)} />
+    {recycleOpen && <section className="records-list-card surface" aria-label="Record Recycle Bin" style={{padding:16,marginBottom:12}}>
+      <div className="records-list-toolbar">
+        <div><h2>{object.label} Recycle Bin</h2><span>{recycleTotal} deleted root record(s)</span></div>
+        <div className="records-list-actions">
+          <button type="button" className="btn" disabled={recycleBusy} onClick={() => void loadRecycleBin(recycleOffset)}>Refresh</button>
+          <button type="button" className="btn" onClick={() => setRecycleOpen(false)}>Close</button>
+        </div>
+      </div>
+      {recycleError && <div className="records-message" role="alert">{recycleError}</div>}
+      {recycleBusy && <div className="records-message" role="status">Loading Recycle Bin…</div>}
+      {!recycleBusy && recycleRows.length===0 && !recycleError && <div className="records-empty">No deleted records.</div>}
+      {recycleRows.length>0 && <div className="records-table-wrap"><table className="slds-table records-table">
+        <thead><tr><th>Record ID</th><th>Deleted at</th><th>Deleted by</th><th>Action</th></tr></thead>
+        <tbody>{recycleRows.map(item=><tr key={item.Id}><td><code>{item.Id}</code></td>
+          <td>{new Date(item.DeletedAt).toLocaleString()}</td><td>{item.DeletedBy}</td>
+          <td><button className="btn" type="button" disabled={recycleBusy} onClick={() => void restoreRecord(item.Id)}>Restore</button></td>
+        </tr>)}</tbody></table></div>}
+      {recycleTotal>25 && <nav aria-label="Recycle Bin pagination" className="records-list-actions" style={{padding:12}}>
+        <button className="btn" disabled={recycleBusy||recycleOffset===0} onClick={() => void loadRecycleBin(Math.max(0,recycleOffset-25))}>Previous</button>
+        <span>{recycleOffset+1}–{Math.min(recycleOffset+recycleRows.length,recycleTotal)} of {recycleTotal}</span>
+        <button className="btn" disabled={recycleBusy||recycleOffset+25>=recycleTotal} onClick={() => void loadRecycleBin(recycleOffset+25)}>Next</button>
+      </nav>}
+    </section>}
     <section className="records-list-card surface">
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
         <RecordsListSearchControls objects={navigableObjects} selected={object.apiName} label={object.pluralLabel} search={headerSearch} onObjectSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})} onSearchChange={(value) => {setListOffset(0);onSearchChange(value);}} />
         <div className="records-list-actions">
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
+          {canDelete && object.apiName!=='User' && <button className="btn" onClick={() => void loadRecycleBin(0)}><Trash2 size={14}/>Recycle Bin</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
