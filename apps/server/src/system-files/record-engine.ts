@@ -243,7 +243,7 @@ export class RecordEngine {
             ON sv.tenant_id=c.tenant_id AND sv.record_id=c.id AND sv.object_api=c.object_api
               AND sv.field_api=$4
           ${filterJoins.join('\n')}
-          WHERE c.tenant_id=$1 AND c.object_api=$2 AND rel.reference_record_id=$5${filterPredicate}
+          WHERE c.tenant_id=$1 AND c.object_api=$2 AND c.is_deleted=false AND rel.reference_record_id=$5${filterPredicate}
         `,filterParams);
         const value=result.rows[0]?.value??(operation==='COUNT'||operation==='SUM'?'0':null);
         const numericValue=sourceType==='date'||sourceType==='datetime'?null:value;
@@ -421,7 +421,7 @@ export class RecordEngine {
       WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.record_id=$3 AND f.deleted_at IS NULL`,
     [tenantId,objectApi,recordId]);
     const {rows:cloneRows}=await client.query<{is_clone:boolean}>(
-      'SELECT is_clone FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+      'SELECT is_clone FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
       [tenantId,objectApi,recordId]);
     const byApi=new Map(rows.map(row=>[row.field_api,row]));
     const record:Record<string,unknown>={Id:recordId,__isClone:cloneRows[0]?.is_clone===true};
@@ -462,7 +462,7 @@ export class RecordEngine {
     [tenantId,objectApi,fieldApi]);
     if(!field.rows[0])throw new Error('Roll-Up Summary definition is unavailable for migration');
     const records=await client.query<{id:string}>(
-      'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 ORDER BY id',
+      'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND is_deleted=false ORDER BY id',
       [tenantId,objectApi]);
     await this.refreshRollups(client,tenantId,field.rows[0].child_object,
       new Map([[objectApi,new Set(records.rows.map(row=>row.id))]]));
@@ -892,7 +892,7 @@ export class RecordEngine {
       await this.rbac.require(tenantId,userId,parentObject,'read');
       await this.rbac.requireRecord(tenantId,userId,parentObject,options.relatedId!,'read');
       const parent=await this.db.query(
-        'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+        'SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',
         [tenantId,parentObject,options.relatedId]);
       if(!parent.rowCount)throw new Error('Related parent record not found');
     }
@@ -951,7 +951,7 @@ export class RecordEngine {
     const where=predicates.length?' AND '+predicates.join(' AND '):'';
     const count=await this.db.query<{total:string}>(`
       SELECT count(*)::text AS total FROM md_records r
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
     `,[tenantId,objectApi,userId,...conditionParams]);
     const params:unknown[]=[tenantId,objectApi,userId,...conditionParams];
     let orderBy='r.created_at ASC,r.id ASC';
@@ -989,7 +989,7 @@ export class RecordEngine {
         SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
           r.record_type_id,r.is_clone,${sortSelection}
         FROM md_records r ${sortJoin}
-        WHERE r.tenant_id=$1 AND r.object_api=$2 AND md_record_access($1,$3,r.id,'read')${where}
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')${where}
         ORDER BY ${orderBy} LIMIT $${limitParam} OFFSET $${offsetParam}
       )
       SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,r.is_clone,
@@ -1074,7 +1074,7 @@ export class RecordEngine {
     const {rows}=await this.db.query<{id:string}>(`
       SELECT r.id FROM md_records r JOIN md_record_values v
         ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND v.field_api=$3
         AND v.${column} ${ops[operator]} $4::${casts[column]}
         AND md_record_access($1,$5,r.id,'read')
       ORDER BY v.${column} ${direction==='desc'?'DESC':'ASC'},r.id LIMIT $6
@@ -1099,7 +1099,7 @@ export class RecordEngine {
         avg(v.value_number)::text AS avg
       FROM md_record_values v JOIN md_records r
         ON r.tenant_id=v.tenant_id AND r.id=v.record_id AND r.object_api=v.object_api
-      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+      WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3 AND r.is_deleted=false
         AND md_record_access($1,$4,r.id,'read')`,
       [tenantId,objectApi,fieldApi,userId]);
     return rows[0]??{count:'0',sum:null,min:null,max:null,avg:null};
@@ -1127,7 +1127,7 @@ export class RecordEngine {
             AND active_field.api_name=v.field_api AND active_field.deleted_at IS NULL)
       LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api
         AND f.api_name=v.field_api AND f.deleted_at IS NULL
-      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3 AND r.is_deleted=false AND md_record_access($1,$4,r.id,'read') ORDER BY v.field_api`,
     [tenantId,objectApi,id,userId]);
     if(!rows.length)throw new Error('Record not found');
     const record:Record<string,unknown>={
@@ -1176,7 +1176,7 @@ export class RecordEngine {
     if(client)await this.lockObjectForWrite(client,tenantId,objectApi);
     const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client,id);
     const write=async(transactionClient:PoolClient,writeValues:Map<string,Storable>)=>{
-      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+      const found=await transactionClient.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rowCount)throw new Error('Record not found');
       if(checkDate&&new Date(found.rows[0].updated_at).getTime()>checkDate.getTime()+999)
@@ -1260,7 +1260,7 @@ export class RecordEngine {
     else await this.db.transaction(async transactionClient=>{
       await this.lockObjectForWrite(transactionClient,tenantId,objectApi);
       const locked=await transactionClient.query(
-        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        "SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!locked.rowCount)throw new Error('Record not found');
       const prior=await this.get(tenantId,userId,objectApi,id,transactionClient);
@@ -1288,7 +1288,7 @@ export class RecordEngine {
     if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     await this.rbac.requireRecord(tenantId,userId,objectApi,id,'read');
-    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
+    const found=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false',[tenantId,objectApi,id]);
     if(!found.rowCount)throw new Error('Record not found');
     const {rows}=await this.db.query<{id:string;field_api:string;changed_by:string;changed_at:Date;old_value:string|null;new_value:string|null}>(
       'SELECT id,field_api,changed_by,changed_at,old_value,new_value FROM md_record_history WHERE tenant_id=$1 AND object_api=$2 AND record_id=$3 ORDER BY changed_at DESC,id DESC LIMIT 100',
@@ -1319,7 +1319,7 @@ export class RecordEngine {
       const target=await client.query<{id:string;queue:boolean}>("SELECT id,false AS queue FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true UNION ALL SELECT q.queue_id,true AS queue FROM md_queue_objects q WHERE q.tenant_id=$1 AND q.queue_id=$2 AND q.object_api=$3",[tenantId,ownerId,objectApi]);
       if(!target.rowCount)throw new Error('Record owner not found');
       const found=await client.query<{updated_at:Date}>(
-        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
+        "SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND is_deleted=false AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rows[0])throw new Error('Record not found');
       if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
