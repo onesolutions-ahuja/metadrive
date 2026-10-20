@@ -42,7 +42,7 @@ export function buildAutomationFlow(input:RecipeInput){
    connectors.push({id:'email-start',from:1,to:2,label:'',kind:'normal'});
  }else{
    if(!input.dueField||!identifier.test(input.dueField)
-     ||!Number.isInteger(input.offsetAmount)||Math.abs(input.offsetAmount!)>9999
+     ||!Number.isInteger(input.offsetAmount)||Math.abs(input.offsetAmount!)>3650
      ||!['Minutes','Hours','Days'].includes(input.offsetUnit??'')
      ||!input.taskSubject?.trim())throw Error('Complete escalation date field, offset and task');
    steps.push({id:2,type:'Action',label:'Escalation task',
