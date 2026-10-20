@@ -319,9 +319,7 @@ try{
    {name:'MealOptions',label:'Meal options',type:'Record Collection',
     dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false},
    {name:'SelectedMeals',label:'Selected meals',type:'Record Collection',
-    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false},
-   {name:'CurrentMeal',label:'Current meal',type:'Record',
-    dataType:'AuditItem__c',isCollection:false,availableForInput:false,availableForOutput:false}
+    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false}
   ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{}},
