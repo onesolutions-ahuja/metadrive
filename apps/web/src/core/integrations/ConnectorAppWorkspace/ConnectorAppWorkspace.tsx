@@ -32,6 +32,8 @@ export type ConnectorApp = {
   TestMethod__c?: string;
   LicenceExpiresAt__c?: string;
   LicenceStatus__c?: string;
+  PackageVersion__c?: number;
+  InstalledPackageVersion__c?: number;
   AccessScope__c?: string;
 };
 export type CommunicationRow = { Id: string; [key: string]: unknown };
