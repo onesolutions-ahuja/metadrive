@@ -26,7 +26,7 @@ import {evaluateFlowFormula,isFormulaImageResult,validateFlowFormula,
   type FormulaEvaluationContext} from './flow-formula-runtime.js';
 import {decryptFieldValue,encryptFieldValue,maskEncryptedFieldValue} from './encrypted-field.js';
 import {sanitizeRichText} from './rich-text.js';
-import {compileRecordFilters,type RecordCursor,type RecordFilter} from './record-query.js';
+import {compileRecordFilters,type RecordCursor,type RecordFilter} from '../object-engine/QueryBuilder.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;relationship_type:string|null;allow_reparenting:boolean;required:boolean;max_length:number|null;precision:number|null;scale:number|null;is_unique:boolean;external_id:boolean;case_sensitive:boolean;default_value:string|null;auto_number_format:string|null;rollup_child_object?:string|null;rollup_relationship_field?:string|null;rollup_operation?:string|null;rollup_source_field?:string|null;rollup_source_data_type?:string|null;formula_expression?:string|null;formula_return_type?:string|null;picklist_restricted?:boolean;controller_field_api_name?:string|null;global_value_set_api?:string|null};
 type EncryptedValueVault={
   encryptOpaque(value:string):{ciphertext:Buffer;keyId:string};
