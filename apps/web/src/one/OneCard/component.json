@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 4,
+  "version": 5,
   "scope": "platform-core",
   "jsxFile": "one/OneCard/OneCard.jsx",
   "cssFile": "one/OneCard/OneCard.css",
@@ -60,6 +60,58 @@
       "kind": "BOOLEAN",
       "defaultValue": true,
       "displayOrder": 390
+    },
+    {
+      "propertyKey": "imageSrc",
+      "label": "Banner image",
+      "kind": "IMAGE",
+      "defaultValue": "",
+      "displayOrder": 325
+    },
+    {
+      "propertyKey": "imageAlt",
+      "label": "Banner image alternative text",
+      "kind": "TEXT",
+      "defaultValue": "",
+      "displayOrder": 326
+    },
+    {
+      "propertyKey": "imagePosition",
+      "label": "Image placement",
+      "kind": "SELECT",
+      "defaultValue": "right",
+      "displayOrder": 327,
+      "choices": [
+        {
+          "key": "right",
+          "label": "right"
+        },
+        {
+          "key": "left",
+          "label": "left"
+        }
+      ]
+    },
+    {
+      "propertyKey": "imageWidthPercent",
+      "label": "Image width (% of banner)",
+      "kind": "NUMBER",
+      "defaultValue": 46,
+      "displayOrder": 328
+    },
+    {
+      "propertyKey": "showSurface",
+      "label": "Show default card surface",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 329
+    },
+    {
+      "propertyKey": "showHeading",
+      "label": "Show card heading",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 330
     }
   ]
 }
