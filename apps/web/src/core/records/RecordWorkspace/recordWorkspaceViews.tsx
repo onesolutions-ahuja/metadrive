@@ -780,6 +780,21 @@ function RecordWorkspace({
     setFormError('');
     setFormOpen(true);
   };
+  const handledRelatedCreation=useRef('');
+  useEffect(()=>{
+    if(route.kind!=='record-list'||!route.relatedCreation||!object){
+      handledRelatedCreation.current='';return;
+    }
+    const ctx=route.relatedCreation;
+    const key=[object.apiName,ctx.sourceObjectApi,ctx.sourceRecordId,ctx.actionId].join(':');
+    if(handledRelatedCreation.current===key)return;
+    handledRelatedCreation.current=key;
+    setEditingId(null);setEditingTimestamp('');
+    setFormValues({RecordTypeId:defaultRecordTypeId});
+    setFormError('');setFormOpen(true);
+  },[route.kind,route.kind==='record-list'?route.relatedCreation?.actionId:'',
+    route.kind==='record-list'?route.relatedCreation?.sourceRecordId:'',object?.apiName,defaultRecordTypeId]);
+
   const openEditForm = (item: RecordData) => {
     if (!object) return;
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
@@ -823,16 +838,22 @@ function RecordWorkspace({
         const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
+      const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
       if (!navigator.onLine) {
+        if(relatedCreation)throw new Error('Creating related records requires an active connection for relationship and Action permission checks.');
         await queueRecordLocally(writableValues, 'pending');
         return;
       }
       let response: {record: RecordData};
       try {
-        response = await apiRequest<{ record: RecordData }>(path, {
-        method: editingId ? 'PUT' : 'POST',
-        ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
-        body: JSON.stringify(writableValues)
+        if(relatedCreation){
+          const saved=await apiRequest<{recordId:string;objectApiName:string}>(`/records/${encodeURIComponent(relatedCreation.sourceObjectApi)}/${encodeURIComponent(relatedCreation.sourceRecordId)}/actions/${encodeURIComponent(relatedCreation.actionId)}/execute`,{
+            method:'POST',body:JSON.stringify(writableValues)});
+          response={record:{Id:saved.recordId} as RecordData};
+        } else response=await apiRequest<{ record: RecordData }>(path, {
+          method: editingId ? 'PUT' : 'POST',
+          ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
+          body: JSON.stringify(writableValues)
         });
       } catch (failure) {
         if (failure instanceof TypeError) {
@@ -854,16 +875,25 @@ function RecordWorkspace({
     }
   };
   const runCustomObjectAction = async (action: ObjectActionMetadata) => {
-    if (!object || !record || action.behavior !== 'Set Field Value' || !action.fieldApiName || action.value === undefined) return;
+    if(!object||!record||!action.behavior)return;
+    if(action.behavior==='Create Related'){
+      if(!action.targetObjectApi||!action.relationshipFieldApi)return;
+      onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,appId:route.appId,
+        relatedCreation:{sourceObjectApi:object.apiName,sourceRecordId:record.Id,actionId:action.id}});
+      return;
+    }
     setCustomActionPendingId(action.id);
     setCustomActionMessage('');
     try {
-      await apiRequest<{ record: RecordData }>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ [action.fieldApiName]: action.value })
+      const payload=action.behavior==='Log Call'
+        ?{subject:action.value?.trim()||action.label}:{}; 
+      const result=await apiRequest<{status:string}>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(action.id)}/execute`,{
+        method:'POST',body:JSON.stringify(payload)
       });
-      setCustomActionMessage(`${action.label} completed.`);
-      setRefreshKey((current) => current + 1);
+      setCustomActionMessage(action.behavior==='Run Flow'&&result.status==='started'
+        ?`${action.label} started. Continue the Flow from its interview if input is required.`
+        :`${action.label} completed.`);
+      setRefreshKey(current=>current+1);
     } catch (failure) {
       setCustomActionMessage(failure instanceof Error ? failure.message : `Unable to run ${action.label}`);
     } finally {
@@ -1457,9 +1487,12 @@ function RecordWorkspace({
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
-            {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && (object.actions ?? []).filter((action) =>
-              action.type === 'Custom' && action.enabled && action.behavior === 'Set Field Value'
-              && Boolean(action.fieldApiName && fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit)
+            {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
+              && (action.behavior==='Run Flow'||action.behavior==='Create Related'
+                || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
+                  && (action.behavior==='Log Call'
+                    ||(action.behavior==='Set Field Value'&&Boolean(action.fieldApiName
+                      &&fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit)))))
             ).map((action) => <button className="btn" key={action.id} disabled={Boolean(customActionPendingId)} onClick={() => void runCustomObjectAction(action)}>{customActionPendingId === action.id ? 'Running…' : action.label}</button>)}
           </div>
         </section>
