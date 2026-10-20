@@ -339,23 +339,34 @@ export class AppRuntime {
   }
   async marketplace(tenantId:string) {
     const {rows}=await this.db.query<{
-      id:string;api_name:string;label:string;installed:boolean;expires_at:Date|null;licensed:boolean
+      id:string;api_name:string;label:string;description:string|null;installed:boolean;
+      expires_at:Date|null;licensed:boolean;package_version:number|null;installed_version:number|null
     }>(`
       SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,COALESCE(m.label,a.label) AS label,
-        (i.app_id IS NOT NULL) AS installed,
-        e.expires_at,(COALESCE(e.active,false) AND
+        COALESCE(m.description,p.description) AS description,
+        (i.app_id IS NOT NULL) AS installed,iv.version AS installed_version,
+        p.version AS package_version,e.expires_at,
+        (COALESCE(e.active,false) AND
           (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
       FROM md_apps a
       LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
       LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
       LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
+      LEFT JOIN md_tenant_app_installed_versions iv ON iv.tenant_id=$1 AND iv.app_id=a.id
+      LEFT JOIN LATERAL (
+        SELECT version,description FROM md_app_package_versions
+        WHERE app_id=a.id AND published=true ORDER BY version DESC LIMIT 1
+      ) p ON true
       WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
       ORDER BY a.label
     `,[tenantId]);
     return {records:rows.map(row=>({
       Id:row.id,Name:row.label,AppKey__c:row.api_name,
-      CredentialName__c:'',Installed__c:row.installed,
+      Description__c:row.description??'',CredentialName__c:'',
+      Installed__c:row.installed,
       LicenceStatus__c:row.licensed?'ACTIVE':'UNLICENSED',
+      ...(row.package_version?{PackageVersion__c:row.package_version}:{}),
+      ...(row.installed_version?{InstalledPackageVersion__c:row.installed_version}:{}),
       ...(row.expires_at?{LicenceExpiresAt__c:new Date(row.expires_at).toISOString()}:{})
     }))};
   }
