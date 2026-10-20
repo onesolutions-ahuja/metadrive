@@ -239,5 +239,22 @@ try{
  await assert.rejects(()=>records.update(tenantId,userId,'AuditItem__c',calculatedId,{Name:'Bad update'}),
    /Name cannot start with Bad/);
  assert.equal((await records.get(tenantId,userId,'AuditItem__c',calculatedId)).Name,'Validated');
+ // Order-of-execution contract: before-save changes are validated before insert/after-save.
+ const failedPhases=[];
+ records.setRecordTriggerHandler(async(_tx,_tenant,_actor,_object,_operation,record,_prior,phase)=>{
+   failedPhases.push(phase);
+   if(phase==='before-save')return {...record,Name:'Bad from before-save'};
+   return record;
+ });
+ await assert.rejects(()=>records.create(tenantId,userId,'AuditItem__c',{Name:'Originally valid'}),
+   /Name cannot start with Bad/);
+ assert.deepEqual(failedPhases,['before-save'],
+   'A failed validation rule must prevent after-save Flow execution');
+ const successPhases=[];
+ records.setRecordTriggerHandler(async(_tx,_tenant,_actor,_object,_operation,record,_prior,phase)=>{
+   successPhases.push(phase);return record;
+ });
+ await records.create(tenantId,userId,'AuditItem__c',{Name:'Flow order good'});
+ assert.deepEqual(successPhases,['before-save','after-save']);
  console.info('SQL system migrations, RBAC and declarative rule acceptance: passed');
 }finally{await db.close();}
