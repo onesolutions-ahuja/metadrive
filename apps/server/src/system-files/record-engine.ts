@@ -60,6 +60,13 @@ export class RecordEngine {
       ?'SELECT pg_advisory_xact_lock(hashtextextended($1,0))'
       :'SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))',
       [`${tenantId}:${objectApi}`]);
+    if(!active.rowCount){
+      const now=await client.query(`SELECT 1 FROM md_matching_rules
+        WHERE tenant_id=$1 AND object_api=$2 AND active=true LIMIT 1`,[tenantId,objectApi]);
+      // A rule was activated while the writer awaited its shared lock.
+      // Retry with an exclusive lock rather than admitting concurrent duplicates.
+      if(now.rowCount)throw new Error('Matching rule configuration changed; retry record save');
+    }
   }
   setRecordTriggerHandler(handler:RecordTriggerHandler) {
     this.recordTrigger=handler;
