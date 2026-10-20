@@ -1,57 +1,41 @@
-# MetaDrive Flow node extraction — scope and acceptance
+# MetaDrive Flow node extraction — final architectural mapping
 
-This document accompanies the non-behaviour-changing Flow runtime decomposition.
-It does not claim a newly supported Flow capability.
+The source-file split preserves published SQL Flow definitions and execution behaviour.
+It does not register arbitrary new Flow graph element types.
 
-## Executable node modules extracted
+## Dedicated executable handlers
 
-- `GetRecordsNode.ts`
-- `CreateRecordsNode.ts`
-- `UpdateRecordsNode.ts`
-- `DeleteRecordsNode.ts`
-- `RollbackRecordsNode.ts`
-- `DecisionNode.ts`
-- `AssignmentNode.ts`
-- `LoopNode.ts`
-- `SortCollectionNode.ts`
-- `FilterCollectionNode.ts`
-- `TransformNode.ts`
-- `CountCollectionNode.ts`
-- `WaitPauseNode.ts`
-- `ResumeEventNode.ts`
-- `ScreenElementNode.ts`
-- `SubflowNode.ts`
-- `CustomErrorNode.ts`
-- `ActionEmailNode.ts`
-- `HttpCalloutNode.ts`
-- `PlatformEventPublishNode.ts`
-- `QuickActionNode.ts`
+Existing Flow runtime node files: `GetRecordsNode.ts`, `CreateRecordsNode.ts`,
+`UpdateRecordsNode.ts`, `DeleteRecordsNode.ts`, `RollbackRecordsNode.ts`,
+`DecisionNode.ts`, `AssignmentNode.ts`, `LoopNode.ts`,
+`SortCollectionNode.ts`, `FilterCollectionNode.ts`, `CountCollectionNode.ts`,
+`TransformNode.ts`, `WaitPauseNode.ts`, `ResumeEventNode.ts`,
+`ScreenElementNode.ts`, `SubflowNode.ts`, `CustomErrorNode.ts`,
+`ActionEmailNode.ts`, `HttpCalloutNode.ts`,
+`PlatformEventPublishNode.ts`, `QuickActionNode.ts`,
+`ActionButtonNode.ts`, and `CustomActionBridgeNode.ts`.
 
-Shared, non-node modules under `nodes/` are `NodeContext.ts`,
-`RecordMutationTargets.ts`, `ActionNodeShared.ts`, and
-`DataActionNodes.ts`. The last is a narrow compatibility dispatcher,
-not a second Record Engine. Existing import paths remain compatibility exports.
+`OpenPageActionNode.ts` lives under
+`apps/web/src/core/pages/PageRuntime/` because page navigation is browser
+behaviour. It delegates to the existing metadata-based route resolver and the
+host navigator; destination APIs enforce server-side authorization.
 
-## Three requested names requiring separate capability decisions
+Action Button is an adapter to the existing SQL-backed Action runtime, preserving
+its RBAC checks and transaction/fault handling. Custom Action Bridge delegates
+to the existing registered HTTPS External Service Action, never arbitrary code.
+Resume Event delegates to the existing durable job resumer rather than creating
+a second Flow engine.
 
-`CountCollectionNode.ts` is now an executable bounded collection-count operation.
-`ResumeEventNode.ts` extracts the existing durable-job resume path without making it a graph element.
+Shared implementation modules `NodeContext.ts`, `RecordMutationTargets.ts`,
+`ActionNodeShared.ts` and the narrow `DataActionNodes.ts` dispatcher are
+not separate Flow node types. Existing import paths are preserved.
 
+## Scope and verification
 
-| Proposed file | Existing runtime ownership / reason not extracted |
-| --- | --- |
-| `ActionButtonNode.ts` | Button components/events live in the shared Component/Action systems, not in the SQL Flow graph runtime. A button may invoke a Flow without becoming a new Flow node type. |
-| `OpenPageActionNode.ts` | Navigation is a browser Page/Action runtime behaviour, not a server-side Flow element; invoking it needs an explicit published UI/action contract. |
-| `CustomActionBridgeNode.ts` | No generic, authorised arbitrary-code bridge is registered. Implementing one requires an approved extension contract, tenant-scoped RBAC, isolation, auditing and packaging. |
+No SQL schema, tenant permission, app entitlement, Flow metadata type, URL,
+or application-specific behaviour has been intentionally added or changed.
+No unsafe generic script execution has been introduced.
 
-Do not create empty files, unsupported node registrations, parallel CRUD engines,
-or runtime permission shortcuts to satisfy the directory diagram.
-
-## Verification and merge gate
-
-Maintain existing SQL Flow graph node type strings, persisted metadata, execution
-context, tenant/RBAC enforcement, savepoints, fault connectors, idempotency,
-durable scheduling, pause/resume semantics and public APIs.
-
-Run `npm run check`, targeted Flow tests, SQL smoke, published Flow runtime checks,
-tenant-isolation/permissions checks, and CI. Only merge on validated success.
+Validate the final commit with `npm run check`, SQL smoke, dedicated Flow
+tests, page-navigation tests, security/tenant-isolation checks and relevant CI.
+Do not merge without passing validation.
