@@ -83,7 +83,8 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
           <button type="button" className="btn" disabled={busy}
             onClick={()=>void loadHistory('rule',rule.apiName)}>History</button>
           <button type="button" className="btn" disabled={busy}
-            onClick={()=>perform(()=>apiRequest(base+'/validation-rules/'+encodeURIComponent(rule.apiName),{method:'DELETE'}))}>Delete</button>
+            onClick={()=>perform(()=>apiRequest(base+'/validation-rules/'+encodeURIComponent(rule.apiName),
+              {method:'DELETE',headers:{'If-Match':'"'+rule.revision+'"'}}))}>Delete</button>
         </div>
       </div>)}
     </div>
@@ -150,7 +151,8 @@ export default function DeclarativeRulesPanel({objectApi,fields,objects}:{object
           <button type="button" className="btn" disabled={busy}
             onClick={()=>void loadHistory('default',item.fieldApi)}>History</button>
           <button type="button" className="btn" disabled={busy}
-            onClick={()=>perform(()=>apiRequest(base+'/default-formulas/'+encodeURIComponent(item.fieldApi),{method:'DELETE'}))}>Delete</button>
+            onClick={()=>perform(()=>apiRequest(base+'/default-formulas/'+encodeURIComponent(item.fieldApi),
+              {method:'DELETE',headers:{'If-Match':'"'+item.revision+'"'}}))}>Delete</button>
         </div>
       </div>)}</div>
     <div className="metadata-card">
