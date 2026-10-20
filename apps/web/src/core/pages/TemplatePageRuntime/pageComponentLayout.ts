@@ -108,7 +108,8 @@ export function isDescendantOf(components: PageComponentMetadata[], childId: str
 export type LayoutDevice = 'Desktop' | 'Tablet' | 'Phone';
 export type LayoutSettingKey = 'padding' | 'margin' | 'backgroundColor' | 'borderColor'
   | 'borderWidth' | 'borderRadius' | 'alignItems' | 'justifyContent' | 'gap' | 'opacity' | 'hidden'
-  | 'fontSize' | 'fontWeight' | 'textAlign' | 'boxShadow';
+  | 'fontSize' | 'fontWeight' | 'textAlign' | 'boxShadow'
+  | 'position' | 'top' | 'bottom' | 'left' | 'right' | 'zIndex' | 'overflowY';
 export type LayoutSettings = Partial<Record<LayoutSettingKey, string | number | boolean>>;
 export const layoutContainerTypes = new Set(['Container', 'Row', 'Column', 'Card', 'Grid']);
 
@@ -278,6 +279,13 @@ export function resolveLayoutStyle(
     ...(s.fontWeight ? { fontWeight: Number(s.fontWeight) } : {}),
     ...(s.textAlign ? { textAlign: String(s.textAlign) } : {}),
     ...(s.boxShadow ? { boxShadow: safeShadows[String(s.boxShadow)] } : {}),
+    ...(s.position ? { position: String(s.position) } : {}),
+    ...(s.top !== undefined ? { top: Number(s.top) } : {}),
+    ...(s.bottom !== undefined ? { bottom: Number(s.bottom) } : {}),
+    ...(s.left !== undefined ? { left: Number(s.left) } : {}),
+    ...(s.right !== undefined ? { right: Number(s.right) } : {}),
+    ...(s.zIndex !== undefined ? { zIndex: Number(s.zIndex) } : {}),
+    ...(s.overflowY ? { overflowY: String(s.overflowY) } : {}),
     ...(s.hidden ? { display: 'none' } : {})
   };
 }
