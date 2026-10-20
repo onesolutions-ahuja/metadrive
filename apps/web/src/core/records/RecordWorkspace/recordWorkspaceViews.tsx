@@ -1503,6 +1503,7 @@ function RecordWorkspace({
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
             {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
               &&allowedActionIds.includes(action.id)
+              && (!recordLayout || recordLayout.actions.includes(action.id))
               && (action.behavior==='Run Flow'||action.behavior==='Create Related'
                 || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
                   && (action.behavior==='Log Call'
