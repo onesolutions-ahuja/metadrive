@@ -67,7 +67,8 @@ import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import {registerSeederManagerRoutes} from './seeder-manager-routes.js';
-import {assertMetadataPackageEditable,MetadataPackageService,registerMetadataPackageRoutes} from './metadata-package-service.js';
+import {assertMetadataPackageEditable,MetadataPackageService} from './metadata-package-service.js';
+import {registerPackageApiController} from '../api/PackageApiController.js';
 import {OpenApiExternalService,registerOpenApiExternalServiceRoutes} from './openapi-external-service.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
@@ -1872,7 +1873,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
-  registerMetadataPackageRoutes(app,metadataPackages);
+  registerPackageApiController(app,metadataPackages);
   registerOpenApiExternalServiceRoutes(app,externalServices);
   registerDurableJobAdminRoutes(app,db,rbac);
   registerSeederManagerRoutes(app,db,platformTenants);
