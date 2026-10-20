@@ -114,7 +114,7 @@ export class RecordFileService {
       input.fieldApi,'edit','create');
     const signature=signatures[input.contentType];
     if(!signature||input.contentBase64.length===0
-      ||input.contentBase64.length>Math.ceil(maxBytes/3)*4)
+      ||input.contentBase64.length>Math.ceil(maxFileBytes/3)*4)
       throw new Error('Invalid inline image format or size');
     const content=Buffer.from(input.contentBase64,'base64');
     if(content.length===0||content.length>maxFileBytes
