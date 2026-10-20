@@ -822,7 +822,7 @@ test('Record update in Flow transaction applies tenant, record, and field permis
   assert.equal(t,tenant);assert.equal(u,user);checks.push(resource+'.'+action);
  }} as unknown as RbacEngine;
  await new RecordEngine(db,rbac).updateInTransaction(client as any,tenant,user,'Product',recordId,{Taxable:true});
- assert.deepEqual(checks,['Product.edit','Product.Taxable.edit']);
+ assert.deepEqual(checks,['Product.edit','Product.Taxable.edit','Product.read']);
  assert.ok(calls.some(call=>call.sql.includes('md_record_access')&&call.args[0]===tenant&&call.args[3]===user));
  assert.ok(calls.some(call=>call.sql.includes('INSERT INTO md_record_history')&&call.args[0]===tenant));
  assert.ok(calls.some(call=>call.sql.includes('INSERT INTO md_record_values')&&call.args[0]===tenant));
