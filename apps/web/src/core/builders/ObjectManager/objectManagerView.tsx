@@ -953,7 +953,13 @@ function ObjectManager({
               )).map((name) => <label className="metadata-row" key={`unknown-${name}`}><span>Unavailable related list: {name}</span><input type="checkbox" checked onChange={() => updateLayout(selectedLayout.id, { relatedLists: selectedLayout.relatedLists.filter((item) => item !== name) })} /></label>)}
               {relatedListOptions.length === 0 && <p className="permission-help">No objects currently have a relationship to this object.</p>}
             </div>
-            <div className="metadata-card"><h3>Page Actions</h3>{(['New', 'Edit', 'Delete'] as const).map((action) => <label className="metadata-row" key={action}><span>{action}</span><input type="checkbox" checked={selectedLayout.actions.includes(action)} onChange={() => updateLayout(selectedLayout.id, { actions: toggleField(selectedLayout.actions, action) })} /></label>)}</div>
+            <div className="metadata-card"><h3>Page Actions</h3>{(['New', 'Edit', 'Delete'] as const).map((action) => <label className="metadata-row" key={action}><span>{action}</span><input type="checkbox" checked={selectedLayout.actions.includes(action)} onChange={() => updateLayout(selectedLayout.id, { actions: toggleField(selectedLayout.actions, action) })} /></label>)}
+              {(draft.actions??[]).filter(action=>action.type==='Custom').map(action=><label className="metadata-row" key={action.id}>
+                <span>{action.label}<small>Record Quick Action · {action.behavior}</small></span>
+                <input type="checkbox" aria-label={`Place ${action.label} on ${selectedLayout.label}`} checked={selectedLayout.actions.includes(action.id)}
+                  onChange={()=>updateLayout(selectedLayout.id,{actions:toggleField(selectedLayout.actions,action.id)})}/>
+              </label>)}
+            </div>
             <div className="metadata-card">
               <h3>Custom Links</h3>
               {(selectedLayout.customLinks ?? []).map((link) => <div className="metadata-card" key={link.id}>
