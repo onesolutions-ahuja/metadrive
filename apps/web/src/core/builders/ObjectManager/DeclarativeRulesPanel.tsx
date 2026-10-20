@@ -1,12 +1,14 @@
 import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
+import type {ObjectMetadata} from '../../metadata/Definitions/metadata';
+import SmartFieldInput from '../../../one/OneSmartFieldInput/SmartFieldInput';
 
 type Field={apiName:string;label:string;dataType:string};
 type Rule={apiName:string;label:string;expression:string;errorMessage:string;errorFieldApi:string|null;active:boolean;sortOrder:number};
 type Default={fieldApi:string;expression:string};
 const initial:Rule={apiName:'',label:'',expression:'',errorMessage:'',errorFieldApi:null,active:false,sortOrder:0};
 
-export default function DeclarativeRulesPanel({objectApi,fields}:{objectApi:string;fields:Field[]}) {
+export default function DeclarativeRulesPanel({objectApi,fields,objects}:{objectApi:string;fields:Field[];objects:ObjectMetadata[]}) {
   const [rules,setRules]=useState<Rule[]>([]);
   const [defaults,setDefaults]=useState<Default[]>([]);
   const [draft,setDraft]=useState<Rule>(initial);
@@ -80,9 +82,9 @@ export default function DeclarativeRulesPanel({objectApi,fields}:{objectApi:stri
         <input className="form-control" value={draft.label}
           onChange={e=>setDraft({...draft,label:e.target.value})}/></label>
       <label className="form-label">Formula (TRUE blocks save)
-        <textarea className="form-control" rows={3} value={draft.expression}
-          onChange={e=>setDraft({...draft,expression:e.target.value})}
-          placeholder="ISBLANK($Record.Name)"/></label>
+        <SmartFieldInput multiline rows={3} kind="formula" objects={objects}
+          primaryObjectApiName={objectApi} value={draft.expression}
+          onChange={value=>setDraft({...draft,expression:value})}/></label>
       <label className="form-label">Error message
         <input className="form-control" value={draft.errorMessage}
           onChange={e=>setDraft({...draft,errorMessage:e.target.value})}/></label>
@@ -122,8 +124,8 @@ export default function DeclarativeRulesPanel({objectApi,fields}:{objectApi:stri
           {writable.map(f=><option key={f.apiName} value={f.apiName}>{f.label}</option>)}
         </select></label>
       <label className="form-label">Default formula
-        <textarea className="form-control" rows={3} value={formula}
-          placeholder="TODAY()" onChange={e=>setFormula(e.target.value)}/></label>
+        <SmartFieldInput multiline rows={3} kind="formula" objects={objects}
+          primaryObjectApiName={objectApi} value={formula} onChange={setFormula}/></label>
       <button type="button" className="btn btn-brand" disabled={busy||!target||!formula.trim()}
         onClick={()=>perform(()=>apiRequest(base+'/default-formulas/'+encodeURIComponent(target),{
           method:'PUT',body:JSON.stringify({expression:formula})}))}>Save default</button>
