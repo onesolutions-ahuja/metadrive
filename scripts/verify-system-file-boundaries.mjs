@@ -17,7 +17,7 @@ const expected=['sql-persistence.ts','object-definition.ts','authentication.ts',
  'record-query.ts','field-type-migration.ts','encrypted-field.ts','object-metadata-history.ts',
  'declarative-rules.ts','record-matching.ts','external-id-upsert.ts'];
 const allowed=new Set(expected);
-const nodeModules=new Set(['AssignmentNode.ts','DecisionNode.ts','WaitPauseNode.ts','LoopNode.ts','DataActionNodes.ts','NodeContext.ts','GetRecordsNode.ts','CreateRecordsNode.ts','RecordMutationTargets.ts','UpdateRecordsNode.ts','DeleteRecordsNode.ts','FilterCollectionNode.ts','SortCollectionNode.ts','TransformNode.ts','RollbackRecordsNode.ts','CustomErrorNode.ts']);
+const nodeModules=new Set(['AssignmentNode.ts','DecisionNode.ts','WaitPauseNode.ts','LoopNode.ts','DataActionNodes.ts','NodeContext.ts','GetRecordsNode.ts','CreateRecordsNode.ts','RecordMutationTargets.ts','UpdateRecordsNode.ts','DeleteRecordsNode.ts','FilterCollectionNode.ts','SortCollectionNode.ts','TransformNode.ts','RollbackRecordsNode.ts','CustomErrorNode.ts','SubflowNode.ts','ScreenElementNode.ts']);
 const nodesDir=path.join(root,'nodes');
 const nodeEntries=fs.existsSync(nodesDir)?fs.readdirSync(nodesDir,{withFileTypes:true}):[];
 const invalidNodeEntries=nodeEntries.filter(entry=>!entry.isFile()||!nodeModules.has(entry.name));
