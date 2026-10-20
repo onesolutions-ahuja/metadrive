@@ -55,7 +55,9 @@ test('opt-in visual properties remain on existing reusable component definitions
       'recordLayout','recordItemMinHeight','selectedItemBackgroundColor','showAllItem'],
     OneTabs: ['showPanel','tabStyle','showAllTab','relatedFilterKey','relatedFieldApiName'],
     OneItemGrid: ['showHeading','recordSortFieldApiName','recordActiveFieldApiName',
-      'badgeFieldApiName','featuredFieldApiName','featuredColumnSpan'],
+      'badgeFieldApiName','featuredFieldApiName','featuredColumnSpan','cardDensity',
+      'cardPadding','cardRadius','cardMinHeight','cardBackgroundColor','cardBorderColor',
+      'cardBorderWidth','cardShadow','cardHover','imageHeight','imageFit','imageAspectRatio'],
     OneCard: ['imageSrc','imagePosition','imageWidthPercent','showSurface'],
     OneOverlay: ['showSelectedRecord','selectedImageFieldApiName','confirmBehavior','cartTargetKey'],
     OneShoppingCart: ['basketPresentation','basketTitle','checkoutLabel'],
@@ -97,4 +99,30 @@ test('reusable item grid renders product imagery, names, prices and badges', asy
   assert.match(html,/md-product-image/);
   assert.match(html,/span 2/);
   assert.doesNotMatch(html,/<h3/);
+});
+
+test('reusable item grid applies metadata-driven card and image presentation', async () => {
+  const definition = components.find(c => c.apiName === 'OneItemGrid');
+  const built = await buildBundledComponent(definition);
+  const context = {React,module:{exports:{}},Intl,Date,URL,crypto:globalThis.crypto};
+  vm.runInNewContext(built.compiledJs,context);
+  const html = renderToStaticMarkup(React.createElement(context.module.exports.default,{
+    kind:'ItemGrid',showHeading:false,titleFieldApiName:'Name',imageFieldApiName:'ImageUrl',
+    priceFieldApiName:'Price',currencyCode:'GBP',cardDensity:'image-focused',
+    cardPadding:10,cardRadius:8,cardMinHeight:240,cardBackgroundColor:'#ffffff',
+    cardBorderColor:'#eaeaea',cardBorderWidth:2,cardShadow:'small',cardHover:'lift',
+    imageHeight:175,imageFit:'cover',imageAspectRatio:'4/3',
+    records:[{Id:'x',Name:'Example burger',Price:4.5,ImageUrl:'https://example.com/test.jpg'}]
+  }));
+  assert.match(html,/md-product-card--image-focused md-product-card--hover-lift/);
+  assert.match(html,/padding:10px/);
+  assert.match(html,/border-radius:8px/);
+  assert.match(html,/min-height:240px/);
+  assert.match(html,/background-color:#ffffff/);
+  assert.match(html,/border-color:#eaeaea/);
+  assert.match(html,/border-width:2px/);
+  assert.match(html,/box-shadow:0 1px 3px rgba\(15, 23, 42, 0.12\)/);
+  assert.match(html,/height:175px/);
+  assert.match(html,/object-fit:cover/);
+  assert.match(html,/aspect-ratio:4\/3/);
 });

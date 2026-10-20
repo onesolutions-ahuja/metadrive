@@ -35,7 +35,8 @@ Using **only the authenticated browser builders** on a disposable tenant:
 - SQL-backed Flow capability catalogue and builder gating, with validated
   Get/Update/Delete Records, collections, Transform and Subflow paths.
 - Configurable ItemGrid selection mode, record-backed bounded Choice,
-  related-record filtering, Repeater and selection-driven Overlay.
+  related-record filtering, reusable card/image presentation properties,
+  Repeater and selection-driven Overlay.
 - Tenant-owned protected image assets, Image property picker and published-page
   media references.
 - Tenant/actor/Flow/request-ID execution deduplication and recovery, now storing

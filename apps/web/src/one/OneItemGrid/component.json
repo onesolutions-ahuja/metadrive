@@ -207,6 +207,168 @@
       "kind": "NUMBER",
       "defaultValue": 2,
       "displayOrder": 429
+    },
+    {
+      "propertyKey": "cardDensity",
+      "label": "Card density",
+      "kind": "SELECT",
+      "displayOrder": 430,
+      "choices": [
+        {
+          "key": "default",
+          "label": "Default"
+        },
+        {
+          "key": "compact",
+          "label": "Compact"
+        },
+        {
+          "key": "comfortable",
+          "label": "Comfortable"
+        },
+        {
+          "key": "image-focused",
+          "label": "Image focused"
+        }
+      ]
+    },
+    {
+      "propertyKey": "cardPadding",
+      "label": "Card padding (px)",
+      "kind": "NUMBER",
+      "displayOrder": 431
+    },
+    {
+      "propertyKey": "cardRadius",
+      "label": "Card radius (px)",
+      "kind": "NUMBER",
+      "displayOrder": 432
+    },
+    {
+      "propertyKey": "cardMinHeight",
+      "label": "Card minimum height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 433
+    },
+    {
+      "propertyKey": "cardBackgroundColor",
+      "label": "Card background",
+      "kind": "COLOR",
+      "displayOrder": 434
+    },
+    {
+      "propertyKey": "cardBorderColor",
+      "label": "Card border colour",
+      "kind": "COLOR",
+      "displayOrder": 435
+    },
+    {
+      "propertyKey": "cardBorderWidth",
+      "label": "Card border width (px)",
+      "kind": "NUMBER",
+      "displayOrder": 436
+    },
+    {
+      "propertyKey": "cardShadow",
+      "label": "Card shadow",
+      "kind": "SELECT",
+      "displayOrder": 437,
+      "choices": [
+        {
+          "key": "none",
+          "label": "None"
+        },
+        {
+          "key": "small",
+          "label": "Small"
+        },
+        {
+          "key": "medium",
+          "label": "Medium"
+        },
+        {
+          "key": "large",
+          "label": "Large"
+        }
+      ]
+    },
+    {
+      "propertyKey": "cardHover",
+      "label": "Card hover effect",
+      "kind": "SELECT",
+      "displayOrder": 438,
+      "choices": [
+        {
+          "key": "none",
+          "label": "None"
+        },
+        {
+          "key": "lift",
+          "label": "Lift"
+        },
+        {
+          "key": "highlight",
+          "label": "Highlight"
+        }
+      ]
+    },
+    {
+      "propertyKey": "imageHeight",
+      "label": "Image height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 439
+    },
+    {
+      "propertyKey": "imageFit",
+      "label": "Image fit",
+      "kind": "SELECT",
+      "displayOrder": 440,
+      "choices": [
+        {
+          "key": "contain",
+          "label": "Contain"
+        },
+        {
+          "key": "cover",
+          "label": "Cover"
+        },
+        {
+          "key": "fill",
+          "label": "Fill"
+        },
+        {
+          "key": "scale-down",
+          "label": "Scale down"
+        }
+      ]
+    },
+    {
+      "propertyKey": "imageAspectRatio",
+      "label": "Image aspect ratio",
+      "kind": "SELECT",
+      "displayOrder": 441,
+      "choices": [
+        {
+          "key": "auto",
+          "label": "Auto"
+        },
+        {
+          "key": "1/1",
+          "label": "1:1"
+        },
+        {
+          "key": "4/3",
+          "label": "4:3"
+        },
+        {
+          "key": "16/9",
+          "label": "16:9"
+        },
+        {
+          "key": "3/4",
+          "label": "3:4"
+        }
+      ]
     }
   ]
 }

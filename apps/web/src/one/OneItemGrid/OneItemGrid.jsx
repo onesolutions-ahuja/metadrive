@@ -124,6 +124,26 @@ function ItemGrid({ p, rows }) {
     Number.isFinite(Number(value))
       ? formatter?.format(Number(value))
       : view(value);
+  const density = ["default", "compact", "comfortable", "image-focused"].includes(p.cardDensity)
+    ? p.cardDensity
+    : "default";
+  const cardPadding = Number(p.cardPadding);
+  const cardRadius = Number(p.cardRadius);
+  const cardMinHeight = Number(p.cardMinHeight);
+  const cardBorderWidth = Number(p.cardBorderWidth);
+  const imageHeight = Number(p.imageHeight);
+  const cardShadow = {
+    none: "none",
+    small: "0 1px 3px rgba(15, 23, 42, 0.12)",
+    medium: "0 4px 12px rgba(15, 23, 42, 0.14)",
+    large: "0 8px 24px rgba(15, 23, 42, 0.18)",
+  }[p.cardShadow];
+  const imageFit = ["contain", "cover", "fill", "scale-down"].includes(p.imageFit)
+    ? p.imageFit
+    : undefined;
+  const imageAspectRatio = ["auto", "1/1", "4/3", "16/9", "3/4"].includes(p.imageAspectRatio)
+    ? p.imageAspectRatio
+    : undefined;
   return (
     <section>
       {p.showHeading !== false && <h3 className="one-heading" style={{ marginBottom: 12 }}>
@@ -147,10 +167,40 @@ function ItemGrid({ p, rows }) {
           const description = descriptionField ? String(r?.[descriptionField] ?? "") : "";
           const isFeatured = featuredField && (r?.[featuredField] === true || r?.[featuredField] === "true");
           const span = isFeatured ? Math.max(1, Math.min(count, Number(p.featuredColumnSpan) || 2)) : 1;
+          const imageStyle = {
+            display: "block",
+            width: "100%",
+            height: Number.isFinite(imageHeight) && imageHeight > 0
+              ? Math.min(900, imageHeight)
+              : density === "image-focused" ? 150 : undefined,
+            objectFit: imageFit,
+            aspectRatio: imageAspectRatio && imageAspectRatio !== "auto" ? imageAspectRatio : undefined,
+          };
+          const cardStyle = {
+            gridColumn: span > 1 ? "span " + span : undefined,
+            padding: Number.isFinite(cardPadding) && cardPadding >= 0
+              ? Math.min(64, cardPadding)
+              : density === "compact" ? 8 : density === "comfortable" ? 16 : density === "image-focused" ? 10 : undefined,
+            borderRadius: Number.isFinite(cardRadius) && cardRadius >= 0
+              ? Math.min(48, cardRadius)
+              : undefined,
+            minHeight: Number.isFinite(cardMinHeight) && cardMinHeight > 0
+              ? Math.min(1200, cardMinHeight)
+              : undefined,
+            backgroundColor: typeof p.cardBackgroundColor === "string" ? p.cardBackgroundColor : undefined,
+            borderColor: typeof p.cardBorderColor === "string" ? p.cardBorderColor : undefined,
+            borderWidth: Number.isFinite(cardBorderWidth) && cardBorderWidth >= 0
+              ? Math.min(12, cardBorderWidth)
+              : undefined,
+            boxShadow: cardShadow,
+          };
           return (
             <button
-              className="one-item one-item--interactive md-product-card"
-              style={{gridColumn: span > 1 ? "span " + span : undefined}}
+              className={
+                "one-item one-item--interactive md-product-card md-product-card--" + density +
+                (["lift", "highlight"].includes(p.cardHover) ? " md-product-card--hover-" + p.cardHover : "")
+              }
+              style={cardStyle}
               key={r.Id ?? r.id ?? i}
               type="button"
               aria-label={(p.selectionBehavior === "select" ? "Select " : "Add ") + name}
@@ -198,6 +248,7 @@ function ItemGrid({ p, rows }) {
                   loadAsset={p.loadAsset}
                   alt={name}
                   className="md-product-image"
+                  style={imageStyle}
                 />
               )}
               {badge && <span className="md-product-badge" style={{display:"inline-block",

@@ -1,1 +1,36 @@
 @import "../shared/one.css";
+
+.md-product-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.md-product-card--compact {
+  gap: 6px;
+}
+
+.md-product-card--comfortable,
+.md-product-card--image-focused {
+  gap: 10px;
+}
+
+.md-product-card--hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.md-product-card--hover-highlight:hover {
+  border-color: var(--one-accent);
+  filter: brightness(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-product-card {
+    transition: none;
+  }
+  .md-product-card--hover-lift:hover {
+    transform: none;
+  }
+}
