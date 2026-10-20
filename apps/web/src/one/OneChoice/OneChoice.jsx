@@ -1,3 +1,4 @@
+import {projectRecordChoices,toggleChoiceSelection} from "../shared/recordChoices.mjs";
 import {
   useOneInputs,
   css,
@@ -19,8 +20,22 @@ export default function OneChoice(props) {
     set,
     label,
     wrap,
-    options,
+    options: staticOptions,
   } = useOneInputs(p);
+  const recordOptions=projectRecordChoices(p.records,p.optionLabelFieldApiName || "",
+    p.optionValueFieldApiName || "Id",p.optionPriceFieldApiName || "");
+  const options=p.optionLabelFieldApiName ? recordOptions : staticOptions;
+  const [selectionError,setSelectionError]=React.useState("");
+  const maxSelections=Number(p.maxSelections);
+  const bounded=Number.isSafeInteger(maxSelections)&&maxSelections>0;
+  const markLimited=()=>setSelectionError("You may choose at most "+maxSelections+" options.");
+  const renderOptionLabel=(option)=>{
+    if(typeof option.price!=="number")return option.label;
+    let price=String(option.price);
+    try{if(p.currencyCode)price=new Intl.NumberFormat(undefined,{style:"currency",
+      currency:p.currencyCode}).format(option.price);}catch{}
+    return option.label+" (+"+price+")";
+  };
   const mode = p.mode || "select",
     chosen = Array.isArray(current)
       ? current.map(String)
@@ -30,29 +45,35 @@ export default function OneChoice(props) {
   const toggle = (v) => {
     if (mode === "checkbox" || Array.isArray(chosen)) {
       const values = Array.isArray(chosen) ? chosen : [];
-      set(values.includes(v) ? values.filter((x) => x !== v) : [...values, v]);
+      const next=toggleChoiceSelection(values,v,p.maxSelections);
+      if(next.limited){markLimited();return;}
+      setSelectionError("");set(next.values);
     } else set(v);
   };
   if (mode === "multiple")
-    return wrap(
-      <select
+    return <React.Fragment>
+      {wrap(<select
         className="one-control"
         multiple
         required={p.required === true}
         id={p.inputId}
         aria-describedby={p.helpId}
         value={Array.isArray(chosen) ? chosen : []}
-        onChange={(e) =>
-          set(Array.from(e.target.selectedOptions, (x) => x.value))
-        }
+        onChange={(e) => {
+          const next=Array.from(e.target.selectedOptions, (x) => x.value);
+          if(bounded&&next.length>maxSelections){markLimited();return;}
+          setSelectionError("");set(next);
+        }}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.label}
+            {renderOptionLabel(o)}
           </option>
         ))}
-      </select>,
-    );
+      </select>)}
+      {p.minSelections>0 && <small className="one-muted">Select at least {p.minSelections}.</small>}
+      {selectionError && <div role="alert" className="one-muted">{selectionError}</div>}
+    </React.Fragment>;
   if (mode === "select")
     return wrap(
       <select
@@ -66,7 +87,7 @@ export default function OneChoice(props) {
         <option value="">Select</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
-            {o.label}
+            {renderOptionLabel(o)}
           </option>
         ))}
       </select>,
@@ -90,12 +111,15 @@ export default function OneChoice(props) {
                   ? chosen.includes(o.value)
                   : chosen === o.value
               }
+              disabled={bounded && Array.isArray(chosen) && chosen.length>=maxSelections && !chosen.includes(o.value)}
               onChange={() => toggle(o.value)}
             />
-            {o.label}
+            {renderOptionLabel(o)}
           </label>
         ))}
       </div>
+      {p.minSelections>0 && <small className="one-muted">Select at least {p.minSelections}.</small>}
+      {selectionError && <div role="alert" className="one-muted">{selectionError}</div>}
     </fieldset>
   );
 }
