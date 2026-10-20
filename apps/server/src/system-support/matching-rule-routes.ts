@@ -38,6 +38,8 @@ export function registerMatchingRoutes(app:Express,db:SqlPersistence,rbac:RbacEn
    ||new Set(data.fields.map((f:any)=>f.fieldApi)).size!==data.fields.length)
    throw new Error('Invalid matching rule');
   await db.transaction(async client=>{
+   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    [actor.tenant_id+':'+req.params.objectApi]);
    const keys=data.fields.map((f:any)=>f.fieldApi);
    const found=await client.query<{api_name:string}>(`SELECT api_name FROM md_field_definitions
     WHERE tenant_id=$1 AND object_api=$2 AND deleted_at IS NULL
@@ -62,8 +64,12 @@ export function registerMatchingRoutes(app:Express,db:SqlPersistence,rbac:RbacEn
  app.delete(base+'/:ruleApi',route(async(req,res)=>{
   const actor=await auth(req,'manage');
   if(!ident.test(req.params.ruleApi))throw new Error('Invalid matching rule');
-  await db.query('DELETE FROM md_matching_rules WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
-   [actor.tenant_id,req.params.objectApi,req.params.ruleApi]);
+  await db.transaction(async client=>{
+   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    [actor.tenant_id+':'+req.params.objectApi]);
+   await client.query('DELETE FROM md_matching_rules WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+    [actor.tenant_id,req.params.objectApi,req.params.ruleApi]);
+  });
   res.status(204).end();
  }));
  app.get('/api/records/:objectApi/:id/duplicates',route(async(req,res)=>{
