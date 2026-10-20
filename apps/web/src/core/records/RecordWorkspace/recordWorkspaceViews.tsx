@@ -1836,7 +1836,8 @@ function RecordWorkspace({
             {(recordLayout?.customLinks ?? []).flatMap(link=>{
               const readable=new Set(object.fields.filter(field=>
                 fieldAccess[`${object.apiName}.${field.apiName}`]?.read).map(field=>field.apiName));
-              const href=resolveRecordCustomLink(link.url,record,readable);
+              const href=resolveRecordCustomLink(link.url,record,readable,
+                {field:link.visibleWhenField,value:link.visibleWhenValue});
               return href?[<a key={link.id} className="btn" href={href}
                 target={link.openInNewWindow?'_blank':undefined}
                 rel={link.openInNewWindow?'noopener noreferrer':undefined}>{link.label}</a>]:[];
