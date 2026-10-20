@@ -6,5 +6,5 @@ export const ImageDefinition:FieldTypeDefinition=Object.freeze({
 });
 
 // Image validation and media storage are shared tenant-aware services.
-export {validateTenantImage} from '../../system-files/record-file-service.js';
-export {TenantMediaService} from '../../system-files/tenant-media-service.js';
+export async function loadImageValidator(){const service=await import('../../system-files/record-file-service.js');return service.validateTenantImage;}
+export async function loadTenantMediaService(){const service=await import('../../system-files/tenant-media-service.js');return service.TenantMediaService;}
