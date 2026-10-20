@@ -2,7 +2,7 @@ import {useState} from 'react';
 import type {PermissionSetMetadata} from '../../metadata/Definitions/metadata';
 // Use the shared metadata contract so patches are valid for both profiles and permission sets.
 type Policy=Pick<PermissionSetMetadata,'systemPermissions'|'deniedPermissions'|'advancedRules'|'objectPermissions'|'fieldPermissions'>;
-export default function AdvancedPermissionRules({policy,onChange,systemPermissionKeys}:{policy:Policy;systemPermissionKeys:string[];onChange:(patch:Partial<Policy>)=>void}){
+export default function AdvancedPermissionRules({policy,onChange,systemPermissionKeys,actionOptions=[]}:{policy:Policy;systemPermissionKeys:string[];onChange:(patch:Partial<Policy>)=>void;actionOptions?:Array<{resource:string;label:string}>}){
  const [resource,setResource]=useState(''),[action,setAction]=useState('read'),[effect,setEffect]=useState<'allow'|'deny'>('deny');
  const controlled=(token:string)=>policy.systemPermissions.includes('*:*')&&(systemPermissionKeys.includes(token)||
   Object.hasOwn(policy.objectPermissions??{},token.slice(0,token.lastIndexOf(':')))||
@@ -29,6 +29,13 @@ export default function AdvancedPermissionRules({policy,onChange,systemPermissio
   </div>)}
   <p className="permission-help">For restrictions on full starting access, restore the corresponding checkbox above. Resource and action names also support existing custom Flow and record policies.</p>
   <div className="permission-form-grid">
+   {actionOptions.length>0&&<label className="form-label">Quick Action permission
+     <select className="form-control" aria-label="Choose Quick Action permission" value=""
+       onChange={event=>{if(!event.target.value)return;setResource(event.target.value);setAction('execute');}}>
+       <option value="">Choose configured Action</option>
+       {actionOptions.map(option=><option value={option.resource} key={option.resource}>{option.label}</option>)}
+     </select>
+   </label>}
    <label className="form-label">Resource<input className="form-control" value={resource} onChange={e=>setResource(e.target.value)} placeholder="Flow:Checkout"/></label>
    <label className="form-label">Action<input className="form-control" value={action} onChange={e=>setAction(e.target.value)} list="rbac-actions"/>
     <datalist id="rbac-actions">{['read','create','edit','delete','execute','manage','viewAll','modifyAll'].map(a=><option key={a} value={a}/>)}</datalist></label>
