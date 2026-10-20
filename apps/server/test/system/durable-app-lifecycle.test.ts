@@ -7,7 +7,7 @@ test('app uninstall cancels tenant app jobs in the uninstall transaction',()=>{
  const section=source.slice(source.indexOf('async uninstall('),source.indexOf('async homePage('));
  assert.match(section,/this\.db\.transaction\(async client/);
  assert.match(section,/UPDATE md_durable_jobs SET status='cancelled'/);
- assert.match(section,/tenant_id=\$1 AND app_api_name=\$2/);
+ assert.match(section,/tenant_id=\$1 AND app_api_name IN \(\$2,\$3\)/);
  assert.match(section,/DELETE FROM md_app_installations/);
  assert.ok(section.indexOf('UPDATE md_durable_jobs')<section.indexOf('DELETE FROM md_app_installations'));
 });

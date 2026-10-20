@@ -1631,6 +1631,10 @@ export function createSystemServer(db:SqlPersistence) {
     else if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
     else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
     else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
+    else if(err.message==='App licence or entitlement unavailable')
+      res.status(403).json({error:err.message});
+    else if(/^(Install dependency first:|Uninstall dependent app first:|Missing app package resource:|Missing app navigation resource:|App package metadata conflict:|Unresolved app package Page Component reference:|App package Page Component dependency missing|App package Page Component property target unavailable or ambiguous|App downgrade is not allowed)/.test(err.message))
+      res.status(409).json({error:err.message});
     else if(err.message==='File storage quota exceeded')res.status(413).json({error:err.message});
     else if(err.message==='Too many inline images for this field')res.status(409).json({error:err.message});
     else if(err.message.startsWith('Converted values conflict')||err.message.startsWith('Field type migrations must')
