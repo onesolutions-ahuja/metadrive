@@ -5,6 +5,7 @@
   "tests": [
     "apps/server/test/system/app-package-lifecycle.test.ts",
     "apps/server/test/system/app-page-seeder.test.ts",
+    "apps/server/test/system/app-runtime-modules.test.ts",
     "apps/server/test/system/component-library-lifecycle.test.ts",
     "apps/server/test/system/connector-licence-contract.test.ts",
     "apps/server/test/system/durable-app-lifecycle.test.ts"

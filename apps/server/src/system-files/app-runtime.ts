@@ -1,42 +1,10 @@
+import {resolveTenantAppMetadata} from '../app-runtime/AppMetadataResolver.js';
 import type {SqlPersistence} from './sql-persistence.js';
 export class AppRuntime {
   constructor(private readonly db:SqlPersistence) {}
   /** Metadata for installed and entitled apps only, including tenant-owned apps. */
   async listMetadata(tenantId:string) {
-    const {rows}=await this.db.query<{
-      id:string;api_name:string;label:string;description:string|null;brand_color:string|null;revision:number|null
-    }>(`
-      SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,
-        COALESCE(m.label,a.label) AS label,m.description,m.brand_color,m.revision
-      FROM md_apps a
-      JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
-      JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
-      LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
-      WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
-        AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
-      ORDER BY COALESCE(m.label,a.label),COALESCE(m.api_name,a.api_name)
-    `,[tenantId]);
-    if(!rows.length)return [];
-    const [navigation,utilities]=await Promise.all([
-      this.db.query<{app_id:string;entry_type:'Object'|'App Page';api_name:string;sort_order:number}>(`
-        SELECT app_id,entry_type,api_name,sort_order FROM md_tenant_app_navigation
-        WHERE tenant_id=$1 AND app_id=ANY($2::uuid[]) ORDER BY sort_order
-      `,[tenantId,rows.map(row=>row.id)]),
-      this.db.query<{app_id:string;utility_name:'Notes'|'History'}>(`
-        SELECT app_id,utility_name FROM md_tenant_app_utilities
-        WHERE tenant_id=$1 AND app_id=ANY($2::uuid[]) ORDER BY sort_order
-      `,[tenantId,rows.map(row=>row.id)])
-    ]);
-    return rows.map(row=>{
-      const entries=navigation.rows.filter(item=>item.app_id===row.id)
-        .map(item=>({type:item.entry_type,apiName:item.api_name}));
-      return {apiName:row.api_name,label:row.label,description:row.description??'',
-        navigationItems:entries.filter(item=>item.type==='Object').map(item=>item.apiName),
-        navigationPageApiNames:entries.filter(item=>item.type==='App Page').map(item=>item.apiName),
-        navigationOrder:entries,brandColor:row.brand_color??'#1d4ed8',
-        utilityItems:utilities.rows.filter(item=>item.app_id===row.id).map(item=>item.utility_name),
-        ...(row.revision===null?{}:{revision:row.revision})};
-    });
+    return resolveTenantAppMetadata(this.db,tenantId);
   }
   /** Tenant-owned app authoring; catalog identity, licence and installation remain separate. */
   async saveMetadata(tenantId:string,apiName:string,raw:unknown,updating:boolean) {
