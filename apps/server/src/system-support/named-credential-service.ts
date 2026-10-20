@@ -441,11 +441,11 @@ export class NamedCredentialService {
   requestKey:string=randomUUID()){
   await this.rbac.require(tenantId,userId,'Email','send');
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
-  const email=/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/;
+  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
   const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if(!uuid.test(requestKey)||!uuid.test(credentialId)||!email.test(to)||to.length>254
     ||!email.test(from)||from.length>254||typeof subject!=='string'
-    ||!subject.trim()||subject.length>300||/[\\r\\n]/.test(subject)
+    ||!subject.trim()||subject.length>300||/[\r\n]/.test(subject)
     ||typeof body!=='string'||!body.trim()||body.length>10000
     ||!(/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
     ||!(/^[A-Za-z][A-Za-z0-9_-]*$/.test(actionId))
