@@ -1,3 +1,4 @@
+import {executeScreenElementNode} from './nodes/ScreenElementNode.js';
 import type { SqlPersistence } from './sql-persistence.js';
 import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from './component-runtime.js';
 import type { RbacEngine } from './rbac-engine.js';
@@ -858,15 +859,10 @@ export class FlowRuntime {
         const node=byId.get(current);
         if(!node)throw new Error('Invalid Flow graph target');
         let selected:string|undefined;
-        if(node.type==='Screen'){
-          if(active.flow_type==='Record-Triggered Flow')
-            throw new Error('Record-Triggered Flows cannot pause at a Screen');
-          await persistFlowInterviewPause(client,tenantId,runId,current,history,steps+1,
-            loopIndexes,vars,persistenceResources);
-          const screenPayload=screenRecordPayload(node,vars,persistenceResources);
-          return {interviewId:runId,screen:hydrateFlowScreenChoices(node,resources),outcomes:this.screenOutcomes(node),
-            canGoBack:history.length>0,...screenPayload};
-        }
+        if(node.type==='Screen')return executeScreenElementNode({
+          client,tenantId,runId,current,history,steps,loopIndexes,vars,node,resources,persistenceResources,
+          flowType:active.flow_type,outcomes:this.screenOutcomes(node)
+        });
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now(),wait_until=NULL WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
           const resources=Array.isArray(graph.resources)
