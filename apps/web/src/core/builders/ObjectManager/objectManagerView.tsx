@@ -15,9 +15,11 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from '../../metadata/Cache/offlineRecordQueue';
 import SchemaBuilder from '../SchemaBuilder/SchemaBuilder';
 import GlobalValueSetManager from './GlobalValueSetManager';
+// Global Quick Actions editor is builder-only; load it on its settings tab.
 import CustomMetadataManager from './CustomMetadataManager';
-const MatchingRulesPanel = React.lazy(() => import('./MatchingRulesPanel'));
 import * as React from 'react';
+const MatchingRulesPanel = React.lazy(() => import('./MatchingRulesPanel'));
+const GlobalQuickActionsEditor = React.lazy(() => import('./GlobalQuickActionsEditor'));
 const BusinessAutomationsPanel=React.lazy(()=>import('./BusinessAutomationsPanel'));
 const DeclarativeRulesPanel=React.lazy(()=>import('./DeclarativeRulesPanel'));
 import { createPortal } from 'react-dom';
@@ -308,6 +310,17 @@ function ObjectManager({
   const [customActionTargetObject, setCustomActionTargetObject] = useState('');
   const [customActionRelationshipField, setCustomActionRelationshipField] = useState('');
   const [customActionFlow, setCustomActionFlow] = useState('');
+  const [customEmailCredential,setCustomEmailCredential] = useState('');
+  const [customEmailFrom,setCustomEmailFrom] = useState('');
+  const [smtpCredentials,setSmtpCredentials] = useState<Array<{id:string;label:string}>>([]);
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{credentials:Array<{id:string;label:string;protocol:string;enabled:boolean}>}>('/named-credentials')
+      .then(result=>{if(active)setSmtpCredentials(result.credentials
+        .filter(item=>item.protocol==='SMTP'&&item.enabled).map(item=>({id:item.id,label:item.label})));})
+      .catch(()=>{if(active)setSmtpCredentials([]);});
+    return ()=>{active=false;};
+  },[]);
   const [customActionFieldApiName, setCustomActionFieldApiName] = useState('');
   const [customActionValue, setCustomActionValue] = useState('');
   const [recordTypePicklistDrafts, setRecordTypePicklistDrafts] = useState<Record<string, string>>({});
@@ -960,7 +973,13 @@ function ObjectManager({
               )).map((name) => <label className="metadata-row" key={`unknown-${name}`}><span>Unavailable related list: {name}</span><input type="checkbox" checked onChange={() => updateLayout(selectedLayout.id, { relatedLists: selectedLayout.relatedLists.filter((item) => item !== name) })} /></label>)}
               {relatedListOptions.length === 0 && <p className="permission-help">No objects currently have a relationship to this object.</p>}
             </div>
-            <div className="metadata-card"><h3>Page Actions</h3>{(['New', 'Edit', 'Delete'] as const).map((action) => <label className="metadata-row" key={action}><span>{action}</span><input type="checkbox" checked={selectedLayout.actions.includes(action)} onChange={() => updateLayout(selectedLayout.id, { actions: toggleField(selectedLayout.actions, action) })} /></label>)}</div>
+            <div className="metadata-card"><h3>Page Actions</h3>{(['New', 'Edit', 'Delete'] as const).map((action) => <label className="metadata-row" key={action}><span>{action}</span><input type="checkbox" checked={selectedLayout.actions.includes(action)} onChange={() => updateLayout(selectedLayout.id, { actions: toggleField(selectedLayout.actions, action) })} /></label>)}
+              {(draft.actions??[]).filter(action=>action.type==='Custom').map(action=><label className="metadata-row" key={action.id}>
+                <span>{action.label}<small>Record Quick Action · {action.behavior}</small></span>
+                <input type="checkbox" aria-label={`Place ${action.label} on ${selectedLayout.label}`} checked={selectedLayout.actions.includes(action.id)}
+                  onChange={()=>updateLayout(selectedLayout.id,{actions:toggleField(selectedLayout.actions,action.id)})}/>
+              </label>)}
+            </div>
             <div className="metadata-card">
               <h3>Custom Links</h3>
               {(selectedLayout.customLinks ?? []).map((link) => <div className="metadata-card" key={link.id}>
@@ -1165,6 +1184,7 @@ function ObjectManager({
       }
       if(customActionBehavior==='Set Field Value'&&!customActionFieldApiName)return;
       if(customActionBehavior==='Run Flow'&&!customActionFlow)return;
+      if(customActionBehavior==='Send Email'&&(!customEmailCredential||!customEmailFrom))return;
       if(customActionBehavior==='Create Related'
         &&(!customActionTargetObject||!customActionRelationshipField))return;
       const action:ObjectActionMetadata={
@@ -1174,6 +1194,7 @@ function ObjectManager({
           value:customActionValue}:{}),
         ...(customActionBehavior==='Log Call'?{value:customActionValue}:{}),
         ...(customActionBehavior==='Run Flow'?{flowApiName:customActionFlow}:{}),
+        ...(customActionBehavior==='Send Email'?{credentialId:customEmailCredential,fromEmail:customEmailFrom}:{}),
         ...(customActionBehavior==='Create Related'?{targetObjectApi:customActionTargetObject,
           relationshipFieldApi:customActionRelationshipField}:{})
       };
@@ -1199,11 +1220,12 @@ function ObjectManager({
                 value={action.behavior??'Set Field Value'} onChange={event=>updateAction(action.id,{
                   behavior:event.target.value as NonNullable<ObjectActionMetadata['behavior']>,
                   fieldApiName:undefined,value:undefined,targetObjectApi:undefined,
-                  relationshipFieldApi:undefined,flowApiName:undefined})}>
+                  relationshipFieldApi:undefined,flowApiName:undefined,credentialId:undefined,fromEmail:undefined})}>
                 <option value="Set Field Value">Update a field</option>
                 <option value="Log Call">Log a call</option>
                 <option value="Run Flow">Run Flow</option>
                 <option value="Create Related">Create related record</option>
+                <option value="Send Email">Send Email</option>
               </select>
             </label>
             {action.behavior==='Set Field Value'&&<>
@@ -1225,7 +1247,17 @@ function ObjectManager({
               <option value="">Choose a Flow</option>
               {flows.filter(flow=>flow.status==='Active').map(flow=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
             </select>}
-            {action.behavior==='Create Related'&&<>
+            {action.behavior==='Send Email'&&<>
+            <select className="form-control" aria-label={`SMTP credential for ${action.label}`}
+              value={action.credentialId??''} onChange={event=>updateAction(action.id,{credentialId:event.target.value})}>
+              <option value="">Choose SMTP credential</option>
+              {smtpCredentials.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+            <input className="form-control" type="email" aria-label={`Sender email for ${action.label}`}
+              placeholder="Verified sender email" value={action.fromEmail??''}
+              onChange={event=>updateAction(action.id,{fromEmail:event.target.value})}/>
+          </>}
+          {action.behavior==='Create Related'&&<>
               <select className="form-control" aria-label={`Related object for ${action.label}`}
                 value={action.targetObjectApi??''} onChange={event=>updateAction(action.id,{
                   targetObjectApi:event.target.value,relationshipFieldApi:undefined})}>
@@ -1252,6 +1284,7 @@ function ObjectManager({
             <option value="Log Call">Log a call</option>
             <option value="Run Flow">Run Flow</option>
             <option value="Create Related">Create related record</option>
+            <option value="Send Email">Send Email</option>
           </select>
           {customActionBehavior==='Set Field Value'&&<>
             <select className="form-control" aria-label="Custom action target field"
@@ -1272,6 +1305,16 @@ function ObjectManager({
             {flows.filter(flow=>flow.status==='Active').map(flow=>
               <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
           </select>}
+          {customActionBehavior==='Send Email'&&<>
+            <select className="form-control" aria-label="Quick action SMTP credential" value={customEmailCredential}
+              onChange={event=>setCustomEmailCredential(event.target.value)}>
+              <option value="">Choose SMTP credential</option>
+              {smtpCredentials.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+            <input className="form-control" type="email" aria-label="Quick action sender email"
+              value={customEmailFrom} placeholder="Verified sender email"
+              onChange={event=>setCustomEmailFrom(event.target.value)}/>
+          </>}
           {customActionBehavior==='Create Related'&&<>
             <select className="form-control" aria-label="Quick action related object"
               value={customActionTargetObject} onChange={event=>{setCustomActionTargetObject(event.target.value);
@@ -1292,10 +1335,12 @@ function ObjectManager({
             disabled={!customActionLabel.trim()||customActionLabel.length>80
               ||(customActionBehavior==='Set Field Value'&&!customActionFieldApiName)
               ||(customActionBehavior==='Run Flow'&&!customActionFlow)
+              ||(customActionBehavior==='Send Email'&&(!customEmailCredential||!customEmailFrom))
               ||(customActionBehavior==='Create Related'&&(!customActionTargetObject||!customActionRelationshipField))}>
             <Plus size={14}/>Add Action</button>
         </div>
       </div>
+      <React.Suspense fallback={<p>Loading global Quick Actions…</p>}><GlobalQuickActionsEditor apiRequest={apiRequest} objects={objects} flows={flows} onNotify={onNotify}/></React.Suspense>
     </section>;
   };
   const renderLightningRecordPages = () => {

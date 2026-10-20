@@ -139,7 +139,9 @@ export type ObjectActionMetadata = {
   label: string;
   type: 'Standard' | 'Custom';
   enabled: boolean;
-  behavior?: 'Set Field Value' | 'Log Call' | 'Run Flow' | 'Create Related';
+  behavior?: 'Set Field Value' | 'Log Call' | 'Run Flow' | 'Create Related' | 'Send Email';
+  credentialId?: string;
+  fromEmail?: string;
   fieldApiName?: string;
   value?: string;
   targetObjectApi?: string;

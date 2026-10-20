@@ -209,6 +209,21 @@ try{
  assert.equal((await db.query(`SELECT kind FROM md_record_activities
     WHERE tenant_id=$1 AND object_api='LifecycleAccount__c' AND record_id=$2 AND subject='Customer follow-up'`,
     [tenantId,parent])).rows[0]?.kind,'Call');
+ // Tenant-global action settings and execution share the same runtime.
+ const {GlobalQuickActionMetadataService}=await import(
+  new URL('global-quick-action-metadata.js',support).href);
+ const globalSettings=new GlobalQuickActionMetadataService(db,new RbacEngine(db));
+ await globalSettings.save(tenantId,userId,[{id:'CreateGlobalAccount',label:'Create Global Account',
+   behavior:'Create Record',enabled:true,targetObjectApi:'LifecycleAccount__c'}]);
+ const globalOptions=await quickActions.globalAvailable({tenant_id:tenantId,user_id:userId});
+ assert.ok(globalOptions.actions.some(x=>x.id==='CreateGlobalAccount'),
+  'global action must be visible to authorized tenant developer');
+ const globalResult=await quickActions.executeGlobal(
+   {tenant_id:tenantId,user_id:userId},'CreateGlobalAccount',{Name:'Global action created'});
+ assert.equal(globalResult.objectApiName,'LifecycleAccount__c');
+ assert.equal((await records.get(tenantId,userId,'LifecycleAccount__c',globalResult.recordId)).Name,
+   'Global action created');
+
 
  const draft={apiName:'AuditCheckout',label:'Audit Checkout',flowType:'Screen Flow',
   status:'Draft',versionNumber:1,activeVersion:null,

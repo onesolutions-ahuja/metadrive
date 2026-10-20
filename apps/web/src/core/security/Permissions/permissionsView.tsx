@@ -233,6 +233,14 @@ function Permissions({
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [navigationApps, setNavigationApps] = useState<Array<{ apiName: string; label: string }>>([]);
+  const [actionPermissionOptions,setActionPermissionOptions] = useState<Array<{resource:string;label:string}>>([]);
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{actions:Array<{resource:string;label:string}>}>('/metadata/action-permission-options')
+      .then(result=>{if(active)setActionPermissionOptions(result.actions);})
+      .catch(()=>{if(active)setActionPermissionOptions([]);});
+    return ()=>{active=false;};
+  },[]);
   useEffect(() => {
     let active = true;
     void apiRequest<{ apps: Array<{ apiName: string; label: string }> }>('/metadata/apps')
@@ -714,7 +722,7 @@ function Permissions({
           </>;
         })()}
         {tab === 'profiles' && selectedProfile && <>
-          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedProfile} onChange={patch=>patchProfile(selectedProfile.id,patch)}/>
+          <AdvancedPermissionRules actionOptions={actionPermissionOptions} systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedProfile} onChange={patch=>patchProfile(selectedProfile.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedProfile.label}</h2><p>Profile · {selectedProfile.apiName}{selectedProfile.isStandard ? ' · Standard' : ''}</p></div><button className="btn" onClick={() => {
             if (selectedProfile.isStandard || draft.users.some((user) => user.profileId === selectedProfile.id)) return;
             setDraft((current) => ({ ...current, profiles: current.profiles.filter((item) => item.id !== selectedProfile.id) }));
@@ -761,7 +769,7 @@ function Permissions({
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'sets' && selectedSet && <>
-          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedSet} onChange={patch=>patchSet(selectedSet.id,patch)}/>
+          <AdvancedPermissionRules actionOptions={actionPermissionOptions} systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedSet} onChange={patch=>patchSet(selectedSet.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedSet.label}</h2><p>Permission Set · {selectedSet.apiName}</p></div><button className="btn" onClick={() => {
             if (selectedSet.id === 'system-administrator'
               || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id))

@@ -251,6 +251,34 @@ CREATE TABLE IF NOT EXISTS md_flow_email_jobs (
 );
 CREATE INDEX IF NOT EXISTS md_flow_email_jobs_queue
  ON md_flow_email_jobs(status,created_at,id) WHERE status='queued';
+-- Queued Quick Action email reuses the existing encrypted SMTP credential service.
+-- A client-generated request key deduplicates retries without retrying unknown SMTP outcomes.
+CREATE TABLE IF NOT EXISTS md_quick_action_email_jobs (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ object_api text NOT NULL,
+ record_id uuid,
+ action_id text NOT NULL,
+ credential_id uuid NOT NULL,
+ payload_ciphertext bytea NOT NULL,
+ encryption_key_id text NOT NULL,
+ request_key uuid NOT NULL,
+ payload_digest text NOT NULL CHECK(payload_digest ~ '^[0-9a-f]{64}$'),
+ status text NOT NULL DEFAULT 'queued'
+  CHECK(status IN ('queued','sending','completed','failed')),
+ error_code text,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ claimed_at timestamptz,
+ completed_at timestamptz,
+ UNIQUE(tenant_id,id),
+ UNIQUE(tenant_id,user_id,request_key),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id),
+ FOREIGN KEY(tenant_id,credential_id) REFERENCES md_named_credentials(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_quick_action_email_jobs_queue
+ ON md_quick_action_email_jobs(status,created_at,id) WHERE status='queued';
+
 CREATE TABLE IF NOT EXISTS md_email_alert_details (
  tenant_id uuid NOT NULL,
  kind text NOT NULL DEFAULT 'email-alerts' CHECK(kind='email-alerts'),
@@ -1370,7 +1398,7 @@ $$;
    FOREIGN KEY(tenant_id,object_api,field_api)
      REFERENCES md_field_definitions(tenant_id,object_api,api_name) ON DELETE CASCADE
  );
- CREATE TABLE IF NOT EXISTS md_object_actions (
+CREATE TABLE IF NOT EXISTS md_object_actions (
    tenant_id uuid NOT NULL,
    object_api text NOT NULL,
    action_id text NOT NULL,
@@ -1383,6 +1411,8 @@ $$;
    target_object_api text,
    relationship_field_api text,
    flow_api_name text,
+   credential_id uuid,
+   from_email text,
    sort_order integer NOT NULL DEFAULT 0,
    PRIMARY KEY(tenant_id,object_api,action_id),
    FOREIGN KEY(tenant_id,object_api)
@@ -1393,19 +1423,53 @@ $$;
    CHECK(length(label) BETWEEN 1 AND 80),
    CHECK(value_text IS NULL OR length(value_text)<=10000),
    CONSTRAINT md_object_actions_behavior_contract CHECK(
-     (action_type='Standard' AND behavior IS NULL AND field_api IS NULL AND value_text IS NULL
-      AND target_object_api IS NULL AND relationship_field_api IS NULL AND flow_api_name IS NULL)
-     OR (action_type='Custom' AND (
-       (behavior='Set Field Value' AND field_api IS NOT NULL AND value_text IS NOT NULL
-        AND target_object_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Log Call' AND field_api IS NULL AND target_object_api IS NULL
-        AND flow_api_name IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Run Flow' AND flow_api_name IS NOT NULL AND field_api IS NULL
-        AND target_object_api IS NULL AND relationship_field_api IS NULL)
-       OR (behavior='Create Related' AND target_object_api IS NOT NULL
-        AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL)
-     )))
- );
+ (action_type='Standard' AND behavior IS NULL AND field_api IS NULL AND value_text IS NULL
+  AND target_object_api IS NULL AND relationship_field_api IS NULL AND flow_api_name IS NULL
+  AND credential_id IS NULL AND from_email IS NULL)
+ OR (action_type='Custom' AND (
+   (behavior='Set Field Value' AND field_api IS NOT NULL AND value_text IS NOT NULL
+     AND target_object_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL
+     AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Log Call' AND field_api IS NULL AND target_object_api IS NULL
+     AND flow_api_name IS NULL AND relationship_field_api IS NULL AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Run Flow' AND flow_api_name IS NOT NULL AND field_api IS NULL
+     AND target_object_api IS NULL AND relationship_field_api IS NULL AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Create Related' AND target_object_api IS NOT NULL
+     AND relationship_field_api IS NOT NULL AND field_api IS NULL AND flow_api_name IS NULL
+     AND credential_id IS NULL AND from_email IS NULL)
+   OR (behavior='Send Email' AND credential_id IS NOT NULL AND from_email IS NOT NULL
+     AND length(from_email)<=254 AND from_email~'^[^[:space:]@<>]+@[^[:space:]@<>]+\.[^[:space:]@<>]+$'
+     AND field_api IS NULL AND flow_api_name IS NULL AND relationship_field_api IS NULL
+     AND target_object_api IS NULL AND value_text IS NULL)
+  )))
+);
+
+-- Global Quick Actions use one tenant metadata registry and shared execution permissions.
+CREATE TABLE IF NOT EXISTS md_global_quick_actions(
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ action_id text NOT NULL CHECK(action_id ~ '^[A-Za-z][A-Za-z0-9_-]*$' AND length(action_id)<=100),
+ label text NOT NULL CHECK(length(label) BETWEEN 1 AND 80),
+ behavior text NOT NULL CHECK(behavior IN ('Create Record','Run Flow','Send Email')),
+ enabled boolean NOT NULL DEFAULT true,
+ target_object_api text,
+ flow_api_name text,
+ credential_id uuid,
+ from_email text,
+ sort_order integer NOT NULL DEFAULT 0,
+ PRIMARY KEY(tenant_id,action_id),
+ FOREIGN KEY(tenant_id,target_object_api) REFERENCES md_object_definitions(tenant_id,api_name),
+ CHECK(
+ (behavior='Create Record' AND target_object_api IS NOT NULL AND flow_api_name IS NULL
+   AND credential_id IS NULL AND from_email IS NULL)
+ OR (behavior='Run Flow' AND flow_api_name IS NOT NULL AND target_object_api IS NULL
+   AND credential_id IS NULL AND from_email IS NULL)
+ OR (behavior='Send Email' AND credential_id IS NOT NULL AND from_email IS NOT NULL
+   AND length(from_email)<=254 AND from_email~'^[^[:space:]@<>]+@[^[:space:]@<>]+\.[^[:space:]@<>]+$'
+   AND target_object_api IS NULL AND flow_api_name IS NULL))
+);
+CREATE INDEX IF NOT EXISTS md_global_quick_actions_active
+ ON md_global_quick_actions(tenant_id,sort_order,action_id) WHERE enabled=true;
+
  CREATE TABLE IF NOT EXISTS md_encrypted_field_access_audit (
    tenant_id uuid NOT NULL,
    id uuid NOT NULL DEFAULT gen_random_uuid(),

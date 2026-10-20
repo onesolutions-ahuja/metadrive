@@ -47,6 +47,7 @@ import {parseRecordCursor,parseRecordFilters} from '../system-files/record-query
 import {SqlReportRuntime} from './sql-report-runtime.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 import {ObjectQuickActionRuntime} from './object-quick-action-runtime.js';
+import {GlobalQuickActionMetadataService} from './global-quick-action-metadata.js';
 import {RecordRetentionService} from './record-retention-service.js';
 import {RecordListViewService,type ViewInput} from './record-list-view-service.js';
 import {RecordFileService} from '../system-files/record-file-service.js';
@@ -207,7 +208,8 @@ export function createSystemServer(db:SqlPersistence) {
       await namedCredentials.enqueueFlowEmail(client,tenantId,userId,flowId,version,runId,nodeId,step,
         message.credentialId,message.from,message.recipients,message.subject,message.body);
     });
-  const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows);
+  const quickActions=new ObjectQuickActionRuntime(db,rbac,records,collaboration,flows,namedCredentials);
+  const globalQuickActionMetadata=new GlobalQuickActionMetadataService(db,rbac);
   const metadataPackages=new MetadataPackageService(db,rbac,definitions,pages,library,
     objectManagerMetadata,flows,rbacAdministration);
   const flowRecordTriggers=new FlowRecordTriggers(rbac,flows,records,db,
@@ -1734,6 +1736,40 @@ export function createSystemServer(db:SqlPersistence) {
     res.json(await quickActions.authorizeFlow(req.actor!,req.params.objectApi,req.params.id,
       req.params.actionId));
   }));
+  app.get('/api/metadata/action-permission-options',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    const {rows}=await db.query<{resource:string;label:string}>(`
+      SELECT 'Action:'||object_api||'.'||action_id AS resource,
+        object_api||' · '||label AS label
+      FROM md_object_actions WHERE tenant_id=$1 AND enabled=true AND action_type='Custom'
+      UNION ALL
+      SELECT 'Action:Global.'||action_id, 'Global · '||label
+      FROM md_global_quick_actions WHERE tenant_id=$1 AND enabled=true
+      ORDER BY label`,[actor.tenant_id]);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({actions:rows});
+  }));
+  app.get('/api/metadata/global-actions',route(async(req,res)=>{
+    const actor=req.actor!;res.setHeader('Cache-Control','private, no-store');
+    res.json(await globalQuickActionMetadata.list(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/metadata/global-actions',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await globalQuickActionMetadata.save(actor.tenant_id,actor.user_id,req.body?.actions));
+  }));
+  app.get('/api/actions/global',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.globalAvailable(req.actor!));
+  }));
+  app.get('/api/actions/global/:actionId/flow-launch',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.authorizeGlobalFlow(req.actor!,req.params.actionId));
+  }));
+  app.post('/api/actions/global/:actionId/execute',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await quickActions.executeGlobal(req.actor!,req.params.actionId,req.body??{}));
+  }));
   app.post('/api/records/:objectApi/:id/actions/:actionId/execute',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
@@ -1919,7 +1955,7 @@ export async function startSystemServer() {
   purgeTimer.unref();
   const calloutDispatcher=new NamedCredentialService(db,new RbacEngine(db));
   const calloutTimer=setInterval(()=>{
-    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail()])
+    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),calloutDispatcher.dispatchOneQuickActionEmail()])
       .catch(error=>console.error('Durable outbound dispatch failed:',error));
   },1000);
   calloutTimer.unref();

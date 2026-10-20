@@ -59,7 +59,7 @@ export type AppRoute =
   | { kind: 'app-home'; appId: string }
   | { kind: 'app-page'; appId: string; pageApiName: string }
   | { kind: 'route-alias'; appId: string; slug: string }
-  | { kind: 'record-list'; objectApiName: string; appId?: string; relatedCreation?: {sourceObjectApi: string; sourceRecordId: string; actionId: string} }
+  | { kind: 'record-list'; objectApiName: string; appId?: string; relatedCreation?: {sourceObjectApi: string; sourceRecordId: string; actionId: string}; globalCreation?: {actionId: string} }
   | { kind: 'record-detail'; objectApiName: string; recordId: string; appId?: string };
 
 export function parseAppRoute(pathname: string, search = ''): AppRoute {
@@ -113,8 +113,11 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
         &&/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(sourceRecordId)
         &&/^[A-Za-z][A-Za-z0-9_-]*$/.test(actionId)
         ?{sourceObjectApi,sourceRecordId,actionId}:undefined;
+      const globalActionId=params.get('globalActionId');
+      const globalCreation=globalActionId&&/^[A-Za-z][A-Za-z0-9_-]*$/.test(globalActionId)
+        ?{actionId:globalActionId}:undefined;
       return { kind:'record-list',objectApiName:decodeURIComponent(segments[1]),appId,
-        ...(relatedCreation?{relatedCreation}:{}) };
+        ...(relatedCreation?{relatedCreation}:{}),...(globalCreation?{globalCreation}:{}) };
     }
     if (segments.length === 4 && segments[0] === 'r' && segments[3] === 'view') {
       return {
@@ -157,6 +160,7 @@ export function appRoutePathWithoutBase(route: AppRoute): string {
   if (route.kind === 'record-list') {
     const query = new URLSearchParams({ filterName: `All${route.objectApiName}s` });
     if (route.appId) query.set('appId', route.appId);
+    if (route.globalCreation) query.set('globalActionId',route.globalCreation.actionId);
     if (route.relatedCreation) {
       query.set('sourceObjectApi',route.relatedCreation.sourceObjectApi);
       query.set('sourceRecordId',route.relatedCreation.sourceRecordId);

@@ -1,6 +1,6 @@
 import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import nodemailer from 'nodemailer';
-import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
+import {createCipheriv,createDecipheriv,randomBytes,randomUUID,createHash} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {request as secureRequest} from 'node:https';
@@ -435,6 +435,135 @@ export class NamedCredentialService {
  async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
   return this.sendTenantEmail(tenantId,id,from,to,subject,body);
  }
+ /** Queue encrypted SMTP delivery; duplicate request keys never enqueue twice. */
+ async sendQuickActionEmail(tenantId:string,userId:string,objectApi:string,recordId:string,
+  actionId:string,credentialId:string,from:string,to:string,subject:string,body:string,
+  requestKey:string=randomUUID()){
+  await this.rbac.require(tenantId,userId,'Email','send');
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if(!uuid.test(requestKey)||!uuid.test(credentialId)||!email.test(to)||to.length>254
+    ||!email.test(from)||from.length>254||typeof subject!=='string'
+    ||!subject.trim()||subject.length>300||/[\r\n]/.test(subject)
+    ||typeof body!=='string'||!body.trim()||body.length>10000
+    ||!(/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+    ||!(/^[A-Za-z][A-Za-z0-9_-]*$/.test(actionId))
+    ||(objectApi==='Global'?recordId!=='':!uuid.test(recordId)))
+    throw new Error('Invalid Quick Action email');
+  const payload=JSON.stringify({from,to,subject,body});
+  const digest=createHash('sha256').update(JSON.stringify([
+    objectApi,recordId,actionId,credentialId,payload])).digest('hex');
+  return this.db.transaction(async client=>{
+    const credential=await client.query(`SELECT 1 FROM md_named_credentials
+      WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true FOR SHARE`,
+      [tenantId,credentialId]);
+    if(!credential.rowCount)throw new Error('SMTP credential unavailable');
+    const {rows}=await client.query<{id:string;payload_digest:string;status:string}>(`
+      INSERT INTO md_quick_action_email_jobs
+        (tenant_id,user_id,object_api,record_id,action_id,credential_id,
+          payload_ciphertext,encryption_key_id,request_key,payload_digest)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(tenant_id,user_id,request_key) DO UPDATE
+        SET request_key=EXCLUDED.request_key
+      RETURNING id,payload_digest,status`,
+      [tenantId,userId,objectApi,recordId||null,actionId,credentialId,
+       this.encryptValue(payload),this.activeKeyId(),requestKey,digest]);
+    const job=rows[0];
+    if(!job||job.payload_digest!==digest)
+      throw new Error('Quick Action request key already belongs to a different message');
+    await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+      VALUES($1,$2,'quick-action.email.queued',
+      jsonb_build_object('objectApi',$3::text,'actionId',$4::text,'jobId',$5::text))`,
+      [tenantId,userId,objectApi,actionId,job.id]);
+    return {status:job.status,jobId:job.id};
+  });
+ }
+
+ private quickActionEmailDispatching=false;
+ async dispatchOneQuickActionEmail(){
+  if(this.quickActionEmailDispatching)return false;
+  this.quickActionEmailDispatching=true;
+  try{
+    const job=await this.db.transaction(async client=>{
+      await client.query(`UPDATE md_quick_action_email_jobs
+        SET status='failed',error_code='DELIVERY_OUTCOME_UNKNOWN',completed_at=now()
+        WHERE status='sending' AND claimed_at<now()-interval '5 minutes'`);
+      const {rows}=await client.query<{
+        id:string;tenant_id:string;user_id:string;object_api:string;record_id:string|null;
+        action_id:string;credential_id:string;payload_ciphertext:Buffer;encryption_key_id:string
+      }>(`WITH candidate AS(
+        SELECT id FROM md_quick_action_email_jobs WHERE status='queued'
+        ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1
+       ) UPDATE md_quick_action_email_jobs j SET status='sending',claimed_at=now()
+       FROM candidate c WHERE j.id=c.id
+       RETURNING j.id,j.tenant_id,j.user_id,j.object_api,j.record_id,j.action_id,
+        j.credential_id,j.payload_ciphertext,j.encryption_key_id`);
+      return rows[0];
+    });
+    if(!job)return false;
+    let errorCode='AUTHORIZATION_CHANGED';
+    try{
+      const actionResource='Action:'+(job.object_api==='Global'
+        ?'Global.':job.object_api+'.')+job.action_id;
+      const {rowCount:eligible}=await this.db.query(`
+        SELECT 1 FROM md_users u
+        JOIN md_tenants t ON t.id=u.tenant_id
+        JOIN md_named_credentials c ON c.tenant_id=u.tenant_id AND c.id=$4
+        WHERE u.tenant_id=$1 AND u.id=$2 AND u.enabled=true
+          AND t.status='ACTIVE' AND c.protocol='SMTP' AND c.enabled=true
+          AND (
+            ($3='Global' AND EXISTS(
+              SELECT 1 FROM md_global_quick_actions a
+              WHERE a.tenant_id=u.tenant_id AND a.action_id=$5
+                AND a.enabled=true AND a.behavior='Send Email'
+                AND a.credential_id=$4))
+            OR ($3<>'Global' AND EXISTS(
+              SELECT 1 FROM md_object_actions a
+              WHERE a.tenant_id=u.tenant_id AND a.object_api=$3 AND a.action_id=$5
+                AND a.enabled=true AND a.behavior='Send Email'
+                AND a.credential_id=$4))
+          )`,
+        [job.tenant_id,job.user_id,job.object_api,job.credential_id,job.action_id]);
+      if(!eligible
+        ||!await this.rbac.allowed(job.tenant_id,job.user_id,actionResource,'execute')
+        ||!await this.rbac.allowed(job.tenant_id,job.user_id,'Email','send')
+        ||!await this.rbac.allowed(job.tenant_id,job.user_id,'NamedCredential','read'))
+        throw new Error('Quick Action email authorization changed');
+      if(job.object_api!=='Global'){
+        await this.rbac.require(job.tenant_id,job.user_id,job.object_api,'read');
+        if(!job.record_id)throw new Error('Quick Action source record unavailable');
+        await this.rbac.requireRecord(job.tenant_id,job.user_id,
+          job.object_api,job.record_id,'read');
+      }
+      const payload=JSON.parse(this.decryptValueWithKey(
+        job.payload_ciphertext,job.encryption_key_id)) as Record<string,unknown>;
+      if(!payload||typeof payload.from!=='string'||typeof payload.to!=='string'
+        ||typeof payload.subject!=='string'||typeof payload.body!=='string')
+        throw new Error('Queued Quick Action email payload invalid');
+      errorCode='DELIVERY_OUTCOME_UNKNOWN';
+      await this.sendTenantEmail(job.tenant_id,job.credential_id,
+        payload.from,payload.to,payload.subject,payload.body);
+      await this.db.query(`UPDATE md_quick_action_email_jobs SET status='completed',
+        claimed_at=NULL,completed_at=now() WHERE tenant_id=$1 AND id=$2 AND status='sending'`,
+        [job.tenant_id,job.id]);
+      await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+        VALUES($1,$2,'quick-action.email.delivered',jsonb_build_object('jobId',$3::text))`,
+        [job.tenant_id,job.user_id,job.id]);
+    }catch{
+      await this.db.query(`UPDATE md_quick_action_email_jobs SET status='failed',
+        error_code=$3,claimed_at=NULL,completed_at=now()
+        WHERE tenant_id=$1 AND id=$2 AND status='sending'`,
+        [job.tenant_id,job.id,errorCode]);
+      await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+        VALUES($1,$2,'quick-action.email.failed',
+          jsonb_build_object('jobId',$3::text,'errorCode',$4::text))`,
+        [job.tenant_id,job.user_id,job.id,errorCode]);
+    }
+    return true;
+  }finally{this.quickActionEmailDispatching=false;}
+ }
+
  async enqueueFlowEmail(client:PoolClient,tenantId:string,userId:string,flowId:string,flowVersion:number,
   runId:string,nodeId:number,step:number,credentialId:string,from:string,recipients:string[],
   subject:string,body:string) {

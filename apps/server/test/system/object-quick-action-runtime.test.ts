@@ -6,6 +6,7 @@ import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 import type {RecordEngine} from '../../src/system-files/record-engine.js';
 import type {FlowRuntime} from '../../src/system-files/flow-runtime.js';
 import type {RecordCollaborationService} from '../../src/system-support/record-collaboration-service.js';
+import type {NamedCredentialService} from '../../src/system-support/named-credential-service.js';
 
 const tenant='00000000-0000-4000-8000-000000000001';
 const actor='00000000-0000-4000-8000-000000000002';
@@ -95,4 +96,25 @@ test('Run Flow reuses shared Flow runtime which checks Flow permissions',async()
   {status:'started',result:{status:'completed'}});
  assert.deepEqual(writes.find(x=>x.kind==='flow')?.args,
   [tenant,'OnboardAccount',actor,{recordId:parent,objectApiName:'Account'}]);
+});
+
+test('Send Email reuses tenant SMTP service, never accepts client-supplied credentials',async()=>{
+ const sent:unknown[][]=[];
+ const configured='00000000-0000-4000-8000-000000000099';
+ const db={query:async()=>({rows:[action('Send Email',{credential_id:configured,
+   from_email:'admin@example.com'})],rowCount:1})} as unknown as SqlPersistence;
+ const rbac={require:async(_t:string,_u:string,res:string)=>{
+  if(res==='Action:Account.Email')return;
+ },requireRecord:async()=>{}} as unknown as RbacEngine;
+ const mail = {sendQuickActionEmail: async (...args: unknown[]) => { sent.push(args); }} as unknown as NamedCredentialService;
+ const runtime=new ObjectQuickActionRuntime(db,rbac,{} as RecordEngine,
+  {} as RecordCollaborationService,{} as FlowRuntime,mail);
+ const result=await runtime.execute(user,'Account',parent,'Email',{
+  to:'client@example.com',subject:'Follow up',body:'Hello there'});
+ assert.deepEqual(result,{status:'queued',recordId:parent});
+ assert.deepEqual(sent[0],[tenant,actor,'Account',parent,'Email',configured,
+  'admin@example.com','client@example.com','Follow up','Hello there',undefined]);
+ await assert.rejects(()=>runtime.execute(user,'Account',parent,'Email',{
+  credentialId:'replacement',to:'client@example.com',subject:'Hi',body:'Hello'}),/Invalid email action input/);
+ assert.equal(sent.length,1);
 });

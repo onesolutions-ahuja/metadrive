@@ -452,6 +452,22 @@ function RecordWorkspace({
       </div>
     </nav>;
   };
+  type GlobalActionView={id:string;label:string;behavior:'Create Record'|'Run Flow'|'Send Email';targetObjectApi?:string};
+  const [globalActions,setGlobalActions] = useState<GlobalActionView[]>([]);
+  const [globalEmailActionId,setGlobalEmailActionId] = useState('');
+  const quickEmailRequestKey=useRef(crypto.randomUUID());
+  const [globalActionMessage,setGlobalActionMessage] = useState('');
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{actions:GlobalActionView[]}>('/actions/global')
+      .then(result=>{if(active)setGlobalActions(result.actions);})
+      .catch(()=>{if(active)setGlobalActions([]);});
+    return ()=>{active=false;};
+  },[route.kind]);
+  const [emailAction,setEmailAction] = useState<ObjectActionMetadata|null>(null);
+  const [emailTo,setEmailTo] = useState('');
+  const [emailSubject,setEmailSubject] = useState('');
+  const [emailBody,setEmailBody] = useState('');
   const [customActionPendingId, setCustomActionPendingId] = useState('');
   const [allowedActionIds,setAllowedActionIds] = useState<string[]>([]);
   const [customActionMessage, setCustomActionMessage] = useState('');
@@ -984,18 +1000,20 @@ function RecordWorkspace({
   };
   const handledRelatedCreation=useRef('');
   useEffect(()=>{
-    if(route.kind!=='record-list'||!route.relatedCreation||!object){
+    if(route.kind!=='record-list'||(!route.relatedCreation&&!route.globalCreation)||!object){
       handledRelatedCreation.current='';return;
     }
     const ctx=route.relatedCreation;
-    const key=[object.apiName,ctx.sourceObjectApi,ctx.sourceRecordId,ctx.actionId].join(':');
+    const key=ctx?[object.apiName,ctx.sourceObjectApi,ctx.sourceRecordId,ctx.actionId].join(':')
+      :[object.apiName,'global',route.globalCreation?.actionId].join(':');
     if(handledRelatedCreation.current===key)return;
     handledRelatedCreation.current=key;
     setEditingId(null);setEditingTimestamp('');
     setFormValues({RecordTypeId:defaultRecordTypeId});
     setFormError('');setFormOpen(true);
   },[route.kind,route.kind==='record-list'?route.relatedCreation?.actionId:'',
-    route.kind==='record-list'?route.relatedCreation?.sourceRecordId:'',object?.apiName,defaultRecordTypeId]);
+    route.kind==='record-list'?route.relatedCreation?.sourceRecordId:'',
+    route.kind==='record-list'?route.globalCreation?.actionId:'',object?.apiName,defaultRecordTypeId]);
 
   const openEditForm = (item: RecordData) => {
     if (!object) return;
@@ -1041,8 +1059,9 @@ function RecordWorkspace({
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
+      const globalCreation=route.kind==='record-list'&&!editingId?route.globalCreation:undefined;
       if (!navigator.onLine) {
-        if(relatedCreation)throw new Error('Creating related records requires an active connection for relationship and Action permission checks.');
+        if(relatedCreation||globalCreation)throw new Error('Creating related records requires an active connection for relationship and Action permission checks.');
         await queueRecordLocally(writableValues, 'pending');
         return;
       }
@@ -1051,6 +1070,12 @@ function RecordWorkspace({
         if(relatedCreation){
           const saved=await apiRequest<{recordId:string;objectApiName:string}>(`/records/${encodeURIComponent(relatedCreation.sourceObjectApi)}/${encodeURIComponent(relatedCreation.sourceRecordId)}/actions/${encodeURIComponent(relatedCreation.actionId)}/execute`,{
             method:'POST',body:JSON.stringify(writableValues)});
+          response={record:{Id:saved.recordId} as RecordData};
+        }else if(globalCreation){
+          const saved=await apiRequest<{recordId:string;objectApiName:string}>(
+            `/actions/global/${encodeURIComponent(globalCreation.actionId)}/execute`,{
+              method:'POST',body:JSON.stringify(writableValues)});
+          if(saved.objectApiName!==object.apiName)throw new Error('Global action target changed; reload');
           response={record:{Id:saved.recordId} as RecordData};
         } else response=await apiRequest<{ record: RecordData }>(path, {
           method: editingId ? 'PUT' : 'POST',
@@ -1078,6 +1103,10 @@ function RecordWorkspace({
   };
   const runCustomObjectAction = async (action: ObjectActionMetadata) => {
     if(!object||!record||!action.behavior)return;
+    if(action.behavior==='Send Email'){
+      setEmailAction(action);setEmailTo('');setEmailSubject('');setEmailBody('');
+      setCustomActionMessage('');return;
+    }
     if(action.behavior==='Create Related'){
       if(!action.targetObjectApi||!action.relationshipFieldApi)return;
       onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,
@@ -1106,6 +1135,83 @@ function RecordWorkspace({
       setCustomActionPendingId('');
     }
   };
+  const sendQuickActionEmail=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    if(!emailAction||!object||!record)return;
+    setCustomActionPendingId(emailAction.id);setCustomActionMessage('');
+    try{
+      await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(emailAction.id)}/execute`,{
+        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
+          requestKey:quickEmailRequestKey.current})
+      });
+      setCustomActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setEmailAction(null);
+      setEmailTo('');setEmailSubject('');setEmailBody('');
+    }catch(error){
+      setCustomActionMessage(error instanceof Error?error.message:'Unable to send email');
+    }finally{setCustomActionPendingId('');}
+  };
+  const runGlobalAction=async(action:GlobalActionView)=>{
+    if(action.behavior==='Create Record'){
+      if(!action.targetObjectApi)return;
+      onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,
+        appId:route.appId,globalCreation:{actionId:action.id}});
+      return;
+    }
+    if(action.behavior==='Send Email'){
+      setEmailAction(null);setGlobalEmailActionId(action.id);
+      setEmailTo('');setEmailSubject('');setEmailBody('');setGlobalActionMessage('');
+      return;
+    }
+    setCustomActionPendingId('global:'+action.id);setGlobalActionMessage('');
+    try{
+      const launch=await apiRequest<{flowApiName:string;inputs:Record<string,unknown>}>(
+        `/actions/global/${encodeURIComponent(action.id)}/flow-launch`);
+      onLaunchFlow(launch.flowApiName,launch.inputs);
+    }catch(error){setGlobalActionMessage(error instanceof Error?error.message:'Cannot launch global Flow');}
+    finally{setCustomActionPendingId('');}
+  };
+  const sendGlobalEmail=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    if(!globalEmailActionId)return;
+    setCustomActionPendingId('global:'+globalEmailActionId);setGlobalActionMessage('');
+    try{
+      await apiRequest(`/actions/global/${encodeURIComponent(globalEmailActionId)}/execute`,{
+        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
+          requestKey:quickEmailRequestKey.current})});
+      setGlobalActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setGlobalEmailActionId('');
+      setEmailTo('');setEmailSubject('');setEmailBody('');
+    }catch(error){
+      setGlobalActionMessage(error instanceof Error?error.message:'Unable to send global email');
+    }finally{setCustomActionPendingId('');}
+  };
+  const renderGlobalQuickActions=()=>globalActions.length===0?null:
+    <section className="records-list-card surface" aria-label="Global Quick Actions"
+      style={{padding:12,margin:'8px 0'}}>
+      <div className="records-list-toolbar">
+        <h2>Global Actions</h2>
+        <div className="records-list-actions">
+          {globalActions.map(action=><button className="btn" type="button" key={action.id}
+            disabled={Boolean(customActionPendingId)} onClick={()=>void runGlobalAction(action)}>
+            {action.label}</button>)}
+        </div>
+      </div>
+      {globalEmailActionId&&<form onSubmit={event=>void sendGlobalEmail(event)}
+        aria-label="Send global Quick Action email">
+        <h3>{globalActions.find(action=>action.id===globalEmailActionId)?.label??'Send Email'}</h3>
+        <label>Recipient<input className="form-control" type="email" required maxLength={254}
+          value={emailTo} onChange={event=>setEmailTo(event.target.value)}/></label>
+        <label>Subject<input className="form-control" required maxLength={300}
+          value={emailSubject} onChange={event=>setEmailSubject(event.target.value)}/></label>
+        <label>Message<textarea className="form-control" required rows={4} maxLength={10000}
+          value={emailBody} onChange={event=>setEmailBody(event.target.value)}/></label>
+        <div className="records-list-actions">
+          <button className="btn btn-brand" type="submit" disabled={Boolean(customActionPendingId)}>Send</button>
+          <button className="btn" type="button" onClick={()=>setGlobalEmailActionId('')}>Cancel</button>
+        </div>
+      </form>}
+      {globalActionMessage&&<div className="records-message" role="status">{globalActionMessage}</div>}
+    </section>;
+
   const deleteCurrentRecord = async () => {
     if (!object) return;
     if (route.kind !== 'record-detail' || !record || !window.confirm(object.apiName === 'User' ? `Deactivate ${String(record.Name ?? record.Id)} and revoke their sessions? Identity and audit records are retained.` : `Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
@@ -1696,16 +1802,37 @@ function RecordWorkspace({
             {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
-            {(object.actions ?? []).filter(action=>action.type==='Custom'&&action.enabled
-              &&allowedActionIds.includes(action.id)
-              && (action.behavior==='Run Flow'||action.behavior==='Create Related'
-                || (canEdit&&(!recordLayout||recordLayout.actions.includes('Edit'))
-                  && (action.behavior==='Log Call'
-                    ||(action.behavior==='Set Field Value'&&Boolean(action.fieldApiName
-                      &&fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit)))))
-            ).map((action) => <button className="btn" key={action.id} disabled={Boolean(customActionPendingId)} onClick={() => void runCustomObjectAction(action)}>{customActionPendingId === action.id ? 'Running…' : action.label}</button>)}
+            {(object.actions ?? []).filter((action) => {
+              if (action.type !== 'Custom' || !action.enabled || !allowedActionIds.includes(action.id)) return false;
+              if (recordLayout && !recordLayout.actions.includes(action.id)) return false;
+              if (['Run Flow', 'Create Related', 'Send Email'].includes(action.behavior ?? '')) return true;
+              if (!canEdit || (recordLayout && !recordLayout.actions.includes('Edit'))) return false;
+              if (action.behavior === 'Log Call') return true;
+              return action.behavior === 'Set Field Value' && Boolean(action.fieldApiName
+                && fieldAccess[`${object.apiName}.${action.fieldApiName}`]?.edit);
+            }).map((action) => <button className="btn" key={action.id}
+              disabled={Boolean(customActionPendingId)}
+              onClick={() => void runCustomObjectAction(action)}>
+                {customActionPendingId === action.id ? 'Running…' : action.label}
+              </button>)}
           </div>
         </section>
+        {renderGlobalQuickActions()}
+        {emailAction&&<form className="record-fields-card surface" onSubmit={event=>void sendQuickActionEmail(event)}
+          aria-label="Send quick action email" style={{padding:16,marginTop:12}}>
+          <h2>{emailAction.label}</h2>
+          <p>The message is sent using the tenant's configured SMTP credential and requires Email permissions.</p>
+          <label>Recipient email<input type="email" className="form-control" required value={emailTo}
+            onChange={event=>setEmailTo(event.target.value)} autoComplete="off" maxLength={254}/></label>
+          <label>Subject<input className="form-control" required maxLength={300} value={emailSubject}
+            onChange={event=>setEmailSubject(event.target.value)}/></label>
+          <label>Message<textarea className="form-control" required maxLength={10000} rows={5}
+            value={emailBody} onChange={event=>setEmailBody(event.target.value)}/></label>
+          <div className="records-list-actions">
+            <button type="submit" className="btn btn-brand" disabled={Boolean(customActionPendingId)}>Send Email</button>
+            <button type="button" className="btn" onClick={()=>setEmailAction(null)} disabled={Boolean(customActionPendingId)}>Cancel</button>
+          </div>
+        </form>}
         {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>}
         {duplicateMatches.length>0 && <section className="records-message" role="status" aria-label="Potential duplicate records">
           <strong>Potential duplicate records detected.</strong>
@@ -1832,6 +1959,7 @@ function RecordWorkspace({
   return <div className="records-page">
     {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
     <RecordsListPageHeading label={object.pluralLabel} onRefresh={() => setRefreshKey((current) => current + 1)} />
+    {renderGlobalQuickActions()}
     {recycleOpen && <section className="records-list-card surface" aria-label="Record Recycle Bin" style={{padding:16,marginBottom:12}}>
       <div className="records-list-toolbar">
         <div><h2>{object.label} Recycle Bin</h2><span>{recycleTotal} deleted root record(s)</span></div>
