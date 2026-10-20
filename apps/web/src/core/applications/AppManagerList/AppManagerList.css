@@ -23,3 +23,20 @@
 @media(max-width:670px){.app-manager-list-head{align-items:stretch;flex-direction:column}.app-manager-list-search{width:100%}}
 
 @media(pointer:coarse){.app-manager-list-actions .btn{min-height:var(--md-control-touch,44px)}}
+
+
+/* Phase 6: small-screen app management and discoverable actions. */
+.app-manager-list-result-count { margin:8px 16px 12px;color:var(--md-muted,#596779);font-size:13px; }
+.app-manager-list-search input:focus-visible,
+.app-manager-list-actions button:focus-visible { outline:2px solid var(--md-primary,#1d4ed8);outline-offset:2px; }
+.app-manager-list-scroll { max-width:100%;overflow-x:auto;scrollbar-gutter:stable; }
+.app-manager-list-table th { white-space:nowrap; }
+.app-manager-list-actions { display:flex;gap:8px;flex-wrap:wrap; }
+@media(pointer:coarse) {
+ .app-manager-list-actions button { min-height:44px; }
+}
+@media(max-width:640px) {
+ .app-manager-list-head { flex-wrap:wrap;gap:12px; }
+ .app-manager-list-search { width:100%; }
+ .app-manager-list-actions button { min-height:44px; }
+}
