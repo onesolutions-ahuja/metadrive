@@ -1217,7 +1217,8 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT COALESCE((
  SELECT
  -- Object/record denies and restrictions also narrow ownership and broad grants.
- NOT (SELECT deny_granted FROM md_rbac_decision(t,u,'Record:'||rec.id::text,act))
+ (NOT rec.is_deleted OR act='delete')
+ AND NOT (SELECT deny_granted FROM md_rbac_decision(t,u,'Record:'||rec.id::text,act))
  AND md_rbac_allowed(t,u,rec.object_api,act)
  AND (rec.record_type_id IS NULL OR md_rbac_allowed(t,u,'RecordType:'||rec.object_api||'.'||rec.record_type_id,'read'))
  AND NOT EXISTS(SELECT 1 FROM md_record_policies rp WHERE rp.tenant_id=t AND rp.object_api=rec.object_api
