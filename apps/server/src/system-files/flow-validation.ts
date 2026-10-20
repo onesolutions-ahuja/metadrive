@@ -129,8 +129,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
       const declared=Array.isArray(data.resources)
         ?data.resources.filter(item=>!!item&&typeof item==='object'&&!Array.isArray(item))
           .map(item=>item as {name:string;type:string;dataType:string}):[];
-      const graphNodes=nodes.filter(item=>!!item&&typeof item==='object'&&!Array.isArray(item))
-        as Array<{id?:unknown;type?:unknown;config?:unknown}>;
+      const graphNodes=nodes.filter(item=>!!item&&typeof item==='object'&&!Array.isArray(item)) as Array<{id?:unknown;type?:unknown;config?:unknown}>;
       errors.push(...validateScreenRecordBindings({config:properties},declared,graphNodes));
     }catch(error){errors.push(error instanceof Error?error.message:'Invalid Screen Choice Set');}
   }
