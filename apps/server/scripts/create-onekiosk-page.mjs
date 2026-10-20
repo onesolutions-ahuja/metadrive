@@ -32,13 +32,13 @@ const login = await json(`${base}/auth/login`, {
 if (login.mfa_required || !login.access_token) throw new Error('Login requires interactive authentication or failed');
 const headers = { Authorization: `Bearer ${login.access_token}` };
 const name = 'Kiosk_Menu';
-// Never overwrite an existing tenant page, including an unpublished draft.
-const current = await fetch(`${base}/metadata/pages/${name}`, { headers, signal: AbortSignal.timeout(15000) });
-if (current.ok) {
+// List existing tenant pages first. Do not infer absence from an error response.
+const existing = await json(`${base}/metadata/pages`, { headers });
+if (!Array.isArray(existing.pages)) throw new Error('Could not verify existing tenant pages');
+if (existing.pages.some(p => p.apiName === name)) {
   console.log('Kiosk_Menu already exists; untouched');
   process.exit(0);
 }
-if (current.status !== 404) throw new Error(`Cannot verify page absence: HTTP ${current.status}`);
 const objectName = env('ONEKIOSK_MENU_OBJECT_API');
 const fields = await json(`${base}/metadata/objects`, { headers });
 const objects = Array.isArray(fields) ? fields : fields.objects ?? [];
