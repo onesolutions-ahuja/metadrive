@@ -6,6 +6,20 @@ ALTER TABLE md_records ADD COLUMN IF NOT EXISTS deleted_by uuid;
 ALTER TABLE md_records ADD COLUMN IF NOT EXISTS deletion_group_id uuid;
 ALTER TABLE md_records ADD COLUMN IF NOT EXISTS deletion_root_id uuid;
 
+-- Release unique values on soft delete; restore rechecks the existing unique indexes atomically.
+ALTER TABLE md_record_values ADD COLUMN IF NOT EXISTS record_is_deleted boolean NOT NULL DEFAULT false;
+UPDATE md_record_values v SET record_is_deleted=r.is_deleted
+ FROM md_records r WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id
+ AND v.record_is_deleted IS DISTINCT FROM r.is_deleted;
+DROP INDEX IF EXISTS md_record_values_unique_ci;
+DROP INDEX IF EXISTS md_record_values_unique_cs;
+CREATE UNIQUE INDEX md_record_values_unique_ci
+ ON md_record_values(tenant_id,object_api,field_api,lower(value_text))
+ WHERE is_unique AND NOT case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
+CREATE UNIQUE INDEX md_record_values_unique_cs
+ ON md_record_values(tenant_id,object_api,field_api,value_text)
+ WHERE is_unique AND case_sensitive AND value_text IS NOT NULL AND record_is_deleted=false;
+
 CREATE INDEX IF NOT EXISTS md_records_active_lookup
  ON md_records(tenant_id,object_api,id) WHERE is_deleted=false;
 CREATE INDEX IF NOT EXISTS md_records_recycle_bin
