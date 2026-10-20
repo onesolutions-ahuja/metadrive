@@ -315,8 +315,14 @@ try{
  const mealSecond=await records.create(tenantId,userId,'AuditItem__c',{Name:'Meal Source Sides'});
  const mealSelectionFlow={apiName:'AuditMealRecordSelection',label:'Meal record selections',
   flowType:'Screen Flow',status:'Active',startConfig:{},tests:[],versions:[],
-  resources:[{name:'SelectedMeals',label:'Selected meals',type:'Record Collection',
-    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false}],
+  resources:[
+   {name:'MealOptions',label:'Meal options',type:'Record Collection',
+    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false},
+   {name:'SelectedMeals',label:'Selected meals',type:'Record Collection',
+    dataType:'AuditItem__c',isCollection:true,availableForInput:false,availableForOutput:false},
+   {name:'CurrentMeal',label:'Current meal',type:'Record',
+    dataType:'AuditItem__c',isCollection:false,availableForInput:false,availableForOutput:false}
+  ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{}},
    {id:2,type:'Get Records',label:'Options',config:{object:'AuditItem__c',
