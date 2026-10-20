@@ -878,7 +878,8 @@ function RecordWorkspace({
     if(!object||!record||!action.behavior)return;
     if(action.behavior==='Create Related'){
       if(!action.targetObjectApi||!action.relationshipFieldApi)return;
-      onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,appId:route.appId,
+      onNavigate({kind:'record-list',objectApiName:action.targetObjectApi,
+        appId:route.kind==='record-detail'?route.appId:undefined,
         relatedCreation:{sourceObjectApi:object.apiName,sourceRecordId:record.Id,actionId:action.id}});
       return;
     }
