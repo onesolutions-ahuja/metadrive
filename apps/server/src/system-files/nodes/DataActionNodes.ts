@@ -1,3 +1,4 @@
+import {executeCountCollectionNode} from './CountCollectionNode.js';
 import {executeFilterCollectionNode} from './FilterCollectionNode.js';
 import {executeSortCollectionNode} from './SortCollectionNode.js';
 import {executeTransformNode} from './TransformNode.js';
@@ -67,6 +68,12 @@ export async function executeFlowDataAction(context:Context):Promise<FlowActionR
   if(node.type==='Update Records')return executeUpdateRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Delete Records')return executeDeleteRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Loop')return executeLoopNode({node,vars,loops});
+  if(node.type==='Count Collection'){
+    const output=String(config.outputVariable??'');
+    if(!apiName.test(output))throw new Error('Invalid Count Collection output variable');
+    vars[output]=executeCountCollectionNode(vars[String(config.collection??'')]);
+    return {handled:true};
+  }
   if(node.type==='Collection Filter'||node.type==='Collection Sort'||node.type==='Transform'){
     const output=String(config.outputCollection??'');
     if(!apiName.test(output))throw new Error('Invalid collection output variable');
