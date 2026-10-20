@@ -54,7 +54,8 @@ test('restore unmarks the full Master-Detail deletion group with an audit entry'
   assert.deepEqual(outcome,{restored:2});
   assert.ok(writes.some(sql=>sql.startsWith('UPDATE md_records SET is_deleted=false')));
   assert.ok(writes.some(sql=>sql.includes("'restore')")));
-  assert.ok(writes.some(sql=>sql.startsWith('DELETE FROM md_deleted_lookup_links')));
+  assert.ok(!writes.some(sql=>sql.startsWith('DELETE FROM md_deleted_lookup_links')),
+    'unresolved recovery data must remain intact');
   assert.ok(writes.every(sql=>!sql.startsWith('DELETE FROM md_records')));
 });
 
