@@ -59,7 +59,7 @@ test('Global email refuses client credential override and delegates to shared SM
   {} as RecordCollaborationService,{} as FlowRuntime,named);
  await svc.executeGlobal(actor,'EmailEveryone',{to:'one@example.com',subject:'Update',body:'Message'});
  assert.deepEqual(sent[0],[t,u,'Global','','EmailEveryone',credential,'sender@example.com',
-  'one@example.com','Update','Message']);
+  'one@example.com','Update','Message',undefined]);
  await assert.rejects(()=>svc.executeGlobal(actor,'EmailEveryone',{
   credentialId:'other',to:'one@example.com',subject:'Update',body:'Message'}),/Invalid global email input/);
  assert.equal(sent.length,1);
