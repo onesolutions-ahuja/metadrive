@@ -34,7 +34,8 @@ async function inferRuleType(db:SqlPersistence,tenantId:string,objectApi:string,
     if(['$User.Id','$User.Name','$User.Email','$User.TimeZone','$Profile.Name'].includes(reference))
       return 'Text';
     const field=reference.startsWith('$Record.')?reference.slice(8):
-      reference.startsWith('$Record__Prior.')?reference.slice(15):reference;
+      reference.startsWith('$Record__Prior.')?reference.slice(15):
+      reference.startsWith(objectApi+'.')?reference.slice(objectApi.length+1):reference;
     return fieldTypes.get(field)??null;
   };
   return inferFlowFormulaType(expression,resolve);
