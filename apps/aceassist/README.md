@@ -79,5 +79,20 @@ amounts or derive invoice balances inside frontend components.
   server-side double-booking prevention, duplicate webhook delivery and timezone
   / daylight-saving transitions are tested.
 
-**Status:** This folder currently describes the implementation contract;
-it is **not** a deployed or working Ace Assist frontend.
+## Installed tenant seed and login entry
+
+- Public staff route: `/aceassist` — branded independent frontend, shared MetaDrive auth.
+- SQL AppExchange ID: `AceAssist`; default published page: `AceAssist_Calendar`.
+- Default components: `OneText` title/status and `OneCalendar` empty calendar.
+- The default calendar deliberately has no dummy appointments or made-up bookings.
+- Permissions: assign `AceAssistUser` with OneEngine. No user assignments are created by seeder.
+- App installation reuses the shared `AppRuntime.install` licence/dependency lifecycle.
+- SQL metadata seeder: `apps/server/src/app-seeders/aceassist-app.ts`.
+- Explicit install after entitlement: `METADRIVE_TARGET_TENANT_SLUG=<slug> node apps/server/dist/scripts/install-aceassist.js` (with standard secured DATABASE_URL).
+- Running server never imports app seeder automatically; optional apps are lazy and independent.
+- The current `unesolutions-dev` tenant was populated in SQL via an authorised installation.
+- A landing calendar is present for permission/routing testing, **not a completed booking workflow**.
+  Appointments, confirmations, rescheduling and billing actions still require configured
+  Objects, authorised published Flows and live integration testing.
+
+Do not replace customer-customised tenant landing metadata during reinstall.
