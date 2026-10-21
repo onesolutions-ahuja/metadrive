@@ -307,6 +307,11 @@
                   "field": "{!cashReceived}",
                   "operator": "GreaterThanOrEqualTo",
                   "value": "{!validatedTotal}"
+                },
+                {
+                  "field": "{!cartTotal}",
+                  "operator": "Equals",
+                  "value": "{!validatedTotal}"
                 }
               ],
               "label": "Approved",
@@ -321,7 +326,7 @@
       {
         "config": {
           "errorLocation": "Page",
-          "errorMessage": "Payment is unconfirmed, amount is insufficient, or the basket is empty. No sale was saved."
+          "errorMessage": "Basket total differs from current Product prices, the cash tender is insufficient, or card confirmation is missing. Refresh the basket; no sale was saved."
         },
         "id": 11,
         "label": "Invalid payment",
@@ -922,6 +927,11 @@
                   "field": "{!cardPaymentConfirmed}",
                   "operator": "Equals",
                   "value": true
+                },
+                {
+                  "field": "{!cartTotal}",
+                  "operator": "Equals",
+                  "value": "{!validatedTotal}"
                 }
               ],
               "label": "Approved",
@@ -936,7 +946,7 @@
       {
         "config": {
           "errorLocation": "Page",
-          "errorMessage": "Payment is unconfirmed, amount is insufficient, or the basket is empty. No sale was saved."
+          "errorMessage": "Basket total differs from current Product prices, the cash tender is insufficient, or card confirmation is missing. Refresh the basket; no sale was saved."
         },
         "id": 11,
         "label": "Invalid payment",
