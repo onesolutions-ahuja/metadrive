@@ -6,7 +6,7 @@ import ProductCustomiser,{type OptionGroup,type Selection} from './ProductCustom
 
 type RecordRow=Record<string,unknown>;
 type Action={apiName:string;label:string};
-type Item={id:string;name:string;description:string;price:number;image:string;category:string;active:boolean};
+type Item={id:string;name:string;description:string;price:number;image:string;category:string;subcategory:string;badge:string;active:boolean};
 type CartLine={key:string;product:Item;quantity:number;selections:Selection[]};
 type Screen='welcome'|'menu'|'cart'|'checkout'|'confirmation';
 const field=(r:RecordRow,...names:string[])=>{for(const n of names){const key=Object.keys(r).find(k=>k.toLowerCase()===n.toLowerCase());if(key&&r[key]!=null)return r[key];}return undefined;};
@@ -17,13 +17,14 @@ const productFrom=(r:RecordRow):Item|null=>{
   const price=Number(field(r,'Price','UnitPrice','SalePrice'));
   if(!id||!name||!Number.isFinite(price)||price<0)return null;
   const active=field(r,'Active','IsActive');
-  return {id,name,price,description:String(field(r,'Description')??''),image:String(field(r,'ImageUrl','ImageURL','PhotoUrl')??''),category:String(field(r,'Category','CategoryName','MenuCategory')??'Menu'),active:active===undefined||active===true||String(active).toLowerCase()==='true'};
+  return {id,name,price,description:String(field(r,'Description')??''),image:String(field(r,'ImageUrl','ImageURL','PhotoUrl')??''),category:String(field(r,'Category','CategoryName','MenuCategory')??'Menu'),subcategory:String(field(r,'Subcategory','SubCategoryName')??''),badge:String(field(r,'Badge','ProductBadge')??''),active:active===undefined||active===true||String(active).toLowerCase()==='true'};
 };
 export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   const [screen,setScreen]=useState<Screen>('welcome');
   const [products,setProducts]=useState<Item[]>([]);
   const [categories,setCategories]=useState<string[]>([]);
   const [category,setCategory]=useState('All');
+  const [subcategory,setSubcategory]=useState('All');
   const [cart,setCart]=useState<CartLine[]>([]);
   const [actions,setActions]=useState<Action[]>([]);
   const [options,setOptions]=useState<Record<string,OptionGroup[]>>({});
@@ -64,7 +65,8 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   },[]);
   const quantity=cart.reduce((sum,line)=>sum+line.quantity,0);
   const subtotal=cart.reduce((sum,line)=>sum+line.quantity*line.product.price,0);
-  const displayed=useMemo(()=>products.filter(p=>category==='All'||p.category.toLowerCase()===category.toLowerCase()),[products,category]);
+  const subcategories=useMemo(()=>[...new Set(products.filter(p=>category==='All'||p.category.toLowerCase()===category.toLowerCase()).map(p=>p.subcategory).filter(Boolean))],[products,category]);
+  const displayed=useMemo(()=>products.filter(p=>(category==='All'||p.category.toLowerCase()===category.toLowerCase())&&(subcategory==='All'||p.subcategory.toLowerCase()===subcategory.toLowerCase())),[products,category,subcategory]);
   const add=(product:Item,selections:Selection[]=[])=>{
     const key=product.id+'|'+selections.map(s=>s.groupId+':'+s.choiceId).sort().join(',');
     setCart(lines=>{const existing=lines.find(l=>l.key===key);return existing?lines.map(l=>l.key===key?{...l,quantity:l.quantity+1}:l):[...lines,{key,product,quantity:1,selections}];});
@@ -94,8 +96,8 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
     {error&&<div className="ak-error" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
     {screen==='welcome'&&<main className="ak-welcome"><div className="ak-welcome-copy"><p className="ak-overline">YOUR ORDER. YOUR WAY.</p><h1>Craving something <em>delicious?</em></h1><p>Discover the menu, customise your favourites, and order in just a few taps.</p><button className="ak-primary" onClick={()=>setScreen('menu')}>Start my order <span>→</span></button></div><div className="ak-hero-art" aria-hidden="true"><span>GOOD FOOD</span><strong>MADE FOR YOU.</strong><div className="ak-hero-disc">ENJOY<br/>EVERY<br/>BITE.</div></div></main>}
     {screen==='menu'&&<main className="ak-main"><div className="ak-title"><div><p className="ak-overline">MADE FOR YOUR CRAVINGS</p><h1>What are you hungry for?</h1></div><button className="ak-cartbutton" onClick={()=>setScreen('cart')}>Basket <span>{quantity}</span></button></div>
-      <div className="ak-menu-layout"><nav className="ak-categories" aria-label="Menu categories">{['All',...(categories.length?categories:[...new Set(products.map(p=>p.category))])].map(c=><button key={c} className={c===category?'active':''} onClick={()=>setCategory(c)}>{c}</button>)}</nav>
-      <section className="ak-products">{loading?<p role="status">Loading your menu…</p>:displayed.length===0?<p>No products are available in this category.</p>:displayed.map(item=><article className="ak-product" key={item.id}><div className="ak-image">{item.image?<img src={item.image} alt={item.name} loading="lazy"/>:<span aria-hidden="true">✦</span>}</div><div className="ak-product-body"><h2>{item.name}</h2><p>{item.description}</p><div><strong>{money(item.price)}</strong><button onClick={()=>choose(item)} aria-label={`Add ${item.name}`}>Add +</button></div></div></article>)}</section></div>
+      <div className="ak-menu-layout"><nav className="ak-categories" aria-label="Menu categories">{['All',...(categories.length?categories:[...new Set(products.map(p=>p.category))])].map(c=><button key={c} className={c===category?'active':''} onClick={()=>{setCategory(c);setSubcategory('All');}}>{c}</button>)}</nav>
+      <div className="ak-menu-content">{subcategories.length>0&&<nav className="ak-subcategories" aria-label="Menu subcategories">{['All',...subcategories].map(c=><button key={c} className={subcategory===c?'active':''} onClick={()=>setSubcategory(c)}>{c}</button>)}</nav>}<section className="ak-products">{loading?<p role="status">Loading your menu…</p>:displayed.length===0?<p>No products are available in this category.</p>:displayed.map(item=><article className="ak-product" key={item.id}><div className="ak-image">{item.image?<img src={item.image} alt={item.name} loading="lazy"/>:<span aria-hidden="true">✦</span>}</div><div className="ak-product-body">{item.badge&&<span className="ak-product-badge">{item.badge}</span>}<h2>{item.name}</h2><p>{item.description}</p><div><strong>{money(item.price)}</strong><button onClick={()=>choose(item)} aria-label={`Add ${item.name}`}>Add +</button></div></div></article>)}</section></div></div>
       <div className="ak-floating"><span>{quantity} items · {money(subtotal)} preview</span><button onClick={()=>setScreen('cart')}>View basket →</button></div></main>}
     {screen==='cart'&&<main className="ak-order"><button className="ak-back" onClick={()=>setScreen('menu')}>← Back to menu</button><h1>Your basket</h1>{cart.length===0?<p>Your basket is empty.</p>:cart.map(l=><div className="ak-orderline" key={l.key}><div><strong>{l.product.name}</strong><p>{money(l.product.price)} each</p>{l.selections.length>0&&<small>Customised: {l.selections.map(s=>s.choiceId).join(', ')}</small>}</div><div className="ak-counter"><button onClick={()=>adjust(l.key,-1)}>−</button><span>{l.quantity}</span><button onClick={()=>adjust(l.key,1)}>+</button></div></div>)}<div className="ak-subtotal"><span>Estimated subtotal</span><strong>{money(subtotal)}</strong></div><p className="ak-small">Tax, discounts, total and stock are calculated by MetaDrive at checkout.</p><button className="ak-primary" disabled={!cart.length} onClick={()=>setScreen('checkout')}>Continue to checkout →</button></main>}
     {screen==='checkout'&&<main className="ak-order"><button className="ak-back" onClick={()=>setScreen('cart')}>← Back to basket</button><p className="ak-overline">FINAL STEP</p><h1>Ready to order?</h1><p>{quantity} item(s) · Preview subtotal {money(subtotal)}</p><p className="ak-small">Your configured OneEngine checkout Flow will verify prices, tax, availability and payment before an order can be confirmed.</p><button className="ak-primary" disabled={busy||!cart.length} onClick={()=>void checkout()}>{busy?'Processing…':'Place order securely →'}</button></main>}
