@@ -118,17 +118,18 @@ export class NamedCredentialService {
    header_name:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
    encryption_key_id:string;enabled:boolean;updated_at:Date
   }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
-  const publicKeys=new Set(['graphApiVersion','wabaId','phoneNumberId',
-   'businessPortfolioId','metaAppId','businessPhoneE164','templateLanguage',
-   'webhookCallbackUrl','displayName']);
+  // Generic, opt-in public settings convention for all provider integrations.
+  // Tokens, passwords and keys are never allowed to be client-readable.
+  const safePublicKey=(key:string)=>/^public_[A-Za-z][A-Za-z0-9_]*$/.test(key)
+   && !/(secret|token|password|passphrase|private|pin|credential|authorization|api_?key)/i.test(key);
   return rows.map(x=>{
    let configuration:Record<string,string>={};
-   if(x.name==='WhatsApp_Cloud_API'&&x.configuration_ciphertext){
+   if(x.configuration_ciphertext){
     try{
      const raw=JSON.parse(this.decryptOpaque(x.configuration_ciphertext,x.encryption_key_id)) as unknown;
      if(raw&&typeof raw==='object'&&!Array.isArray(raw))
       configuration=Object.fromEntries(Object.entries(raw)
-       .filter(([key,value])=>publicKeys.has(key)&&typeof value==='string')) as Record<string,string>;
+       .filter(([key,value])=>safePublicKey(key)&&typeof value==='string')) as Record<string,string>;
     }catch{/* Never expose unreadable or confidential credential values. */}
    }
    return {id:x.id,name:x.name,label:x.label,protocol:x.protocol,
