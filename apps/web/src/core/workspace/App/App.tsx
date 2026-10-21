@@ -5,6 +5,7 @@ import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, i
 
 
 import { parseAppRoute, appRoutePath } from '../Navigation/appRouting';
+import {resolveStandaloneEntry} from '../Standalone/standaloneEntries';
 
 
 
@@ -69,6 +70,7 @@ type NewFieldLookupFilterDraft = {
 
 
 const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthConsent'));
+const LazyStandaloneRuntime=React.lazy(()=>import('../Standalone/StandaloneRuntime'));
 type AuthState = 'restoring' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -85,6 +87,7 @@ type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticated
 
 
 function App() {
+  const standaloneEntry=resolveStandaloneEntry(window.location.pathname,import.meta.env.BASE_URL);
   const [authState, setAuthState] = useState<AuthState>('restoring');
   const [authError, setAuthError] = useState('');
   const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);
@@ -207,10 +210,12 @@ function App() {
   const loginSuccess = (timing: EntryTiming) => { sessionGeneration.current += 1; setEntryTiming(timing); setAuthState('authenticated'); };
   const cancelRestore = () => { sessionGeneration.current += 1; };
   if (authState === 'restoring') return <div className="auth-loading" role="status">Restoring session…</div>;
-  if (authState === 'anonymous') return <Login onStart={cancelRestore} onSuccess={loginSuccess} />;
-  if (authState === 'error') return <Login error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
+  if (authState === 'anonymous') return <Login branding={standaloneEntry??undefined} onStart={cancelRestore} onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login branding={standaloneEntry??undefined} error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
-  return <SetupApp entryTiming={entryTiming} onLogout={() => { sessionGeneration.current += 1; setEntryTiming(null); setAccessToken(undefined); setAuthState('anonymous'); }} />;
+  const onLogout=()=>{sessionGeneration.current += 1;setEntryTiming(null);setAccessToken(undefined);setAuthState('anonymous');};
+  if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}><LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/></React.Suspense>;
+  return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
 }
 
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
