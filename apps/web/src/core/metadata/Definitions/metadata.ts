@@ -1169,14 +1169,6 @@ export const setupShortcuts = [
   { title: 'Permission Sets', description: 'Manage access to apps and data', workspace: 'rbac' as const, icon: ShieldCheck }
 ];
 
-export const recordMetadata = [
-  { name: 'Edge Communications', owner: 'Alexandra Curtis', type: 'Customer - Direct', industry: 'Electronics', employees: '1,000', status: 'Active' },
-  { name: 'Express Logistics and Transport', owner: 'David Kim', type: 'Customer - Channel', industry: 'Transportation', employees: '4,800', status: 'Active' },
-  { name: 'University of Arizona', owner: 'Jamie Taylor', type: 'Customer - Direct', industry: 'Education', employees: '8,200', status: 'Active' },
-  { name: 'GenePoint', owner: 'Alexandra Curtis', type: 'Prospect', industry: 'Biotechnology', employees: '265', status: 'New' },
-  { name: 'Grand Hotels & Resorts Ltd', owner: 'Chris Johnson', type: 'Customer - Direct', industry: 'Hospitality', employees: '3,200', status: 'Active' }
-];
-
 export const defaultFlow: FlowDefinitionMetadata = {
   apiName: 'Renewal_Risk_Evaluation',
   label: 'New Autolaunched Flow',
