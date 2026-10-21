@@ -22,6 +22,7 @@ const productFrom=(r:RecordRow):Item|null=>{
 export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   const [screen,setScreen]=useState<Screen>('welcome');
   const [products,setProducts]=useState<Item[]>([]);
+  const [catalog,setCatalog]=useState<Item[]>([]);
   const [categories,setCategories]=useState<Array<{id:string;name:string;order:number}>>([]);
   const [serviceMode,setServiceMode]=useState('Takeaway');
   const [paymentMethod,setPaymentMethod]=useState('');
@@ -56,7 +57,8 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
         if(!live)return;
         if(!Array.isArray(response.outputs?.products)||!Array.isArray(response.outputs?.categories))
           throw Error('AceKioskLoadMenu must return products and categories arrays.');
-        setProducts(response.outputs.products.map(productFrom).filter((p):p is Item=>p!==null&&p.active));
+        const menu=response.outputs.products.map(productFrom).filter((p):p is Item=>p!==null&&p.active);
+        setCatalog(menu);setProducts(menu);
         setOptions(response.outputs.optionsByProduct??{});
         setCategories(response.outputs.categories.filter(r=>field(r,'Active')!==false).map(r=>({id:String(field(r,'Id')??''),name:String(field(r,'Name')??''),order:Number(field(r,'DisplayOrder')??0)})).filter(r=>r.name).sort((a,b)=>a.order-b.order));
       }catch(e){if(live)setError(e instanceof Error?e.message:String(e));}
@@ -82,6 +84,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const filterCategory=async(name:string)=>{
     setCategory(name);setSubcategory('All');setSearch('');
+    setProducts(catalog);
     if(actions.some(a=>a.apiName==='AceKioskFilterMenu')){
       try{const r=await executeAction('AceKioskFilterMenu',{categoryName:name,categoryId:categories.find(c=>c.name===name)?.id??'',sessionId});
         if(Array.isArray(r.outputs?.products))setProducts((r.outputs.products as RecordRow[]).map(productFrom).filter((p):p is Item=>Boolean(p?.active)));}
@@ -90,9 +93,9 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const restart=()=>{
     if(sessionId&&actions.some(a=>a.apiName==='AceKioskRestart'))void executeAction('AceKioskRestart',{sessionId}).catch(e=>setError(e instanceof Error?e.message:String(e)));
-    setCart([]);setSessionId('');setPaymentMethod('');setCategory('All');setScreen('welcome');
+    setCart([]);setSessionId('');setPaymentMethod('');setCategory('All');setSubcategory('All');setSearch('');setProducts(catalog);setScreen('welcome');
   };
-  const subcategories=useMemo(()=>[...new Set(products.filter(p=>matchCategory(p)).map(p=>p.subcategory).filter(Boolean))],[products,category]);
+  const subcategories=useMemo(()=>[...new Set(products.filter(p=>matchCategory(p)).map(p=>p.subcategory).filter(Boolean))],[products,category,categories]);
   const displayed=useMemo(()=>products.filter(p=>matchCategory(p)&&(subcategory==='All'||p.subcategory.toLowerCase()===subcategory.toLowerCase())&&(!search||p.name.toLowerCase().includes(search.toLowerCase()))),[products,category,subcategory,search,categories]);
   const add=(product:Item,selections:Selection[]=[])=>{
     const key=product.id+'|'+selections.map(s=>s.groupId+':'+s.choiceId).sort().join(',');
@@ -100,7 +103,20 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const choose=async(item:Item)=>{
     if(actions.some(a=>a.apiName==='AceKioskProductOptions')){
-      try{const r=await executeAction('AceKioskProductOptions',{productId:item.id,sessionId});if(Array.isArray(r.outputs?.groups))setOptions(o=>({...o,[item.id]:r.outputs!.groups as OptionGroup[]}));}
+      try{const r=await executeAction('AceKioskProductOptions',{productId:item.id,sessionId});if(Array.isArray(r.outputs?.groups))setOptions(o=>({...o,[item.id]:r.outputs!.groups as OptionGroup[]}));
+        else if(Array.isArray(r.outputs?.choiceGroups)&&Array.isArray(r.outputs?.choiceOptions)){
+          const groupRows=r.outputs.choiceGroups as RecordRow[];
+          const choiceRows=r.outputs.choiceOptions as RecordRow[];
+          const relevant=groupRows.filter(g=>String(field(g,'ParentProduct')??'')===item.id);
+          const groups:OptionGroup[]=relevant.map(g=>({
+            id:String(field(g,'Id')??''),label:String(field(g,'Name')??''),
+            required:Number(field(g,'MinimumChoices')??0)>0,
+            choices:choiceRows.filter(c=>String(field(c,'ChoiceGroup')??'')===String(field(g,'Id')??'')).map(c=>({
+              id:String(field(c,'Id')??''),label:String(field(c,'Name')??''),description:String(field(c,'Description')??'')
+            }))
+          })).filter(g=>g.id&&g.label&&g.choices.length);
+          setOptions(o=>({...o,[item.id]:groups}));
+        }}
       catch(e){setError(e instanceof Error?e.message:String(e));return;}
     }
     setCustomising(item);
@@ -124,11 +140,11 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   const checkout=async()=>{
     // Never write Orders directly or trust preview totals. Only an authorised tenant Flow may validate and commit.
     const action=actions.find(a=>/^(AceKioskCheckout|KioskCheckout)$/.test(a.apiName));
-    if(!action){setError('Checkout is unavailable: configure and activate the AceKioskCheckout Flow in MetaDrive.');return;}
+    if(!action){setError('Checkout is not configured: an authorised AceKioskCheckout Flow must validate the order and payment before confirmation.');return;}
     setBusy(true);setError('');
     try{
       const response=await apiRequest<{outputs?:RecordRow;interviewId?:string}>(`/flows/${encodeURIComponent(action.apiName)}/execute`,{
-        method:'POST',body:JSON.stringify({sessionId,serviceMode,paymentMethod,cartItems:cart.map(l=>({productId:l.product.id,quantity:l.quantity,selections:l.selections}))})
+        method:'POST',body:JSON.stringify({sessionId,serviceMode,paymentMethod,cartItemsJson:JSON.stringify(cart.map(l=>({productId:l.product.id,quantity:l.quantity,selections:l.selections})))})
       });
       const outputs=response.outputs??{};
       const status=String(outputs.status??'').toLowerCase();
