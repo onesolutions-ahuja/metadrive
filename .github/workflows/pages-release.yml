@@ -10,7 +10,7 @@ permissions:
   pages: write
   id-token: write
 concurrency:
-  group: metadrive-pages-release
+  group: metadrive-authenticated-diagnostic
   cancel-in-progress: false
 jobs:
   verify:
