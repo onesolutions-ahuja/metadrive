@@ -165,7 +165,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use((_req,res,next)=>withAuditContext({},()=>{res.setHeader('X-Correlation-ID',auditContext()!.correlationId);next();}));
   app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb',verify:(req,_res,bytes)=>{
-    if(req.path.startsWith('/api/inbound-webhooks/') && bytes.length<=262144)
+    if((req.url??'').startsWith('/api/inbound-webhooks/') && bytes.length<=262144)
       (req as Request & {rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(bytes);
   }}));
   app.use(express.urlencoded({extended:false,limit:'1mb'}));
