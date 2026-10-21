@@ -183,41 +183,36 @@ function App() {
     void restoreSession();
   }, []);
 
-  // The user's app landing preference is navigation only; the destination
-  // still enforces installation, entitlement and RBAC independently.
+  // A user's configured home determines their destination after common login.
+  // Standalone product UIs do not depend on AppExchange installation.
   useEffect(() => {
-    if (authState !== 'authenticated'||window.location.pathname==='/oauth/authorize') return;
-    const currentRoute = parseAppRoute(window.location.pathname, window.location.search);
-    if (currentRoute.kind !== 'setup' || currentRoute.workspace !== 'home') return;
-    const requestedApp = new URLSearchParams(window.location.search).get('appId');
-    let cancelled = false;
-    void (async () => {
-      const [session,allowed] = await Promise.all([
-        apiRequest<{user:{landingAppApi?:string}}>('/auth/me'),
-        entryTiming?.landing?.apps?.length
-          ? Promise.resolve({apps:entryTiming.landing.apps})
-          : apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps')
-      ]);
-      const preferredApp = requestedApp || session.user.landingAppApi || 'Setup';
-      const appId=allowed.apps.find(app=>app.apiName.toLowerCase()===preferredApp.toLowerCase())?.apiName;
-      if (cancelled || preferredApp==='Setup' || !appId
-        || parseAppRoute(window.location.pathname, window.location.search).kind!=='setup') return;
-      const destination=appRoutePath({kind:'app-home',appId});
-      if(standaloneEntryForAppId(appId)){
-        window.location.assign(destination);
+    if(authState!=='authenticated'||window.location.pathname==='/oauth/authorize'||standaloneEntry)return;
+    const route=parseAppRoute(window.location.pathname,window.location.search);
+    if(route.kind!=='setup'||route.workspace!=='home')return;
+    let cancelled=false;
+    void apiRequest<{user:{landingAppApi?:string}}>('/auth/me').then(session=>{
+      const preferredApp=session.user.landingAppApi??'Setup';
+      if(cancelled||preferredApp.toLowerCase()==='setup')return;
+      const standalone=standaloneEntryForAppId(preferredApp);
+      if(standalone){
+        window.location.assign('/'+standalone.slug);
         return;
       }
-      window.history.replaceState({}, '', destination);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    })().catch(() => { /* Keep Setup Home if landing preferences cannot be loaded. */ });
-    return () => { cancelled = true; };
-  }, [authState,entryTiming]);
+      // Existing MetaDrive application navigation retains its normal behaviour.
+      return apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps').then(allowed=>{
+        const app=allowed.apps.find(item=>item.apiName.toLowerCase()===preferredApp.toLowerCase());
+        if(cancelled||!app)return;
+        window.location.assign(appRoutePath({kind:'app-home',appId:app.apiName}));
+      });
+    }).catch(()=>{/* Remain in Setup when preferences cannot be read. */});
+    return()=>{cancelled=true;};
+  },[authState,standaloneEntry]);
 
   const loginSuccess = (timing: EntryTiming) => { sessionGeneration.current += 1; setEntryTiming(timing); setAuthState('authenticated'); };
   const cancelRestore = () => { sessionGeneration.current += 1; };
   if (authState === 'restoring') return <div className="auth-loading" role="status">Restoring session…</div>;
-  if (authState === 'anonymous') return <Login branding={standaloneEntry??undefined} onStart={cancelRestore} onSuccess={loginSuccess} />;
-  if (authState === 'error') return <Login branding={standaloneEntry??undefined} error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
+  if (authState === 'anonymous') return <Login onStart={cancelRestore} onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
   const onLogout=()=>{sessionGeneration.current += 1;setEntryTiming(null);setAccessToken(undefined);setAuthState('anonymous');};
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}><LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/></React.Suspense>;
