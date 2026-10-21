@@ -68,6 +68,14 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
   const pathSegments = pathname.split('/').filter(Boolean);
   const segments = pathSegments[0] === 'une' ? pathSegments.slice(1) : [];
   const appId = new URLSearchParams(search).get('appId') || 'Records';
+  // Generic single-segment application entrypoints: /acetill resolves the published
+  // Acetill app, without a second login or app-specific routing branch.
+  // The authenticated app runtime still enforces tenant licence, installation and RBAC.
+  if (pathSegments.length === 1 && /^[a-z][a-z0-9]*$/.test(pathSegments[0])
+    && !['login','logout','oauth','api','une','index'].includes(pathSegments[0])) {
+    const slug = pathSegments[0];
+    return {kind:'app-home',appId:slug[0].toUpperCase()+slug.slice(1)};
+  }
   try {
     if (segments.length === 3 && segments[0] === 'apps' && segments[2] === 'home') {
       return { kind: 'app-home', appId: decodeURIComponent(segments[1]) };
