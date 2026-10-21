@@ -6,17 +6,17 @@ Credential API name: `WhatsApp_Cloud_API`. The existing tenant has a **disabled*
 
 | Variable | Enter from Meta | Notes |
 | --- | --- | --- |
-| `graphApiVersion` | Graph API version supported by your app | Example format `vNN.0`; choose a currently supported version |
-| `wabaId` | WhatsApp Business Account ID | Needed for phone-number lookup and WABA webhook subscription |
-| `phoneNumberId` | Registered sender Phone Number ID | Used for `POST /{version}/{phoneNumberId}/messages` |
-| `businessPortfolioId` | Meta Business portfolio ID | For asset discovery/administration |
-| `metaAppId` | Meta developer App ID | Used when linking app and webhook |
-| `businessPhoneE164` | Sender business phone | Display/verification reference, not Phone Number ID |
-| `templateLanguage` | Approved template locale | Typically `en_US` |
-| `webhookCallbackUrl` | HTTPS endpoint registered with Meta | For inbound message/status deliveries |
-| `displayName` | Business display name | Optional descriptive setting |
+| `public_graphApiVersion` | Graph API version supported by your app | Example format `vNN.0`; choose a currently supported version |
+| `public_wabaId` | WhatsApp Business Account ID | Needed for phone-number lookup and WABA webhook subscription |
+| `public_phoneNumberId` | Registered sender Phone Number ID | Used for `POST /{version}/{phoneNumberId}/messages` |
+| `public_businessPortfolioId` | Meta Business portfolio ID | For asset discovery/administration |
+| `public_metaAppId` | Meta developer App ID | Used when linking app and webhook |
+| `public_businessPhoneE164` | Sender business phone | Display/verification reference, not Phone Number ID |
+| `public_templateLanguage` | Approved template locale | Typically `en_US` |
+| `public_webhookCallbackUrl` | HTTPS endpoint registered with Meta | For inbound message/status deliveries |
+| `public_displayName` | Business display name | Optional descriptive setting |
 
-These values are saved encrypted when you click **Save Changes**. Only these non-secret settings are shown again for editing. Do not put passwords, access tokens, two-step PINs, verify tokens or App Secret into these fields.
+These values use MetaDrive's reusable `public_` variable convention and are saved through the existing Named Credentials editor when you click **Save Changes**. No WhatsApp-specific SQL seeder runs. Only these non-secret settings are shown again for editing. Do not put passwords, access tokens, two-step PINs, verify tokens or App Secret into these fields.
 
 ## Confidential fields
 
