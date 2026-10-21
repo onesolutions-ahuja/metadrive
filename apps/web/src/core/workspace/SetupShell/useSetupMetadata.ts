@@ -6,11 +6,11 @@ import { saveVerifiedMetadata, type MetadataPublicationResponse } from '../../me
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 
 export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
-  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder');
+  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder' || workspace === 'scheduled-flows' || workspace === 'app-exchange');
 }
 
 export function useSetupMetadata(ctx: any) {
-  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setFlowDefinitionsLoaded, setFlowDefinitionsError, setReportsLoaded, setReportsError, setDashboardsLoaded, setDashboardsError, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
   // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
   // Load tenant permissions as soon as a screen needs them, without waiting for
@@ -36,7 +36,11 @@ export function useSetupMetadata(ctx: any) {
   }, [route.kind, workspace]);
   const analyticsLoads = useRef(new Set<string>());
   useEffect(() => {
-    if (!advancedMetadataLoaded) return;
+    // Direct analytics/automation lists fetch immediately, rather than waiting
+    // for the unrelated editor/component-library bootstrap to finish.
+    const directDataRoute=route.kind === 'setup' &&
+      ['report-builder', 'dashboard-builder', 'scheduled-flows'].includes(workspace);
+    if (!advancedMetadataLoaded && !directDataRoute) return;
     const currentPage = pages.filter((page) =>
       (route.kind === 'app-page' && page.apiName === route.pageApiName)
       || (route.kind === 'app-home' && page.pageType === 'Home Page' &&
@@ -68,6 +72,8 @@ export function useSetupMetadata(ctx: any) {
               setFlow(definitions[0]);
               setSelectedFlowId(definitions[0].elements[0]?.id ?? 1);
             }
+            setFlowDefinitionsError('');
+            setFlowDefinitionsLoaded(true);
           })
       },
       {
@@ -89,7 +95,10 @@ export function useSetupMetadata(ctx: any) {
     for (const group of optionalGroups) {
       if (!group.enabled || analyticsLoads.current.has(group.key)) continue;
       analyticsLoads.current.add(group.key);
-      void group.run().catch(() => analyticsLoads.current.delete(group.key));
+      void group.run().catch((error:unknown) => {
+        analyticsLoads.current.delete(group.key);
+        if(group.key==='flow-definitions')setFlowDefinitionsError(error instanceof Error?error.message:String(error));
+      });
     }
     if (reportNeeded && !analyticsLoads.current.has('reports')) {
       analyticsLoads.current.add('reports');
@@ -100,7 +109,11 @@ export function useSetupMetadata(ctx: any) {
         setReports(reportsPayload.reports ?? []);
         setReportFolders(foldersPayload.folders ?? []);
         setCanManageReportFolders(Boolean(foldersPayload.canManageAll));
-      }).catch(() => analyticsLoads.current.delete('reports'));
+        setReportsError('');setReportsLoaded(true);
+      }).catch((error:unknown) => {
+        analyticsLoads.current.delete('reports');
+        setReportsError(error instanceof Error?error.message:String(error));
+      });
     }
     if (dashboardNeeded && !analyticsLoads.current.has('dashboards')) {
       analyticsLoads.current.add('dashboards');
@@ -118,7 +131,11 @@ export function useSetupMetadata(ctx: any) {
         setDashboardFolders(foldersPayload.folders ?? []);
         setDashboardTerritories(territoryPayload.territories ?? []);
         setCanManageDashboardTerritories(Boolean(territoryPayload.canManage));
-      }).catch(() => analyticsLoads.current.delete('dashboards'));
+        setDashboardsError('');setDashboardsLoaded(true);
+      }).catch((error:unknown) => {
+        analyticsLoads.current.delete('dashboards');
+        setDashboardsError(error instanceof Error?error.message:String(error));
+      });
     }
   }, [advancedMetadataLoaded, route, workspace, pages]);
 
