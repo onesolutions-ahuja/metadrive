@@ -2016,9 +2016,9 @@ export async function startSystemServer() {
   try { await applySystemMigrations(db); await db.verifySchema();
     await seedAcetillAppCatalog(db); // Catalog only: tenant installation/RBAC stay in AppExchange.
     await seedAceKioskAppCatalog(db); // Custom frontend discovery; no automatic tenant licence/install.
-    await seedAceKioskMenuFlows(db); // Installed tenants only, never overwrites existing Flow versions.
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     await seedCartObjectsForExistingTenants(db);
+    await seedAceKioskMenuFlows(db); // Installed tenants only, never overwrites existing Flow versions.
     await seedQuotationObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
