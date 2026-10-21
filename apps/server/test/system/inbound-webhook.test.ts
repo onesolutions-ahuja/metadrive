@@ -13,7 +13,7 @@ test('Meta verification and signatures are mandatory before an inbound Flow runs
  const db={query:async(sql:string)=>{
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Inbox',flow_api:'AceChatterReceive',
-   execution_user_id:'actor',enabled:true,app_api:'AceChatter',
+   execution_user_id:'actor',enabled:true,app_api:'AceChatter',provider:'Meta',
    verify_token_digest:createHash('sha256').update(token).digest(),
    signature_secret_ciphertext:Buffer.from('encrypted'),encryption_key_id:'active'
   }]};
