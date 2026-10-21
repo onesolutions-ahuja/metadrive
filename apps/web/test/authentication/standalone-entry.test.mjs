@@ -28,15 +28,13 @@ test('product login keeps shared MetaDrive session, MFA and password recovery',(
   assert.match(app,/return <SetupApp entryTiming=/);
 });
 
-test('standalone app shell verifies granted app and renders only published app pages',()=>{
+test('standalone app UI uses direct OneEngine records and flows without app installation or Page Builder',()=>{
   const runtime=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
-  assert.match(runtime,/\/metadata\/apps/);
-  assert.match(runtime,/item\.apiName\.toLowerCase\(\)===entry\.appId\.toLowerCase\(\)/);
-  assert.match(runtime,/appId=\{app\?\.apiName\?\?entry\.appId\}/);
-  assert.match(runtime,/navigationPageApiNames/);
-  assert.match(runtime,/LazyPublishedRuntime/);
+  assert.match(runtime,/\/metadata\/objects/);
+  assert.match(runtime,/\/records\//);
+  assert.match(runtime,/\/flows\//);
   assert.match(runtime,/\/auth\/logout/);
-  assert.doesNotMatch(runtime,/setupAppShell|AppManager|PageBuilder/);
+  assert.doesNotMatch(runtime,/\/metadata\/apps|LazyPublishedRuntime|PageBuilder|component-library/);
 });
 
 test('old app links and metadata navigation enter the app-only frontend',()=>{
@@ -62,11 +60,11 @@ test('user landing preference opens the assigned app without granting access',()
   const schema=readFileSync(new URL('../../../server/src/system-support/migrations/20261021-user-landing-app.sql',import.meta.url),'utf8');
   assert.match(app,/landingAppApi\?:string/);
   assert.match(app,/\/auth\/me/);
-  assert.match(app,/preferredApp==='Setup'/);
-  assert.match(app,/standaloneEntryForAppId\(appId\)/);
-  assert.match(app,/window\.location\.assign\(destination\)/);
+  assert.match(app,/landingAppApi\?\?'Setup'/);
+  assert.match(app,/standaloneEntryForAppId\(preferredApp\)/);
+  assert.match(app,/window\.location\.assign\('\/'\+standalone\.slug\)/);
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
   assert.match(server,/landingAppApi:landing\.rows\[0\]\?\.landing_app_api\?\?'Setup'/);
   assert.match(schema,/landing_app_api text NOT NULL DEFAULT 'Setup'/);
-  assert.match(app,/still enforces installation, entitlement and RBAC independently/);
+  assert.match(app,/without installed-app checks for standalone/);
 });
