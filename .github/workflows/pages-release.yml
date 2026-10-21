@@ -59,3 +59,19 @@ jobs:
       # Release the current main frontend, including metadata integrity diagnostics.
       - name: Verify published site serves this exact frontend bundle
         run: node scripts/verify-pages-artifacts.mjs --live
+  publication-diagnostic:
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/offline-publication-20261021'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify authenticated metadata publication digest and freshness
+        run: node scripts/diagnose-offline-publication.mjs
+        env:
+          METADRIVE_TENANT_SLUG: ${{ secrets.METADRIVE_TENANT_SLUG }}
+          METADRIVE_LOGIN_EMAIL: ${{ secrets.METADRIVE_LOGIN_EMAIL }}
+          METADRIVE_LOGIN_PASSWORD: ${{ secrets.METADRIVE_LOGIN_PASSWORD }}
