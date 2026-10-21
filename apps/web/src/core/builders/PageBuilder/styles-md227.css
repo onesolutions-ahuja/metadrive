@@ -231,3 +231,47 @@
 @media (prefers-reduced-motion:reduce) {
  .canvas-unified-builder .component-panel,.canvas-unified-builder .properties-panel {animation:none}
 }
+
+
+/* Metadata-driven visual presets: the raw numeric controls remain available in Advanced. */
+.metadata-component-visual-editor .visual-preset-section {margin:12px 0 16px}
+.metadata-component-visual-editor .visual-preset-heading {
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:7px;font-size:12px;font-weight:650;
+}
+.metadata-component-visual-editor .visual-preset-heading small {font-size:11px;color:#768398;font-weight:500}
+.metadata-component-visual-editor .visual-preset-grid {
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;
+}
+.metadata-component-visual-editor .visual-preset {
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  min-width:0;min-height:67px;padding:6px 2px;border:1px solid #dfe5ed;
+  border-radius:9px;background:white;font-size:10px;cursor:pointer;color:#3b465d;
+}
+.metadata-component-visual-editor .visual-preset:hover {border-color:#8e7bf8;background:#faf8ff}
+.metadata-component-visual-editor .visual-preset.active {border:2px solid var(--md-primary,#7656f7);padding:5px 1px;background:#f7f4ff;color:#4931a9}
+.metadata-component-visual-editor .visual-preset-sample {height:30px;display:flex;align-items:center;justify-content:center;width:100%}
+.metadata-component-visual-editor .visual-corner-example {height:23px;width:29px;border:3px solid currentColor}
+.metadata-component-visual-editor .visual-border-example {height:23px;width:29px;border-style:solid;border-color:currentColor;border-radius:3px}
+.metadata-component-visual-editor .visual-space-example {display:flex;align-items:center;min-width:30px;min-height:23px;border:1px dashed #b8c2d6}
+.metadata-component-visual-editor .visual-space-example i {width:8px;height:12px;background:#899bcb;display:block}
+.metadata-component-visual-editor .visual-alignment-example {
+  display:flex;align-items:flex-start;flex-direction:column;justify-content:space-around;
+  height:28px;width:34px;margin:auto;gap:3px;
+}
+.metadata-component-visual-editor .visual-alignment-example i {height:5px;background:currentColor;border-radius:2px;width:26px}
+.metadata-component-visual-editor .visual-alignment-example i:nth-child(2) {width:15px}
+.metadata-component-visual-editor .visual-align-center {align-items:center}
+.metadata-component-visual-editor .visual-align-end {align-items:flex-end}
+.metadata-component-visual-editor .visual-align-stretch i {width:100%}
+.metadata-component-visual-editor .visual-align-space-between {justify-content:space-between}
+.metadata-component-visual-editor .visual-swatch-grid {display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px}
+.metadata-component-visual-editor .visual-swatch {aspect-ratio:1;border:1px solid #bdc5d2;border-radius:7px;cursor:pointer;min-width:0}
+.metadata-component-visual-editor .visual-swatch.active {outline:2px solid var(--md-primary,#7355ed);outline-offset:2px}
+.metadata-component-visual-editor .visual-advanced-properties {margin:12px 0;padding:10px;border:1px solid #dfe5ed;border-radius:10px}
+.metadata-component-visual-editor .visual-advanced-properties summary {cursor:pointer;font-weight:600;font-size:12px;line-height:1.5}
+.metadata-component-visual-editor .visual-advanced-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}
+.metadata-component-visual-editor .visual-advanced-grid .form-label {min-width:0;margin:0}
+.metadata-component-visual-editor .visual-advanced-grid .form-control {width:100%;min-width:0}
+.canvas-unified-builder .free-canvas-component.selected {z-index:50}
+.canvas-unified-builder .canvas-align-choices button {display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px}
