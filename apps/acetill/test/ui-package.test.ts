@@ -29,3 +29,16 @@ test('catalogue and basket bind shared Product fields and same cart state',()=>{
  assert.match(sql,/OneItemGrid','main',20,'cartTargetKey','string','acetill'/);
  assert.match(sql,/OneShoppingCart','sidebar',30,'cartTargetKey','string','acetill'/);
 });
+
+test('standalone entrypoint mounts Acetill without importing full admin workspace',()=>{
+ const shell=readFileSync(fileURLToPath(new URL('../src/AcetillShell.tsx',import.meta.url)),'utf8');
+ const main=readFileSync(fileURLToPath(new URL('../../web/src/main.tsx',import.meta.url)),'utf8');
+ assert.match(main,/isAcetillEntry/);
+ assert.match(main,/<Acetill \/>/);
+ assert.doesNotMatch(shell,/SetupApp|MarketingSite|AppExchange|object-manager/);
+ assert.match(shell,/createLoginView/);
+ assert.match(shell,/\/auth\/refresh\?landing=1/);
+ assert.match(shell,/\/apps\/Acetill\/home-page/);
+ assert.match(shell,/OneShoppingCart/);
+ assert.match(shell,/previewOnly=\{true\}/);
+});
