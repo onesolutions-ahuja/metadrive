@@ -44,7 +44,7 @@ export default function StandaloneRuntime({entry,onLogout}:RuntimeProps) {
     void (async()=>{
       // Authoritative list includes only installed, entitled apps permitted by RBAC.
       const appResponse=await apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps');
-      const app=appResponse.apps.find(item=>item.apiName===entry.appId);
+      const app=appResponse.apps.find(item=>item.apiName.toLowerCase()===entry.appId.toLowerCase());
       if(!app)throw Error(entry.label+' is not installed, licensed or permitted for this user. Contact your UNE Solutions administrator.');
       const [objectResponse,pageResponse,libraryResponse]=await Promise.all([
         apiRequest<{objects:ObjectMetadata[]}>('/metadata/objects'),
@@ -67,7 +67,7 @@ export default function StandaloneRuntime({entry,onLogout}:RuntimeProps) {
       setMessage('This destination is not part of the standalone app. Configure an app page in UNE Solutions.');
       return;
     }
-    if(route.appId!==entry.appId || route.kind==='app-page' && !allowedPages.includes(route.pageApiName)) {
+    if(route.appId.toLowerCase()!==entry.appId.toLowerCase() || route.kind==='app-page' && !allowedPages.includes(route.pageApiName)) {
       setMessage('That page is not available to this application.');
       return;
     }
@@ -115,7 +115,7 @@ export default function StandaloneRuntime({entry,onLogout}:RuntimeProps) {
         {message && <p role="status" className="standalone-product-message">{message}</p>}
         <React.Suspense fallback={<p role="status">Loading published page…</p>}>
           <LazyPublishedRuntime key={entry.appId+':'+selectedPage+':'+refresh}
-            appId={entry.appId} pageApiName={selectedPage||undefined}
+            appId={app?.apiName??entry.appId} pageApiName={selectedPage||undefined}
             apps={catalog.apps} objects={catalog.objects} pages={catalog.pages}
             libraryComponents={catalog.libraryComponents} reports={[]} availableFlows={[]}
             formFactor={phone?'Phone':'Desktop'} onNavigate={navigate}
