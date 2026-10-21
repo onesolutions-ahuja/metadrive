@@ -404,6 +404,7 @@ function RecordWorkspace({
   const layoutDevice = usePageLayoutDevice();
   const [records, setRecords] = useState<RecordData[]>([]);
   const [record, setRecord] = useState<RecordData | null>(null);
+  const [overlayRecordId, setOverlayRecordId] = useState<string | null>(null);
   const [duplicateMatches,setDuplicateMatches]=useState<Array<{ruleApi:string;recordId:string}>>([]);
   const [activeLightningPage, setActiveLightningPage] = useState<LightningPageMetadata | null>(null);
   const [activeRuntimeTab, setActiveRuntimeTab] = useState('Related');
@@ -990,6 +991,16 @@ function RecordWorkspace({
   const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
   const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
   const canMassDelete = false;
+  const deleteListRecord = async (item: RecordData) => {
+    if (!object || !canDelete || !window.confirm(`Delete ${String(item.Name ?? item.Id)}? The record may be recoverable from the Recycle Bin.`)) return;
+    try {
+      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}`, { method: 'DELETE', ...(typeof item.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': item.LastModifiedDate } } : {}) });
+      setListNotice('Record deleted.');
+      setRefreshKey(current => current + 1);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to delete record');
+    }
+  };
   const bulkEditableFields = (object?.fields ?? []).filter((field) =>
     fieldAccess[`${object?.apiName}.${field.apiName}`]?.edit === true
     && !field.relationship && !field.formula
@@ -1027,7 +1038,7 @@ function RecordWorkspace({
     route.kind==='record-list'?route.globalCreation?.actionId:'',object?.apiName,defaultRecordTypeId]);
 
   const openEditForm = (item: RecordData) => {
-    if (!object) return;
+    if (!object || !canEdit) return;
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
     const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) => editableFieldNames.has(apiName) || apiName === 'RecordTypeId'));
     setEditingId(item.Id);
@@ -1901,11 +1912,11 @@ function RecordWorkspace({
             return <div className="record-layout-section" key={section.id}>
               <h3>{section.label}</h3>
               <dl className={`record-fields-grid columns-${section.columns}`}>
-                {sectionFields.map((field) => <div className="record-field" key={field.apiName}><dt>{field.label}</dt><dd>{formatFieldValue(field, record[field.apiName])}</dd></div>)}
+                {sectionFields.map((field) => <div className="record-field" key={field.apiName}><dt>{field.label}</dt><dd>{formatFieldValue(field, record[field.apiName])}{canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && fieldAccess[`${object.apiName}.${field.apiName}`]?.edit && !field.formula && <button className="icon-button" type="button" aria-label={`Edit ${field.label}`} onClick={() => openEditForm(record)}><Pencil size={13} /></button>}</dd></div>)}
               </dl>
             </div>;
           }) : <dl className="record-fields-grid">
-            {fields.map((field) => <div className="record-field" key={field.apiName}><dt>{field.label}</dt><dd>{formatFieldValue(field, record[field.apiName])}</dd></div>)}
+            {fields.map((field) => <div className="record-field" key={field.apiName}><dt>{field.label}</dt><dd>{formatFieldValue(field, record[field.apiName])}{canEdit && fieldAccess[`${object.apiName}.${field.apiName}`]?.edit && !field.formula && <button className="icon-button" type="button" aria-label={`Edit ${field.label}`} onClick={() => openEditForm(record)}><Pencil size={13} /></button>}</dd></div>)}
           </dl>}
           <dl className="record-fields-grid"><div className="record-field"><dt>Record ID</dt><dd><code>{record.Id}</code></dd></div></dl>
         </section>}
@@ -2074,7 +2085,7 @@ function RecordWorkspace({
           <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
             onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
             {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
-          </button></th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
+          </button></th>)}{(canEdit || canDelete || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
@@ -2083,12 +2094,13 @@ function RecordWorkspace({
           const selectable = canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
           return <tr key={item.Id}>{(canMassDelete || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName} data-label={field.label}>
             {index === 0
-              ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
+              ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setOverlayRecordId(item.Id); }}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
               : formatFieldValue(field, item[field.apiName])}
-          </td>)}{(canEdit || canChangeOwner) && <td>{rowAllowsEdit && <div className="record-row-actions">
-            {canEdit && <button className="text-action" onClick={() => openEditForm(item)}><Pencil size={13} />Edit</button>}
-            {canChangeOwner && <button className="text-action" onClick={() => openChangeOwner(item)}>Change Owner</button>}
-          </div>}</td>}</tr>;
+          </td>)}{(canEdit || canDelete || canChangeOwner) && <td><div className="record-row-actions">
+            {canEdit && rowAllowsEdit && <button className="text-action" onClick={() => openEditForm(item)}><Pencil size={13} />Edit</button>}
+            {canDelete && rowAllowsDelete && <button className="text-action" aria-label={`Delete ${String(item.Name ?? item.Id)}`} onClick={() => void deleteListRecord(item)}><Trash2 size={13} />Delete</button>}
+            {canChangeOwner && rowAllowsEdit && <button className="text-action" onClick={() => openChangeOwner(item)}>Change Owner</button>}
+          </div></td>}</tr>;
         })}</tbody>
       </table></div>}
       {!error && listTotal > 0 && <nav aria-label="Record list pagination" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px' }}>
@@ -2102,6 +2114,15 @@ function RecordWorkspace({
         </div>
       </nav>}
     </section>
+    {overlayRecordId && <div className="record-form-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) { setOverlayRecordId(null); setRefreshKey(current => current + 1); } }}>
+      <section role="dialog" aria-modal="true" aria-label={`${object.label} record details`} className="surface" style={{width:'min(1200px,96vw)',maxHeight:'92vh',overflow:'auto',padding:16,borderRadius:12}}>
+        <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginBottom:8}}>
+          <a className="btn" href={appRoutePath({kind:'record-detail',objectApiName:object.apiName,recordId:overlayRecordId,appId:route.appId})}>Open full page</a>
+          <button className="icon-button" type="button" aria-label="Close record" onClick={() => { setOverlayRecordId(null); setRefreshKey(current => current + 1); }}><X size={18}/></button>
+        </div>
+        <RecordWorkspace route={{kind:'record-detail',objectApiName:object.apiName,recordId:overlayRecordId,appId:route.appId}} objects={objects} apps={apps} pages={pages} availableFlows={availableFlows} onLaunchFlow={onLaunchFlow} reports={reports} metadataLoaded={metadataLoaded} profileId={profileId} canManageUserIdentities={canManageUserIdentities} userRoles={userRoles} fieldAccess={fieldAccess} recordTypeAccess={recordTypeAccess} libraryComponents={libraryComponents} headerSearch={headerSearch} onSearchChange={onSearchChange} navigableObjects={navigableObjects} onNavigate={next => { if (next.kind === 'record-list' && next.objectApiName === object.apiName) { setOverlayRecordId(null); setRefreshKey(current => current + 1); } else if (next.kind === 'record-detail' && next.objectApiName === object.apiName) setOverlayRecordId(next.recordId); else onNavigate(next); }}/>
+      </section>
+    </div>}
     {bulkOwnerDialogOpen && <div className="record-form-backdrop" role="presentation"
       onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkOwnerSaving) setBulkOwnerDialogOpen(false); }}>
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="bulk-owner-title">
