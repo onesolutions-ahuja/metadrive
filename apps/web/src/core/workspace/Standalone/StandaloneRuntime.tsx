@@ -91,7 +91,7 @@ export default function StandaloneRuntime({entry,onLogout}:RuntimeProps) {
     catch{/* Client session always clears, even when server is unavailable. */}
     finally{onLogout();}
   };
-  return <div className="standalone-product" style={{'--product-accent':entry.accent} as React.CSSProperties}>
+  return <div className="standalone-product" style={{'--product-accent':app?.brandColor||entry.accent} as React.CSSProperties}>
     <header className="standalone-product-header">
       <button className="standalone-product-brand" type="button" onClick={()=>navigate({kind:'app-home',appId:entry.appId})}>
         <span className="standalone-product-mark" aria-hidden="true">{entry.label.slice(0,1)}</span>
