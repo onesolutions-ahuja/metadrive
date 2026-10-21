@@ -38,7 +38,10 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
   {label:'OneEngine Permissions',workspace:'rbac',description:'Developer and builder access policies',allowed:!!rights?.security}
  ];
  const available=destinations.filter(item=>item.allowed);
- const visibleSections=sections.filter(section=>section.id!=='developer'||available.length>0);
+ const visibleSections=sections.filter(section=>
+  (section.id!=='developer'||available.length>0) &&
+  (!mobile || !['security','integrations'].includes(section.id) || !!rights?.security)
+ );
  return <div className={mobile?'company-workspace company-workspace-mobile':'company-workspace'}>
    <header className="company-workspace-heading">
      {mobile && mobileSection && <button type="button" className="company-workspace-mobile-back"
