@@ -1471,6 +1471,30 @@ export function createSystemServer(db:SqlPersistence) {
       await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({path:resolution.path});
   }));
+  // Tenant-scoped self-service diagnostics; never grant or bypass permissions.
+  app.get('/api/metadata/apps/:apiName/access',route(async(req,res)=>{
+    const actor=req.actor!;
+    const appName=req.params.apiName;
+    if(!/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(appName))throw Error('Invalid app name');
+    const {rows}=await db.query<{installed:boolean;licensed:boolean;enabled:boolean}>(`
+      SELECT (i.app_id IS NOT NULL) AS installed,
+        (e.app_id IS NOT NULL AND e.active=true AND
+        (e.expires_at IS NULL OR e.expires_at>now())) AS licensed,
+        a.enabled
+      FROM md_apps a
+      LEFT JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
+      LEFT JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
+      LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
+      WHERE COALESCE(m.api_name,a.api_name)=$2
+        AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+      LIMIT 1`,[actor.tenant_id,appName]);
+    const found=rows[0],installed=found?.installed===true;
+    const licensed=found?.licensed===true,enabled=found?.enabled===true;
+    const permitted=installed&&licensed&&enabled
+      &&await rbac.allowed(actor.tenant_id,actor.user_id,'App:'+appName,'read');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({installed,licensed,enabled,permitted});
+  }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
