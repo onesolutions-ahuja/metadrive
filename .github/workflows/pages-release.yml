@@ -24,9 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - name: Inspect public Pages API binding and Render SQL (report)
+      - name: Verify production frontend, Render API and browser login
         if: github.event_name == 'pull_request'
-        continue-on-error: true
         run: node scripts/verify-public-render-routing.mjs
   publish:
     if: github.event_name != 'pull_request'
