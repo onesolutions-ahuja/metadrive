@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>AceKiosk | UNE Solutions</title>
+</head>
+<body>
+  <p>Opening AceKiosk… <a href="/?__spa=%2Facekiosk">Continue to AceKiosk</a></p>
+  <script>
+    (function () {
+      // Preserve the canonical standalone URL. The shared MetaDrive shell
+      // restores this route before loading the lazy AceKiosk UI.
+      var route = '/acekiosk' + window.location.search + window.location.hash;
+      window.location.replace('/?__spa=' + encodeURIComponent(route));
+    }());
+  </script>
+</body>
+</html>
