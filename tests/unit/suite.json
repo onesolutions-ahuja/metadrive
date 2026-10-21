@@ -9,6 +9,7 @@
     "apps/server/test/system/business-calendar-settings.test.ts",
     "apps/server/test/system/cart-objects.test.ts",
     "apps/server/test/system/core-object-defaults.test.ts",
+    "apps/server/test/system/core-quotation-objects.test.ts",
     "apps/server/test/system/cors-if-match.test.ts",
     "apps/server/test/system/credential-key-version.test.ts",
     "apps/server/test/system/credential-rotation.test.ts",
