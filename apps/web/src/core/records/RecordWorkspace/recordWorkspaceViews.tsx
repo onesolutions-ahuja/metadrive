@@ -1122,7 +1122,7 @@ function RecordWorkspace({
       ));
       // A record without an assigned type must not submit an empty type ID:
       // the generic API treats an explicitly supplied ID as an assignment request.
-      if (writableValues.RecordTypeId === '') delete writableValues.RecordTypeId;
+      if (writableValues.RecordTypeId == null || writableValues.RecordTypeId === '') delete writableValues.RecordTypeId;
       if (object.apiName === 'User') {
         if (!editingId) {
           if (typeof formValues.Password !== 'string' || formValues.Password.length < 12) throw new Error('Set an initial password of at least 12 characters.');
