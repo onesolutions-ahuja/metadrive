@@ -54,6 +54,7 @@
     "apps/server/test/system/mfa-service.test.ts",
     "apps/server/test/system/named-credential-auth-contract.test.ts",
     "apps/server/test/system/named-credential-service.test.ts",
+    "apps/server/test/system/native-tenant-records.test.ts",
     "apps/server/test/system/oauth-authorization-contract.test.ts",
     "apps/server/test/system/oauth-pkce-start.test.ts",
     "apps/server/test/system/object-manager-metadata.test.ts",
