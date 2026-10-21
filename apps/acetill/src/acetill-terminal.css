@@ -108,3 +108,21 @@
   .standalone-product .acetill-shop{height:60%;max-height:60%;min-height:0;}
   .standalone-product .acetill-current-order{height:40%;max-height:40%;min-height:0;}
 }
+
+
+/* Second-screen launcher and cash/card dialogs belong to the custom POS only. */
+.acetill-display-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #dce5f3;background:#f3f7fd;color:#1456b5;border-radius:10px;min-height:42px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.acetill-display-button:hover{border-color:#2563eb;background:#e8f1ff}
+.acetill-payment-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.acetill-payment-choices .acetill-charge{width:100%}
+.acetill-payment-choices .acetill-charge:first-child{background:#188057}
+.acetill-payment-backdrop{position:fixed;inset:0;z-index:3000;background:#0a142b9c;display:grid;place-items:center;padding:18px}
+.acetill-payment-dialog{background:#fff;color:#192538;width:min(100%,470px);max-height:calc(100dvh - 36px);overflow:auto;border-radius:22px;padding:30px;box-shadow:0 24px 70px #0d1d3560}
+.acetill-payment-dialog h2{margin:0 0 16px;font-size:27px}
+.acetill-payment-dialog label{display:grid;gap:8px;font-weight:700}
+.acetill-payment-dialog input{border:1px solid #becbdb;background:#fff;border-radius:12px;padding:14px;font-size:24px;width:100%;box-sizing:border-box}
+.acetill-payment-buttons{display:grid;grid-template-columns:1fr 1.3fr;gap:12px;margin-top:24px}
+.acetill-payment-buttons button{border-radius:12px;border:1px solid #dce5ee;background:#f5f7fa;padding:12px;font-size:15px;font-weight:700;cursor:pointer;min-height:54px}
+.acetill-payment-buttons .acetill-charge{border:0;background:#1267e5;color:#fff}
+.acetill-payment-buttons button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:820px){.acetill-display-button span{display:none}}
