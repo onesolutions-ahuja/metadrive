@@ -12,7 +12,8 @@ permissions:
 # A newer release must supersede a stale, queued Pages deployment instead of
 # leaving the latest production frontend blocked behind obsolete commits.
 concurrency:
-  group: metadrive-pages-release
+  # Keep PR checks separate from production so a feature push cannot cancel a live release.
+  group: metadrive-pages-release-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   verify:
