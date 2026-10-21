@@ -1981,7 +1981,10 @@ function RecordWorkspace({
     })());
   return <div className="records-page">
     {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
-    <RecordsListPageHeading label={object.pluralLabel} onRefresh={() => setRefreshKey((current) => current + 1)} />
+    <RecordsListPageHeading label={object.pluralLabel}
+      objects={navigableObjects} selected={object.apiName}
+      onObjectSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})}
+      onRefresh={() => setRefreshKey((current) => current + 1)} />
     {renderGlobalQuickActions()}
     {recycleOpen && <section className="records-list-card surface" aria-label="Record Recycle Bin" style={{padding:16,marginBottom:12}}>
       <div className="records-list-toolbar">
@@ -2022,7 +2025,7 @@ function RecordWorkspace({
     <section className="records-list-card surface">
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
-        <RecordsListSearchControls objects={navigableObjects} selected={object.apiName} label={object.pluralLabel} search={headerSearch} onObjectSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})} onSearchChange={(value) => {setListOffset(0);onSearchChange(value);}} />
+        <RecordsListSearchControls label={object.pluralLabel} search={headerSearch} onSearchChange={(value) => {setListOffset(0);onSearchChange(value);}} />
         <SavedRecordListViewPicker objectApi={object.apiName}
           defaultColumns={defaultListFields.map(field=>field.apiName)}
           fields={object.fields.filter(field=>fieldAccess[`${object.apiName}.${field.apiName}`]?.read)}
