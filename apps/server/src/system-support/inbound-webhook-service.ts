@@ -9,7 +9,7 @@ type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
 type Endpoint={tenant_id:string;id:string;api_name:string;flow_api:string;
  execution_user_id:string;verify_token_digest:Buffer;signature_secret_ciphertext:Buffer;
- encryption_key_id:string;enabled:boolean;app_api:string};
+ encryption_key_id:string;enabled:boolean;app_api:string;provider:string};
 const identifier=/^[A-Za-z][A-Za-z0-9_]*$/;
 const uuid=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
 const handler=(fn:(req:Authenticated,res:Response)=>Promise<void>)=>
@@ -39,7 +39,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const endpoint=await load(req.params.id);
   const mode=req.query['hub.mode'],token=req.query['hub.verify_token'];
   const challenge=req.query['hub.challenge'];
-  if(!endpoint||mode!=='subscribe'||typeof token!=='string'||token.length>512
+  if(!endpoint||endpoint.provider!=='Meta'||mode!=='subscribe'||typeof token!=='string'||token.length>512
      ||typeof challenge!=='string'||challenge.length>1024
      ||!matches(endpoint.verify_token_digest,digest(token))){
    res.status(403).type('text/plain').send('Forbidden');return;
@@ -131,7 +131,7 @@ export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
   const {rows}=await db.query(`
    SELECT w.id,w.api_name AS "apiName",a.api_name AS "appApiName",
     w.flow_api AS "flowApi",w.execution_user_id AS "executionUserId",
-    w.enabled,w.created_at AS "createdAt",
+    w.enabled,w.provider,w.created_at AS "createdAt",
     (SELECT count(*)::int FROM md_inbound_webhook_events e
       WHERE e.tenant_id=w.tenant_id AND e.endpoint_id=w.id) AS "eventCount"
    FROM md_inbound_webhook_endpoints w JOIN md_apps a ON a.id=w.app_id
@@ -149,6 +149,7 @@ export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
     ||typeof body.flowApi!=='string'||!identifier.test(body.flowApi)
     ||typeof body.executionUserId!=='string'||!uuid.test(body.executionUserId)
     ||typeof body.verifyToken!=='string'||body.verifyToken.length<24||body.verifyToken.length>512
+    ||!['Meta','HmacSha256'].includes(String(body.provider??'Meta'))
     ||typeof body.appSecret!=='string'||body.appSecret.length<16||body.appSecret.length>512
     ||body.enabled!==undefined&&typeof body.enabled!=='boolean')
    {res.status(400).json({error:'Invalid webhook settings'});return;}
@@ -174,11 +175,11 @@ export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
    INSERT INTO md_inbound_webhook_endpoints
     (tenant_id,api_name,app_id,flow_api,execution_user_id,
      verify_token_digest,signature_secret_ciphertext,encryption_key_id,
-     enabled,created_by)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     provider,enabled,created_by)
+   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
    RETURNING id`,[actor.tenant_id,body.apiName,apps[0].id,body.flowApi,
     body.executionUserId,digest(body.verifyToken),secured.ciphertext,secured.keyId,
-    body.enabled===true,actor.user_id]);
+    body.provider??'Meta',body.enabled===true,actor.user_id]);
   res.status(201).json({id:rows[0].id,callbackUrl:publicUrl(req,rows[0].id)});
  }));
  app.patch('/api/metadata/inbound-webhooks/:id',handler(async(req,res)=>{
