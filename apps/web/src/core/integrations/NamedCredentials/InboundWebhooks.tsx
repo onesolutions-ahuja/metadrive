@@ -5,7 +5,7 @@ type Endpoint={id:string;apiName:string;appApiName:string;flowApi:string;executi
  enabled:boolean;callbackUrl:string;eventCount:number};
 type Options={apps:string[];flows:string[];users:Array<{id:string;email:string}>};
 const empty={apiName:'',appApiName:'',flowApi:'',executionUserId:'',
- verifyToken:'',appSecret:'',enabled:false};
+ verifyToken:'',appSecret:'',provider:'Meta',enabled:false};
 export default function InboundWebhooks(){
  const [items,setItems]=useState<Endpoint[]>([]);
  const [options,setOptions]=useState<Options>({apps:[],flows:[],users:[]});
@@ -68,6 +68,10 @@ export default function InboundWebhooks(){
     <select className="form-control" required value={draft.appApiName}
      onChange={e=>setDraft(v=>({...v,appApiName:e.target.value}))}>
      <option value="">Select installed app</option>{options.apps.map(a=><option key={a}>{a}</option>)}
+    </select></label>
+   <label>Verification provider<select className="form-control" value={draft.provider}
+      onChange={e=>setDraft(v=>({...v,provider:e.target.value}))}>
+      <option value="Meta">Meta (WhatsApp / Facebook)</option><option value="HmacSha256">Generic HMAC-SHA256</option>
     </select></label>
    <label>Target Autolaunched Flow
     <select className="form-control" required value={draft.flowApi}
