@@ -9,8 +9,8 @@ test('Acetill is a separate document, not the UNE workspace router',()=>{
  const vite=readFileSync(file('../../web/vite.config.ts'),'utf8');
  assert.match(html,/Acetill \| Point of Sale/);
  assert.match(html,/src="\/src\/acetillEntry\.tsx"/);
- assert.match(entry,/import AcetillShell/);
- assert.doesNotMatch(entry,/MarketingSite|SetupApp|Workspace/);
+ assert.match(entry,/import App from/);
+ assert.doesNotMatch(entry,/MarketingSite|SetupApp|AcetillShell/);
  assert.match(vite,/acetill\/index\.html/);
  assert.equal(existsSync(file('../../web/public/acetill/index.html')),false,
    'public Acetill redirect would shadow the separately built entrypoint');
