@@ -3,6 +3,7 @@ import {apiBase,apiRequest,setAccessToken} from '../../web/src/core/authenticati
 import {createLoginView} from '../../web/src/core/authentication/Login/loginView';
 import OneShoppingCart from '../../web/src/one/OneShoppingCart/OneShoppingCart';
 import '../../web/src/one/OneShoppingCart/OneShoppingCart.css';
+import '../../web/src/core/workspace/WorkspaceTheme/styles.css';
 import './acetill.css';
 
 const Login=createLoginView('/une-solutions-logo.webp');
@@ -16,7 +17,7 @@ export default function AcetillShell() {
   const [pages,setPages]=React.useState<Page[]>([]);
   const [products,setProducts]=React.useState<Array<Record<string,unknown>>>([]);
   const [screen,setScreen]=React.useState<string>('AcetillSale');
-  const [currency,setCurrency]=React.useState('GBP');
+  const currency='GBP';
 
   const authorize=React.useCallback(async()=>{
     setGate('authorizing');
