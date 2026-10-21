@@ -60,3 +60,25 @@ settings, Product VAT metadata and checkout/receipt Flows before processing real
 
 The intended public route is `https://unesolutions.co.uk/acetill`. The same hosted SPA and
 MetaDrive authentication handle it; domain hosting/deployment must be verified separately.
+
+
+## Cash and card settlement Flows (v1)
+`flows/payment-flows.v1.json` is the versioned metadata source for the independently installed
+`AcetillPaymentCash` and `AcetillPaymentCard` Autolaunched Flows. Run
+`node apps/acetill/scripts/seed-payment-flows.mjs --tenant=<slug>` with an authorised
+backend `DATABASE_URL` to create draft definitions only. Existing tenant Flows and
+customisations are preserved; publishing/activation requires validation.
+
+Both Flows accept `cartItems` as an **OrderLine Record Collection** with
+`Product` and `Quantity` fields plus `requestId`. They fetch active Product records
+and authoritative Price values on the backend, reject invalid items/quantities or
+insufficient/unconfirmed tender, create an Order and its OrderLines, verify the saved
+line total matches the Order total, and return `status=completed`, `orderId` and `total`.
+Cash additionally takes `cashReceived` and calculates server-side change; Card
+requires `cardPaymentConfirmed=true`. Flows use the existing user OneEngine context,
+Acetill app entitlement, and backend record permissions. They do not implement a card
+processor integration; operator confirmation remains a human attestation.
+
+These Flows do not define tax calculation, discounts, inventory deduction, refunds or
+acquirer settlement. Add such rules as independently configured Flows before relying on
+those business capabilities. There is no direct SQL access from the Acetill frontend.

@@ -50,6 +50,7 @@ export default function AcetillTerminal(){
   const [cashReceived,setCashReceived]=React.useState('');
   const [customerWindow,setCustomerWindow]=React.useState<Window|null>(null);
   const customerWindowRef=React.useRef<Window|null>(null);
+  const paymentRequestId=React.useRef(crypto.randomUUID());
   const openCustomerDisplay=()=>{
     const current=customerWindowRef.current;
     if(current&&!current.closed){current.focus();return;}
@@ -142,8 +143,8 @@ export default function AcetillTerminal(){
   const shown=products;
   const count=cart.reduce((n,x)=>n+x.quantity,0);
   const subtotal=cart.reduce((n,x)=>n+x.quantity*x.price,0);
-  const add=(item:Item)=>setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});
-  const change=(id:string,delta:number)=>setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));
+  const add=(item:Item)=>{paymentRequestId.current=crypto.randomUUID();setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});};
+  const change=(id:string,delta:number)=>{paymentRequestId.current=crypto.randomUUID();setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));};
   const received=Number(cashReceived);
   const tenderValid=Number.isFinite(received)&&cashReceived.trim()!==''&&
     Math.round(received*100)>=Math.round(subtotal*100);
@@ -154,7 +155,8 @@ export default function AcetillTerminal(){
     if(!method||!flow||!cart.length||busy||(method==='cash'&&!tenderValid))return;
     try {
       const result=await execute(flow,{
-        cartItems:cart.map(x=>({productId:x.id,quantity:x.quantity,unitPrice:x.price})),
+        cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity})),
+        requestId:paymentRequestId.current,
         cartTotal:subtotal,paymentMethod:method==='cash'?'Cash':'Card',
         ...(method==='cash'?{cashReceived:received,changeDue}:{cardPaymentConfirmed:true})
       });
@@ -165,6 +167,7 @@ export default function AcetillTerminal(){
       if(completed){
         setReceipt(outputs);
         setCart([]);
+        paymentRequestId.current=crypto.randomUUID();
         setPaymentMode(null);
         setCashReceived('');
         setMessage('Sale confirmed by '+flow.apiName+'.');
@@ -241,7 +244,7 @@ export default function AcetillTerminal(){
       </div>
     </section>
     <aside className="acetill-current-order" aria-label="Current order">
-      <div className="acetill-order-heading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>setCart([])}>⌫</button></div>
+      <div className="acetill-order-heading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>{paymentRequestId.current=crypto.randomUUID();setCart([]);}}>⌫</button></div>
       <div className="acetill-lines">{cart.length?cart.map(p=><div className="acetill-line" key={p.id}>
         <div className="acetill-line-art">{p.image?<img src={p.image} alt=""/>:<span aria-hidden="true">◻</span>}</div>
         <div className="acetill-line-details"><strong>{p.name}</strong><div className="acetill-qty">
