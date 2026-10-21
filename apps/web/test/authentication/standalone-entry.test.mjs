@@ -83,3 +83,14 @@ test('user landing preference opens the assigned app without granting access',()
   assert.match(schema,/landing_app_api text NOT NULL DEFAULT 'Setup'/);
   assert.match(app,/Standalone product UIs do not depend on AppExchange installation/);
 });
+
+test('AceKiosk uses independent lazy custom UI and backend Flows',()=>{
+ const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
+ const kiosk=readFileSync(new URL('../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
+ assert.equal(resolveStandaloneEntry('/acekiosk')?.appId,'AceKiosk');
+ assert.equal(standaloneCanonicalPath('/une/apps/AceKiosk/home'),'/acekiosk');
+ assert.match(app,/AceKioskAccessGate/);
+ assert.match(kiosk,/AceKioskLoadMenu/);
+ assert.match(kiosk,/AceKioskCheckout/);
+ assert.doesNotMatch(kiosk,/\/records\/|OneShoppingCart|OneItemGrid|PageBuilder/);
+});

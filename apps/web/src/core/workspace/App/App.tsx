@@ -71,6 +71,16 @@ type NewFieldLookupFilterDraft = {
 
 const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthConsent'));
 const LazyStandaloneRuntime=React.lazy(()=>import('../Standalone/StandaloneRuntime'));
+const LazyAceKiosk=React.lazy(()=>import('../../../../../acekiosk/src/AceKiosk'));
+function AceKioskAccessGate({onLogout}:{onLogout:()=>void}){
+ const [allowed,setAllowed]=React.useState<boolean|null>(null);
+ React.useEffect(()=>{let mounted=true;void apiRequest<{apps:Array<{apiName:string}>}>('/metadata/apps')
+ .then(r=>{if(mounted)setAllowed(r.apps?.some(a=>a.apiName.toLowerCase()==='acekiosk')??false);})
+ .catch(()=>{if(mounted)setAllowed(false);});return()=>{mounted=false;};},[]);
+ if(allowed===null)return <main role="status">Checking AceKiosk access…</main>;
+ if(!allowed)return <main role="alert">AceKiosk is not installed, licensed or permitted for this user.</main>;
+ return <React.Suspense fallback={<main role="status">Opening AceKiosk…</main>}><LazyAceKiosk onLogout={onLogout}/></React.Suspense>;
+}
 type AuthState = 'restoring' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -221,7 +231,7 @@ function App() {
   if (authState === 'error') return <Login branding={standaloneEntry??undefined} error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
   const onLogout=()=>{sessionGeneration.current += 1;setEntryTiming(null);setAccessToken(undefined);setAuthState('anonymous');};
-  if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}><LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/></React.Suspense>;
+  if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}>{standaloneEntry.slug==='acekiosk'?<AceKioskAccessGate onLogout={onLogout}/>:<LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/>}</React.Suspense>;
   return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
 }
 
