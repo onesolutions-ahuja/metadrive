@@ -80,3 +80,31 @@
   .acetill-shop{min-height:65dvh;max-height:65dvh;}
   .acetill-current-order{min-height:40dvh;max-height:40dvh;border-left:0;border-top:1px solid #e7eaf0;}
 }
+
+
+/* Layout height is allocated by the enclosing shell, not a guessed 74px header.
+   Browser zoom, OS scaling and the real header height must not push payment offscreen. */
+.standalone-product:has(> .acetill-terminal){
+  height:100dvh;min-height:0;max-height:100dvh;
+  display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;
+}
+.standalone-product:has(> .acetill-terminal) > .standalone-product-header{min-height:0;}
+.standalone-product > .acetill-terminal{
+  height:100%;max-height:100%;min-height:0;
+  grid-template-rows:minmax(0,1fr);overflow:hidden;
+}
+.standalone-product > .acetill-terminal > .acetill-shop,
+.standalone-product > .acetill-terminal > .acetill-current-order{
+  height:100%;min-height:0;max-height:100%;
+}
+.standalone-product .acetill-catalogue-scroll,
+.standalone-product .acetill-lines{min-height:0;overflow-y:scroll;scrollbar-width:thin;scrollbar-color:#adb9c9 transparent;}
+.standalone-product .acetill-quick-actions{margin-top:0;}
+@media(min-width:591px){
+  .standalone-product > .acetill-terminal{grid-template-columns:minmax(0,1fr) minmax(250px,31%);}
+}
+@media(max-width:590px){
+  .standalone-product > .acetill-terminal{overflow-y:auto;display:block;}
+  .standalone-product .acetill-shop{height:60%;max-height:60%;min-height:0;}
+  .standalone-product .acetill-current-order{height:40%;max-height:40%;min-height:0;}
+}
