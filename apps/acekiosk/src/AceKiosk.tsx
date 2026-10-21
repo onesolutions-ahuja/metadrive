@@ -35,6 +35,10 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
       try{
         // The custom frontend invokes an explicitly configured, authorised tenant Flow.
         // The Flow owns Get Records, filtering, ordering and output field visibility.
+        // /metadata/apps returns only installed, entitled and RBAC-permitted apps.
+        const installed=await apiRequest<{apps:Array<{apiName:string}>}>('/metadata/apps');
+        if(!installed.apps?.some(a=>a.apiName.toLowerCase()==='acekiosk'))
+          throw Error('AceKiosk is not installed, licensed or accessible to this user.');
         const available=await apiRequest<{actions:Action[]}>('/flows/available-actions?product=AceKiosk');
         if(!live)return;
         const permitted=available.actions??[];
