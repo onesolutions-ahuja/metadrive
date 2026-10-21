@@ -1446,3 +1446,14 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .object-manager-picker { flex-basis: 100%; order: 3; }
   .object-title-actions { margin-left: auto; }
 }
+
+
+/* Record details are scrolled within the workspace, never underneath fixed chrome.
+   This applies to every object and retains published layout sections. */
+.workspace-records:has(.record-detail-viewport){overflow-y:auto;scroll-padding-top:16px;}
+.record-detail-viewport{padding-top:20px;padding-bottom:32px;scroll-margin-top:0;min-height:0;}
+.record-detail-viewport .record-detail-top{position:sticky;top:0;z-index:3;background:var(--canvas,#f8fafc);padding:10px 0;margin-top:0;}
+.record-detail-viewport .record-all-fields{padding:0 16px 14px;overflow:visible;margin:12px 0;}
+.record-detail-viewport .record-all-fields summary{display:list-item;cursor:pointer;padding:14px 0;font-weight:700;list-style-position:inside;}
+.record-detail-viewport .record-all-fields .record-fields-grid{margin-top:10px;}
+@media(max-width:700px){.record-detail-viewport{padding-top:12px}.record-detail-viewport .record-all-fields{padding:0 10px 10px;}}
