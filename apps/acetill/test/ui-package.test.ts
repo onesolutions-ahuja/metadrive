@@ -31,11 +31,11 @@ test('catalogue and basket bind shared Product fields and same cart state',()=>{
 });
 
 test('standalone entrypoint reuses shared authentication and published metadata runtime',()=>{
- const entry=readFileSync(fileURLToPath(new URL('../../web/src/acetillEntry.tsx',import.meta.url)),'utf8');
+ const entry=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/Standalone/acetillEntry.tsx',import.meta.url)),'utf8');
  const main=readFileSync(fileURLToPath(new URL('../../web/src/main.tsx',import.meta.url)),'utf8');
  const auth=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/App/App.tsx',import.meta.url)),'utf8');
  const runtime=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url)),'utf8');
- assert.match(entry,/import App from '.\/core\/workspace\/App\/App'/);
+ assert.match(entry,/import App from '..\/App\/App'/);
  assert.doesNotMatch(entry,/AcetillShell|SetupApp|MarketingSite/);
  assert.doesNotMatch(main,/AcetillShell/);
  assert.match(auth,/resolveStandaloneEntry/);
