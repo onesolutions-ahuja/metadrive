@@ -287,3 +287,13 @@
 .canvas-unified-builder .builder-panel-collapse-row strong {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
 .canvas-unified-builder .builder-panel-collapse-row .icon-button {width:30px;height:30px;flex-shrink:0}
 .canvas-unified-builder .builder-tabs {top:44px}
+
+/* The rail is the category navigation: no second tab bar or duplicate category list. */
+.canvas-unified-builder .builder-tabs,
+.canvas-unified-builder .component-category-list {display:none;}
+.canvas-unified-builder .free-canvas-component.multi-selected:not(.selected) {
+  outline:2px dashed var(--md-primary,#6553ec);
+  outline-offset:2px;
+}
+.canvas-unified-builder .visual-advanced-properties:focus-within,
+.canvas-unified-builder .canvas-action-menu:focus-within {border-color:var(--md-primary,#6553ec);}
