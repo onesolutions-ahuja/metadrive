@@ -3,8 +3,9 @@
   "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
   "command": "node scripts/run-test-suite.mjs app-lifecycle",
   "tests": [
-    "apps/server/test/system/acekiosk-menu-flow.test.ts",
+    "apps/server/test/system/acechatter-flow.test.ts",
     "apps/server/test/system/acekiosk-app-catalog.test.ts",
+    "apps/server/test/system/acekiosk-menu-flow.test.ts",
     "apps/server/test/system/app-package-lifecycle.test.ts",
     "apps/server/test/system/app-page-seeder.test.ts",
     "apps/server/test/system/app-runtime-modules.test.ts",
