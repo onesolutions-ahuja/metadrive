@@ -550,11 +550,6 @@
         "type": "Variable"
       },
       {
-        "dataType": "OrderLine",
-        "name": "currentLine",
-        "type": "Record"
-      },
-      {
         "dataType": "Product",
         "name": "currentProduct",
         "type": "Record"
@@ -1154,11 +1149,6 @@
         "dataType": "Boolean",
         "name": "cardPaymentConfirmed",
         "type": "Variable"
-      },
-      {
-        "dataType": "OrderLine",
-        "name": "currentLine",
-        "type": "Record"
       },
       {
         "dataType": "Product",
