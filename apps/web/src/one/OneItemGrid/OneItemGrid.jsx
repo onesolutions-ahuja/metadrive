@@ -175,6 +175,9 @@ function ItemGrid({ p, rows }) {
               ? Math.min(900, imageHeight)
               : density === "image-focused" ? 150 : undefined,
             objectFit: imageFit,
+            borderRadius: Number.isFinite(Number(p.imageRadius)) && Number(p.imageRadius) >= 0
+              ? Math.min(64, Number(p.imageRadius))
+              : undefined,
             aspectRatio: imageAspectRatio && imageAspectRatio !== "auto" ? imageAspectRatio : undefined,
           };
           const cardStyle = {
