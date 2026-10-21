@@ -1081,8 +1081,12 @@ function PageBuilder({
     if (saving) return;
     const label = newPageLabel.trim();
     if (!label) return;
-    if (!objects.some(item => item.apiName === newPageTargetObject)) {
-      onNotify('Choose an existing data object for the new page');
+    if (newPageType === 'Record Page' && !objects.some(item => item.apiName === newPageTargetObject)) {
+      onNotify('Record Pages need an existing data object; Home and App Pages do not.');
+      return;
+    }
+    if (newPageTargetObject && !objects.some(item => item.apiName === newPageTargetObject)) {
+      onNotify('Choose a valid data object or leave it unbound.');
       return;
     }
     if (!newPageDevices.length) {
@@ -2095,10 +2099,10 @@ function PageBuilder({
               {['Record Page', 'App Page', 'Home Page'].map(type => <option key={type}>{type}</option>)}
             </select>
           </label>
-          <label className="form-label" htmlFor="new-lightning-page-object">Data object
+          <label className="form-label" htmlFor="new-lightning-page-object">Data object {newPageType === 'Record Page' ? '(required)' : '(optional)'}
             <select id="new-lightning-page-object" className="form-control" value={newPageTargetObject}
               onChange={event => setNewPageTargetObject(event.target.value)}>
-              <option value="">Choose an object…</option>
+              <option value="">No data object — bind later</option>
               {objects.map(object => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
             </select>
           </label>
@@ -2148,7 +2152,7 @@ function PageBuilder({
           <div className="modal-actions">
             <button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button>
             <button className="btn btn-brand"
-              disabled={saving || !newPageLabel.trim() || !newPageTargetObject}
+              disabled={saving || !newPageLabel.trim() || (newPageType === 'Record Page' && !newPageTargetObject)}
               onClick={() => void createPage()}><Plus size={14} />{saving ? 'Creating…' : 'Create draft'}</button>
           </div>
         </section>
