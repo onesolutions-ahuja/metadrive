@@ -51,17 +51,6 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;};
   },[metadata?.apiName,reload]);
-  const execute=async(flow:string)=>{
-    try{
-      const values=JSON.parse(flowInput);
-      if(!values||Array.isArray(values)||typeof values!=='object')throw Error('Flow inputs must be an object');
-      setBusy(true);setError('');setMessage('');
-      const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>('/flows/'+encodeURIComponent(flow)+'/execute',{method:'POST',body:JSON.stringify(values)});
-      setMessage(result.interviewId?'Flow paused; no completion confirmed':`Flow response: ${JSON.stringify(result.outputs??result)}`);
-      setReload(v=>v+1);
-    }catch(e){setError(e instanceof Error?e.message:String(e));}
-    finally{setBusy(false);}
-  };
   const logout=async()=>{
     try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* Clear local session regardless. */}
     onLogout();window.location.assign('/login');
