@@ -1,3 +1,5 @@
+import {lazy,Suspense} from 'react';
+const InboundWebhooks=lazy(()=>import('./InboundWebhooks'));
 import {PlatformPageSlot} from '../../platform/Workspace/PlatformPageSlot';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalAccessibility } from '../../accessibility/Modal/useModalAccessibility';
@@ -282,5 +284,6 @@ export default function NamedCredentials({
         <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
       </section>
     </div>}
+    {!embedded&&<Suspense fallback={<p>Loading webhook settings…</p>}><InboundWebhooks/></Suspense>}
   </section>;
 }
