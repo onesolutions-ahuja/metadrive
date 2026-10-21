@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
-import { Building2, ChevronRight, Database, LockKeyhole, Search, Settings2, Workflow, ChartNoAxesColumn, Plug, X, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Building2, ChevronRight, Database, LockKeyhole, Search, Settings2, Workflow, ChartNoAxesColumn, Plug, X, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { setupNavigation } from '../metadata/Definitions/metadata';
 import './MobileSettingsHome.css';
 
@@ -14,7 +14,7 @@ type Rights = {
 };
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 type Group = {group: string; items: string[]};
-const groupIcons: Record<string, ComponentType<{size?: number; 'aria-hidden'?: boolean}>> = {
+const groupIcons: Record<string, LucideIcon> = {
   'Platform Administration': ShieldCheck,
   'Company Settings': Building2,
   'Platform Tools': Database,
