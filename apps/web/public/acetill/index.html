@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Acetill · Sign in</title></head>
+<body><p>Opening Acetill… <a href="/?__spa=%2Facetill">Continue</a></p>
+<script>
+(function () {
+  // Existing GitHub Pages SPA deep-link recovery; preserve /acetill after reload.
+  var route='/acetill'+window.location.search+window.location.hash;
+  window.location.replace('/?__spa='+encodeURIComponent(route));
+}());
+</script></body></html>
