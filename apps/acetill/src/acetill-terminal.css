@@ -38,3 +38,45 @@
 .acetill-receipt-panel dl{margin:24px 0;padding:15px;border-radius:14px;background:#f6f8fb}
 .acetill-receipt-panel dl div{display:flex;justify-content:space-between;gap:8px;padding:7px;font-size:14px}.acetill-receipt-panel dt{color:#627187}.acetill-receipt-panel dd{margin:0;font-weight:750}
 .acetill-receipt-actions{display:grid;gap:10px}.acetill-receipt-actions button{min-height:48px;border-radius:12px;border:1px solid #dfe6ef;background:white;color:#1769d2;font-weight:750;cursor:pointer}.acetill-receipt-actions .acetill-charge{background:#1267e5;color:white;border:0}
+
+
+/* Fixed-height POS: only the independent product and order lists scroll. */
+.acetill-terminal{
+  height:calc(100dvh - 74px);
+  min-height:0;
+  max-height:calc(100dvh - 74px);
+  overflow:hidden;
+}
+.acetill-shop,.acetill-current-order{min-height:0;max-height:100%;overflow:hidden;}
+.acetill-shop{gap:12px;}
+.acetill-topline,.acetill-quick-actions,.acetill-order-heading,.acetill-checkout{flex-shrink:0;}
+.acetill-catalogue-scroll{
+  flex:1 1 0;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  padding:4px 7px 12px 0;
+}
+.acetill-product-grid{flex:none;}
+.acetill-category-tabs{min-width:0;}
+.acetill-lines{
+  flex:1 1 0;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.acetill-catalogue-scroll::-webkit-scrollbar,.acetill-lines::-webkit-scrollbar{width:9px;}
+.acetill-catalogue-scroll::-webkit-scrollbar-thumb,.acetill-lines::-webkit-scrollbar-thumb{background:#c1cbd8;border-radius:9px;border:2px solid white;}
+@media(max-width:880px){
+  .acetill-terminal{height:calc(100dvh - 74px);max-height:calc(100dvh - 74px);grid-template-columns:minmax(0,1fr) minmax(255px,37%);}
+  .acetill-current-order{min-height:0;border-left:1px solid #e7eaf0;border-top:0;padding:15px 12px;}
+}
+@media(max-width:590px){
+  .acetill-terminal{grid-template-columns:minmax(0,1fr);overflow-y:auto;}
+  .acetill-shop{min-height:65dvh;max-height:65dvh;}
+  .acetill-current-order{min-height:40dvh;max-height:40dvh;border-left:0;border-top:1px solid #e7eaf0;}
+}
