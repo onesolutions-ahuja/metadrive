@@ -2153,6 +2153,42 @@ function RecordWorkspace({
           </div></td>}</tr>;
         })}</tbody>
       </table></div>}
+      {!error && !loading && records.length>0 && (recordListLayout==='cards'||recordListLayout==='checklist') && <div
+        className={'records-alternative-list '+(recordListLayout==='checklist'?'records-checklist-view':'records-cards-view')}
+        role="list" aria-label={object.pluralLabel+' '+recordListLayout}>
+        {visibleRecords.map(item=>{
+          const recordTypeId=String(item.RecordTypeId??defaultRecordTypeId);
+          const rowLayout=pageLayoutForRecord(object,recordTypeId,profileId);
+          const canRowEdit=canEdit&&(!rowLayout||rowLayout.actions.includes('Edit'));
+          const canRowDelete=canDelete&&(!rowLayout||rowLayout.actions.includes('Delete'));
+          const canSelect=selectableRecordIds.includes(item.Id);
+          return <article role="listitem" className="records-record-card" key={item.Id}>
+            <header className="records-card-header">
+              {canSelect&&<input type="checkbox" aria-label={'Select '+String(item.Name??item.Id)}
+                checked={selectedRecordIds.includes(item.Id)}
+                onChange={()=>setSelectedRecordIds(current=>current.includes(item.Id)
+                  ?current.filter(id=>id!==item.Id):[...current,item.Id])}/>}
+              <a className="records-card-title" href={appRoutePath({kind:'record-detail',objectApiName:object.apiName,recordId:item.Id,appId:route.appId})}
+                onClick={event=>{
+                  if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+                  event.preventDefault();setOverlayRecordId(item.Id);
+                }}>{String(item.Name??item[listFields[0]?.apiName]??item.Id)}</a>
+            </header>
+            <dl className="records-card-fields">
+              {listFields.filter(field=>field.apiName!=='Name').slice(0,recordListLayout==='checklist'?3:6)
+                .map(field=><div key={field.apiName}>
+                  <dt>{field.label}</dt><dd>{formatFieldValue(field,item[field.apiName])}</dd>
+                </div>)}
+            </dl>
+            {(canRowEdit||canRowDelete||(canChangeOwner&&(!rowLayout||rowLayout.actions.includes('Edit'))))&&
+              <footer className="records-card-actions">
+                {canRowEdit&&<button type="button" className="text-action" onClick={()=>openEditForm(item)}><Pencil size={13}/>Edit</button>}
+                {canRowDelete&&<button type="button" className="text-action" onClick={()=>void deleteListRecord(item)}><Trash2 size={13}/>Delete</button>}
+                {canChangeOwner&&(!rowLayout||rowLayout.actions.includes('Edit'))&&<button type="button" className="text-action" onClick={()=>openChangeOwner(item)}>Change owner</button>}
+              </footer>}
+          </article>;
+        })}
+      </div>}
       {!error && listTotal > 0 && <nav aria-label="Record list pagination" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px' }}>
         <span>{listOffset + 1}–{Math.min(listOffset + records.length, listTotal)} of {listTotal}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
