@@ -5,6 +5,7 @@ import type {RecordEngine} from '../system-files/record-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import {authenticated,wrap,api} from './ApiAuthenticationGuard.js';
 import {DurableJobService} from '../system-support/durable-job-service.js';
+import {registerFlowJobApiRoutes} from './FlowJobApiRoutes.js';
 import {PlatformEventService} from '../system-support/platform-event-service.js';
 export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:RbacEngine,flows:FlowRuntime){
  const jobs=new DurableJobService(db);
@@ -14,33 +15,7 @@ export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:Rba
     const result=await platformEvents.publish(actor.tenant_id,actor.user_id,req.params.apiName,req.body);
     res.status(202).json(result);
   }));
-  app.get('/api/jobs/:id',wrap(async(req,res)=>{
-    const actor=authenticated(req);
-    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
-    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
-    res.setHeader('Cache-Control','private, no-store');
-    res.json({job:await jobs.inspect(actor.tenant_id,req.params.id)});
-  }));
-  app.post('/api/jobs/:id/cancel-failed',wrap(async(req,res)=>{
-    const actor=authenticated(req);
-    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
-    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
-    await jobs.cancelFailed(actor.tenant_id,req.params.id);
-    res.json({cancelled:true});
-  }));
-
-  app.post('/api/jobs/:id/reconcile',wrap(async(req,res)=>{
-    const actor=authenticated(req);
-    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
-    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
-    const decision=req.body?.decision;
-    if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
-    // Explicit confirmation is mandatory because retry may duplicate irreversible effects.
-    if(req.body?.reviewedExternalEffects!==true)throw new Error('Invalid reconciliation confirmation');
-    await jobs.reconcileFailed(actor.tenant_id,req.params.id,actor.user_id,decision);
-    res.setHeader('Cache-Control','private, no-store');
-    res.json({resolved:true,decision});
-  }));
+  registerFlowJobApiRoutes(app,rbac,jobs);
 
   app.post('/api/flows/:apiName/schedule',wrap(async(req,res)=>{
     const actor=authenticated(req),flowName=req.params.apiName;
