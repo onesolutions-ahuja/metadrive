@@ -56,5 +56,6 @@ jobs:
           path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
+      # Release the current main frontend, including metadata integrity diagnostics.
       - name: Verify published site serves this exact frontend bundle
         run: node scripts/verify-pages-artifacts.mjs --live
