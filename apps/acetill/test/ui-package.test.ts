@@ -37,8 +37,8 @@ test('standalone entrypoint uses the shared product-aware workspace shell',()=>{
  assert.match(main,/isMarketingHome/);
  assert.match(app,/standaloneCanonicalPath\(window\.location\.pathname/);
  assert.match(app,/resolveStandaloneEntry\(entryPath/);
- assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
- assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
+ assert.match(app,/const standaloneEntry=resolveStandaloneEntry\(entryPath/);
+ assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\} onLogout=\{onLogout\}/);
 });
 
 test('standalone Flow actions use server authorization without requiring Flow Definition read',()=>{
