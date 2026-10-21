@@ -1026,11 +1026,15 @@ function RecordWorkspace({
   const defaultRecordTypeId = activeRecordTypes.find((item) => item.isDefault)?.id ?? activeRecordTypes[0]?.id ?? '';
   const selectedRecordTypeId = String(formValues.RecordTypeId ?? defaultRecordTypeId);
   const selectedLayout = object ? pageLayoutForRecord(object, selectedRecordTypeId, profileId) : undefined;
-  const canCreate = (object?.apiName !== 'User' || canManageUserIdentities) && object?.listViewButtons?.includes('New') !== false
-    && object?.actions?.some((action) => action.label === 'New' && action.enabled) !== false
-    && (!selectedLayout || selectedLayout.actions.includes('New'));
-  const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
-  const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
+  // Standard CRUD is universal: missing layout buttons must not silently disable
+  // record operations. Explicitly disabled metadata actions still opt out.
+  // The shared Record API remains the mandatory tenant/RBAC/FLS enforcement point.
+  // Identity creation additionally requires the existing Security management gate.
+  const identityAllowed = object?.apiName !== 'User' || canManageUserIdentities;
+  const actionEnabled = (label: string) => object?.actions?.find(action => action.label === label)?.enabled !== false;
+  const canCreate = Boolean(object && identityAllowed && actionEnabled('New'));
+  const canEdit = Boolean(object && identityAllowed && actionEnabled('Edit'));
+  const canDelete = Boolean(object && identityAllowed && actionEnabled('Delete'));
   const canMassDelete = false;
   const deleteListRecord = async (item: RecordData) => {
     if (!object || !canDelete || !window.confirm(`Delete ${String(item.Name ?? item.Id)}? The record may be recoverable from the Recycle Bin.`)) return;
@@ -1882,9 +1886,9 @@ function RecordWorkspace({
           <div className="record-object-icon"><Database size={18} /></div>
           <div><div className="eyebrow">{object.label}</div><h1>{recordName}</h1><p>Record ID: <code>{record.Id}</code></p></div>
           <div className="record-detail-actions">
-            {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
+            {canEdit && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
             {canCreate&&object.apiName!=='User'&&<button className="btn" onClick={()=>void cloneCurrentRecord()}><Copy size={14}/>Clone</button>}
-            {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
+            {canDelete && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).flatMap(link=>{
               const readable=new Set(object.fields.filter(field=>
                 fieldAccess[`${object.apiName}.${field.apiName}`]?.read).map(field=>field.apiName));
@@ -2139,8 +2143,8 @@ function RecordWorkspace({
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
-          const rowAllowsEdit = !rowLayout || rowLayout.actions.includes('Edit');
-          const rowAllowsDelete = !rowLayout || rowLayout.actions.includes('Delete');
+          const rowAllowsEdit = true; // Shared CRUD is not removed by page-layout action placement.
+          const rowAllowsDelete = true; // Server RBAC and record permissions remain authoritative.
           const selectable = canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
           return <tr key={item.Id}>{(canMassDelete || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName} data-label={field.label}>
             {index === 0
