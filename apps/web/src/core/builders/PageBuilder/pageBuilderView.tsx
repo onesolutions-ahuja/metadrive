@@ -892,6 +892,9 @@ function PageBuilder({
       ...structuredClone(componentClipboard),
       id: `${componentClipboard.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`,
       label: `${componentClipboard.label} Copy`,
+      position: componentClipboard.position ? { ...componentClipboard.position,
+        x: Math.min(page.canvasWidth - componentClipboard.position.width, componentClipboard.position.x + 24),
+        y: Math.min(page.canvasHeight - componentClipboard.position.height, componentClipboard.position.y + 24) } : undefined,
       region: selected?.region ?? componentClipboard.region ?? 'main',
       properties: { ...structuredClone(componentClipboard.properties), layoutParentId: selected && canNest(page.components, componentClipboard.id, selected.id) ? selected.id : undefined }
     };
@@ -900,6 +903,25 @@ function PageBuilder({
     components.splice(selectedIndex < 0 ? components.length : selectedIndex + 1, 0, pasted);
     applyPage({ ...page, components });
     setSelectedId(pasted.id);
+  };
+  const duplicateSelected = () => {
+    if (!selected || isCanvasLocked(selected)) return;
+    const copy: PageComponentMetadata = { ...structuredClone(selected),
+      id: `copy-${crypto.randomUUID()}`, label: `${selected.label} Copy`,
+      position: selected.position ? { ...selected.position,
+        x: Math.min(page.canvasWidth - selected.position.width, selected.position.x + 24),
+        y: Math.min(page.canvasHeight - selected.position.height, selected.position.y + 24) } : undefined };
+    const index = page.components.findIndex(item => item.id === selected.id);
+    applyPage({ ...page, components: [...page.components.slice(0, index + 1), copy, ...page.components.slice(index + 1)] });
+    setSelectedId(copy.id); setComponentMenuId('');
+  };
+  const alignSelected = (axis: 'x' | 'y', anchor: 'start' | 'center' | 'end') => {
+    if (!selected?.position || isCanvasLocked(selected) || selected.properties.canvasLocked === true) return;
+    const dimension = axis === 'x' ? 'width' : 'height';
+    const span = axis === 'x' ? page.canvasWidth : page.canvasHeight;
+    const freeSpace = Math.max(0, span - selected.position[dimension]);
+    const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
+    updateComponent(selected.id, { position: { ...selected.position, [axis]: value } });
   };
   const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
@@ -933,6 +955,8 @@ function PageBuilder({
         event.preventDefault(); copySelected();
       } else if (command && key === 'v' && componentClipboard && !previewMode) {
         event.preventDefault(); pasteComponent();
+      } else if (command && key === 'd' && selected && !previewMode) {
+        event.preventDefault(); duplicateSelected();
       } else if (!command && (event.key === 'Delete' || event.key === 'Backspace')
         && selected && !previewMode && !isCanvasLocked(selected)) {
         event.preventDefault(); removeSelected();
@@ -1283,7 +1307,11 @@ function PageBuilder({
         ...visualStyle,
         ...(component.properties?.fillRegion===true && page.layoutMode==='template' ? {height:'100%',minHeight:0}: {})
       } as React.CSSProperties}
-      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); setComponentMenuId(''); } } : undefined}
+      onPointerDown={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
+      onPointerMove={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
+      onPointerUp={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
+      onPointerCancel={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => {
          if (event.currentTarget !== event.target || previewMode) return;
@@ -1305,12 +1333,33 @@ function PageBuilder({
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
-      draggable={!previewMode && !libraryPreview && !isCanvasLocked(component)}
+      draggable={!previewMode && !libraryPreview && page.layoutMode !== 'free-canvas' && !isCanvasLocked(component)}
       data-component-id={libraryPreview ? undefined : component.id}
       onDragStart={!libraryPreview ? (event) => { if (component.properties.canvasLocked === true || canvasMoveStart.current?.id === component.id) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
+      {!previewMode && !libraryPreview && selectedId === component.id && !nested && <div
+        className="canvas-element-actions" role="toolbar" aria-label={`Actions for ${component.label}`}
+        onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+        <button type="button" onClick={() => openComponentInspector('Design')} title="Edit appearance"><Pencil size={15}/> Edit</button>
+        {page.layoutMode === 'free-canvas' && <button type="button" onClick={() => openComponentInspector('Position')} title="Position and size"><Maximize2 size={15}/> Position</button>}
+        <button type="button" onClick={() => toggleCanvasLock(component)} title={isCanvasLocked(component) ? 'Unlock' : 'Lock'}>{isCanvasLocked(component) ? <Unlock size={16}/> : <Lock size={16}/>}</button>
+        <button type="button" onClick={duplicateSelected} disabled={isCanvasLocked(component)} title="Duplicate"><Copy size={16}/></button>
+        <button type="button" onClick={() => setComponentMenuId(current => current === component.id ? '' : component.id)}
+          aria-expanded={componentMenuId === component.id} aria-label="More component actions"><MoreHorizontal size={18}/></button>
+        {componentMenuId === component.id && <div className="canvas-action-menu" role="menu" aria-label="More component actions">
+          <button type="button" role="menuitem" onClick={() => {copySelected();setComponentMenuId('');}}>Copy <kbd>Ctrl+C</kbd></button>
+          <button type="button" role="menuitem" disabled={!componentClipboard} onClick={() => {pasteComponent();setComponentMenuId('');}}>Paste <kbd>Ctrl+V</kbd></button>
+          <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={duplicateSelected}>Duplicate <kbd>Ctrl+D</kbd></button>
+          <button type="button" role="menuitem" onClick={() => openComponentInspector('Position')}>Align and position</button>
+          <button type="button" role="menuitem" onClick={() => {moveSelected(-1);setComponentMenuId('');}}>Bring forward</button>
+          <button type="button" role="menuitem" onClick={() => {moveSelected(1);setComponentMenuId('');}}>Send backward</button>
+          <button type="button" role="menuitem" onClick={() => openComponentInspector('Data & Actions')}>Data, links and actions</button>
+          <button type="button" role="menuitem" onClick={() => {updateComponent(component.id,{visible:!component.visible});setComponentMenuId('');}}>{component.visible ? 'Hide' : 'Show'} element</button>
+          <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={() => {removeSelected();setComponentMenuId('');}}>Delete <kbd>Delete</kbd></button>
+        </div>}
+      </div>}
       {!previewMode && !libraryPreview && <div className="record-component-head"
         data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
         onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
@@ -1318,7 +1367,7 @@ function PageBuilder({
         onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
         onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
         <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
-        {component.properties.canvasLocked === true ? <Lock size={13} /> : <MoreHorizontal size={16} />}
+        {isCanvasLocked(component) || component.properties.canvasLocked === true ? <Lock size={13} /> : <GripVertical size={16} />}
       </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
@@ -1387,7 +1436,7 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !previewMode && !isCanvasLocked(component) && component.properties.canvasLocked !== true
         && (['n','ne','e','se','s','sw','w','nw'] as const).map(edge =>
           <button key={edge} type="button" className={`free-canvas-resize-handle resize-${edge}`}
             aria-label={`Resize ${component.label} ${edge}`} title="Drag edge or corner to resize"
