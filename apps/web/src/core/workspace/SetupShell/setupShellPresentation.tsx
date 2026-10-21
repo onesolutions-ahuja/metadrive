@@ -164,7 +164,7 @@ export function renderSetupShell(ctx: any) {
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName: string, inputs: Record<string, unknown>,context?:{requestId?:string}) => void runFlow(apiName, inputs,context)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
-            <SetupHome onNavigate={openSetupWorkspace} />
+            <SetupHome onNavigate={openSetupWorkspace} request={apiRequest} />
           )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
             !advancedMetadataLoaded ? <section className="setup-card" role="status">Loading live object definitions…</section> :
