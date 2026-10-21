@@ -4,7 +4,8 @@ import './acetill-terminal.css';
 
 type Row=Record<string,unknown>;
 type Action={apiName:string;label:string};
-type Item={id:string;name:string;price:number;image:string;category:string;quantity:number};
+type Item={id:string;name:string;price:number;image:string;category:string;categoryId:string;quantity:number};
+type Category={id:string;name:string;order:number};
 type Result={outputs?:Row;records?:Row[];interviewId?:string};
 const asText=(v:unknown)=>v==null?'':String(v);
 const amount=(v:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v);
@@ -13,11 +14,18 @@ function product(row:Row):Item|null {
   const name=asText(row.Name??row.name);
   const price=Number(row.Price??row.UnitPrice??row.SalePrice);
   if(!id||!name||!Number.isFinite(price)||price<0)return null;
-  return {id,name,price,image:asText(row.ImageUrl??row.Image??row.PhotoUrl??row.ProductImage),category:asText(row.CategoryName??row.Category??row.ProductCategory??'Other'),quantity:1};
+  return {id,name,price,image:asText(row.ImageUrl??row.Image??row.PhotoUrl??row.ProductImage),category:asText(row.CategoryName??row.Category??row.ProductCategory??''),categoryId:asText(row.MenuCategory??row.MenuCategoryId??row.CategoryId),quantity:1};
+}
+function parseCategory(row:Row):Category|null {
+  const id=asText(row.Id??row.id??row.CategoryId);
+  const name=asText(row.Name??row.name);
+  if(!id||!name||row.Active===false||row.Active==='false')return null;
+  const order=Number(row.DisplayOrder??0);
+  return {id,name,order:Number.isFinite(order)?order:0};
 }
 function extractRows(result:Result):Row[] {
   const output=result.outputs??{};
-  for(const key of ['records','Records','products','Products','result','Result']) {
+  for(const key of ['records','Records','products','Products','categories','Categories','result','Result']) {
     const candidate=output[key]??(result as Row)[key];
     if(Array.isArray(candidate))return candidate.filter((v):v is Row=>!!v&&typeof v==='object'&&!Array.isArray(v));
   }
@@ -27,8 +35,10 @@ function extractRows(result:Result):Row[] {
 export default function AcetillTerminal(){
   const [actions,setActions]=React.useState<Action[]>([]);
   const [products,setProducts]=React.useState<Item[]>([]);
+  const [categories,setCategories]=React.useState<Category[]>([]);
+  const [catalogueLoading,setCatalogueLoading]=React.useState(false);
   const [cart,setCart]=React.useState<Item[]>([]);
-  const [category,setCategory]=React.useState('All items');
+  const [category,setCategory]=React.useState('');
   const [search,setSearch]=React.useState('');
   const [busy,setBusy]=React.useState(false);
   const [error,setError]=React.useState('');
@@ -55,23 +65,48 @@ export default function AcetillTerminal(){
   },[]);
   const find=(suffix:string)=>actions.find(a=>a.apiName.toLowerCase()==='acetill'+suffix.toLowerCase());
   const getProducts=find('GetProducts');
+  const getCategories=find('GetCategories');
   const checkout=find('Checkout')??find('CompleteSale');
-  const refresh=React.useCallback(async (query='')=>{
-    if(!getProducts)return;
-    try {
-      const result=await execute(getProducts,{search:query,limit:100});
-      setProducts(extractRows(result).map(product).filter((v):v is Item=>v!==null));
-    }catch(e){setError(e instanceof Error?e.message:String(e));}
-  },[getProducts?.apiName,execute]);
-  React.useEffect(()=>{if(getProducts)void refresh();},[getProducts?.apiName]);
-  // Debounced server-side search respects the tenant's configured Get Records filters.
+  // Read-only catalogue flows may run simultaneously; checkout and write actions remain serialized.
+  const executeRead=React.useCallback(async(action:Action,inputs:Row)=>{
+    return apiRequest<Result>('/flows/'+encodeURIComponent(action.apiName)+'/execute',{
+      method:'POST',body:JSON.stringify(inputs)
+    });
+  },[]);
+  // Category tabs and product data come exclusively from entitled OneEngine Flows.
+  // A selection always invokes GetProducts with the selected category and search input.
+  const latestRequest=React.useRef(0);
   React.useEffect(()=>{
-    if(!getProducts||!search.trim())return;
-    const handle=window.setTimeout(()=>{void refresh(search.trim());},350);
-    return()=>window.clearTimeout(handle);
-  },[search,getProducts?.apiName]);
-  const categories=['All items',...new Set(products.map(p=>p.category).filter(Boolean))];
-  const shown=products.filter(p=>(category==='All items'||p.category===category)&&p.name.toLowerCase().includes(search.toLowerCase()));
+    if(!getCategories)return;
+    let active=true;
+    void executeRead(getCategories,{active:true,sortField:'DisplayOrder',sortOrder:'Ascending'})
+      .then(result=>{if(active)setCategories(extractRows(result).map(parseCategory)
+        .filter((c):c is Category=>c!==null).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)));})
+      .catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));});
+    return()=>{active=false;};
+  },[getCategories?.apiName]);
+  React.useEffect(()=>{
+    if(!getProducts)return;
+    const request=++latestRequest.current;
+    const handle=window.setTimeout(()=>{
+      setCatalogueLoading(true);
+      const selected=categories.find(c=>c.id===category);
+      void executeRead(getProducts,{
+        search:search.trim(),categoryId:category,categoryName:selected?.name??'',limit:100
+      }).then(result=>{
+        if(request!==latestRequest.current)return;
+        const rows=extractRows(result).map(product).filter((p):p is Item=>p!==null);
+        // Keep the selected category accurate even when a tenant has not yet
+        // added categoryId as a Flow input/filter; no direct CRUD fallback.
+        setProducts(category?rows.filter(p=>p.categoryId===category||
+          (selected&&p.category===selected.name)):rows);
+      }).catch(e=>{
+        if(request===latestRequest.current)setError(e instanceof Error?e.message:String(e));
+      }).finally(()=>{if(request===latestRequest.current)setCatalogueLoading(false);});
+    },search.trim()?350:0);
+    return()=>{latestRequest.current++;window.clearTimeout(handle);};
+  },[getProducts?.apiName,category,search,categories]);
+  const shown=products;
   const count=cart.reduce((n,x)=>n+x.quantity,0);
   const subtotal=cart.reduce((n,x)=>n+x.quantity*x.price,0);
   const add=(item:Item)=>setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});
@@ -101,20 +136,25 @@ export default function AcetillTerminal(){
     <section className="acetill-shop" aria-label="Acetill product catalogue">
       <div className="acetill-topline">
         <nav aria-label="Product categories" className="acetill-category-tabs">
-          {categories.map(c=><button key={c} type="button" className={c===category?'selected':''} aria-pressed={c===category} onClick={()=>setCategory(c)}>{c}</button>)}
+          <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
+          {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
         <label className="acetill-search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
       {error&&<p role="alert" className="acetill-error">{error}</p>}
       {message&&<p role="status" className="acetill-state">{message}</p>}
+      <div className="acetill-catalogue-scroll" tabIndex={0} aria-label="Scrollable product catalogue">
+      {!getCategories&&!loading&&<p className="acetill-state">Configure AcetillGetCategories Flow to load category tabs.</p>}
+      {catalogueLoading&&<p role="status" className="acetill-state">Loading products…</p>}
       <div className="acetill-product-grid">
         {shown.map(p=><button type="button" key={p.id} className="acetill-product" onClick={()=>add(p)} disabled={busy}>
           <div className="acetill-product-art">{p.image?<img src={p.image} alt="" loading="lazy"/>:<span aria-hidden="true">◻</span>}</div>
           <div className="acetill-product-meta"><strong>{p.name}</strong><span>{amount(p.price)}</span></div>
         </button>)}
       </div>
-      {getProducts&&!busy&&!shown.length&&<p className="acetill-state">No matching products returned by your Flow.</p>}
+      {getProducts&&!catalogueLoading&&!shown.length&&<p className="acetill-state">No matching products returned by your Flow.</p>}
+      </div>
       <div className="acetill-quick-actions">
         {['Discount','Rewards','GiftCards','More'].map(label=>{
           const action=find(label);
