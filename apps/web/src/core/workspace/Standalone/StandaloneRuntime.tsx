@@ -1,127 +1,117 @@
 import * as React from 'react';
-import {useCallback,useEffect,useState} from 'react';
+import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
-import {resolveSqlComponentLibrary} from '../../components/Registry/bundledRegistryClient';
-import type {LightningAppMetadata,LightningPageMetadata,ObjectMetadata,LibraryComponentMetadata} from '../../metadata/Definitions/metadata';
-import type {AppRoute} from '../Navigation/appRouting';
 import type {StandaloneEntry} from './standaloneEntries';
 import './standaloneRuntime.css';
 
-type AllowedCatalog={
-  apps: LightningAppMetadata[];
-  pages:LightningPageMetadata[];
-  objects:ObjectMetadata[];
-  libraryComponents:LibraryComponentMetadata[];
+type DataRow=Record<string,unknown>;
+type ObjectInfo={apiName:string;label?:string;fields?:Array<{apiName:string;label?:string;type?:string;required?:boolean}>};
+const sections:Record<string,Array<{label:string;object:string}>>={
+  acetill:[{label:'Products',object:'Product'},{label:'Customers',object:'Customer'},{label:'Carts',object:'Cart'},{label:'Orders',object:'Order'}],
+  aceassist:[{label:'Appointments',object:'Appointment'},{label:'Customers',object:'Customer'},{label:'Quotations',object:'Quotation'},{label:'Quotation lines',object:'QuotationLine'},{label:'Invoices',object:'Invoice'}]
 };
-type LibraryResponse={
-  components: LibraryComponentMetadata[];
-  registered: Array<{apiName:string;rendererKey:string}>;
+const flowActions:Record<string,Array<{label:string;flow:string}>>={
+  acetill:[{label:'Complete sale',flow:'AcetillCompleteSale'},{label:'Print receipt',flow:'AcetillPrintReceipt'}],
+  aceassist:[{label:'Complete visit',flow:'AceAssistCompleteVisit'},{label:'Reschedule visit',flow:'AceAssistRescheduleVisit'}]
 };
-type RuntimeProps={entry:StandaloneEntry; onLogout:()=>void};
-const LazyPublishedRuntime=React.lazy(async()=>{
-  const {createPageRuntimeViews}=await import('../../pages/PageRuntime/pageRuntimeViews');
-  return {default:createPageRuntimeViews(apiRequest).LightningAppRuntime};
-});
+const show=(value:unknown)=>value==null?'—':typeof value==='object'?JSON.stringify(value):String(value);
 
-/** Product-specific navigation around the shared, permission-checked SQL Page Runtime. */
-export default function StandaloneRuntime({entry,onLogout}:RuntimeProps) {
-  const [catalog,setCatalog]=useState<AllowedCatalog|null>(null);
+/** Dedicated React product workspaces. Server-side tenant and RBAC rules remain authoritative. */
+export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogout:()=>void}) {
+  const tabs=sections[entry.slug]??[];
+  const [objects,setObjects]=useState<ObjectInfo[]>([]);
+  const [selected,setSelected]=useState(0);
+  const [rows,setRows]=useState<DataRow[]>([]);
+  const [busy,setBusy]=useState(true);
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
-  const [refresh,setRefresh]=useState(0);
-  const [page,setPage]=useState(()=>new URLSearchParams(window.location.search).get('page')??'');
-  const [phone,setPhone]=useState(()=>window.matchMedia('(max-width:600px)').matches);
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState<Record<string,unknown>>({});
+  const [flowInput,setFlowInput]=useState('{}');
+  const [reload,setReload]=useState(0);
+  const current=tabs[selected];
+  const metadata=objects.find(o=>o.apiName.toLowerCase()===current?.object.toLowerCase());
   useEffect(()=>{
-    const onPop=()=>setPage(new URLSearchParams(window.location.search).get('page')??'');
-    const onResize=()=>setPhone(window.matchMedia('(max-width:600px)').matches);
-    window.addEventListener('popstate',onPop);
-    window.addEventListener('resize',onResize);
-    return ()=>{window.removeEventListener('popstate',onPop);window.removeEventListener('resize',onResize);};
+    let active=true;setBusy(true);setError('');
+    void apiRequest<{objects:ObjectInfo[]}>('/metadata/objects').then(response=>{
+      if(active)setObjects(response.objects??[]);
+    }).catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setBusy(false);});
+    return()=>{active=false;};
   },[]);
   useEffect(()=>{
-    let active=true;
-    setError('');
-    void (async()=>{
-      // Authoritative list includes only installed, entitled apps permitted by RBAC.
-      const appResponse=await apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps');
-      const app=appResponse.apps.find(item=>item.apiName.toLowerCase()===entry.appId.toLowerCase());
-      if(!app)throw Error(entry.label+' is not installed, licensed or permitted for this user. Contact your UNE Solutions administrator.');
-      const [objectResponse,pageResponse,libraryResponse]=await Promise.all([
-        apiRequest<{objects:ObjectMetadata[]}>('/metadata/objects'),
-        apiRequest<{pages:LightningPageMetadata[]}>('/metadata/pages'),
-        apiRequest<LibraryResponse>('/component-library')
-      ]);
-      const bundles=await resolveSqlComponentLibrary(libraryResponse.registered??[]);
-      if(active)setCatalog({
-        apps:[app],objects:objectResponse.objects,pages:pageResponse.pages,
-        libraryComponents:[...libraryResponse.components,...bundles]
-      });
-    })().catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));});
-    return ()=>{active=false;};
-  },[entry]);
-  const app=catalog?.apps[0];
-  const allowedPages=app?.navigationPageApiNames??[];
-  const selectedPage=page && allowedPages.includes(page)?page:'';
-  const navigate=useCallback((route:AppRoute)=>{
-    if(route.kind!=='app-home'&&route.kind!=='app-page') {
-      setMessage('This destination is not part of the standalone app. Configure an app page in UNE Solutions.');
-      return;
-    }
-    if(route.appId.toLowerCase()!==entry.appId.toLowerCase() || route.kind==='app-page' && !allowedPages.includes(route.pageApiName)) {
-      setMessage('That page is not available to this application.');
-      return;
-    }
-    const nextPage=route.kind==='app-page'?route.pageApiName:'';
-    const url=new URL(window.location.href);
-    if(nextPage)url.searchParams.set('page',nextPage);
-    else url.searchParams.delete('page');
-    window.history.pushState({},'',url.pathname+url.search);
-    setPage(nextPage);setMessage('');
-  },[entry.appId,allowedPages.join('|')]);
-  const launchFlow=useCallback((flowApiName:string,inputs?:Record<string,unknown>)=>{
-    setMessage('Running action…');
-    void apiRequest('/flows/'+encodeURIComponent(flowApiName)+'/execute',{
-      method:'POST',body:JSON.stringify({inputs:inputs??{}})
-    }).then(()=>{
-      setMessage('Action submitted.');setRefresh(current=>current+1);
-    }).catch(e=>setMessage(e instanceof Error?e.message:'Unable to run action'));
-  },[]);
-  const logout=async()=>{
-    try{await apiRequest('/auth/logout',{method:'POST'});}
-    catch{/* Client session always clears, even when server is unavailable. */}
-    finally{onLogout();}
+    let active=true;setRows([]);setEditing(false);setMessage('');
+    if(!metadata)return;
+    setBusy(true);setError('');
+    void apiRequest<{records:DataRow[]}>(`/records/${encodeURIComponent(metadata.apiName)}?limit=50`).then(response=>{
+      if(active)setRows(response.records??[]);
+    }).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));}).finally(()=>{if(active)setBusy(false);});
+    return()=>{active=false;};
+  },[metadata?.apiName,reload]);
+  const fields=(metadata?.fields??[]).filter(f=>!['Id','CreatedDate','LastModifiedDate','CreatedById','LastModifiedById'].includes(f.apiName));
+  const editable=fields.filter(f=>!['formula','rollup','autonumber'].includes((f.type??'').toLowerCase()));
+  const save=async()=>{
+    if(!metadata)return;
+    setBusy(true);setError('');
+    try{
+      await apiRequest('/records/'+encodeURIComponent(metadata.apiName),{method:'POST',body:JSON.stringify(draft)});
+      setEditing(false);setDraft({});setMessage('Record created');setReload(v=>v+1);
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
   };
-  return <div className="standalone-product" style={{'--product-accent':app?.brandColor||entry.accent} as React.CSSProperties}>
+  const execute=async(flow:string)=>{
+    try{
+      const values=JSON.parse(flowInput);
+      if(!values||Array.isArray(values)||typeof values!=='object')throw Error('Flow inputs must be an object');
+      setBusy(true);setError('');setMessage('');
+      const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>('/flows/'+encodeURIComponent(flow)+'/execute',{method:'POST',body:JSON.stringify(values)});
+      setMessage(result.interviewId?'Flow paused; no completion confirmed':`Flow response: ${JSON.stringify(result.outputs??result)}`);
+      setReload(v=>v+1);
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+    finally{setBusy(false);}
+  };
+  const logout=async()=>{
+    try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* Clear local session regardless. */}
+    onLogout();window.location.assign('/login');
+  };
+  return <div className="standalone-product" style={{'--product-accent':entry.accent} as React.CSSProperties}>
     <header className="standalone-product-header">
-      <button className="standalone-product-brand" type="button" onClick={()=>navigate({kind:'app-home',appId:entry.appId})}>
-        <span className="standalone-product-mark" aria-hidden="true">{entry.label.slice(0,1)}</span>
-        <span><strong>{entry.label}</strong><small>{entry.tagline}</small></span>
-      </button>
+      <div className="standalone-product-brand"><span className="standalone-product-mark">{entry.label[0]}</span><span><strong>{entry.label}</strong><small>{entry.tagline}</small></span></div>
       <button type="button" className="standalone-product-logout" onClick={()=>void logout()}>Sign out</button>
     </header>
-    {catalog && allowedPages.length>0 && <nav className="standalone-product-nav" aria-label={entry.label+' pages'}>
-      <button type="button" aria-current={!selectedPage?'page':undefined} onClick={()=>navigate({kind:'app-home',appId:entry.appId})}>Home</button>
-      {allowedPages.map(apiName=><button key={apiName} type="button"
-        aria-current={selectedPage===apiName?'page':undefined}
-        onClick={()=>navigate({kind:'app-page',appId:entry.appId,pageApiName:apiName})}>
-          {catalog.pages.find(p=>p.apiName===apiName)?.label??apiName}
-        </button>)}
-    </nav>}
+    <nav className="standalone-product-nav" aria-label={entry.label+' sections'}>
+      {tabs.map((tab,i)=><button key={tab.object} type="button" aria-current={selected===i?'page':undefined} onClick={()=>setSelected(i)}>{tab.label}</button>)}
+    </nav>
     <main className="standalone-product-content">
-      {!catalog && !error && <p role="status">Loading your authorised {entry.label} workspace…</p>}
-      {error && <section role="alert" className="standalone-product-message"><h2>App access unavailable</h2><p>{error}</p></section>}
-      {catalog && <>
-        {page && !allowedPages.includes(page) && <p role="alert">The requested page is not assigned to your app. Showing Home.</p>}
-        {message && <p role="status" className="standalone-product-message">{message}</p>}
-        <React.Suspense fallback={<p role="status">Loading published page…</p>}>
-          <LazyPublishedRuntime key={entry.appId+':'+selectedPage+':'+refresh}
-            appId={app?.apiName??entry.appId} pageApiName={selectedPage||undefined}
-            apps={catalog.apps} objects={catalog.objects} pages={catalog.pages}
-            libraryComponents={catalog.libraryComponents} reports={[]} availableFlows={[]}
-            formFactor={phone?'Phone':'Desktop'} onNavigate={navigate}
-            onLaunchFlow={launchFlow} onStandaloneModeChange={()=>{}}/>
-        </React.Suspense>
+      <h1>{current?.label??entry.label}</h1>
+      <p>Live tenant records and shared OneEngine permissions. Access and validation are enforced by the server.</p>
+      {error&&<p role="alert" className="standalone-product-message">{error}</p>}
+      {message&&<p role="status" className="standalone-product-message">{message}</p>}
+      {!metadata&&!busy&&<p role="status">The {current?.object} object is not available to this user or tenant. Check Object Manager and permissions.</p>}
+      {metadata&&<>
+        <div style={{display:'flex',gap:12,marginBottom:16}}>
+          <button type="button" disabled={busy} onClick={()=>setReload(v=>v+1)}>Refresh</button>
+          <button type="button" disabled={busy} onClick={()=>{setDraft({});setEditing(v=>!v);}}>{editing?'Cancel':'New '+(metadata.label??current.label)}</button>
+        </div>
+        {editing&&<form onSubmit={e=>{e.preventDefault();void save();}} style={{display:'grid',gap:12,maxWidth:580,marginBottom:24}}>
+          {editable.map(f=><label key={f.apiName}>{f.label??f.apiName}
+            {['boolean','checkbox'].includes((f.type??'').toLowerCase())
+              ?<input type="checkbox" checked={draft[f.apiName]===true} onChange={e=>setDraft(v=>({...v,[f.apiName]:e.target.checked}))}/>
+              :<input style={{display:'block',width:'100%'}} value={String(draft[f.apiName]??'')} onChange={e=>setDraft(v=>({...v,[f.apiName]:e.target.value}))}/>}
+          </label>)}
+          <button disabled={busy} type="submit">Create record</button>
+        </form>}
+        {busy?<p role="status">Loading records…</p>:rows.length===0?<p>No accessible records.</p>:
+        <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{Object.keys(rows[0]).slice(0,8).map(key=><th key={key} scope="col" style={{padding:10,textAlign:'left'}}>{key}</th>)}</tr></thead>
+          <tbody>{rows.map((row,i)=><tr key={String(row.Id??i)}>{Object.keys(rows[0]).slice(0,8).map(key=><td key={key} style={{padding:10,borderTop:'1px solid #8884'}}>{show(row[key])}</td>)}</tr>)}</tbody>
+        </table></div>}
       </>}
+      <section style={{marginTop:32}}>
+        <h2>Backend actions</h2><p>Run active OneEngine flows. Flow execution permissions are checked by the server.</p>
+        <label>Flow inputs (JSON)<textarea style={{display:'block',width:'100%',maxWidth:650}} rows={3} value={flowInput} onChange={e=>setFlowInput(e.target.value)}/></label>
+        <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:12}}>{(flowActions[entry.slug]??[]).map(action=>
+          <button type="button" key={action.flow} disabled={busy} onClick={()=>void execute(action.flow)}>{action.label}</button>)}</div>
+      </section>
     </main>
   </div>;
 }
