@@ -1979,15 +1979,6 @@ function RecordWorkspace({
             View matched record ({match.ruleApi})
           </a>)}
         </section>}
-        {assignedPage && <div className="record-runtime-page" data-lightning-page={assignedPage.apiName}>
-          {renderRuntimeRegion('header')}
-          <div className={assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
-            <main className="record-runtime-main">{renderRuntimeRegion('main')}</main>
-            {assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar'
-              ? <aside className="record-runtime-sidebar">{renderRuntimeRegion('sidebar')}</aside>
-              : null}
-          </div>
-        </div>}
         {/* Full-field view supplements metadata layouts without altering their sections.
             Only server-readable fields are included; it never bypasses FLS. */}
         <details className="record-fields-card surface record-all-fields" open>
@@ -2000,6 +1991,15 @@ function RecordWorkspace({
               </div>)}
           </dl>
         </details>
+        {assignedPage && <div className="record-runtime-page" data-lightning-page={assignedPage.apiName}>
+          {renderRuntimeRegion('header')}
+          <div className={assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
+            <main className="record-runtime-main">{renderRuntimeRegion('main')}</main>
+            {assignedPage.template === 'main-sidebar' || assignedPage.template === 'header-main-sidebar'
+              ? <aside className="record-runtime-sidebar">{renderRuntimeRegion('sidebar')}</aside>
+              : null}
+          </div>
+        </div>}
         {!assignedPage && compactFields.length > 0 && <section className="record-highlights surface" aria-label="Record highlights">
           {compactFields.map((field) => <div key={field.apiName}><span>{field.label}</span><strong>{formatFieldValue(field, record[field.apiName])}</strong></div>)}
         </section>}
