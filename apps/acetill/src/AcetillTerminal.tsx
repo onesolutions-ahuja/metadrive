@@ -34,6 +34,7 @@ export default function AcetillTerminal(){
   const [error,setError]=React.useState('');
   const [message,setMessage]=React.useState('');
   const [loading,setLoading]=React.useState(true);
+  const [receipt,setReceipt]=React.useState<Row|null>(null);
   const pending=React.useRef(false);
   React.useEffect(()=>{
     let active=true;
@@ -63,6 +64,12 @@ export default function AcetillTerminal(){
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   },[getProducts?.apiName,execute]);
   React.useEffect(()=>{if(getProducts)void refresh();},[getProducts?.apiName]);
+  // Debounced server-side search respects the tenant's configured Get Records filters.
+  React.useEffect(()=>{
+    if(!getProducts||!search.trim())return;
+    const handle=window.setTimeout(()=>{void refresh(search.trim());},350);
+    return()=>window.clearTimeout(handle);
+  },[search,getProducts?.apiName]);
   const categories=['All items',...new Set(products.map(p=>p.category).filter(Boolean))];
   const shown=products.filter(p=>(category==='All items'||p.category===category)&&p.name.toLowerCase().includes(search.toLowerCase()));
   const count=cart.reduce((n,x)=>n+x.quantity,0);
@@ -73,12 +80,24 @@ export default function AcetillTerminal(){
     if(!checkout||!cart.length)return;
     try {
       const result=await execute(checkout,{cartItems:cart.map(x=>({productId:x.id,quantity:x.quantity})),cartTotal:subtotal});
-      setMessage(result.interviewId?'Checkout workflow started.':asText(result.outputs?.message??'Checkout workflow returned.'));
-      // Never clear the basket without authoritative Flow completion confirmation.
-      if(result.outputs?.status==='complete'||result.outputs?.status==='completed')setCart([]);
+      const status=asText(result.outputs?.status).toLowerCase();
+      const completed=!result.interviewId&&(status==='complete'||status==='completed'||status==='success');
+      setMessage(completed?'Sale confirmed.':result.interviewId?'Checkout workflow started; sale is not yet confirmed.':asText(result.outputs?.message??'Checkout is not confirmed.'));
+      // Never clear the basket or offer a receipt until the Flow confirms the sale.
+      if(completed){setReceipt(result.outputs??{});setCart([]);}
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   };
-  return <main className="acetill-terminal">
+  return receipt?<main className="acetill-receipt-screen" aria-label="Sale completed">
+    <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
+      <h1>Payment complete</h1><p>Your OneEngine checkout Flow confirmed this transaction.</p>
+      <dl><div><dt>Order reference</dt><dd>{asText(receipt.orderId??receipt.orderNumber??receipt.OrderId)||'Confirmed'}</dd></div>
+      {receipt.total!=null&&<div><dt>Final total</dt><dd>{amount(Number(receipt.total))}</dd></div>}</dl>
+      <div className="acetill-receipt-actions">
+        {find('PrintReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('PrintReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt print Flow submitted.')).catch(e=>setError(String(e)))}>Print receipt</button>}
+        {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
+        <button type="button" className="acetill-charge" onClick={()=>{setReceipt(null);setMessage('');setError('');}}>New sale</button>
+      </div>{error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
+    </section></main>:<main className="acetill-terminal">
     <section className="acetill-shop" aria-label="Acetill product catalogue">
       <div className="acetill-topline">
         <nav aria-label="Product categories" className="acetill-category-tabs">
