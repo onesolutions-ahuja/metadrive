@@ -17,6 +17,25 @@ export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:Rba
   }));
   registerFlowJobApiRoutes(app,rbac,jobs);
 
+  // Frontends discover executable tenant Flows without FlowDefinition read access.
+  // Product-prefixed Flow API names are an authoring convention, not UI business logic.
+  app.get('/api/flows/available-actions',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    const product=req.query.product;
+    if(typeof product!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(product))
+      throw new Error('Invalid product');
+    const {rows}=await db.query<{api_name:string;label:string}>(`
+      SELECT DISTINCT ON (api_name) api_name,label
+      FROM md_flow_definitions
+      WHERE tenant_id=$1 AND active=true AND archived=false
+        AND lower(api_name) LIKE lower($2) || '%'
+      ORDER BY api_name,version DESC LIMIT 100`,[actor.tenant_id,product]);
+    const permitted=await rbac.allowedMany(actor.tenant_id,actor.user_id,
+      rows.map(row=>({resource:'Flow:'+row.api_name,action:'execute'})));
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({actions:rows.filter((_,index)=>permitted[index]).map(row=>({apiName:row.api_name,label:row.label}))});
+  }));
+
   app.post('/api/flows/:apiName/schedule',wrap(async(req,res)=>{
     const actor=authenticated(req),flowName=req.params.apiName;
     if(!api.test(flowName))throw new Error('Invalid Flow name');
