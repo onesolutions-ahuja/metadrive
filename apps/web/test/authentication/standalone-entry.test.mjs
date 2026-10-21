@@ -81,5 +81,5 @@ test('user landing preference opens the assigned app without granting access',()
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
   assert.match(server,/landingAppApi:landing\.rows\[0\]\?\.landing_app_api\?\?'Setup'/);
   assert.match(schema,/landing_app_api text NOT NULL DEFAULT 'Setup'/);
-  assert.match(app,/without installed-app checks for standalone/);
+  assert.match(app,/Standalone product UIs do not depend on AppExchange installation/);
 });
