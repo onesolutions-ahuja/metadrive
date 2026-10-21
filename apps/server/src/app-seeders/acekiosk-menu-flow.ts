@@ -43,7 +43,7 @@ export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
      {id:3,type:'Get Records',label:'Categories',config:{object:'MenuCategory',recordLimit:'all',outputVariable:'categories'}},
      {id:4,type:'End',label:'End',config:{}}
     ],
-    connectors:[{from:1,to:2},{from:2,to:3},{from:3,to:4}],
+    connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'},{from:3,to:4,kind:'normal',label:'Next'}],
     resources:[
      {name:'products',type:'Record Collection',dataType:'Product',availableForOutput:true},
      {name:'categories',type:'Record Collection',dataType:'MenuCategory',availableForOutput:true}
