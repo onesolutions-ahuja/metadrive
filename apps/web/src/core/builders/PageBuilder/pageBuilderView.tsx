@@ -78,7 +78,8 @@ import {
   Wifi,
   WifiOff,
   PanelLeft,
-  PanelRight
+  PanelRight,
+  Layers3
 } from 'lucide-react';
 import FlowBuilderWorkspace from '../FlowBuilder/FlowBuilder';
 import FlowScreenContent from '../../automation/FlowScreen/FlowScreenContent';
@@ -97,7 +98,7 @@ import { isComponentVisible } from '../../components/Properties/componentVisibil
 import PageComponentVisualEditor from '../ComponentStyleEditor/PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import PageComponentStyleEditor from '../ComponentStyleEditor/PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
+import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from '../../pages/PageRuntime/pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import AppExchange from '../../applications/AppExchange/AppExchange';
@@ -345,8 +346,9 @@ function PageBuilder({
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
-  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge } | null>(null);
-  const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; x: number; y: number; width: number; height: number } | null>(null);
+  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge; element: HTMLElement; current: { x: number; y: number; width: number; height: number } } | null>(null);
+  const canvasGuideXRef = useRef<HTMLDivElement | null>(null);
+  const canvasGuideYRef = useRef<HTMLDivElement | null>(null);
   const [canvasSnap, setCanvasSnap] = useState(true);
   const [componentMenuId, setComponentMenuId] = useState('');
   const canvasMoveStart = useRef<{
@@ -579,8 +581,9 @@ function PageBuilder({
   // Move only the selected DOM element while dragging. Commit metadata and
   // a single undo step on release, avoiding a page-wide render per pointer frame.
   const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
-    if (previewMode || !component.position || component.properties.canvasLocked === true
+    if (previewMode || !component.position || isCanvasLocked(component) || component.properties.canvasLocked === true
       || event.button !== 0 || canvasMoveStart.current) return;
+    if ((event.target as HTMLElement).closest('button,input,select,textarea,a,[contenteditable="true"],.free-canvas-resize-handle,.canvas-element-actions')) return;
     const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
     if (!element) return;
     event.preventDefault();
@@ -601,17 +604,28 @@ function PageBuilder({
     const scale = fitCanvas ? fitScale : 1;
     const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
     const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
-    const next = canvasBoundPosition({ ...start.original, x, y },
-      { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
-    start.x = next.x; start.y = next.y;
+    const next = snapCanvasPosition({ ...start.original, x, y },
+      { width: page.canvasWidth, height: page.canvasHeight },
+      page.components.filter(item => item.id !== start.id && !rawLayoutParentId(item) && item.position).map(item => item.position!), canvasSnap);
+    start.x = next.position.x; start.y = next.position.y;
+    if (canvasGuideXRef.current) {
+      canvasGuideXRef.current.style.display = next.guides.x ? 'block' : 'none';
+      canvasGuideXRef.current.style.left = `${next.position.x}px`;
+    }
+    if (canvasGuideYRef.current) {
+      canvasGuideYRef.current.style.display = next.guides.y ? 'block' : 'none';
+      canvasGuideYRef.current.style.top = `${next.position.y}px`;
+    }
     start.element.style.transform =
-      `translate(${next.x - start.original.x}px, ${next.y - start.original.y}px)`;
+      `translate(${next.position.x - start.original.x}px, ${next.position.y - start.original.y}px)`;
   };
   const endCanvasMove = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
     const start = canvasMoveStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
     canvasMoveStart.current = null;
     start.element.style.transform = '';
+    if (canvasGuideXRef.current) canvasGuideXRef.current.style.display = 'none';
+    if (canvasGuideYRef.current) canvasGuideYRef.current.style.display = 'none';
     if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
       updateComponent(start.id, { position: { ...start.original, x: start.x, y: start.y } });
     }
@@ -629,12 +643,14 @@ function PageBuilder({
     applyPage({ ...page, components: items });
   };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata, edge: ResizeEdge) => {
-    if (!component.position || component.properties.canvasLocked === true) return;
+    if (!component.position || isCanvasLocked(component) || component.properties.canvasLocked === true) return;
+    const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
+    if (!element) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
     canvasResizeStart.current = { id: component.id, pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY,
-      x: component.position.x, y: component.position.y, width: component.position.width, height: component.position.height, edge };
-    setSelectedId(component.id); setInspectorTab('Overview');
-    setCanvasResizePreview({ id: component.id, ...component.position });
+      x: component.position.x, y: component.position.y, width: component.position.width, height: component.position.height, edge,
+      element, current: { ...component.position } };
+    setSelectedId(component.id);
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
@@ -644,24 +660,26 @@ function PageBuilder({
     const definition = component.type.startsWith('Custom:') ? findRegisteredComponent(libraryComponents, component.type.slice('Custom:'.length), 'page') : undefined;
     const minWidth = Math.min(start.width, definition?.resize?.minWidth ?? 20);
     const minHeight = Math.min(start.height, definition?.resize?.minHeight ?? 20);
-    const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale));
-    const dy = Math.round(canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale));
+    const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitCanvas ? fitScale : 1));
+    const dy = Math.round(canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitCanvas ? fitScale : 1));
     const west = start.edge.includes('w'), east = start.edge.includes('e'), north = start.edge.includes('n'), south = start.edge.includes('s');
     let x = start.x, y = start.y, width = start.width, height = start.height;
     if (east) width = Math.max(minWidth, Math.min(page.canvasWidth - start.x, start.width + dx));
     if (south) height = Math.max(minHeight, Math.min(page.canvasHeight - start.y, start.height + dy));
     if (west) { x = Math.max(0, Math.min(start.x + start.width - minWidth, start.x + dx)); width = start.width + start.x - x; }
     if (north) { y = Math.max(0, Math.min(start.y + start.height - minHeight, start.y + dy)); height = start.height + start.y - y; }
-    setCanvasResizePreview({ id: start.id, x, y, width, height });
+    start.current = { x, y, width, height };
+    Object.assign(start.element.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
   };
   const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    const size = canvasResizePreview?.id === start.id ? canvasResizePreview :
-      { id: start.id, x: start.x, y: start.y, width: start.width, height: start.height };
+    const size = start.current;
+    Object.assign(start.element.style, { left: `${start.x}px`, top: `${start.y}px`, width: `${start.width}px`, height: `${start.height}px` });
+    canvasResizeStart.current = null;
     const component = page.components.find(item => item.id === start.id);
-    if (component?.position) updateComponent(start.id, { position: { x:size.x, y:size.y, width:size.width, height:size.height } });
-    canvasResizeStart.current = null; setCanvasResizePreview(null);
+    if (component?.position && (size.x !== start.x || size.y !== start.y || size.width !== start.width || size.height !== start.height))
+      updateComponent(start.id, { position: size });
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
@@ -1256,10 +1274,10 @@ function PageBuilder({
           ? nested
             ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
             : {
-                left: canvasResizePreview?.id === component.id ? canvasResizePreview.x : component.position?.x ?? 0,
-                top: canvasResizePreview?.id === component.id ? canvasResizePreview.y : component.position?.y ?? 0,
-                width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
-                height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
+                left: component.position?.x ?? 0,
+                top: component.position?.y ?? 0,
+                width: component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
+                height: component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
               }
           : {}),
         ...visualStyle,
@@ -1628,8 +1646,8 @@ function PageBuilder({
               >
                 {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
-                {!previewMode && <><div className="canvas-magnet-guide canvas-magnet-guide-x"  aria-hidden="true" />
-                  <div className="canvas-magnet-guide canvas-magnet-guide-y"  aria-hidden="true" /></>}
+                {!previewMode && <><div ref={canvasGuideXRef} className="canvas-magnet-guide canvas-magnet-guide-x" aria-hidden="true" />
+                  <div ref={canvasGuideYRef} className="canvas-magnet-guide canvas-magnet-guide-y" aria-hidden="true" /></>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
                 <div className="record-preview-nav">
