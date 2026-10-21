@@ -18,7 +18,7 @@ export async function executeHttpCalloutNode(input:{
  const asynchronous=node.config.deliveryMode==='DURABLE_ASYNC';
  try {
   const scalarVars=Object.fromEntries(Object.entries(vars).filter(
-   (entry):entry is [string,FlowScalar]=>isFlowScalar(entry[1])));
+   (entry):entry is [string,FlowScalar]=>!entry[0].includes('.')&&isFlowScalar(entry[1])));
   // Reuse the same server-side Get Records output for HTTP mappings. Only
   // scalar properties of records already fetched under OneEngine may be used.
   // Never accept dotted browser input or flatten arbitrary collections.
