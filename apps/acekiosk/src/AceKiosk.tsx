@@ -91,7 +91,10 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
       catch(e){setError(e instanceof Error?e.message:String(e));}
     }
   };
-  const restart=()=>{setCart([]);setSessionId('');setPaymentMethod('');setCategory('All');setScreen('welcome');};
+  const restart=()=>{
+    if(sessionId&&actions.some(a=>a.apiName==='AceKioskRestart'))void executeAction('AceKioskRestart',{sessionId}).catch(e=>setError(e instanceof Error?e.message:String(e)));
+    setCart([]);setSessionId('');setPaymentMethod('');setCategory('All');setScreen('welcome');
+  };
   const subcategories=useMemo(()=>[...new Set(products.filter(p=>matchCategory(p)).map(p=>p.subcategory).filter(Boolean))],[products,category]);
   const displayed=useMemo(()=>products.filter(p=>matchCategory(p)&&(subcategory==='All'||p.subcategory.toLowerCase()===subcategory.toLowerCase())&&(!search||p.name.toLowerCase().includes(search.toLowerCase()))),[products,category,subcategory,search,categories]);
   const add=(product:Item,selections:Selection[]=[])=>{
@@ -112,7 +115,15 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
     }
     add(item,selections);setCustomising(null);
   };
-  const adjust=(key:string,delta:number)=>setCart(lines=>lines.map(l=>l.key===key?{...l,quantity:l.quantity+delta}:l).filter(l=>l.quantity>0));
+  const adjust=(key:string,delta:number)=>{
+    const line=cart.find(l=>l.key===key);if(!line)return;
+    const next=Math.max(0,line.quantity+delta);
+    if(actions.some(a=>a.apiName==='AceKioskUpdateCart')){
+      void executeAction('AceKioskUpdateCart',{sessionId,productId:line.product.id,quantity:next,selections:line.selections})
+        .then(()=>setCart(items=>items.map(l=>l.key===key?{...l,quantity:next}:l).filter(l=>l.quantity>0)))
+        .catch(e=>setError(e instanceof Error?e.message:String(e)));
+    }else setCart(items=>items.map(l=>l.key===key?{...l,quantity:next}:l).filter(l=>l.quantity>0));
+  };
   const checkout=async()=>{
     // Never write Orders directly or trust preview totals. Only an authorised tenant Flow may validate and commit.
     const action=actions.find(a=>/^(AceKioskCheckout|KioskCheckout)$/.test(a.apiName));
@@ -131,7 +142,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const logout=async()=>{try{await apiRequest('/auth/logout',{method:'POST'});}catch{}onLogout();window.location.assign('/login');};
   return <div className="ak-shell">
-    <header className="ak-header"><button type="button" className="ak-logo" onClick={restart} aria-label="KFC home"><span className="ak-mark">KFC</span><strong>KFC</strong></button>
+    <header className="ak-header"><button type="button" className="ak-logo" onClick={restart} aria-label="KFC home"><img className="ak-kfc-logo" src="https://commons.wikimedia.org/wiki/Special:FilePath/KFC_logo_wordmark.svg" alt="KFC" /></button>
       <span className="ak-header-label">KFC KIOSK EXPERIENCE · CLIENT DEMO</span><button className="ak-signout" onClick={()=>void logout()}>Sign out</button></header>
     {error&&<div className="ak-error" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
     {screen==='welcome'&&<main className="ak-welcome"><div className="ak-welcome-copy"><p className="ak-overline">YOUR ORDER. YOUR WAY.</p><h1>WELCOME TO <em>KFC.</em></h1><p>It's finger lickin' good. How would you like to eat?</p><div className="ak-modes"><button className="ak-primary" onClick={()=>void begin('Eat In')}>EAT IN →</button><button className="ak-primary" onClick={()=>void begin('Takeaway')}>TAKEAWAY →</button></div></div><div className="ak-hero-art" aria-hidden="true"><span>GOOD FOOD</span><strong>MADE FOR YOU.</strong><div className="ak-hero-disc">ENJOY<br/>EVERY<br/>BITE.</div></div></main>}
