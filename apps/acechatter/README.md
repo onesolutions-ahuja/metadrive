@@ -12,18 +12,18 @@ The UI is maintained here as a standalone app, never by Page Builder. No alterna
 
 **Setup:** make authorised Conversation/Message metadata available, configure message-to-conversation relationships, activate permitted WhatsApp Flows, set the intended user's landing application to AceChatter. Verify inbound sync and delivery receipts using the tenant's configured provider.
 
-## Required Flow Builder contracts
+## Flow configuration and data model
 
-The app never calls a Record endpoint to load conversations or messages. Create **active, executable Autolaunched Flows** under the current tenant, grant their execution through OneEngine and choose all Object/Record/Field filters within the Flows:
+AppExchange now discovers AceChatter independently. For **installed, entitled tenants only**, the idempotent app seeder creates missing `ChatConversation` and `ChatMessage` Object/Field definitions, a separately assignable `AceChatterUser` permission set and three editable OneEngine Flows. Existing versions are not modified. It does not create customer conversations or assign permissions to a user.
 
-| Flow API name | Declared inputs | Synchronous output Text variable |
-| --- | --- | --- |
-| `AceChatterLoadConversations` | `searchTerm` (Text), `limit` (Number) | `conversationsJson` |
-| `AceChatterLoadMessages` | `conversationId` (Text), `limit` (Number) | `messagesJson` |
-| `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Flow-specific result |
+| Flow API | Inputs | OneEngine output | Initial state |
+| --- | --- | --- | --- |
+| `AceChatterLoadConversations` | `searchTerm` (Text) | `conversations` (Record Collection) | Active |
+| `AceChatterLoadMessages` | `conversationId` (Text) | `messages` (Record Collection) | Active |
+| `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Configure in Flow Builder | Draft |
 
-Read Flows must complete synchronously and return an output variable containing a JSON array of at most 200 objects. The shared Flow runtime currently publishes declared output **scalar variables**, not arbitrary record collections; the Flow must map/serialize the intended data to Text output (or the reusable shared Flow serializer must be extended if unavailable). The UI validates the result and fails closed instead of exposing a direct, unfiltered Object API fallback.
+Both loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. Edit filters, sorting, selected fields and object relationships in Flow Builder. The conversation search defaults to the `Name` field, while message loading filters by `ConversationId`; these are metadata defaults, not UI business logic. The UI can also render the earlier JSON Text outputs `conversationsJson` and `messagesJson` for compatibility, but native collections need no serialization. Unauthorised users cannot bypass the server's OneEngine RBAC or Record/Field checks.
 
-Example conversation: `[{"Id":"conv-id","Name":"Customer"}]`. Example message: `[{"Id":"msg-id","Body":"Hello","Direction":"Inbound","SentAt":"2026-10-21T10:00:00Z"}]`. These are **output schema examples only**, never demo records shown in the UI.
+**Outbound WhatsApp sending deliberately remains a Draft until a tenant administrator configures an appropriate Named Credential, authorised WhatsApp HTTP callout, provider delivery statuses and failure handling.** Activating a no-op send Flow would falsely imply delivery. Incoming WhatsApp webhooks and provider callbacks likewise require tenant-secured integration Flows. Confirm provider consent, conversation-window/template requirements and webhook authenticity before activation.
 
-All filtering, conversation assignment, message membership, sort and limit are defined by the Flow owner; the browser passes the search text and selected conversation ID, and renders only returned rows. The Flow must validate that the requested conversation is accessible by the actor. No alternate WhatsApp transport or message CRUD path is provided.
+Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
