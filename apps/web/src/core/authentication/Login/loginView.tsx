@@ -1,8 +1,9 @@
-import { useEffect,useState, type FormEvent } from 'react';
+import { useEffect,useState, type FormEvent, type CSSProperties } from 'react';
 import { readSubmittedLogin } from './readSubmittedLogin';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from '../../metadata/Definitions/metadata';
 import { apiRequest, setAccessToken } from '../Client/authClient';
 import LoginRecovery from './LoginRecovery';
+import './standaloneLogin.css';
 
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -19,12 +20,15 @@ type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticated
 type LoginResult={access_token?:string;landing?:LandingBootstrap;mfa_required?:boolean;challenge_token?:string;setup_secret?:string;enrollment_required?:boolean};
 let federationCompletion:Promise<LoginResult|undefined>|undefined;
 
+export type ProductLoginBrand = { label: string; eyebrow: string; tagline: string; accent: string; signInDescription: string };
+
 export function createLoginView(logoUrl: string) {
-  function Login({ error, onStart, onSuccess, onRetry }: {
+  function Login({ error, onStart, onSuccess, onRetry, branding }: {
     error?: string;
     onStart?: () => void;
     onSuccess?: (timing: EntryTiming) => void;
     onRetry?: () => void;
+    branding?: ProductLoginBrand;
   }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -91,13 +95,15 @@ export function createLoginView(logoUrl: string) {
       }
     };
 
-    if(recovering)return <main className="auth-screen"><div className="auth-card"><LoginRecovery onClose={()=>setRecovering(false)}/></div></main>;
-    return <main className="auth-screen">
+    const loginStyle=branding?{'--standalone-accent':branding.accent} as CSSProperties:undefined;
+    if(recovering)return <main className={branding?'auth-screen auth-screen--standalone':'auth-screen'} style={loginStyle}><div className="auth-card"><LoginRecovery onClose={()=>setRecovering(false)}/></div></main>;
+    return <main className={branding?'auth-screen auth-screen--standalone':'auth-screen'} style={loginStyle}>
       <form className="auth-card" onSubmit={(event) => void signIn(event)}>
-        <img className="auth-brand-logo" src={logoUrl} alt="UNE Solutions" />
-        <div className="eyebrow">UNEENGINE WORKSPACE</div>
-        <h1>Welcome back</h1>
-        <p>Sign in to manage your organization&apos;s metadata and workflows.</p>
+        {branding && <div className="auth-product-identity"><div className="auth-product-monogram" aria-hidden="true">{branding.label.slice(0,1)}</div><div><div className="eyebrow">{branding.eyebrow}</div><h1>{branding.label}</h1></div></div>}
+        {!branding && <img className="auth-brand-logo" src={logoUrl} alt="UNE Solutions" />}
+        {!branding && <div className="eyebrow">UNEENGINE WORKSPACE</div>}
+        {branding ? <><h2 className="auth-product-heading">Welcome back</h2><p>{branding.signInDescription}</p></> : <><h1>Welcome back</h1><p>Sign in to manage your organization&apos;s metadata and workflows.</p></>}
+        {branding && <div className="auth-product-subline">{branding.tagline}</div>}
         {message && <div className="auth-error" role="alert">
           {message}{onRetry && <button type="button" className="text-action" onClick={onRetry}>Retry connection</button>}
         </div>}
@@ -133,6 +139,7 @@ export function createLoginView(logoUrl: string) {
         <button className="btn btn-brand auth-submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
+        {branding && <div className="auth-product-powered"><img src={logoUrl} alt="UNE Solutions"/>Securely powered by MetaDrive</div>}
       </form>
     </main>;
   }

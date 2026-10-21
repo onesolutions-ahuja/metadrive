@@ -82,6 +82,7 @@
     "apps/server/test/system/user-account-lock-contract.test.ts",
     "apps/web/test/authentication/login-bootstrap.test.mjs",
     "apps/web/test/authentication/readSubmittedLogin.test.mjs",
+    "apps/web/test/authentication/standalone-entry.test.mjs",
     "apps/web/test/bundledRegistryClient.test.ts",
     "apps/web/test/canvasInteractionUX.test.ts",
     "apps/web/test/componentLibraries.test.ts",

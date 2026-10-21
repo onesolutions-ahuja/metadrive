@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Ace Assist · Sign in</title></head>
+<body><p>Opening Ace Assist… <a href="/?__spa=%2Faceassist">Continue</a></p>
+<script>
+(function () {
+  // GitHub Pages deep-link recovery keeps the standalone app pathname.
+  var route='/aceassist'+window.location.search+window.location.hash;
+  window.location.replace('/?__spa='+encodeURIComponent(route));
+}());
+</script></body></html>
