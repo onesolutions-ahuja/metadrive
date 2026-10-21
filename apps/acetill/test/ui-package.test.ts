@@ -35,7 +35,8 @@ test('standalone entrypoint uses the shared product-aware workspace shell',()=>{
  const app=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/App/App.tsx',import.meta.url)),'utf8');
  assert.doesNotMatch(main,/import\(['"]\.\.\/\.\.\/acetill\/src\/AcetillShell/);
  assert.match(main,/isMarketingHome/);
- assert.match(app,/resolveStandaloneEntry\(window\.location\.pathname/);
+ assert.match(app,/standaloneCanonicalPath\(window\.location\.pathname/);
+ assert.match(app,/resolveStandaloneEntry\(entryPath/);
  assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
  assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
 });
