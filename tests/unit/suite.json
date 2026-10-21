@@ -6,6 +6,7 @@
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
     "apps/server/test/system/acetill-payment-flow-metadata.test.ts",
+    "apps/server/test/system/acetill-payment-flows.test.ts",
     "apps/server/test/system/builder-contracts.test.ts",
     "apps/server/test/system/bundled-components.test.ts",
     "apps/server/test/system/business-automation-recipes.test.ts",
