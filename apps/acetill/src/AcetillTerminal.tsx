@@ -25,7 +25,7 @@ function parseCategory(row:Row):Category|null {
 }
 function extractRows(result:Result):Row[] {
   const output=result.outputs??{};
-  for(const key of ['records','Records','products','Products','result','Result']) {
+  for(const key of ['records','Records','products','Products','categories','Categories','result','Result']) {
     const candidate=output[key]??(result as Row)[key];
     if(Array.isArray(candidate))return candidate.filter((v):v is Row=>!!v&&typeof v==='object'&&!Array.isArray(v));
   }
