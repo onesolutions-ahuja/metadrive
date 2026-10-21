@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 12,
+  "version": 13,
   "scope": "platform-core",
   "jsxFile": "one/OneShoppingCart/OneShoppingCart.jsx",
   "cssFile": "one/OneShoppingCart/OneShoppingCart.css",
@@ -53,6 +53,30 @@
           "label": "Basket only"
         }
       ]
+    },
+    {
+      "propertyKey": "presentationStyle",
+      "label": "Sales terminal appearance",
+      "kind": "SELECT",
+      "defaultValue": "standard",
+      "displayOrder": 301,
+      "choices": [
+        {
+          "key": "standard",
+          "label": "Standard"
+        },
+        {
+          "key": "modernTouch",
+          "label": "Modern touchscreen POS (rounded cards)"
+        }
+      ]
+    },
+    {
+      "propertyKey": "productImageRadius",
+      "label": "Product image corner radius (px)",
+      "kind": "NUMBER",
+      "defaultValue": 18,
+      "displayOrder": 302
     },
     {
       "propertyKey": "title",
