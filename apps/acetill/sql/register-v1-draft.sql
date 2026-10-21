@@ -79,7 +79,7 @@ INSERT INTO md_app_package_page_property_templates
 SELECT a.id,1,p.page_api,p.component_api,p.slot,p.sort_order,p.property_path,p.data_type,p.value_text
 FROM md_apps a
 CROSS JOIN (VALUES
- ('AcetillRegister','OneBadge','header',5,'label','string','ACETILL POS'),
+ ('AcetillRegister','OneBadge','header',5,'text','string','ACETILL POS'),
  ('AcetillRegister','OneText','main',10,'text','string','Welcome to Acetill'),
  ('AcetillRegister','OneText','main',10,'fontSize','number','28'),
  ('AcetillRegister','OneText','main',15,'text','string','Your store and available registers are managed in UNE Solutions. Register selection will be connected through a published Flow.'),
@@ -113,7 +113,7 @@ CROSS JOIN (VALUES
  ('AcetillCheckout','OneButton','main',20,'label','string','Complete sale (connect Flow)'),
  ('AcetillCheckout','OneButton','main',20,'disabled','boolean','true'),
  ('AcetillCheckout','OneShoppingCart','main',10,'cartTargetKey','string','acetill'),
- ('AcetillReceipt','OneBadge','header',5,'label','string','RECEIPT'),
+ ('AcetillReceipt','OneBadge','header',5,'text','string','RECEIPT'),
  ('AcetillReceipt','OneText','main',10,'text','string','Receipt'),
  ('AcetillReceipt','OneText','main',10,'fontSize','number','28'),
  ('AcetillReceipt','OneText','main',20,'text','string','Receipt details will be populated from the confirmed Order using your published Flow. No placeholder receipt is treated as proof of payment.'),
