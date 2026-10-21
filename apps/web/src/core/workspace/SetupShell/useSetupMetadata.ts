@@ -6,7 +6,7 @@ import { saveVerifiedMetadata, type MetadataPublicationResponse } from '../../me
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 
 export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
-  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder' || workspace === 'scheduled-flows' || workspace === 'app-exchange');
+  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder' || workspace === 'scheduled-flows');
 }
 
 export function useSetupMetadata(ctx: any) {
