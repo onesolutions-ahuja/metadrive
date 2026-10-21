@@ -15,7 +15,7 @@
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "audit:architecture": "node scripts/verify-project-references.mjs && node scripts/verify-web-source-layout.mjs",
-    "test:login": "node --import tsx --test apps/web/test/authentication/readSubmittedLogin.test.mjs apps/web/test/authentication/login-bootstrap.test.mjs",
+    "test:login": "node --import tsx --test apps/web/test/authentication/readSubmittedLogin.test.mjs apps/web/test/authentication/login-bootstrap.test.mjs apps/web/test/authentication/standalone-entry.test.mjs",
     "test:metadata": "node --import tsx --test apps/web/test/metadataBindings.test.ts apps/web/test/flowEndElement.test.mjs apps/web/test/flowGraphOperations.test.mjs apps/web/test/flowCapabilityCatalog.test.ts apps/web/test/flowSubflowMappings.test.ts apps/web/test/flowReferenceCatalog.test.ts apps/web/test/recordCsvUtils.test.ts apps/web/test/setupObjectActions.test.ts apps/web/test/setupMetadataDependencies.test.ts apps/web/test/openPageActionNode.test.ts apps/web/test/recordChoices.test.ts apps/web/test/filterRelatedRecords.test.ts apps/web/test/offlinePublicationClient.test.mjs",
     "audit:sql-routes": "node scripts/audit-sql-api-contract.mjs",
     "audit:duplicates": "node scripts/audit-duplicate-code.mjs",
