@@ -107,6 +107,24 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
 
 export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
  vault:NamedCredentialService,rbac:RbacEngine){
+ app.get('/api/metadata/inbound-webhooks/options',handler(async(req,res)=>{
+  const actor=req.actor!;
+  await rbac.require(actor.tenant_id,actor.user_id,'WebhookSubscription','manage');
+  const [apps,flows,users]=await Promise.all([
+   db.query<{api_name:string}>(`SELECT a.api_name FROM md_apps a
+     JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
+     JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1 AND e.active=true
+     WHERE a.enabled=true AND (e.expires_at IS NULL OR e.expires_at>now())
+     ORDER BY a.api_name`,[actor.tenant_id]),
+   db.query<{api_name:string}>(`SELECT DISTINCT api_name FROM md_flow_definitions
+      WHERE tenant_id=$1 AND active=true AND archived=false
+        AND flow_type='Autolaunched Flow' ORDER BY api_name`,[actor.tenant_id]),
+   db.query<{id:string;email:string}>(`SELECT id,email FROM md_users
+      WHERE tenant_id=$1 ORDER BY email LIMIT 500`,[actor.tenant_id])
+  ]);
+  res.json({apps:apps.rows.map(a=>a.api_name),flows:flows.rows.map(f=>f.api_name),
+    users:users.rows});
+ }));
  app.get('/api/metadata/inbound-webhooks',handler(async(req,res)=>{
   const actor=req.actor!;
   await rbac.require(actor.tenant_id,actor.user_id,'WebhookSubscription','read');
