@@ -82,6 +82,7 @@
     "apps/web/test/authentication/login-bootstrap.test.mjs",
     "apps/web/test/authentication/readSubmittedLogin.test.mjs",
     "apps/web/test/bundledRegistryClient.test.ts",
+    "apps/web/test/canvasInteractionUX.test.ts",
     "apps/web/test/componentLibraries.test.ts",
     "apps/web/test/dynamicChunkRecovery.test.ts",
     "apps/web/test/filterRelatedRecords.test.ts",
