@@ -245,7 +245,7 @@
                 },
                 {
                   "field": "{!verifyLine.Quantity}",
-                  "operator": "Greater",
+                  "operator": "GreaterThan",
                   "value": 0
                 },
                 {
@@ -300,7 +300,7 @@
               "conditions": [
                 {
                   "field": "{!itemCount}",
-                  "operator": "Greater",
+                  "operator": "GreaterThan",
                   "value": 0
                 },
                 {
@@ -865,7 +865,7 @@
                 },
                 {
                   "field": "{!verifyLine.Quantity}",
-                  "operator": "Greater",
+                  "operator": "GreaterThan",
                   "value": 0
                 },
                 {
@@ -920,7 +920,7 @@
               "conditions": [
                 {
                   "field": "{!itemCount}",
-                  "operator": "Greater",
+                  "operator": "GreaterThan",
                   "value": 0
                 },
                 {
