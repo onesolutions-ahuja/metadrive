@@ -539,6 +539,14 @@ function RecordWorkspace({
     return ()=>{active=false};
   },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
   const [formOpen, setFormOpen] = useState(false);
+  // Switching from a scrolled record list to its editor must start at the top.
+  // Otherwise the editor header remains hidden above the sticky workspace bar.
+  useEffect(() => {
+    if (!formOpen) return;
+    const container = document.querySelector('.workspace-records');
+    if (container instanceof HTMLElement) container.scrollTop = 0;
+    window.scrollTo({top: 0, behavior: 'instant'});
+  }, [formOpen]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTimestamp, setEditingTimestamp] = useState('');
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
