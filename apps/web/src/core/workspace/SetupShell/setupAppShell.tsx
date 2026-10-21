@@ -25,6 +25,7 @@ import { useSetupAnalyticsActions } from '../../builders/ReportBuilder/useSetupA
 import { createSetupObjectActions } from '../../builders/ObjectManager/setupObjectActions';
 import { createSetupFlowActions } from '../../builders/FlowBuilder/setupFlowActions';
 import { useSetupMetadata } from './useSetupMetadata';
+import {rbacUserSaveWasCommitted} from './rbacSaveRecovery';
 const SetupObjectDialogs = React.lazy(() => import('../../builders/ObjectManager/setupObjectDialogs'));
 const FieldWizardModal = React.lazy(() => import('../../builders/ObjectManager/setupFieldWizard'));
 
