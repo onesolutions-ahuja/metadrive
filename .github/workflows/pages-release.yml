@@ -26,7 +26,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run check
+      # Production Pages is a frontend release: do not block it behind unrelated
+      # server/metadata suites. Run shared full checks on pull requests.
+      - name: Verify standalone login, frontend routing and product screens
+        run: npm run test:login && npm run build --workspace apps/web
+      - name: Run comprehensive repository checks for pull requests
+        if: github.event_name == 'pull_request'
+        run: npm run check
       - name: Verify production frontend, Render API and browser login
         if: github.event_name == 'pull_request'
         run: node scripts/verify-public-render-routing.mjs
