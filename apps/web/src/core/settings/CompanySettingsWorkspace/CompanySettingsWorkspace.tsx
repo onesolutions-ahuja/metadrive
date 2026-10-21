@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react';
 import BusinessCalendarSettings from '../../platform/BusinessCalendarSettings/BusinessCalendarSettings';
 import OfflineBriefcaseSettings from '../../platform/OfflineBriefcaseSettings/OfflineBriefcaseSettings';
 import MetadataPackageManager from '../../applications/MetadataPackages/MetadataPackageManager';
@@ -12,13 +13,16 @@ const sections:ReadonlyArray<{id:Section;label:string}>=[
 {id:'contacts',label:'Contacts'},{id:'mobile',label:'Mobile & Offline'},{id:'integrations',label:'Integrations'},
 {id:'security',label:'Security & Recovery'},{id:'developer',label:'Developer'}];
 /** Presentation only: retains existing OneEngine-protected runtime controls and slots. */
-export default function CompanySettingsWorkspace({company,domains,developer,usage,calendar,recovery,mfa,emailRecovery,locks,sessions,audit,onNavigateDeveloper,developerAccess}:{
+export default function CompanySettingsWorkspace({company,domains,developer,usage,calendar,recovery,mfa,emailRecovery,locks,sessions,audit,onNavigateDeveloper,developerAccess,mobile=false}:{
 company:ReactNode;domains:ReactNode;developer:ReactNode;usage:ReactNode;calendar?:ReactNode;
 recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;sessions:ReactNode;audit:ReactNode;
  onNavigateDeveloper?:(workspace:string)=>void;
  developerAccess?:{metadata:boolean;apps:boolean;packages?:boolean;flows:boolean;dashboards:boolean;reports:boolean;approvals:boolean;security:boolean};
+ mobile?:boolean;
 }){
  const [active,setActive]=useState<Section>('general');
+ const [mobileSection,setMobileSection]=useState<Section|null>(null);
+ const currentSection=mobile ? mobileSection : active;
  const rights=developerAccess;
  const destinations:DeveloperDestination[]=[
   {label:'Object Manager',workspace:'object-manager',description:'Objects, fields and relationships',allowed:!!rights?.metadata},
@@ -34,26 +38,41 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
   {label:'OneEngine Permissions',workspace:'rbac',description:'Developer and builder access policies',allowed:!!rights?.security}
  ];
  const available=destinations.filter(item=>item.allowed);
- return <div className="company-workspace">
-   <header className="company-workspace-heading"><div><p className="company-workspace-eyebrow">Setup / Organisation</p>
-     <h1>Company Settings</h1><p>Manage your organisation, currency, branding and security settings.</p></div></header>
+ const visibleSections=sections.filter(section=>
+  (section.id!=='developer'||available.length>0) &&
+  (!mobile || !['security','integrations'].includes(section.id) || !!rights?.security)
+ );
+ return <div className={mobile?'company-workspace company-workspace-mobile':'company-workspace'}>
+   <header className="company-workspace-heading">
+     {mobile && mobileSection && <button type="button" className="company-workspace-mobile-back"
+       onClick={()=>setMobileSection(null)}><ChevronLeft size={19} aria-hidden="true" /> Company Settings</button>}
+     <div><p className="company-workspace-eyebrow">Setup / Organisation</p>
+     <h1>{mobile && mobileSection ? visibleSections.find(item=>item.id===mobileSection)?.label : 'Company Settings'}</h1>
+     {!mobileSection && <p>Manage your organisation, currency, branding and security settings.</p>}</div>
+   </header>
    <nav className="company-workspace-tabs" aria-label="Company settings sections">
-     {sections.filter(section=>section.id!=='developer'||available.length>0).map(section=><button key={section.id} type="button" className={active===section.id?'active':''}
+     {visibleSections.map(section=><button key={section.id} type="button" className={active===section.id?'active':''}
        aria-current={active===section.id?'page':undefined} onClick={()=>setActive(section.id)}>{section.label}</button>)}
    </nav>
-   <div className={"company-workspace-body company-workspace-section-"+active}>
+   {mobile && mobileSection===null && <nav className="company-workspace-mobile-menu" aria-label="Company settings sections">
+     {visibleSections.map(section=><button key={section.id} type="button" onClick={()=>setMobileSection(section.id)}>
+       <span className="company-workspace-mobile-section-icon"><Settings2 size={17} aria-hidden="true" /></span>
+       <span>{section.label}</span><ChevronRight size={18} aria-hidden="true" />
+     </button>)}
+   </nav>}
+   {currentSection && <div className={"company-workspace-body company-workspace-section-"+currentSection}>
      {/* CompanySettings currently contains both company details and currency sections.
          Render it once, avoiding duplicate state and network requests. */}
-     {(active==='general'||active==='currency'||active==='business'||active==='contacts'||active==='branding')&&company}
-     {active==='integrations'&&<section className="company-workspace-stack">{domains}{developer}</section>}
-     {active==='security'&&<section className="company-workspace-stack">{mfa}{emailRecovery}{locks}{sessions}{recovery}{audit}</section>}
-     {active==='business'&&<div className="company-workspace-secondary">
+     {(currentSection==='general'||currentSection==='currency'||currentSection==='business'||currentSection==='contacts'||currentSection==='branding')&&company}
+     {currentSection==='integrations'&&<section className="company-workspace-stack">{domains}{developer}</section>}
+     {currentSection==='security'&&<section className="company-workspace-stack">{mfa}{emailRecovery}{locks}{sessions}{recovery}{audit}</section>}
+     {currentSection==='business'&&<div className="company-workspace-secondary">
        {calendar??<BusinessCalendarSettings request={apiRequest} permitted />}
        {usage}
      </div>}
-     {active==='mobile'&&<OfflineBriefcaseSettings request={apiRequest} permitted />}
-     {active==='developer'&&<><section className="company-workspace-card" aria-label="Developer tools"><h2>Developer tools</h2><p>Build and manage your apps with OneEngine-controlled access.</p><div className="company-developer-links">{available.map(item=><button type="button" key={item.workspace} onClick={()=>onNavigateDeveloper?.(item.workspace)} disabled={!onNavigateDeveloper}><strong>{item.label}</strong><span>{item.description}</span><span aria-hidden="true">›</span></button>)}</div></section>
+     {currentSection==='mobile'&&<OfflineBriefcaseSettings request={apiRequest} permitted />}
+     {currentSection==='developer'&&<><section className="company-workspace-card" aria-label="Developer tools"><h2>Developer tools</h2><p>Build and manage your apps with OneEngine-controlled access.</p><div className="company-developer-links">{available.map(item=><button type="button" key={item.workspace} onClick={()=>onNavigateDeveloper?.(item.workspace)} disabled={!onNavigateDeveloper}><strong>{item.label}</strong><span>{item.description}</span><span aria-hidden="true">›</span></button>)}</div></section>
        <MetadataPackageManager request={apiRequest} permitted={!!rights?.metadata} canManage={!!(rights?.packages??rights?.apps)} /></>}
-   </div>
+   </div>}
  </div>;
 }
