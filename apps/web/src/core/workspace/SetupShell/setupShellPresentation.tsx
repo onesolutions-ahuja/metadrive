@@ -181,7 +181,7 @@ export function renderSetupShell(ctx: any) {
                   namedDevices:readableRecordObjects.some(item=>item.apiName==='NamedDevice__c')
                 }} />
             : <SetupHome onNavigate={openSetupWorkspace} request={apiRequest} />
-          )
+          )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
             !advancedMetadataLoaded ? <section className="setup-card" role="status">Loading live object definitions…</section> :
             metadataLoadError && objects.length === 0 ? <section className="setup-card" role="alert">Unable to load object definitions: {metadataLoadError}</section> :
