@@ -485,6 +485,13 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const navigateRoute = (nextRoute: AppRoute, skipFlowConfirmation = false) => {
     if (!skipFlowConfirmation && !confirmFlowNavigation(nextRoute)) return false;
     const routeWithApp = nextRoute.kind === 'setup' ? nextRoute : { ...nextRoute, appId: nextRoute.appId ?? currentAppId };
+    // Standalone frontends must replace the workspace document; pushState alone
+    // leaves SetupApp mounted and renders the wrong (admin) application shell.
+    if ((routeWithApp.kind === 'app-home' || routeWithApp.kind === 'app-page' || routeWithApp.kind === 'route-alias')
+      && routeWithApp.appId.toLowerCase() === 'acetill') {
+      window.location.assign('/acetill');
+      return true;
+    }
     const path = appRoutePath(routeWithApp);
     if (`${window.location.pathname}${window.location.search}` !== path) {
       setRouteTiming({ routeKey: path, startedAt: performance.now(), kind: 'navigation', authMs: null });
