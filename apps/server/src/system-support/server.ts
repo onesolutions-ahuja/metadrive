@@ -72,6 +72,7 @@ import {DeclarativeRuleError} from '../system-files/declarative-rules.js';
 import {registerVersionedApiRoutes} from './versioned-api-routes.js';
 import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
+import {registerInboundWebhookPublicRoutes,registerInboundWebhookAdminRoutes} from './inbound-webhook-service.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import {registerSeederManagerRoutes} from './seeder-manager-routes.js';
@@ -163,7 +164,10 @@ export function createSystemServer(db:SqlPersistence) {
   app.disable('x-powered-by');
   app.use((_req,res,next)=>withAuditContext({},()=>{res.setHeader('X-Correlation-ID',auditContext()!.correlationId);next();}));
   app.use('/api/media-assets',express.json({limit:'8mb'}));
-  app.use(express.json({limit:'2mb'}));
+  app.use(express.json({limit:'2mb',verify:(req,_res,bytes)=>{
+    if(req.path.startsWith('/api/inbound-webhooks/') && bytes.length<=262144)
+      (req as Request & {rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(bytes);
+  }}));
   app.use(express.urlencoded({extended:false,limit:'1mb'}));
   app.use((_req,res,next)=>{res.set(browserSecurityHeaders({frame_policy:'DENY',csp_enabled:true}));next();});
   const auth=new AuthenticationService(db);
@@ -375,6 +379,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     }});
   registerConnectedPublicRoutes(app,connected);
+  registerInboundWebhookPublicRoutes(app,db,namedCredentials,flows,rbac);
   app.use('/api',authorize);
   registerGovernanceRoutes(app,db,rbac,auth,connected,securityMonitor);
   registerIdentityAdminRoutes(app,{sessions:sessionPolicies,federation,passkeys,backups});
@@ -1959,6 +1964,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerVersionedApiRoutes(app,records,definitions,rbac,db);
   registerPlatformEventStreamRoutes(app,db,rbac);
   registerOutboundWebhookRoutes(app,db,rbac);
+  registerInboundWebhookAdminRoutes(app,db,namedCredentials,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
