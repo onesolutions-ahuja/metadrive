@@ -9,9 +9,11 @@ permissions:
   contents: read
   pages: write
   id-token: write
+# A newer release must supersede a stale, queued Pages deployment instead of
+# leaving the latest production frontend blocked behind obsolete commits.
 concurrency:
   group: metadrive-pages-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
