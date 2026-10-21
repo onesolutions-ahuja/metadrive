@@ -331,7 +331,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         if (active) {setNamedCredentials(credentials);setNamedCredentialsLoaded(true);}
       })
       .catch((error:unknown) => {
-        if(active)setNamedCredentialsError(error instanceof Error?error.message:String(error));
+        if(active){setNamedCredentials([]);setNamedCredentialsError(error instanceof Error?error.message:String(error));setNamedCredentialsLoaded(true);}
       });
     return () => { active = false; };
   }, [route.kind, workspace]);
