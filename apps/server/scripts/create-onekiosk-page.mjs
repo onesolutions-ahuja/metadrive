@@ -1,0 +1,83 @@
+import { kioskMenuDraft } from '../src/app-seeders/onekiosk-menu.ts';
+
+// One-time, opt-in, tenant-scoped creation through the existing authenticated
+// MetaDrive Page API. No direct SQL, no new renderer and no credential output.
+const env = key => {
+  const value = process.env[key]?.trim();
+  if (!value) throw new Error(`Required configuration missing: ${key}`);
+  return value;
+};
+const base = env('METADRIVE_API_BASE_URL').replace(/\/$/, '');
+if (!/^https:\/\//.test(base)) throw new Error('HTTPS API base required');
+if (process.env.ONEKIOSK_APPROVE_CREATE !== 'Kiosk_Menu') {
+  throw new Error('Explicit Kiosk_Menu approval required');
+}
+const json = async (url, options = {}) => {
+  const response = await fetch(url, {
+    ...options, headers: { 'content-type': 'application/json', ...options.headers },
+    signal: AbortSignal.timeout(15000)
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`MetaDrive API failed: ${response.status} ${url.replace(base, '')}`);
+  return body;
+};
+const login = await json(`${base}/auth/login`, {
+  method: 'POST',
+  body: JSON.stringify({
+    tenantSlug: env('METADRIVE_TENANT_SLUG'),
+    email: env('METADRIVE_LOGIN_EMAIL'),
+    password: env('METADRIVE_LOGIN_PASSWORD')
+  })
+});
+if (login.mfa_required || !login.access_token) throw new Error('Login requires interactive authentication or failed');
+const headers = { Authorization: `Bearer ${login.access_token}` };
+const name = 'Kiosk_Menu';
+// List existing tenant pages first. Do not infer absence from an error response.
+const existing = await json(`${base}/metadata/pages`, { headers });
+if (!Array.isArray(existing.pages)) throw new Error('Could not verify existing tenant pages');
+const present = existing.pages.find(p => p.apiName === name);
+if (present && (!Array.isArray(present.components) || present.components.length !== 0)) {
+  console.log('Kiosk_Menu already has components; preserved without changes');
+  process.exit(0);
+}
+const objectName = env('ONEKIOSK_MENU_OBJECT_API');
+const fields = await json(`${base}/metadata/objects`, { headers });
+const objects = Array.isArray(fields) ? fields : fields.objects ?? [];
+const object = objects.find(o => o.apiName === objectName);
+if (!object) throw new Error('Configured menu object was not found in authenticated tenant metadata');
+const fieldNames = new Set((object.fields ?? []).map(f => f.apiName));
+const namedField = key => {
+  const value = env(key);
+  if (!fieldNames.has(value)) throw new Error(`Configured field missing: ${key}`);
+  return value;
+};
+const optionalField = key => {
+  const value = process.env[key]?.trim();
+  if (value && !fieldNames.has(value)) throw new Error(`Configured field missing: ${key}`);
+  return value;
+};
+const page = kioskMenuDraft({
+  productObjectApiName: objectName,
+  nameFieldApiName: namedField('ONEKIOSK_NAME_FIELD_API'),
+  priceFieldApiName: namedField('ONEKIOSK_PRICE_FIELD_API'),
+  imageFieldApiName: optionalField('ONEKIOSK_IMAGE_FIELD_API'),
+  categoryFieldApiName: optionalField('ONEKIOSK_CATEGORY_FIELD_API')
+});
+// Update only an existing empty draft with the same required page identity;
+ // optimistic revision protection prevents overwriting concurrent user edits.
+if (present) {
+  if (present.status !== 'Draft' || present.targetObject !== objectName ||
+      present.pageType !== 'App Page' || present.layoutMode !== 'free-canvas') {
+    throw new Error('Existing Kiosk_Menu metadata differs; refusing to modify it');
+  }
+  page.revision = present.revision;
+}
+const result = await json(`${base}/metadata/pages/${name}`, {
+  method: 'PUT', headers, body: JSON.stringify(page)
+});
+if (result.page?.apiName !== name) throw new Error('Page save response missing expected API name');
+const saved = await json(`${base}/metadata/pages/${name}`, { headers });
+if (saved.page?.apiName !== name || saved.page?.components?.length !== page.components.length) {
+  throw new Error('Page read-back verification failed');
+}
+console.log('Kiosk_Menu draft saved and verified as editable tenant metadata');
