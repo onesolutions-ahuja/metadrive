@@ -22,8 +22,14 @@ export function metadataCacheDecision<T>(
     ||!Number.isFinite(context.maxAgeMs)||context.maxAgeMs<0
     ||!Number.isSafeInteger(context.minimumVersion)||context.minimumVersion<1)
     return 'reject';
+  // A freshly authenticated publication is stamped by the API server.
+  // Client clocks can be a few seconds behind, particularly on Windows devices.
+  // Rejecting every future millisecond made valid online metadata fail its
+  // integrity check; allow bounded skew without weakening digest/version checks.
   const age=context.now-candidate.revision.publishedAt;
-  if(age<0||age>context.maxAgeMs||candidate.revision.version<context.minimumVersion)
+  const maxClockSkewMs=5*60*1000;
+  if(age < -maxClockSkewMs || age > context.maxAgeMs
+    || candidate.revision.version < context.minimumVersion)
     return 'reject';
   if(context.verifiedDigest!==undefined && candidate.revision.digest!==context.verifiedDigest)
     return 'reject';
