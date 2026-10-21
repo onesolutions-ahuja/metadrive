@@ -1732,6 +1732,47 @@ function PageBuilder({
                 aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
                 onClick={() => setInspectorTab(tab)}>{tab}</button>)}
             </div>
+            {inspectorTab === 'Position' ? <div className="canvas-position-editor">
+              <div className="properties-section-title">Arrange</div>
+              <div className="canvas-align-choices">
+                <button type="button" onClick={() => moveSelected(-1)} disabled={isCanvasLocked(selected)} title="Bring forward"><ArrowUp size={15}/> Forward</button>
+                <button type="button" onClick={() => moveSelected(1)} disabled={isCanvasLocked(selected)} title="Send backward"><ArrowDown size={15}/> Backward</button>
+                <button type="button" onClick={() => openPalette('Layers')} title="View all layers"><Layers3 size={15}/> Layers</button>
+              </div>
+              {page.layoutMode === 'free-canvas' && selected.position ? <>
+                <div className="properties-section-title">Align to page</div>
+                <div className="canvas-align-choices" role="group" aria-label="Horizontal alignment">
+                  {(['start','center','end'] as const).map((alignment, index) =>
+                    <button type="button" key={alignment} disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true}
+                      aria-label={['Align left','Align centre','Align right'][index]}
+                      onClick={() => alignSelected('x', alignment)}>{['Left','Centre','Right'][index]}</button>)}
+                </div>
+                <div className="canvas-align-choices" role="group" aria-label="Vertical alignment">
+                  {(['start','center','end'] as const).map((alignment, index) =>
+                    <button type="button" key={alignment} disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true}
+                      aria-label={['Align top','Align middle','Align bottom'][index]}
+                      onClick={() => alignSelected('y', alignment)}>{['Top','Middle','Bottom'][index]}</button>)}
+                </div>
+                <div className="properties-section-title">Size and position</div>
+                <div className="canvas-position-grid">
+                  {(['width','height','x','y'] as const).map(key => {
+                    const pos = selected.position!;
+                    const isSize = key === 'width' || key === 'height';
+                    const limit = key === 'width' || key === 'x' ? page.canvasWidth : page.canvasHeight;
+                    const other = key === 'width' ? pos.x : key === 'height' ? pos.y : key === 'x' ? pos.width : pos.height;
+                    return <label className="form-label" key={key}>{key.toUpperCase()} (px)
+                      <input type="number" className="form-control" step={1} min={isSize ? 1 : 0} max={Math.max(isSize ? 1 : 0, limit-other)}
+                        disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true} value={pos[key]}
+                        onChange={event => {const value = Number(event.target.value);
+                          if (Number.isFinite(value)) updateComponent(selected.id, { position: { ...pos,
+                            [key]: Math.max(isSize ? 1 : 0, Math.min(limit-other, Math.round(value))) } });
+                        }} />
+                    </label>;
+                  })}
+                </div>
+              </> : <p className="properties-help">Choose a free-canvas element to edit precise position and size. Template layouts position children responsively.</p>}
+              <button type="button" className="btn btn-small" onClick={() => openComponentInspector('Design')}>Appearance and styles</button>
+            </div> : <>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
@@ -1928,7 +1969,8 @@ function PageBuilder({
                 updateComponent(selected.id, { properties });
               }} />
             </>}
-            <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
+            <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); setActivePanel('page'); }}>Done</button>
+            </>}
           </> : <>
             <p className="properties-help">Edit page details and activation assignments. The related object and device layout are fixed at creation.</p>
             <label className="form-label" htmlFor="lightning-page-label">Label</label><input id="lightning-page-label" className="form-control" value={page.label} onChange={(event) => applyPage({ ...page, label: event.target.value })} />
