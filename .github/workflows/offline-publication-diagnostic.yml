@@ -1,0 +1,26 @@
+name: Authenticated offline metadata publication diagnostic
+on:
+  push:
+    branches:
+      - diagnostic/offline-publication-20261021
+    paths:
+      - scripts/diagnose-offline-publication.mjs
+      - .github/workflows/offline-publication-diagnostic.yml
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check authenticated published payload integrity without logging user data
+        run: node scripts/diagnose-offline-publication.mjs
+        env:
+          METADRIVE_TENANT_SLUG: ${{ secrets.METADRIVE_TENANT_SLUG }}
+          METADRIVE_LOGIN_EMAIL: ${{ secrets.METADRIVE_LOGIN_EMAIL }}
+          METADRIVE_LOGIN_PASSWORD: ${{ secrets.METADRIVE_LOGIN_PASSWORD }}
