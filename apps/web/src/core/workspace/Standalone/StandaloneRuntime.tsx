@@ -1,3 +1,4 @@
+import AcetillTerminal from '../../../../../acetill/src/AcetillTerminal';
 import * as React from 'react';
 import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
@@ -13,7 +14,7 @@ const sections:Record<string,Array<{label:string;object:string}>>={
 const show=(value:unknown)=>value==null?'—':typeof value==='object'?JSON.stringify(value):String(value);
 
 /** Dedicated React product workspaces. Server-side tenant and RBAC rules remain authoritative. */
-export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogout:()=>void}) {
+function LegacyStandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogout:()=>void}) {
   const tabs=sections[entry.slug]??[];
   const [objects,setObjects]=useState<ObjectInfo[]>([]);
   const [selected,setSelected]=useState(0);
@@ -160,5 +161,25 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
         {actions}
       </aside></div>
     </main>}
+  </div>;
+}
+
+/** Independent Acetill React screen; only UNE backend OneEngine Flows own data changes. */
+export default function StandaloneRuntime(props:{entry:StandaloneEntry;onLogout:()=>void}){
+  if(props.entry.slug!=='acetill')return <LegacyStandaloneRuntime {...props}/>;
+  const logout=async()=>{
+    try{await apiRequest('/auth/logout',{method:'POST'});}catch{}
+    props.onLogout();
+    window.location.assign('/login');
+  };
+  return <div className="standalone-product" style={{'--product-accent':props.entry.accent} as React.CSSProperties}>
+    <header className="standalone-product-header">
+      <div className="standalone-product-brand">
+        <span className="standalone-product-mark">A</span>
+        <span><strong>Acetill</strong><small>Point of sale</small></span>
+      </div>
+      <button type="button" className="standalone-product-logout" onClick={()=>void logout()}>Sign out</button>
+    </header>
+    <AcetillTerminal/>
   </div>;
 }
