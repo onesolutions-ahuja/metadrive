@@ -52,6 +52,6 @@ try{
  console.info('Isolated logical backup/restore, migration ledger and SQL integrity: PASS');
 }finally{
  if(restore)await restore.close();
- try{await source.query('DROP DATABASE IF EXISTS '+destination+' WITH (FORCE)');}
+ try{await source.query('DROP DATABASE IF EXISTS '+destination);}
  finally{await source.close();rmSync(local,{force:true,recursive:true});}
 }
