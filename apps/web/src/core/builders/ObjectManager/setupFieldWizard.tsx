@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { PicklistValueRows } from './PicklistValueRows';
 // Shared metadata-driven field creation wizard. View-only; actions remain in the object engine.
 import { useEffect, useState } from 'react';
 import type { RelatedLookupFilterMetadata } from '../../metadata/Definitions/metadata';
@@ -137,13 +138,15 @@ export default function FieldWizardModal({ context }: { context: any }) {
                 </select>
               </label>
               {globalValueSetError && <p className="permission-help">Global Value Sets could not be loaded. You can still define field-specific values. {globalValueSetError}</p>}
-              <label className="form-label" htmlFor="new-field-picklist-values">Picklist Values</label>
-              <textarea className="form-control" id="new-field-picklist-values" value={newFieldPicklistValues} readOnly={Boolean(globalValueSetApiName)} onChange={(event) => {
-                const values = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-                setNewFieldPicklistValues(event.target.value);
-                setNewFieldValueSettings((current) => Object.fromEntries(Object.entries(current)
-                  .map(([controllerValue, selectedValues]) => [controllerValue, selectedValues.filter((value) => values.includes(value))])));
-              }} placeholder={'New\\nIn Progress\\nCompleted'} rows={4} />
+              <PicklistValueRows key={globalValueSetApiName || 'field-specific'} values={newFieldPicklistValues.split(/\r?\n/).filter(Boolean)} disabled={Boolean(globalValueSetApiName)} onChange={(values, previous, replacement) => {
+                setNewFieldPicklistValues(values.join('\n'));
+                setNewFieldValueSettings((current) => Object.fromEntries(Object.entries(current).map(([controllerValue, selectedValues]) =>
+                  [controllerValue, selectedValues.map((value) => value === previous ? replacement ?? '' : value).filter((value) => values.includes(value))])));
+                if (previous && newFieldDefaultValue === previous) {
+                  setNewFieldDefaultValue(replacement && values.includes(replacement) ? replacement : '');
+                  setNewFieldHasDefault(Boolean(replacement && values.includes(replacement)));
+                }
+              }} />
               <label className="checkbox-row"><input type="checkbox" checked={newFieldPicklistRestricted} onChange={(event) => setNewFieldPicklistRestricted(event.target.checked)} />Restrict to the values defined in the value set</label>
               {object.fields.some((field) => field.apiName !== newFieldApiName && (field.dataType === 'Picklist' || field.dataType === 'Checkbox')) && <div className="metadata-card">
                 <label className="form-label">Controlling Field
