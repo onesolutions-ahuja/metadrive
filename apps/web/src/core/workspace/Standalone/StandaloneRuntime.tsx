@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
 import type {StandaloneEntry} from './standaloneEntries';
 import './standaloneRuntime.css';
+const LazyAceChatter=React.lazy(()=>import('./AceChatterRuntime'));
 
 type DataRow=Record<string,unknown>;
 type ObjectInfo={apiName:string;label?:string;fields?:Array<{apiName:string;label?:string;type?:string;required?:boolean}>};
@@ -14,6 +15,10 @@ const show=(value:unknown)=>value==null?'—':typeof value==='object'?JSON.strin
 
 /** Dedicated React product workspaces. Server-side tenant and RBAC rules remain authoritative. */
 export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogout:()=>void}) {
+  if(entry.slug==='acechatter')return <React.Suspense fallback={<div role="status">Opening AceChatter…</div>}><LazyAceChatter onLogout={onLogout}/></React.Suspense>;
+  return <StandardStandaloneRuntime entry={entry} onLogout={onLogout}/>;
+}
+function StandardStandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogout:()=>void}) {
   const tabs=sections[entry.slug]??[];
   const [objects,setObjects]=useState<ObjectInfo[]>([]);
   const [selected,setSelected]=useState(0);
