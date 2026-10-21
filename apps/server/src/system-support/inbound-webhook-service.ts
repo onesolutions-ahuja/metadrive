@@ -89,7 +89,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const json=raw.toString('utf8');
   try{
    await flows.execute(endpoint.tenant_id,endpoint.flow_api,endpoint.execution_user_id,{
-    webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
+    requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
     webhookEndpoint: endpoint.api_name
    });
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
