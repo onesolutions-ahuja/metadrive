@@ -10,8 +10,8 @@ export type StandaloneEntry=(typeof entries)[number];
 export function resolveStandaloneEntry(pathname:string,basePath=''):StandaloneEntry|null {
   const base=basePath.replace(/\/$/,'');
   const local=base && pathname.startsWith(base+'/')?pathname.slice(base.length):pathname;
-  const match=/^\/([a-z][a-z0-9]*?)\/?$/.exec(local);
-  return match?entries.find(e=>e.slug===match[1])??null:null;
+  const match=/^\/([a-z][a-z0-9]*?)\/?$/i.exec(local);
+  return match?entries.find(e=>e.slug===match[1].toLowerCase())??null:null;
 }
 
 /** Resolve only explicitly registered standalone products, never arbitrary app IDs. */
