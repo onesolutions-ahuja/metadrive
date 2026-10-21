@@ -21,3 +21,22 @@ For the sale screen, bind existing Product data through One components, and call
 - Page and component metadata remains editable in existing Builders, published state stored in SQL.
 - Install, upgrade, deactivate and reinstall preserve customer data and customisations.
 - Payments never report success until recorded transaction completion is verified.
+
+## UI-only handoff to Flow Builder
+
+The SQL draft package now declares four editable Acetill pages and reuses OneText, OneBadge,
+OneSearch, OneItemGrid, OneShoppingCart and OneButton. Sale components reference Product.Name,
+Product.Price and Product.Active, and share the same `acetill` cart target.
+
+**Flow authoring is owned by the UNE Solutions administrator.** These are handoff contracts,
+not pre-created or activated Flows:
+- Register selection: resolve authorised store/register and enter the sale page.
+- Complete sale: validate cart, confirm payment, write Order/OrderLine, return verified result.
+- Receipt: take confirmed Order ID and render/print authorised receipt.
+
+The register, complete-sale and print buttons are disabled until connected and validated.
+The draft package remains unpublished: do not install it until SQL page layout/publishing and
+the required shared fields are verified against a disposable tenant.
+
+The intended public route is `https://unesolutions.co.uk/acetill`. The same hosted SPA and
+MetaDrive authentication handle it; domain hosting/deployment must be verified separately.
