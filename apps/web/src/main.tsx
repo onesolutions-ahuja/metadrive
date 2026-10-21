@@ -79,8 +79,10 @@ const isAcetillEntry = pathname.toLowerCase() === '/acetill'
   || pathname.toLowerCase().startsWith('/acetill/')
   || pathname.toLowerCase().startsWith('/une/apps/acetill/');
 // Redirect old metadata workspace links to the Acetill-owned login/POS entry.
-if (pathname.toLowerCase().startsWith('/une/apps/acetill/')) {
-  window.history.replaceState({}, '', '/acetill');
+if (pathname.toLowerCase().startsWith('/une/apps/acetill/')
+  || pathname.toLowerCase() === '/acetill') {
+  // A document navigation is required to load the independent /acetill/ HTML.
+  window.location.replace('/acetill/');
 }
 const isMarketingHome = !workspaceDevelopmentRoot && (pathname === '/' || pathname === '/index.html' || (Boolean(basePath) && window.location.pathname === basePath));
 
