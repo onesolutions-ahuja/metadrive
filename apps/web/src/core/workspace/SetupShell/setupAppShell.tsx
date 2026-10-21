@@ -492,7 +492,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       const standalone=standaloneEntryForAppId(routeWithApp.appId);
       if (standalone) {
         const path=routeWithApp.kind==='route-alias' ? `/${standalone.slug}` : appRoutePath(routeWithApp);
-        window.location.assign(path);
+        // Canonical directory URL loads the standalone HTML document directly.
+        const target=new URL(path,window.location.origin);
+        if(target.pathname.endsWith('/'+standalone.slug))target.pathname+='/';
+        window.location.assign(target.pathname+target.search);
         return true;
       }
     }
