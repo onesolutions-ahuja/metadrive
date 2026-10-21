@@ -1961,7 +1961,7 @@ export function createSystemServer(db:SqlPersistence) {
     else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
     else if(['23503','23505'].includes((err as Error&{code?:string}).code??''))res.status(409).json({error:'Policy dependency or duplicate identity conflict'});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
-    else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unsupported ')
+    else if(err.message.startsWith('Flow cannot activate: ')||err.message.startsWith('Invalid ')||err.message.startsWith('Unsupported ')
       ||/^(Unknown |Duplicate |Cyclic |Stale |External |Queue |Active sharing|Restriction |Portal |Too many)/.test(err.message)) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
   });
