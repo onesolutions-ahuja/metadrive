@@ -41,6 +41,17 @@ test('standalone app UI uses direct OneEngine records and flows without app inst
   assert.doesNotMatch(runtime,/\/metadata\/apps|LazyPublishedRuntime|PageBuilder|component-library/);
 });
 
+test('custom POS and appointment UIs never fall back to published home pages',()=>{
+  const runtime=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
+  assert.match(runtime,/custom-pos/);
+  assert.match(runtime,/custom-product-grid/);
+  assert.match(runtime,/custom-basket/);
+  assert.match(runtime,/custom-assist/);
+  assert.match(runtime,/custom-week/);
+  assert.match(runtime,/runAction\(action\.apiName\)/);
+  assert.doesNotMatch(runtime,/Home page is not configured|LazyPublishedRuntime|LightningAppRuntime/);
+});
+
 test('old app links and metadata navigation enter the app-only frontend',()=>{
   assert.equal(standaloneEntryForAppId('Aceassist')?.slug,'aceassist');
   assert.equal(standaloneEntryForAppId('ACEASSIST')?.slug,'aceassist');
