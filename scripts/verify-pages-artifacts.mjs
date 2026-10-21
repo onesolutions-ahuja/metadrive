@@ -10,10 +10,10 @@ if (!html.includes('<html') || !fallback.includes('<html')) throw new Error('Inv
 const acetillHtml=readFileSync(resolve(dist,'acetill/index.html'),'utf8');
 if (!acetillHtml.includes('<html') || !acetillHtml.includes('Acetill | Point of Sale'))
   throw new Error('Acetill must have an independent built HTML entrypoint, not a redirect');
-const acetillScripts=[...acetillHtml.matchAll(/src=["']([^"']+\\.js)["']/g)].map(match=>match[1]);
+const acetillScripts=[...acetillHtml.matchAll(/src=["']([^"']+\.js)["']/g)].map(match=>match[1]);
 if(!acetillScripts.length)throw new Error('Acetill HTML does not reference a compiled JS entrypoint');
 for(const ref of acetillScripts){
-  const asset=resolve(dist,ref.replace(/^\\//,''));
+  const asset=resolve(dist,ref.replace(/^\//,''));
   if(!asset.startsWith(dist+'/') || !existsSync(asset))
     throw new Error('Acetill entry asset missing: '+ref);
 }
@@ -76,7 +76,7 @@ if (process.argv.includes('--live')) {
   if(!response.ok)throw new Error('Published Acetill route unavailable: HTTP '+response.status);
   const observed=await response.text();
   const expectedAcetillJs=acetillScripts.map(ref=>ref.split('/').at(-1));
-  const observedJs=[...observed.matchAll(/src=["']([^"']+\\.js)["']/g)].map(m=>m[1].split('/').at(-1));
+  const observedJs=[...observed.matchAll(/src=["']([^"']+\.js)["']/g)].map(m=>m[1].split('/').at(-1));
   if(!observed.includes('Acetill | Point of Sale') ||
      !expectedAcetillJs.every(name=>observedJs.includes(name)))
     throw new Error('Live /acetill/ is not the published independent Acetill frontend');
