@@ -45,9 +45,13 @@ jobs:
           VITE_API_BASE_URL: https://metadrive-nxd7.onrender.com/api
         run: npm run build --workspace apps/web
       - run: node scripts/verify-pages-artifacts.mjs
+      - name: Verify Render SQL API and browser origin before publishing
+        run: node scripts/verify-render-api.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify published site serves this exact frontend bundle
+        run: node scripts/verify-pages-artifacts.mjs --live
