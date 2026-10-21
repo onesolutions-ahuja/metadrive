@@ -275,3 +275,15 @@
 .metadata-component-visual-editor .visual-advanced-grid .form-control {width:100%;min-width:0}
 .canvas-unified-builder .free-canvas-component.selected {z-index:50}
 .canvas-unified-builder .canvas-align-choices button {display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px}
+
+/* Override legacy mobile inspector hiding only inside the unified editor. */
+.page-builder-layout.canvas-unified-builder .component-panel,
+.page-builder-layout.canvas-unified-builder .properties-panel {display:block;}
+.canvas-unified-builder .builder-panel-collapse-row {
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  min-height:44px;padding:8px 12px;border-bottom:1px solid #e6eaf0;
+  position:sticky;top:0;z-index:5;background:white;
+}
+.canvas-unified-builder .builder-panel-collapse-row strong {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.canvas-unified-builder .builder-panel-collapse-row .icon-button {width:30px;height:30px;flex-shrink:0}
+.canvas-unified-builder .builder-tabs {top:44px}
