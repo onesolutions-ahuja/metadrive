@@ -15,6 +15,7 @@ import {finishFlowOrchestrationDecision} from '../system-files/flow-orchestratio
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js';
 import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotation-objects.js';
+import {seedCommunicationObjectsForExistingTenants} from '../app-seeders/core-communication-objects.js';
 import {seedAcetillAppCatalog} from '../app-seeders/acetill-app-catalog.js';
 import {seedAceKioskAppCatalog} from '../app-seeders/acekiosk-app-catalog.js';
 import {seedAceKioskMenuFlows} from '../app-seeders/acekiosk-menu-flow.js';
@@ -2020,6 +2021,7 @@ export async function startSystemServer() {
     await seedCartObjectsForExistingTenants(db);
     await seedAceKioskMenuFlows(db); // Installed tenants only, never overwrites existing Flow versions.
     await seedQuotationObjectsForExistingTenants(db);
+    await seedCommunicationObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
     const bundledTenants=await seedBundledComponentsForExistingTenants(db);
