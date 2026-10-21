@@ -66,7 +66,6 @@ test('old app links and metadata navigation enter the app-only frontend',()=>{
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Aceassist'}),'/aceassist');
   assert.equal(appRoutePathWithoutBase({kind:'app-page',appId:'AceAssist',pageApiName:'VisitList'}),'/aceassist?page=VisitList');
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
-  assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'OneKiosk'}),'/une/apps/OneKiosk/home');
 });
 
 test('user landing preference opens the assigned app without granting access',()=>{

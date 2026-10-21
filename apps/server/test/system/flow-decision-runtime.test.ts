@@ -220,7 +220,7 @@ test('Flow Get Records ignores unselected optional field mappings for Invoice', 
   return {rows:[]};
  }} as unknown as SqlPersistence;
  const graph={
-  apiName:'OneposBlankFields',flowType:'Autolaunched Flow',
+  apiName:'GenericBlankFields',flowType:'Autolaunched Flow',
   resources:[{name:'invoice',type:'Record',dataType:'Invoice'}],
   elements:[
    {id:1,type:'Start',config:{}},
@@ -230,12 +230,12 @@ test('Flow Get Records ignores unselected optional field mappings for Invoice', 
   ],
   connectors:[{from:1,to:2},{from:2,to:3}]
  };
- const result=await validateFlowDraft(rbac,'tenant-id','user-id','OneposBlankFields',graph,db);
+ const result=await validateFlowDraft(rbac,'tenant-id','user-id','GenericBlankFields',graph,db);
  assert.equal(result.errors.some(error=>error==='Flow data action references an unavailable field: Invoice.'),false,
   result.errors.join('; '));
  assert.ok(sqlCalls.some(sql=>sql.includes('FROM md_field_definitions')));
  const invalid=structuredClone(graph);
  (invalid.elements[1].config as {fields:string[]}).fields=['GenuinelyMissingField'];
- const failed=await validateFlowDraft(rbac,'tenant-id','user-id','OneposBlankFields',invalid,db);
+ const failed=await validateFlowDraft(rbac,'tenant-id','user-id','GenericBlankFields',invalid,db);
  assert.ok(failed.errors.some(error=>error.includes('Invoice.GenuinelyMissingField')));
 });
