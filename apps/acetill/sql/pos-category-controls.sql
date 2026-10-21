@@ -9,7 +9,7 @@ FROM md_tenants t CROSS JOIN (VALUES
  ('POSSortOrder','POS Sort Order','number',NULL,'Acetill POS category tab ordering')
 ) p(api,label,dtype,default_value,description)
 WHERE EXISTS(SELECT 1 FROM md_object_definitions o
-  WHERE o.tenant_id=t.id AND o.api_name='MenuCategory' AND o.deleted_at IS NULL)
+  WHERE o.tenant_id=t.id AND o.api_name='MenuCategory')
   AND EXISTS(SELECT 1 FROM md_flow_definitions f
   WHERE f.tenant_id=t.id AND f.api_name='AcetillGetCategories' AND f.archived=false)
 ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING;
