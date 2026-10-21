@@ -610,6 +610,7 @@ function PageBuilder({
       x: component.position.x, y: component.position.y
     };
     setSelectedId(component.id);
+    if (!selectionIds.includes(component.id)) setSelectionIds([component.id]);
     setPageSettingsOpen(false);
   };
   const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -654,8 +655,10 @@ function PageBuilder({
     if (canvasGuideXRef.current) canvasGuideXRef.current.style.display = 'none';
     if (canvasGuideYRef.current) canvasGuideYRef.current.style.display = 'none';
     if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
-      const positions = new Map([[start.id, { ...start.original, x: start.x, y: start.y }],
-        ...start.group.map(other => [other.id, { ...other.original, x: other.x, y: other.y }] as const)]);
+      const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
+        [start.id, { ...start.original, x: start.x, y: start.y }],
+        ...start.group.map(other => [other.id, { ...other.original, x: other.x, y: other.y }] as const)
+      ]);
       applyPage({ ...page, components: page.components.map(item => {
         const position = positions.get(item.id);
         return position ? { ...item, position } : item;
@@ -1345,11 +1348,15 @@ function PageBuilder({
       } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) {
         if (event.shiftKey && page.layoutMode === 'free-canvas') {
-          setSelectionIds(current => current.includes(component.id) ? (current.length > 1 ? current.filter(id => id !== component.id) : current) : [...current, component.id]);
+          const next = selectionIds.includes(component.id) && selectionIds.length > 1
+            ? selectionIds.filter(id => id !== component.id) : [...new Set([...selectionIds, component.id])];
+          setSelectionIds(next);
+          setSelectedId(next.includes(component.id) ? component.id : next[0]);
         } else {
           setSelectionIds([component.id]);
+          setSelectedId(component.id);
         }
-        setSelectedId(component.id); setPageSettingsOpen(false); setComponentMenuId('');
+        setPageSettingsOpen(false); setComponentMenuId('');
       } } : undefined}
       onPointerDown={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
       onPointerMove={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
