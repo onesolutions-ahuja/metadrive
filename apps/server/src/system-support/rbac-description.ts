@@ -8,8 +8,15 @@ export async function readRbac(db:SqlExecutor,tenant:string){
   'md_access_groups','md_access_group_members','md_queue_objects','md_sharing_settings','md_record_policies',
   'md_policy_owner_roles','md_policy_conditions','md_policy_condition_values','md_rbac_revisions','md_profile_permission_sets',
   'md_object_record_types','md_tenant_app_metadata'];
+ // A normal GET uses a pool-backed executor: bound parallelism avoids a
+ // 27-query network waterfall without consuming the whole connection pool.
+ // In SQL transactions the shared client still serialises these queries.
  const values:Array<{rows:any[]}>=[];
- for(const table of tables)values.push(await db.query('SELECT * FROM '+table+' WHERE tenant_id=$1',[tenant]));
+ for(let offset=0;offset<tables.length;offset+=4){
+  const batch=await Promise.all(tables.slice(offset,offset+4)
+   .map(table=>db.query('SELECT * FROM '+table+' WHERE tenant_id=$1',[tenant])));
+  values.push(...batch);
+ }
  const rows=(table:string):any[]=>values[tables.indexOf(table)].rows;
  const objects=rows('md_object_definitions').map(o=>o.api_name);
  const fields=rows('md_field_definitions').map(f=>f.object_api+'.'+f.api_name);
