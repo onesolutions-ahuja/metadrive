@@ -1,8 +1,9 @@
 import {ACETILL_STANDALONE_ENTRY} from '../../../../../acetill/src/standalone-entry';
 import {ACEASSIST_STANDALONE_ENTRY} from '../../../../../aceassist/src/standalone-entry';
+import {ACECHATTER_STANDALONE_ENTRY} from '../../../../../acechatter/src/standalone-entry';
 
 /** Presentation-only route declarations from independently owned app packages. */
-const entries=[ACETILL_STANDALONE_ENTRY,ACEASSIST_STANDALONE_ENTRY] as const;
+const entries=[ACETILL_STANDALONE_ENTRY,ACEASSIST_STANDALONE_ENTRY,ACECHATTER_STANDALONE_ENTRY] as const;
 export type StandaloneEntry=(typeof entries)[number];
 
 /** Accept only registered product root paths. No generic /slug bypass or setup redirect. */
