@@ -266,6 +266,10 @@ function PageBuilder({
     && (component !== 'Report Chart' || targetObject?.settings?.allowReports));
   const stringList = pageStringList;
   const [selectedId, setSelectedId] = useState(page.components[0]?.id ?? '');
+  const [selectionIds, setSelectionIds] = useState<string[]>(page.components[0] ? [page.components[0].id] : []);
+  useEffect(() => {
+    setSelectionIds(current => selectedId && current.includes(selectedId) ? current : selectedId ? [selectedId] : []);
+  }, [selectedId]);
   const savedPageApiName = useRef(page.apiName);
   const device: 'Desktop' | 'Tablet' | 'Phone' = page.devices.length === 1 && page.devices[0] === 'Phone' || page.canvasWidth <= 600
     ? 'Phone' : page.canvasWidth < 1400 ? 'Tablet' : 'Desktop';
@@ -355,6 +359,7 @@ function PageBuilder({
     id: string; pointerId: number; pointerX: number; pointerY: number;
     original: { x: number; y: number; width: number; height: number };
     element: HTMLElement; x: number; y: number;
+    group: Array<{ id: string; element: HTMLElement; original: { x: number; y: number; width: number; height: number }; x: number; y: number }>;
   } | null>(null);
   const [showLayers, setShowLayers] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions' | 'Position'>('Overview');
@@ -582,15 +587,24 @@ function PageBuilder({
   // a single undo step on release, avoiding a page-wide render per pointer frame.
   const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
     if (previewMode || !component.position || isCanvasLocked(component) || component.properties.canvasLocked === true
-      || event.button !== 0 || canvasMoveStart.current) return;
+      || event.button !== 0 || event.shiftKey || canvasMoveStart.current) return;
     if ((event.target as HTMLElement).closest('button,input,select,textarea,a,[contenteditable="true"],.free-canvas-resize-handle,.canvas-element-actions')) return;
     const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
     if (!element) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const stage = element.closest('.free-canvas-stage');
+    const group = page.components.filter(item => item.id !== component.id && selectionIds.includes(item.id)
+      && item.position && !rawLayoutParentId(item) && !isCanvasLocked(item) && item.properties.canvasLocked !== true)
+      .flatMap(item => {
+        const node = Array.from(stage?.querySelectorAll<HTMLElement>('.free-canvas-component') ?? [])
+          .find(candidate => candidate.dataset.componentId === item.id);
+        return node && item.position ? [{ id: item.id, element: node, original: { ...item.position },
+          x: item.position.x, y: item.position.y }] : [];
+      });
     canvasMoveStart.current = {
-      id: component.id, pointerId: event.pointerId,
+      id: component.id, pointerId: event.pointerId, group,
       pointerX: event.clientX, pointerY: event.clientY,
       original: { ...component.position }, element,
       x: component.position.x, y: component.position.y
@@ -610,27 +624,42 @@ function PageBuilder({
           page.components.filter(item => item.id !== start.id && !rawLayoutParentId(item) && item.position).map(item => item.position!), true)
       : { position: canvasBoundPosition({ ...start.original, x, y }, { width: page.canvasWidth, height: page.canvasHeight }, false),
           guides: { x: false, y: false } };
-    start.x = next.position.x; start.y = next.position.y;
+    const positions = [start.original, ...start.group.map(item => item.original)];
+    const deltaX = Math.max(-Math.min(...positions.map(item => item.x)),
+      Math.min(Math.min(...positions.map(item => page.canvasWidth - item.x - item.width)), next.position.x - start.original.x));
+    const deltaY = Math.max(-Math.min(...positions.map(item => item.y)),
+      Math.min(Math.min(...positions.map(item => page.canvasHeight - item.y - item.height)), next.position.y - start.original.y));
+    start.x = start.original.x + deltaX; start.y = start.original.y + deltaY;
+    for (const other of start.group) {
+      other.x = other.original.x + deltaX; other.y = other.original.y + deltaY;
+      other.element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    }
     if (canvasGuideXRef.current) {
       canvasGuideXRef.current.style.display = next.guides.x ? 'block' : 'none';
-      canvasGuideXRef.current.style.left = `${next.position.x}px`;
+      canvasGuideXRef.current.style.left = `${start.x}px`;
     }
     if (canvasGuideYRef.current) {
       canvasGuideYRef.current.style.display = next.guides.y ? 'block' : 'none';
-      canvasGuideYRef.current.style.top = `${next.position.y}px`;
+      canvasGuideYRef.current.style.top = `${start.y}px`;
     }
     start.element.style.transform =
-      `translate(${next.position.x - start.original.x}px, ${next.position.y - start.original.y}px)`;
+      `translate(${deltaX}px, ${deltaY}px)`;
   };
   const endCanvasMove = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
     const start = canvasMoveStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
     canvasMoveStart.current = null;
     start.element.style.transform = '';
+    for (const other of start.group) other.element.style.transform = '';
     if (canvasGuideXRef.current) canvasGuideXRef.current.style.display = 'none';
     if (canvasGuideYRef.current) canvasGuideYRef.current.style.display = 'none';
     if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
-      updateComponent(start.id, { position: { ...start.original, x: start.x, y: start.y } });
+      const positions = new Map([[start.id, { ...start.original, x: start.x, y: start.y }],
+        ...start.group.map(other => [other.id, { ...other.original, x: other.x, y: other.y }] as const)]);
+      applyPage({ ...page, components: page.components.map(item => {
+        const position = positions.get(item.id);
+        return position ? { ...item, position } : item;
+      }) });
     }
   };
   const reorderLayer = (id: string, direction: -1 | 1) => {
@@ -1299,7 +1328,7 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${isCanvasLocked(component) ? 'canvas-component-locked' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${isCanvasLocked(component) ? 'canvas-component-locked' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${selectionIds.includes(component.id) && !previewMode && !libraryPreview ? 'multi-selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
       style={{
         ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
           ? nested
@@ -1314,7 +1343,14 @@ function PageBuilder({
         ...visualStyle,
         ...(component.properties?.fillRegion===true && page.layoutMode==='template' ? {height:'100%',minHeight:0}: {})
       } as React.CSSProperties}
-      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); setComponentMenuId(''); } } : undefined}
+      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) {
+        if (event.shiftKey && page.layoutMode === 'free-canvas') {
+          setSelectionIds(current => current.includes(component.id) ? (current.length > 1 ? current.filter(id => id !== component.id) : current) : [...current, component.id]);
+        } else {
+          setSelectionIds([component.id]);
+        }
+        setSelectedId(component.id); setPageSettingsOpen(false); setComponentMenuId('');
+      } } : undefined}
       onPointerDown={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
       onPointerMove={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
       onPointerUp={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
@@ -1348,6 +1384,7 @@ function PageBuilder({
     >
       {!previewMode && !libraryPreview && selectedId === component.id && !nested && <div
         className="canvas-element-actions" role="toolbar" aria-label={`Actions for ${component.label}`}
+        style={component.position && component.position.y < 60 ? {bottom:'auto',top:'calc(100% + 12px)'} : undefined}
         onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
         <button type="button" onClick={() => openComponentInspector('Design')} title="Edit appearance"><Pencil size={15}/> Edit</button>
         {page.layoutMode === 'free-canvas' && <button type="button" onClick={() => openComponentInspector('Position')} title="Position and size"><Maximize2 size={15}/> Position</button>}
@@ -1692,7 +1729,7 @@ function PageBuilder({
                 width: page.canvasWidth * fitScale,
                 height: page.canvasHeight * fitScale,
                 minHeight: 0,
-                overflow: 'hidden'
+                overflow: previewMode ? 'hidden' : 'visible'
               } : page.layoutMode === 'template' && page.components.some(c => c.visible && c.properties?.standalonePresentation === true) ? standaloneTemplateCanvasStyle(page.canvasWidth, page.canvasHeight) : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
