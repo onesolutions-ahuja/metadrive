@@ -1,0 +1,1048 @@
+{
+  "AcetillPaymentCash": {
+    "apiName": "AcetillPaymentCash",
+    "connectors": [
+      {
+        "from": 1,
+        "id": "1",
+        "kind": "normal",
+        "label": "Next",
+        "to": 2
+      },
+      {
+        "from": 2,
+        "id": "2",
+        "kind": "normal",
+        "label": "Next",
+        "to": 3
+      },
+      {
+        "from": 3,
+        "id": "3",
+        "kind": "normal",
+        "label": "Next",
+        "to": 4
+      },
+      {
+        "from": 4,
+        "id": "4",
+        "kind": "normal",
+        "label": "For Each",
+        "to": 5
+      },
+      {
+        "from": 4,
+        "id": "5",
+        "kind": "normal",
+        "label": "After Last",
+        "to": 10
+      },
+      {
+        "from": 5,
+        "id": "6",
+        "kind": "normal",
+        "label": "Next",
+        "to": 6
+      },
+      {
+        "from": 6,
+        "id": "7",
+        "kind": "normal",
+        "label": "Valid",
+        "to": 7
+      },
+      {
+        "from": 6,
+        "id": "8",
+        "kind": "normal",
+        "label": "Default",
+        "to": 9
+      },
+      {
+        "from": 7,
+        "id": "9",
+        "kind": "normal",
+        "label": "Next",
+        "to": 8
+      },
+      {
+        "from": 8,
+        "id": "10",
+        "kind": "normal",
+        "label": "Next",
+        "to": 4
+      },
+      {
+        "from": 10,
+        "id": "11",
+        "kind": "normal",
+        "label": "Approved",
+        "to": 12
+      },
+      {
+        "from": 10,
+        "id": "12",
+        "kind": "normal",
+        "label": "Default",
+        "to": 11
+      },
+      {
+        "from": 12,
+        "id": "13",
+        "kind": "normal",
+        "label": "Next",
+        "to": 13
+      },
+      {
+        "from": 13,
+        "id": "14",
+        "kind": "normal",
+        "label": "For Each",
+        "to": 14
+      },
+      {
+        "from": 13,
+        "id": "15",
+        "kind": "normal",
+        "label": "After Last",
+        "to": 16
+      },
+      {
+        "from": 14,
+        "id": "16",
+        "kind": "normal",
+        "label": "Next",
+        "to": 15
+      },
+      {
+        "from": 15,
+        "id": "17",
+        "kind": "normal",
+        "label": "Next",
+        "to": 13
+      },
+      {
+        "from": 16,
+        "id": "18",
+        "kind": "normal",
+        "label": "Next",
+        "to": 17
+      },
+      {
+        "from": 17,
+        "id": "19",
+        "kind": "normal",
+        "label": "Next",
+        "to": 18
+      },
+      {
+        "from": 18,
+        "id": "20",
+        "kind": "normal",
+        "label": "Next",
+        "to": 19
+      }
+    ],
+    "elements": [
+      {
+        "config": {
+          "executionContext": "User"
+        },
+        "id": 1,
+        "label": "Start",
+        "type": "Start"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": 0,
+          "variable": "validatedTotal"
+        },
+        "id": 2,
+        "label": "Initialize verified totals",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": 0,
+          "variable": "itemCount"
+        },
+        "id": 3,
+        "label": "Initialize item count",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "collection": "cartItems",
+          "direction": "First to last",
+          "loopVariable": "currentLine"
+        },
+        "id": 4,
+        "label": "Verify each cart item",
+        "type": "Loop"
+      },
+      {
+        "config": {
+          "conditionLogic": "All",
+          "conditions": [
+            {
+              "field": "Id",
+              "operator": "Equals",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Active",
+              "operator": "Equals",
+              "value": true
+            }
+          ],
+          "object": "Product",
+          "outputVariable": "currentProduct",
+          "recordLimit": "1"
+        },
+        "id": 5,
+        "label": "Retrieve authoritative Product price",
+        "type": "Get Records"
+      },
+      {
+        "config": {
+          "outcomes": [
+            {
+              "conditionLogic": "All",
+              "conditions": [
+                {
+                  "field": "{!currentProduct}",
+                  "operator": "IsNotNull"
+                },
+                {
+                  "field": "{!currentLine.Quantity}",
+                  "operator": "Greater",
+                  "value": 0
+                },
+                {
+                  "field": "{!currentProduct.Price}",
+                  "operator": "GreaterThanOrEqualTo",
+                  "value": 0
+                }
+              ],
+              "label": "Valid",
+              "name": "Valid"
+            }
+          ]
+        },
+        "id": 6,
+        "label": "Valid price and quantity",
+        "type": "Decision"
+      },
+      {
+        "config": {
+          "operator": "Add",
+          "value": "{!lineAmount}",
+          "variable": "validatedTotal"
+        },
+        "id": 7,
+        "label": "Accumulate trusted amount",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Add",
+          "value": 1,
+          "variable": "itemCount"
+        },
+        "id": 8,
+        "label": "Count item",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "A cart item is inactive, unavailable, or has an invalid quantity/price. No sale was saved."
+        },
+        "id": 9,
+        "label": "Invalid product or quantity",
+        "type": "Custom Error"
+      },
+      {
+        "config": {
+          "outcomes": [
+            {
+              "conditionLogic": "All",
+              "conditions": [
+                {
+                  "field": "{!itemCount}",
+                  "operator": "Greater",
+                  "value": 0
+                },
+                {
+                  "field": "{!cashReceived}",
+                  "operator": "GreaterThanOrEqualTo",
+                  "value": "{!validatedTotal}"
+                }
+              ],
+              "label": "Approved",
+              "name": "Approved"
+            }
+          ]
+        },
+        "id": 10,
+        "label": "Validate tender and nonempty cart",
+        "type": "Decision"
+      },
+      {
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "Payment is unconfirmed, amount is insufficient, or the basket is empty. No sale was saved."
+        },
+        "id": 11,
+        "label": "Invalid payment",
+        "type": "Custom Error"
+      },
+      {
+        "config": {
+          "fieldValues": [
+            {
+              "field": "Name",
+              "value": "Acetill Sale"
+            },
+            {
+              "field": "Total",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Subtotal",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "PaymentMethod",
+              "value": "Cash"
+            },
+            {
+              "field": "PaymentStatus",
+              "value": "Paid"
+            },
+            {
+              "field": "PaymentRequestId",
+              "value": "{!requestId}"
+            },
+            {
+              "field": "CashReceived",
+              "value": "{!cashReceived}"
+            },
+            {
+              "field": "ChangeDue",
+              "value": "{!changeAmount}"
+            }
+          ],
+          "object": "Order",
+          "recordSource": "fields"
+        },
+        "id": 12,
+        "label": "Create settled Order",
+        "type": "Create Records"
+      },
+      {
+        "config": {
+          "collection": "cartItems",
+          "direction": "First to last",
+          "loopVariable": "currentLine"
+        },
+        "id": 13,
+        "label": "Save each order line",
+        "type": "Loop"
+      },
+      {
+        "config": {
+          "conditionLogic": "All",
+          "conditions": [
+            {
+              "field": "Id",
+              "operator": "Equals",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Active",
+              "operator": "Equals",
+              "value": true
+            }
+          ],
+          "object": "Product",
+          "outputVariable": "currentProduct",
+          "recordLimit": "1"
+        },
+        "id": 14,
+        "label": "Read Product for order line",
+        "type": "Get Records"
+      },
+      {
+        "config": {
+          "fieldValues": [
+            {
+              "field": "Order",
+              "value": "{!record12.Id}"
+            },
+            {
+              "field": "Product",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Quantity",
+              "value": "{!currentLine.Quantity}"
+            },
+            {
+              "field": "UnitPrice",
+              "value": "{!currentProduct.Price}"
+            },
+            {
+              "field": "LineTotal",
+              "value": "{!lineAmount}"
+            }
+          ],
+          "object": "OrderLine",
+          "recordSource": "fields"
+        },
+        "id": 15,
+        "label": "Create OrderLine using trusted price",
+        "type": "Create Records"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "{!record12.Id}",
+          "variable": "orderId"
+        },
+        "id": 16,
+        "label": "Return saved order ID",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "completed",
+          "variable": "status"
+        },
+        "id": 17,
+        "label": "Mark completed",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "{!validatedTotal}",
+          "variable": "total"
+        },
+        "id": 18,
+        "label": "Return verified total",
+        "type": "Assignment"
+      },
+      {
+        "config": {},
+        "id": 19,
+        "label": "End",
+        "type": "End"
+      }
+    ],
+    "flowType": "Autolaunched Flow",
+    "label": "Acetill Payment Cash",
+    "resources": [
+      {
+        "availableForInput": true,
+        "dataType": "OrderLine",
+        "isCollection": true,
+        "name": "cartItems",
+        "type": "Record Collection"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Number",
+        "name": "cartTotal",
+        "type": "Variable"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Text",
+        "name": "requestId",
+        "type": "Variable"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Number",
+        "name": "cashReceived",
+        "type": "Variable"
+      },
+      {
+        "dataType": "OrderLine",
+        "name": "currentLine",
+        "type": "Record"
+      },
+      {
+        "dataType": "Product",
+        "name": "currentProduct",
+        "type": "Record"
+      },
+      {
+        "dataType": "Number",
+        "name": "validatedTotal",
+        "type": "Variable"
+      },
+      {
+        "dataType": "Number",
+        "name": "itemCount",
+        "type": "Variable"
+      },
+      {
+        "dataType": "Number",
+        "name": "lineAmount",
+        "type": "Formula",
+        "value": "currentProduct.Price * currentLine.Quantity"
+      },
+      {
+        "dataType": "Number",
+        "name": "changeAmount",
+        "type": "Formula",
+        "value": "cashReceived - validatedTotal"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Text",
+        "name": "orderId",
+        "type": "Variable"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Text",
+        "name": "status",
+        "type": "Variable"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Number",
+        "name": "total",
+        "type": "Variable"
+      }
+    ],
+    "startConfig": {
+      "executionContext": "User"
+    },
+    "status": "Draft",
+    "tests": [],
+    "versions": []
+  },
+  "AcetillPaymentCard": {
+    "apiName": "AcetillPaymentCard",
+    "connectors": [
+      {
+        "from": 1,
+        "id": "1",
+        "kind": "normal",
+        "label": "Next",
+        "to": 2
+      },
+      {
+        "from": 2,
+        "id": "2",
+        "kind": "normal",
+        "label": "Next",
+        "to": 3
+      },
+      {
+        "from": 3,
+        "id": "3",
+        "kind": "normal",
+        "label": "Next",
+        "to": 4
+      },
+      {
+        "from": 4,
+        "id": "4",
+        "kind": "normal",
+        "label": "For Each",
+        "to": 5
+      },
+      {
+        "from": 4,
+        "id": "5",
+        "kind": "normal",
+        "label": "After Last",
+        "to": 10
+      },
+      {
+        "from": 5,
+        "id": "6",
+        "kind": "normal",
+        "label": "Next",
+        "to": 6
+      },
+      {
+        "from": 6,
+        "id": "7",
+        "kind": "normal",
+        "label": "Valid",
+        "to": 7
+      },
+      {
+        "from": 6,
+        "id": "8",
+        "kind": "normal",
+        "label": "Default",
+        "to": 9
+      },
+      {
+        "from": 7,
+        "id": "9",
+        "kind": "normal",
+        "label": "Next",
+        "to": 8
+      },
+      {
+        "from": 8,
+        "id": "10",
+        "kind": "normal",
+        "label": "Next",
+        "to": 4
+      },
+      {
+        "from": 10,
+        "id": "11",
+        "kind": "normal",
+        "label": "Approved",
+        "to": 12
+      },
+      {
+        "from": 10,
+        "id": "12",
+        "kind": "normal",
+        "label": "Default",
+        "to": 11
+      },
+      {
+        "from": 12,
+        "id": "13",
+        "kind": "normal",
+        "label": "Next",
+        "to": 13
+      },
+      {
+        "from": 13,
+        "id": "14",
+        "kind": "normal",
+        "label": "For Each",
+        "to": 14
+      },
+      {
+        "from": 13,
+        "id": "15",
+        "kind": "normal",
+        "label": "After Last",
+        "to": 16
+      },
+      {
+        "from": 14,
+        "id": "16",
+        "kind": "normal",
+        "label": "Next",
+        "to": 15
+      },
+      {
+        "from": 15,
+        "id": "17",
+        "kind": "normal",
+        "label": "Next",
+        "to": 13
+      },
+      {
+        "from": 16,
+        "id": "18",
+        "kind": "normal",
+        "label": "Next",
+        "to": 17
+      },
+      {
+        "from": 17,
+        "id": "19",
+        "kind": "normal",
+        "label": "Next",
+        "to": 18
+      },
+      {
+        "from": 18,
+        "id": "20",
+        "kind": "normal",
+        "label": "Next",
+        "to": 19
+      }
+    ],
+    "elements": [
+      {
+        "config": {
+          "executionContext": "User"
+        },
+        "id": 1,
+        "label": "Start",
+        "type": "Start"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": 0,
+          "variable": "validatedTotal"
+        },
+        "id": 2,
+        "label": "Initialize verified totals",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": 0,
+          "variable": "itemCount"
+        },
+        "id": 3,
+        "label": "Initialize item count",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "collection": "cartItems",
+          "direction": "First to last",
+          "loopVariable": "currentLine"
+        },
+        "id": 4,
+        "label": "Verify each cart item",
+        "type": "Loop"
+      },
+      {
+        "config": {
+          "conditionLogic": "All",
+          "conditions": [
+            {
+              "field": "Id",
+              "operator": "Equals",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Active",
+              "operator": "Equals",
+              "value": true
+            }
+          ],
+          "object": "Product",
+          "outputVariable": "currentProduct",
+          "recordLimit": "1"
+        },
+        "id": 5,
+        "label": "Retrieve authoritative Product price",
+        "type": "Get Records"
+      },
+      {
+        "config": {
+          "outcomes": [
+            {
+              "conditionLogic": "All",
+              "conditions": [
+                {
+                  "field": "{!currentProduct}",
+                  "operator": "IsNotNull"
+                },
+                {
+                  "field": "{!currentLine.Quantity}",
+                  "operator": "Greater",
+                  "value": 0
+                },
+                {
+                  "field": "{!currentProduct.Price}",
+                  "operator": "GreaterThanOrEqualTo",
+                  "value": 0
+                }
+              ],
+              "label": "Valid",
+              "name": "Valid"
+            }
+          ]
+        },
+        "id": 6,
+        "label": "Valid price and quantity",
+        "type": "Decision"
+      },
+      {
+        "config": {
+          "operator": "Add",
+          "value": "{!lineAmount}",
+          "variable": "validatedTotal"
+        },
+        "id": 7,
+        "label": "Accumulate trusted amount",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Add",
+          "value": 1,
+          "variable": "itemCount"
+        },
+        "id": 8,
+        "label": "Count item",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "A cart item is inactive, unavailable, or has an invalid quantity/price. No sale was saved."
+        },
+        "id": 9,
+        "label": "Invalid product or quantity",
+        "type": "Custom Error"
+      },
+      {
+        "config": {
+          "outcomes": [
+            {
+              "conditionLogic": "All",
+              "conditions": [
+                {
+                  "field": "{!itemCount}",
+                  "operator": "Greater",
+                  "value": 0
+                },
+                {
+                  "field": "{!cardPaymentConfirmed}",
+                  "operator": "Equals",
+                  "value": true
+                }
+              ],
+              "label": "Approved",
+              "name": "Approved"
+            }
+          ]
+        },
+        "id": 10,
+        "label": "Validate tender and nonempty cart",
+        "type": "Decision"
+      },
+      {
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "Payment is unconfirmed, amount is insufficient, or the basket is empty. No sale was saved."
+        },
+        "id": 11,
+        "label": "Invalid payment",
+        "type": "Custom Error"
+      },
+      {
+        "config": {
+          "fieldValues": [
+            {
+              "field": "Name",
+              "value": "Acetill Sale"
+            },
+            {
+              "field": "Total",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Subtotal",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "PaymentMethod",
+              "value": "Card"
+            },
+            {
+              "field": "PaymentStatus",
+              "value": "Paid"
+            },
+            {
+              "field": "PaymentRequestId",
+              "value": "{!requestId}"
+            }
+          ],
+          "object": "Order",
+          "recordSource": "fields"
+        },
+        "id": 12,
+        "label": "Create settled Order",
+        "type": "Create Records"
+      },
+      {
+        "config": {
+          "collection": "cartItems",
+          "direction": "First to last",
+          "loopVariable": "currentLine"
+        },
+        "id": 13,
+        "label": "Save each order line",
+        "type": "Loop"
+      },
+      {
+        "config": {
+          "conditionLogic": "All",
+          "conditions": [
+            {
+              "field": "Id",
+              "operator": "Equals",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Active",
+              "operator": "Equals",
+              "value": true
+            }
+          ],
+          "object": "Product",
+          "outputVariable": "currentProduct",
+          "recordLimit": "1"
+        },
+        "id": 14,
+        "label": "Read Product for order line",
+        "type": "Get Records"
+      },
+      {
+        "config": {
+          "fieldValues": [
+            {
+              "field": "Order",
+              "value": "{!record12.Id}"
+            },
+            {
+              "field": "Product",
+              "value": "{!currentLine.Product}"
+            },
+            {
+              "field": "Quantity",
+              "value": "{!currentLine.Quantity}"
+            },
+            {
+              "field": "UnitPrice",
+              "value": "{!currentProduct.Price}"
+            },
+            {
+              "field": "LineTotal",
+              "value": "{!lineAmount}"
+            }
+          ],
+          "object": "OrderLine",
+          "recordSource": "fields"
+        },
+        "id": 15,
+        "label": "Create OrderLine using trusted price",
+        "type": "Create Records"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "{!record12.Id}",
+          "variable": "orderId"
+        },
+        "id": 16,
+        "label": "Return saved order ID",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "completed",
+          "variable": "status"
+        },
+        "id": 17,
+        "label": "Mark completed",
+        "type": "Assignment"
+      },
+      {
+        "config": {
+          "operator": "Assign",
+          "value": "{!validatedTotal}",
+          "variable": "total"
+        },
+        "id": 18,
+        "label": "Return verified total",
+        "type": "Assignment"
+      },
+      {
+        "config": {},
+        "id": 19,
+        "label": "End",
+        "type": "End"
+      }
+    ],
+    "flowType": "Autolaunched Flow",
+    "label": "Acetill Payment Card",
+    "resources": [
+      {
+        "availableForInput": true,
+        "dataType": "OrderLine",
+        "isCollection": true,
+        "name": "cartItems",
+        "type": "Record Collection"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Number",
+        "name": "cartTotal",
+        "type": "Variable"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Text",
+        "name": "requestId",
+        "type": "Variable"
+      },
+      {
+        "availableForInput": true,
+        "dataType": "Boolean",
+        "name": "cardPaymentConfirmed",
+        "type": "Variable"
+      },
+      {
+        "dataType": "OrderLine",
+        "name": "currentLine",
+        "type": "Record"
+      },
+      {
+        "dataType": "Product",
+        "name": "currentProduct",
+        "type": "Record"
+      },
+      {
+        "dataType": "Number",
+        "name": "validatedTotal",
+        "type": "Variable"
+      },
+      {
+        "dataType": "Number",
+        "name": "itemCount",
+        "type": "Variable"
+      },
+      {
+        "dataType": "Number",
+        "name": "lineAmount",
+        "type": "Formula",
+        "value": "currentProduct.Price * currentLine.Quantity"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Text",
+        "name": "orderId",
+        "type": "Variable"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Text",
+        "name": "status",
+        "type": "Variable"
+      },
+      {
+        "availableForOutput": true,
+        "dataType": "Number",
+        "name": "total",
+        "type": "Variable"
+      }
+    ],
+    "startConfig": {
+      "executionContext": "User"
+    },
+    "status": "Draft",
+    "tests": [],
+    "versions": []
+  }
+}
