@@ -60,3 +60,32 @@ test('Flow record query rejects unsafe filters and invalid custom condition logi
     [{field:'Name',operator:'Equals',value:'x'}],'1 OR ('),/Invalid Flow filter logic/);
   assert.equal(fieldReads,2);
 });
+
+
+test('Flow Get Records projects typed boolean and numeric values used by POS payment validation',async()=>{
+ const statements:string[]=[];
+ const db={query:async(sql:string)=>{
+  statements.push(sql);
+  if(sql.includes('FROM md_field_definitions'))return {rows:[
+   {api_name:'Active',data_type:'boolean'},{api_name:'Price',data_type:'number'}]};
+  return {rows:[
+   {id:'product-1',created_at:new Date(0),updated_at:new Date(0),owner_id:null,
+    record_type_id:null,field_api:'Active',value_text:null,value_number:null,
+    value_boolean:true,reference_record_id:null,data_type:'boolean'},
+   {id:'product-1',created_at:new Date(0),updated_at:new Date(0),owner_id:null,
+    record_type_id:null,field_api:'Price',value_text:null,value_number:'4.25',
+    value_boolean:null,reference_record_id:null,data_type:'number'}
+  ]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>undefined,allowed:async()=>true,
+  allowedMany:async(_tenant:string,_user:string,resources:unknown[])=>resources.map(()=>true)} as unknown as RbacEngine;
+ const rows=await new FlowRecordQuery(db,rbac).find('tenant','user','Product',[
+  {field:'Active',operator:'Equals',value:true}
+ ]);
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].Active,true);
+ assert.equal(rows[0].Price,4.25);
+ assert.match(statements[1],/v\.value_boolean::text/);
+ assert.match(statements[1],/v\.value_number/);
+ assert.match(statements[1],/::text/);
+});
