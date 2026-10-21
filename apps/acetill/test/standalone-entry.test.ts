@@ -19,5 +19,6 @@ test('Legacy navigation transfers to the real Acetill document',()=>{
  const main=readFileSync(file('../../web/src/main.tsx'),'utf8');
  const setup=readFileSync(file('../../web/src/core/workspace/SetupShell/setupAppShell.tsx'),'utf8');
  assert.match(main,/window\.location\.replace\('\/acetill\/'\)/);
- assert.match(setup,/window\.location\.assign\('\/acetill\/'\)/);
+ assert.match(setup,/standaloneEntryForAppId/);
+ assert.match(setup,/window\.location\.assign\(target\.pathname\+target\.search\)/);
 });
