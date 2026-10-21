@@ -24,6 +24,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - name: Verify production frontend, Render API and browser login
+        if: github.event_name == 'pull_request'
+        run: node scripts/verify-public-render-routing.mjs
   publish:
     if: github.event_name != 'pull_request'
     needs: verify
