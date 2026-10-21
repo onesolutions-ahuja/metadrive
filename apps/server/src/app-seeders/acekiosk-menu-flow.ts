@@ -16,6 +16,17 @@ export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':flow:AceKioskLoadMenu']);
    const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 LIMIT 1',[tenantId,'AceKioskLoadMenu']);
    if(existing.rowCount)return false; // Never change or activate an existing tenant-customised Flow.
+   // Only the installed application's missing schema is provisioned.
+   await client.query(`INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system)
+      VALUES($1,'MenuCategory','Menu Category',false) ON CONFLICT DO NOTHING`,[tenantId]);
+   for(const item of [
+      {api:'Name',label:'Name',type:'text'},
+      {api:'DisplayOrder',label:'Display Order',type:'number'},
+      {api:'Active',label:'Active',type:'boolean'}
+   ])await client.query(`INSERT INTO md_field_definitions
+      (tenant_id,object_api,api_name,label,data_type)
+      VALUES($1,'MenuCategory',$2,$3,$4) ON CONFLICT DO NOTHING`,
+      [tenantId,item.api,item.label,item.type]);
    const products=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[tenantId,'Product']);
    const categories=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[tenantId,'MenuCategory']);
    if(!products.rowCount||!categories.rowCount)return false; // Object seeder is independently managed.
