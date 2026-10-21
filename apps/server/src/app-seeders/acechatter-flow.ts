@@ -59,6 +59,25 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
   [tenantId,field.object,field.name,field.label,field.type,
    field.name==='ConversationId'?'ChatConversation':null]);
+ // Policy exists for explicit administrator assignment; no automatic user grants.
+ await client.query(`INSERT INTO md_permission_sets
+  (tenant_id,api_name,label,description,navigation_default_access)
+  VALUES($1,'AceChatterUser','AceChatter User',
+   'Read assigned chats and execute authorised AceChatter Flows','Deny')
+  ON CONFLICT(tenant_id,api_name) DO NOTHING`,[tenantId]);
+ const rights=[
+  ['App:AceChatter','read'],
+  ['Flow:AceChatterLoadConversations','execute'],
+  ['Flow:AceChatterLoadMessages','execute'],
+  ['Flow:AceChatterSendMessage','execute'],
+  ['ChatConversation','read'],['ChatMessage','read'],
+  ...fields.map(field=>[field.object+'.'+field.name,'read'])
+ ];
+ for(const [resource,action] of rights)await client.query(`
+  INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+  SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+  WHERE p.tenant_id=$1 AND p.api_name='AceChatterUser'
+  ON CONFLICT DO NOTHING`,[tenantId,resource,action]);
  const definitions=[
   graph('AceChatterLoadConversations','AceChatter - Load Conversations',
    'ChatConversation','searchTerm',[
@@ -69,6 +88,24 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
  ];
  let seeded=0;
  for(const value of definitions)if(await insertGraph(client,tenantId,value,true))seeded++;
+ // Never activate a fake send: the tenant must author and connect a provider
+ // Named Credential / callout first. Keep the editable Flow safely Draft.
+ const sendDraft={
+  apiName:'AceChatterSendMessage',label:'AceChatter - Send Message',
+  appApiName:'AceChatter',flowType:'Autolaunched Flow',
+  status:'Draft',version:1,tests:[],
+  resources:[
+   {name:'conversationId',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'message',type:'Variable',dataType:'Text',availableForInput:true}
+  ],
+  elements:[
+   {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+   {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
+     onError:'FAULT_PATH',deliveryMode:'DURABLE_ASYNC'}},
+   {id:3,type:'End',label:'End',config:{}}
+  ],connectors:links(1,2,3)
+ };
+ if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
 }
 export async function seedAceChatterFlows(db:SqlPersistence):Promise<number>{
