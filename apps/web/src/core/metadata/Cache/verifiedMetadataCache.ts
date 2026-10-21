@@ -20,12 +20,14 @@ export async function metadataPayloadDigest(content:Content):Promise<string>{
 export async function saveVerifiedMetadata(
   identity:OfflineMetadataIdentity,content:Content,publication:TrustedPublication
 ):Promise<void>{
-  if(!publication.verifiedDigest || publication.verifiedDigest!==publication.revision.digest
-    || await metadataPayloadDigest(content)!==publication.verifiedDigest
-    || metadataCacheDecision({ ...identity,revision:publication.revision,payload:content},{
+  if(!publication?.verifiedDigest || publication.verifiedDigest!==publication.revision?.digest)
+    throw Error('Metadata publication digest missing or inconsistent');
+  if(await metadataPayloadDigest(content)!==publication.verifiedDigest)
+    throw Error('Metadata publication payload digest mismatch');
+  if(metadataCacheDecision({ ...identity,revision:publication.revision,payload:content},{
       ...identity,now:Date.now(),maxAgeMs:86400000,minimumVersion:publication.minimumVersion,
       verifiedDigest:publication.verifiedDigest
-    })!=='accept')throw Error('Metadata publication verification failed');
+    })!=='accept')throw Error('Metadata publication identity, version or freshness rejected');
   await saveOfflineMetadata(identity,{...contentOf(content),revision:publication.revision});
 }
 /** Never interpret this metadata as authentication, permissions, or Flow approval. */
