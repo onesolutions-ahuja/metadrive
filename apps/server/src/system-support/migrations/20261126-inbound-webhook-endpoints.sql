@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS md_inbound_webhook_endpoints (
  app_id uuid NOT NULL REFERENCES md_apps(id),
  flow_api text NOT NULL CHECK(flow_api ~ '^[A-Za-z][A-Za-z0-9_]*$'),
  execution_user_id uuid NOT NULL,
- provider text NOT NULL DEFAULT 'Meta' CHECK(provider IN ('Meta')),
+ provider text NOT NULL DEFAULT 'Meta' CHECK(provider IN ('Meta','HmacSha256')),
  verify_token_digest bytea NOT NULL,
  signature_secret_ciphertext bytea NOT NULL,
  encryption_key_id text NOT NULL,
