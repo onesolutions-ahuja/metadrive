@@ -85,7 +85,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   const filterCategory=async(name:string)=>{
     setCategory(name);setSubcategory('All');setSearch('');
     setProducts(catalog);
-    if(actions.some(a=>a.apiName==='AceKioskFilterMenu')){
+    if(name!=='All'&&actions.some(a=>a.apiName==='AceKioskFilterMenu')){
       try{const r=await executeAction('AceKioskFilterMenu',{categoryName:name,categoryId:categories.find(c=>c.name===name)?.id??'',sessionId});
         if(Array.isArray(r.outputs?.products))setProducts((r.outputs.products as RecordRow[]).map(productFrom).filter((p):p is Item=>Boolean(p?.active)));}
       catch(e){setError(e instanceof Error?e.message:String(e));}

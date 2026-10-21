@@ -21,3 +21,13 @@ test('AceKiosk modifier Flow is tenant-scoped and only uses existing meal metada
  assert.match(source,/availableForOutput:true/);
  assert.doesNotMatch(source,/INSERT INTO md_records|INSERT INTO md_permission_assignments/);
 });
+
+test('AceKiosk menu navigation Flows are metadata-only and idempotent',()=>{
+ const file=readFileSync(new URL('../../src/app-seeders/acekiosk-navigation-flows.ts',import.meta.url),'utf8');
+ assert.match(file,/AceKioskStartSession/);
+ assert.match(file,/AceKioskFilterMenu/);
+ assert.match(file,/recordLimit:'all'/);
+ assert.match(file,/executionContext:'User'/);
+ assert.match(file,/if\(exists\.rowCount\)continue/);
+ assert.doesNotMatch(file,/INSERT INTO md_records|INSERT INTO md_permission_assignments|INSERT INTO md_orders/);
+});
