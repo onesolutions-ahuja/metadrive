@@ -67,13 +67,19 @@ export default function AcetillTerminal(){
   const getProducts=find('GetProducts');
   const getCategories=find('GetCategories');
   const checkout=find('Checkout')??find('CompleteSale');
+  // Read-only catalogue flows may run simultaneously; checkout and write actions remain serialized.
+  const executeRead=React.useCallback(async(action:Action,inputs:Row)=>{
+    return apiRequest<Result>('/flows/'+encodeURIComponent(action.apiName)+'/execute',{
+      method:'POST',body:JSON.stringify(inputs)
+    });
+  },[]);
   // Category tabs and product data come exclusively from entitled OneEngine Flows.
   // A selection always invokes GetProducts with the selected category and search input.
   const latestRequest=React.useRef(0);
   React.useEffect(()=>{
     if(!getCategories)return;
     let active=true;
-    void execute(getCategories,{active:true,sortField:'DisplayOrder',sortOrder:'Ascending'})
+    void executeRead(getCategories,{active:true,sortField:'DisplayOrder',sortOrder:'Ascending'})
       .then(result=>{if(active)setCategories(extractRows(result).map(parseCategory)
         .filter((c):c is Category=>c!==null).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)));})
       .catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));});
@@ -85,7 +91,7 @@ export default function AcetillTerminal(){
     const handle=window.setTimeout(()=>{
       setCatalogueLoading(true);
       const selected=categories.find(c=>c.id===category);
-      void execute(getProducts,{
+      void executeRead(getProducts,{
         search:search.trim(),categoryId:category,categoryName:selected?.name??'',limit:100
       }).then(result=>{
         if(request!==latestRequest.current)return;
