@@ -191,6 +191,18 @@ export function useSetupMetadata(ctx: any) {
           // immediately, preserving the previous deep-link behaviour.
           await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
         }
+        // Authorise direct Setup tabs as soon as /auth/me responds rather than
+        // waiting for unrelated component-library, page and app metadata.
+        const sessionRequest = recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } });
+        void sessionRequest.then(({user}) => {
+          setCurrentProfileId(user.profileId);
+          setCanManageUserIdentities(user.permissions.includes('security:manage'));
+          setCanReadSecurity(user.permissions.includes('security:read') || user.permissions.includes('security:manage'));
+          setCanReadMetadata(user.permissions.includes('metadata:read') || user.permissions.includes('metadata:write'));
+          setCanManageApps(user.permissions.includes('metadata:write'));
+          setCurrentFieldAccess(user.fieldAccess);
+          setCurrentRecordTypeAccess(user.recordTypeAccess);
+        }).catch(() => {}); // The awaited bootstrap handles session-expiry errors.
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           Promise.resolve({ flows: [] as FlowDefinitionMetadata[] }), // Flow definitions belong to the Builder, not login.
@@ -208,7 +220,7 @@ export function useSetupMetadata(ctx: any) {
           Promise.resolve({ territories: [] as DashboardTerritoryMetadata[], canManage: false }),
           Promise.resolve({ folders: [] as ReportFolderMetadata[], canManageAll: false }),
           Promise.resolve({ reports: [] as ReportMetadata[] }),
-          recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
+          sessionRequest
         ]);
         setObjects(objectPayload.objects);
         if(objectPayload.objects.length)setObject(objectPayload.objects.find(item=>item.apiName===object.apiName)??objectPayload.objects[0]);
