@@ -1,0 +1,13 @@
+{
+  "name": "@metadrive/acetill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent Acetill transaction terminal powered by MetaDrive",
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "check": "npm run test"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
