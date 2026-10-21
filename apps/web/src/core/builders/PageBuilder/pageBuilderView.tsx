@@ -78,7 +78,8 @@ import {
   Wifi,
   WifiOff,
   PanelLeft,
-  PanelRight
+  PanelRight,
+  Layers3
 } from 'lucide-react';
 import FlowBuilderWorkspace from '../FlowBuilder/FlowBuilder';
 import FlowScreenContent from '../../automation/FlowScreen/FlowScreenContent';
@@ -97,7 +98,7 @@ import { isComponentVisible } from '../../components/Properties/componentVisibil
 import PageComponentVisualEditor from '../ComponentStyleEditor/PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import PageComponentStyleEditor from '../ComponentStyleEditor/PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
+import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from '../../pages/PageRuntime/pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import AppExchange from '../../applications/AppExchange/AppExchange';
@@ -265,6 +266,10 @@ function PageBuilder({
     && (component !== 'Report Chart' || targetObject?.settings?.allowReports));
   const stringList = pageStringList;
   const [selectedId, setSelectedId] = useState(page.components[0]?.id ?? '');
+  const [selectionIds, setSelectionIds] = useState<string[]>(page.components[0] ? [page.components[0].id] : []);
+  useEffect(() => {
+    setSelectionIds(current => selectedId && current.includes(selectedId) ? current : selectedId ? [selectedId] : []);
+  }, [selectedId]);
   const savedPageApiName = useRef(page.apiName);
   const device: 'Desktop' | 'Tablet' | 'Phone' = page.devices.length === 1 && page.devices[0] === 'Phone' || page.canvasWidth <= 600
     ? 'Phone' : page.canvasWidth < 1400 ? 'Tablet' : 'Desktop';
@@ -275,10 +280,15 @@ function PageBuilder({
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
   const [favouritesLoaded, setFavouritesLoaded] = useState(false);
   const [componentPanelWidth, setComponentPanelWidth] = useState(280);
-  const [componentPanelVisible, setComponentPanelVisible] = useState(true);
-  const [propertiesPanelVisible, setPropertiesPanelVisible] = useState(true);
-  const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
-  const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
+  // One Canva-style contextual rail and one collapsible panel; never two competing sidebars.
+  const [activePanel, setActivePanel] = useState<'palette' | 'properties' | 'page' | null>(() => {
+    try { return window.localStorage.getItem('metadrive:page-builder:panel') === 'collapsed' ? null : 'palette'; }
+    catch { return 'palette'; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('metadrive:page-builder:panel', activePanel === null ? 'collapsed' : 'expanded'); }
+    catch { /* Optional browser preference, not page metadata. */ }
+  }, [activePanel]);
   const [pageListObject, setPageListObject] = useState('');
   const [pageListSearch, setPageListSearch] = useState('');
   const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
@@ -340,16 +350,19 @@ function PageBuilder({
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
-  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge } | null>(null);
-  const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; x: number; y: number; width: number; height: number } | null>(null);
-  const canvasSnap = false;
+  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge; element: HTMLElement; current: { x: number; y: number; width: number; height: number } } | null>(null);
+  const canvasGuideXRef = useRef<HTMLDivElement | null>(null);
+  const canvasGuideYRef = useRef<HTMLDivElement | null>(null);
+  const [canvasSnap, setCanvasSnap] = useState(true);
+  const [componentMenuId, setComponentMenuId] = useState('');
   const canvasMoveStart = useRef<{
     id: string; pointerId: number; pointerX: number; pointerY: number;
     original: { x: number; y: number; width: number; height: number };
     element: HTMLElement; x: number; y: number;
+    group: Array<{ id: string; element: HTMLElement; original: { x: number; y: number; width: number; height: number }; x: number; y: number }>;
   } | null>(null);
   const [showLayers, setShowLayers] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions'>('Overview');
+  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions' | 'Position'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -550,9 +563,13 @@ function PageBuilder({
   const endComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (paletteResizeStart.current?.pointerId === event.pointerId) paletteResizeStart.current = null;
   };
-  const startPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); propertiesResizeStart.current = { pointerId: event.pointerId, pointerX: event.clientX, width: propertiesPanelWidth }; };
-  const movePropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { const start = propertiesResizeStart.current; if (start?.pointerId === event.pointerId) setPropertiesPanelWidth(Math.max(240, Math.min(520, start.width + start.pointerX - event.clientX))); };
-  const endPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { if (propertiesResizeStart.current?.pointerId === event.pointerId) propertiesResizeStart.current = null; };
+  const openComponentInspector = (tab: typeof inspectorTab = 'Overview') => {
+    setInspectorTab(tab); setPageSettingsOpen(false); setActivePanel('properties'); setComponentMenuId('');
+  };
+  const openPalette = (tab: typeof paletteTab = 'Components', category?: typeof paletteCategory) => {
+    setPaletteTab(tab); if (category) setPaletteCategory(category);
+    setActivePanel('palette'); setComponentMenuId('');
+  };
   const updateCustomProperties = (value: string) => {
     setCustomPropertiesDraft(value);
     try {
@@ -569,20 +586,31 @@ function PageBuilder({
   // Move only the selected DOM element while dragging. Commit metadata and
   // a single undo step on release, avoiding a page-wide render per pointer frame.
   const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
-    if (previewMode || !component.position || component.properties.canvasLocked === true
-      || event.button !== 0 || canvasMoveStart.current) return;
+    if (previewMode || !component.position || isCanvasLocked(component) || component.properties.canvasLocked === true
+      || event.button !== 0 || event.shiftKey || canvasMoveStart.current) return;
+    if ((event.target as HTMLElement).closest('button,input,select,textarea,a,[contenteditable="true"],.free-canvas-resize-handle,.canvas-element-actions')) return;
     const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
     if (!element) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const stage = element.closest('.free-canvas-stage');
+    const group = page.components.filter(item => item.id !== component.id && selectionIds.includes(item.id)
+      && item.position && !rawLayoutParentId(item) && !isCanvasLocked(item) && item.properties.canvasLocked !== true)
+      .flatMap(item => {
+        const node = Array.from(stage?.querySelectorAll<HTMLElement>('.free-canvas-component') ?? [])
+          .find(candidate => candidate.dataset.componentId === item.id);
+        return node && item.position ? [{ id: item.id, element: node, original: { ...item.position },
+          x: item.position.x, y: item.position.y }] : [];
+      });
     canvasMoveStart.current = {
-      id: component.id, pointerId: event.pointerId,
+      id: component.id, pointerId: event.pointerId, group,
       pointerX: event.clientX, pointerY: event.clientY,
       original: { ...component.position }, element,
       x: component.position.x, y: component.position.y
     };
     setSelectedId(component.id);
+    if (!selectionIds.includes(component.id)) setSelectionIds([component.id]);
     setPageSettingsOpen(false);
   };
   const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -591,19 +619,50 @@ function PageBuilder({
     const scale = fitCanvas ? fitScale : 1;
     const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
     const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
-    const next = canvasBoundPosition({ ...start.original, x, y },
-      { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
-    start.x = next.x; start.y = next.y;
+    const next = canvasSnap
+      ? snapCanvasPosition({ ...start.original, x, y },
+          { width: page.canvasWidth, height: page.canvasHeight },
+          page.components.filter(item => item.id !== start.id && !rawLayoutParentId(item) && item.position).map(item => item.position!), true)
+      : { position: canvasBoundPosition({ ...start.original, x, y }, { width: page.canvasWidth, height: page.canvasHeight }, false),
+          guides: { x: false, y: false } };
+    const positions = [start.original, ...start.group.map(item => item.original)];
+    const deltaX = Math.max(-Math.min(...positions.map(item => item.x)),
+      Math.min(Math.min(...positions.map(item => page.canvasWidth - item.x - item.width)), next.position.x - start.original.x));
+    const deltaY = Math.max(-Math.min(...positions.map(item => item.y)),
+      Math.min(Math.min(...positions.map(item => page.canvasHeight - item.y - item.height)), next.position.y - start.original.y));
+    start.x = start.original.x + deltaX; start.y = start.original.y + deltaY;
+    for (const other of start.group) {
+      other.x = other.original.x + deltaX; other.y = other.original.y + deltaY;
+      other.element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    }
+    if (canvasGuideXRef.current) {
+      canvasGuideXRef.current.style.display = next.guides.x ? 'block' : 'none';
+      canvasGuideXRef.current.style.left = `${start.x}px`;
+    }
+    if (canvasGuideYRef.current) {
+      canvasGuideYRef.current.style.display = next.guides.y ? 'block' : 'none';
+      canvasGuideYRef.current.style.top = `${start.y}px`;
+    }
     start.element.style.transform =
-      `translate(${next.x - start.original.x}px, ${next.y - start.original.y}px)`;
+      `translate(${deltaX}px, ${deltaY}px)`;
   };
   const endCanvasMove = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
     const start = canvasMoveStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
     canvasMoveStart.current = null;
     start.element.style.transform = '';
+    for (const other of start.group) other.element.style.transform = '';
+    if (canvasGuideXRef.current) canvasGuideXRef.current.style.display = 'none';
+    if (canvasGuideYRef.current) canvasGuideYRef.current.style.display = 'none';
     if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
-      updateComponent(start.id, { position: { ...start.original, x: start.x, y: start.y } });
+      const positions = new Map<string, { x: number; y: number; width: number; height: number }>([
+        [start.id, { ...start.original, x: start.x, y: start.y }],
+        ...start.group.map(other => [other.id, { ...other.original, x: other.x, y: other.y }] as const)
+      ]);
+      applyPage({ ...page, components: page.components.map(item => {
+        const position = positions.get(item.id);
+        return position ? { ...item, position } : item;
+      }) });
     }
   };
   const reorderLayer = (id: string, direction: -1 | 1) => {
@@ -619,12 +678,14 @@ function PageBuilder({
     applyPage({ ...page, components: items });
   };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata, edge: ResizeEdge) => {
-    if (!component.position || component.properties.canvasLocked === true) return;
+    if (!component.position || isCanvasLocked(component) || component.properties.canvasLocked === true) return;
+    const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
+    if (!element) return;
     event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
     canvasResizeStart.current = { id: component.id, pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY,
-      x: component.position.x, y: component.position.y, width: component.position.width, height: component.position.height, edge };
-    setSelectedId(component.id); setInspectorTab('Overview');
-    setCanvasResizePreview({ id: component.id, ...component.position });
+      x: component.position.x, y: component.position.y, width: component.position.width, height: component.position.height, edge,
+      element, current: { ...component.position } };
+    setSelectedId(component.id);
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
@@ -634,24 +695,26 @@ function PageBuilder({
     const definition = component.type.startsWith('Custom:') ? findRegisteredComponent(libraryComponents, component.type.slice('Custom:'.length), 'page') : undefined;
     const minWidth = Math.min(start.width, definition?.resize?.minWidth ?? 20);
     const minHeight = Math.min(start.height, definition?.resize?.minHeight ?? 20);
-    const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale));
-    const dy = Math.round(canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale));
+    const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitCanvas ? fitScale : 1));
+    const dy = Math.round(canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitCanvas ? fitScale : 1));
     const west = start.edge.includes('w'), east = start.edge.includes('e'), north = start.edge.includes('n'), south = start.edge.includes('s');
     let x = start.x, y = start.y, width = start.width, height = start.height;
     if (east) width = Math.max(minWidth, Math.min(page.canvasWidth - start.x, start.width + dx));
     if (south) height = Math.max(minHeight, Math.min(page.canvasHeight - start.y, start.height + dy));
     if (west) { x = Math.max(0, Math.min(start.x + start.width - minWidth, start.x + dx)); width = start.width + start.x - x; }
     if (north) { y = Math.max(0, Math.min(start.y + start.height - minHeight, start.y + dy)); height = start.height + start.y - y; }
-    setCanvasResizePreview({ id: start.id, x, y, width, height });
+    start.current = { x, y, width, height };
+    Object.assign(start.element.style, { left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` });
   };
   const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    const size = canvasResizePreview?.id === start.id ? canvasResizePreview :
-      { id: start.id, x: start.x, y: start.y, width: start.width, height: start.height };
+    const size = start.current;
+    Object.assign(start.element.style, { left: `${start.x}px`, top: `${start.y}px`, width: `${start.width}px`, height: `${start.height}px` });
+    canvasResizeStart.current = null;
     const component = page.components.find(item => item.id === start.id);
-    if (component?.position) updateComponent(start.id, { position: { x:size.x, y:size.y, width:size.width, height:size.height } });
-    canvasResizeStart.current = null; setCanvasResizePreview(null);
+    if (component?.position && (size.x !== start.x || size.y !== start.y || size.width !== start.width || size.height !== start.height))
+      updateComponent(start.id, { position: size });
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
@@ -864,6 +927,9 @@ function PageBuilder({
       ...structuredClone(componentClipboard),
       id: `${componentClipboard.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`,
       label: `${componentClipboard.label} Copy`,
+      position: componentClipboard.position ? { ...componentClipboard.position,
+        x: Math.min(page.canvasWidth - componentClipboard.position.width, componentClipboard.position.x + 24),
+        y: Math.min(page.canvasHeight - componentClipboard.position.height, componentClipboard.position.y + 24) } : undefined,
       region: selected?.region ?? componentClipboard.region ?? 'main',
       properties: { ...structuredClone(componentClipboard.properties), layoutParentId: selected && canNest(page.components, componentClipboard.id, selected.id) ? selected.id : undefined }
     };
@@ -872,6 +938,25 @@ function PageBuilder({
     components.splice(selectedIndex < 0 ? components.length : selectedIndex + 1, 0, pasted);
     applyPage({ ...page, components });
     setSelectedId(pasted.id);
+  };
+  const duplicateSelected = () => {
+    if (!selected || isCanvasLocked(selected)) return;
+    const copy: PageComponentMetadata = { ...structuredClone(selected),
+      id: `copy-${crypto.randomUUID()}`, label: `${selected.label} Copy`,
+      position: selected.position ? { ...selected.position,
+        x: Math.min(page.canvasWidth - selected.position.width, selected.position.x + 24),
+        y: Math.min(page.canvasHeight - selected.position.height, selected.position.y + 24) } : undefined };
+    const index = page.components.findIndex(item => item.id === selected.id);
+    applyPage({ ...page, components: [...page.components.slice(0, index + 1), copy, ...page.components.slice(index + 1)] });
+    setSelectedId(copy.id); setComponentMenuId('');
+  };
+  const alignSelected = (axis: 'x' | 'y', anchor: 'start' | 'center' | 'end') => {
+    if (!selected?.position || isCanvasLocked(selected) || selected.properties.canvasLocked === true) return;
+    const dimension = axis === 'x' ? 'width' : 'height';
+    const span = axis === 'x' ? page.canvasWidth : page.canvasHeight;
+    const freeSpace = Math.max(0, span - selected.position[dimension]);
+    const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
+    updateComponent(selected.id, { position: { ...selected.position, [axis]: value } });
   };
   const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
@@ -905,6 +990,8 @@ function PageBuilder({
         event.preventDefault(); copySelected();
       } else if (command && key === 'v' && componentClipboard && !previewMode) {
         event.preventDefault(); pasteComponent();
+      } else if (command && key === 'd' && selected && !previewMode) {
+        event.preventDefault(); duplicateSelected();
       } else if (!command && (event.key === 'Delete' || event.key === 'Backspace')
         && selected && !previewMode && !isCanvasLocked(selected)) {
         event.preventDefault(); removeSelected();
@@ -1029,8 +1116,12 @@ function PageBuilder({
     if (saving) return;
     const label = newPageLabel.trim();
     if (!label) return;
-    if (!objects.some(item => item.apiName === newPageTargetObject)) {
-      onNotify('Choose an existing data object for the new page');
+    if (newPageType === 'Record Page' && !objects.some(item => item.apiName === newPageTargetObject)) {
+      onNotify('Record Pages need an existing data object; Home and App Pages do not.');
+      return;
+    }
+    if (newPageTargetObject && !objects.some(item => item.apiName === newPageTargetObject)) {
+      onNotify('Choose a valid data object or leave it unbound.');
       return;
     }
     if (!newPageDevices.length) {
@@ -1240,22 +1331,37 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${isCanvasLocked(component) ? 'canvas-component-locked' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${isCanvasLocked(component) ? 'canvas-component-locked' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${selectionIds.includes(component.id) && !previewMode && !libraryPreview ? 'multi-selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
       style={{
         ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
           ? nested
             ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
             : {
-                left: canvasResizePreview?.id === component.id ? canvasResizePreview.x : component.position?.x ?? 0,
-                top: canvasResizePreview?.id === component.id ? canvasResizePreview.y : component.position?.y ?? 0,
-                width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
-                height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
+                left: component.position?.x ?? 0,
+                top: component.position?.y ?? 0,
+                width: component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
+                height: component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
               }
           : {}),
         ...visualStyle,
         ...(component.properties?.fillRegion===true && page.layoutMode==='template' ? {height:'100%',minHeight:0}: {})
       } as React.CSSProperties}
-      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) {
+        if (event.shiftKey && page.layoutMode === 'free-canvas') {
+          const next = selectionIds.includes(component.id) && selectionIds.length > 1
+            ? selectionIds.filter(id => id !== component.id) : [...new Set([...selectionIds, component.id])];
+          setSelectionIds(next);
+          setSelectedId(next.includes(component.id) ? component.id : next[0]);
+        } else {
+          setSelectionIds([component.id]);
+          setSelectedId(component.id);
+        }
+        setPageSettingsOpen(false); setComponentMenuId('');
+      } } : undefined}
+      onPointerDown={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
+      onPointerMove={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
+      onPointerUp={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
+      onPointerCancel={!libraryPreview && page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => {
          if (event.currentTarget !== event.target || previewMode) return;
@@ -1277,12 +1383,34 @@ function PageBuilder({
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
-      draggable={!previewMode && !libraryPreview && !isCanvasLocked(component)}
+      draggable={!previewMode && !libraryPreview && page.layoutMode !== 'free-canvas' && !isCanvasLocked(component)}
       data-component-id={libraryPreview ? undefined : component.id}
       onDragStart={!libraryPreview ? (event) => { if (component.properties.canvasLocked === true || canvasMoveStart.current?.id === component.id) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
+      {!previewMode && !libraryPreview && selectedId === component.id && !nested && <div
+        className="canvas-element-actions" role="toolbar" aria-label={`Actions for ${component.label}`}
+        style={component.position && component.position.y < 60 ? {bottom:'auto',top:'calc(100% + 12px)'} : undefined}
+        onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+        <button type="button" onClick={() => openComponentInspector('Design')} title="Edit appearance"><Pencil size={15}/> Edit</button>
+        {page.layoutMode === 'free-canvas' && <button type="button" onClick={() => openComponentInspector('Position')} title="Position and size"><Maximize2 size={15}/> Position</button>}
+        <button type="button" onClick={() => toggleCanvasLock(component)} title={isCanvasLocked(component) ? 'Unlock' : 'Lock'}>{isCanvasLocked(component) ? <Unlock size={16}/> : <Lock size={16}/>}</button>
+        <button type="button" onClick={duplicateSelected} disabled={isCanvasLocked(component)} title="Duplicate"><Copy size={16}/></button>
+        <button type="button" onClick={() => setComponentMenuId(current => current === component.id ? '' : component.id)}
+          aria-expanded={componentMenuId === component.id} aria-label="More component actions"><MoreHorizontal size={18}/></button>
+        {componentMenuId === component.id && <div className="canvas-action-menu" role="menu" aria-label="More component actions">
+          <button type="button" role="menuitem" onClick={() => {copySelected();setComponentMenuId('');}}>Copy <kbd>Ctrl+C</kbd></button>
+          <button type="button" role="menuitem" disabled={!componentClipboard} onClick={() => {pasteComponent();setComponentMenuId('');}}>Paste <kbd>Ctrl+V</kbd></button>
+          <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={duplicateSelected}>Duplicate <kbd>Ctrl+D</kbd></button>
+          <button type="button" role="menuitem" onClick={() => openComponentInspector('Position')}>Align and position</button>
+          <button type="button" role="menuitem" onClick={() => {moveSelected(-1);setComponentMenuId('');}}>Bring forward</button>
+          <button type="button" role="menuitem" onClick={() => {moveSelected(1);setComponentMenuId('');}}>Send backward</button>
+          <button type="button" role="menuitem" onClick={() => openComponentInspector('Data & Actions')}>Data, links and actions</button>
+          <button type="button" role="menuitem" onClick={() => {updateComponent(component.id,{visible:!component.visible});setComponentMenuId('');}}>{component.visible ? 'Hide' : 'Show'} element</button>
+          <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={() => {removeSelected();setComponentMenuId('');}}>Delete <kbd>Delete</kbd></button>
+        </div>}
+      </div>}
       {!previewMode && !libraryPreview && <div className="record-component-head"
         data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
         onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
@@ -1290,7 +1418,7 @@ function PageBuilder({
         onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
         onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
         <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
-        {component.properties.canvasLocked === true ? <Lock size={13} /> : <MoreHorizontal size={16} />}
+        {isCanvasLocked(component) || component.properties.canvasLocked === true ? <Lock size={13} /> : <GripVertical size={16} />}
       </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
@@ -1359,7 +1487,7 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !previewMode && !isCanvasLocked(component) && component.properties.canvasLocked !== true
         && (['n','ne','e','se','s','sw','w','nw'] as const).map(edge =>
           <button key={edge} type="button" className={`free-canvas-resize-handle resize-${edge}`}
             aria-label={`Resize ${component.label} ${edge}`} title="Drag edge or corner to resize"
@@ -1459,9 +1587,13 @@ function PageBuilder({
           <span className="builder-layout-chip">{pageDeviceLabel(page)} · {page.canvasWidth} × {page.canvasHeight}px · {canvasOrientation(page.canvasWidth,page.canvasHeight)}</span>
         </div>
         <div className="toolbar-actions">
-          <button type="button" className="icon-button subtle" aria-label={componentPanelVisible ? "Hide components panel" : "Show components panel"} aria-pressed={componentPanelVisible} title={componentPanelVisible ? "Hide components" : "Show components"} onClick={() => setComponentPanelVisible(value => !value)}><PanelLeft size={17}/></button>
-          <button type="button" className="icon-button subtle" aria-label={propertiesPanelVisible ? "Hide properties panel" : "Show properties panel"} aria-pressed={propertiesPanelVisible} title={propertiesPanelVisible ? "Hide properties" : "Show properties"} onClick={() => setPropertiesPanelVisible(value => !value)}><PanelRight size={17}/></button>
-          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setPageSettingsOpen(true);setPropertiesPanelVisible(true)}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label={activePanel ? 'Collapse left panel' : 'Expand left panel'} aria-pressed={activePanel !== null}
+            title={activePanel ? 'Collapse left panel' : 'Expand left panel'} onClick={() => setActivePanel(value => value ? null : 'palette')}><PanelLeft size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={() => {setPageSettingsOpen(true);setActivePanel('page');}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onClick={undo}><Undo2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!redoStack.length} onClick={redo}><Redo2 size={17}/></button>
+          {page.layoutMode === 'free-canvas' && <button type="button" className={canvasSnap ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
+            aria-pressed={canvasSnap} onClick={() => setCanvasSnap(value => !value)}>Snap {canvasSnap ? 'on' : 'off'}</button>}
           <button type="button" className="icon-button subtle" aria-label="Fit canvas to view" title="Fit canvas" onClick={()=>setFitCanvas(v=>!v)}><Maximize2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Preview page" title="Preview in new window" onClick={openExternalPreview}><Eye size={17}/></button>
           <button type="button" className="btn btn-small"
@@ -1476,8 +1608,42 @@ function PageBuilder({
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
       </div>
-      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''} ${!componentPanelVisible ? 'canvas-left-hidden' : ''} ${!propertiesPanelVisible ? 'canvas-right-hidden' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px`, '--properties-panel-width': `${propertiesPanelWidth}px` } as React.CSSProperties}>
-        <aside className="component-panel" style={!componentPanelVisible ? { display: "none" } : undefined}>
+      <div className={`page-builder-layout canvas-unified-builder ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''} ${activePanel === null ? 'unified-panel-collapsed' : ''}`}
+        style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
+        <nav className="builder-icon-rail" aria-label="Builder tools">
+          {([
+            ['All Components', Grid2X2, 'All elements'],
+            ['Layout', PanelLeft, 'Layouts'],
+            ['Display', FileText, 'Display'],
+            ['Inputs', SlidersHorizontal, 'Inputs'],
+            ['Data', Database, 'Data'],
+            ['Navigation', ArrowRight, 'Navigation'],
+            ['Favourites', Star, 'Favourites']
+          ] as const).map(([category, Icon, label]) => <button type="button" key={category}
+            aria-label={label} title={label} aria-pressed={activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category}
+            className={activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category ? 'active' : ''}
+            onClick={() => activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category ? setActivePanel(null) : openPalette('Components', category)}>
+            <Icon size={19}/><span>{label}</span>
+          </button>)}
+          {page.pageType === 'Record Page' && <button type="button" title="Fields" aria-label="Fields"
+            aria-pressed={activePanel === 'palette' && paletteTab === 'Fields'}
+            className={activePanel === 'palette' && paletteTab === 'Fields' ? 'active' : ''}
+            onClick={() => openPalette('Fields')}><Database size={19}/><span>Fields</span></button>}
+          <button type="button" title="Layers" aria-label="Layers" aria-pressed={activePanel === 'palette' && paletteTab === 'Layers'}
+            className={activePanel === 'palette' && paletteTab === 'Layers' ? 'active' : ''}
+            onClick={() => openPalette('Layers')}><Layers3 size={19}/><span>Layers</span></button>
+          <button type="button" title="Element properties" aria-label="Element properties" aria-pressed={activePanel === 'properties'}
+            className={activePanel === 'properties' ? 'active' : ''} onClick={() => openComponentInspector()}>
+            <Settings2 size={19}/><span>Properties</span></button>
+          <button type="button" title="Page settings" aria-label="Page settings" aria-pressed={activePanel === 'page'}
+            className={activePanel === 'page' ? 'active' : ''} onClick={() => {setPageSettingsOpen(true);setActivePanel('page');}}>
+            <SlidersHorizontal size={19}/><span>Page</span></button>
+        </nav>
+        <aside className="component-panel" style={activePanel !== 'palette' ? { display: 'none' } : undefined}>
+          <div className="builder-panel-collapse-row"><strong>{paletteTab === 'Components' ? paletteCategory : paletteTab}</strong>
+            <button type="button" aria-label="Collapse element panel" title="Collapse panel" className="icon-button subtle"
+              onClick={() => setActivePanel(null)}><X size={16}/></button>
+          </div>
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
             <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
@@ -1570,7 +1736,7 @@ function PageBuilder({
                 width: page.canvasWidth * fitScale,
                 height: page.canvasHeight * fitScale,
                 minHeight: 0,
-                overflow: 'hidden'
+                overflow: previewMode ? 'hidden' : 'visible'
               } : page.layoutMode === 'template' && page.components.some(c => c.visible && c.properties?.standalonePresentation === true) ? standaloneTemplateCanvasStyle(page.canvasWidth, page.canvasHeight) : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
@@ -1584,8 +1750,8 @@ function PageBuilder({
               >
                 {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
-                {!previewMode && <><div className="canvas-magnet-guide canvas-magnet-guide-x"  aria-hidden="true" />
-                  <div className="canvas-magnet-guide canvas-magnet-guide-y"  aria-hidden="true" /></>}
+                {!previewMode && <><div ref={canvasGuideXRef} className="canvas-magnet-guide canvas-magnet-guide-x" aria-hidden="true" />
+                  <div ref={canvasGuideYRef} className="canvas-magnet-guide canvas-magnet-guide-y" aria-hidden="true" /></>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
                 <div className="record-preview-nav">
@@ -1610,14 +1776,58 @@ function PageBuilder({
             </div>
           </div>
         </div>
-        <aside id="lightning-page-properties" style={!propertiesPanelVisible ? { display: "none" } : undefined} className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}><button className="properties-panel-resize" type="button" aria-label="Resize properties panel" title="Drag to resize" onPointerDown={startPropertiesResize} onPointerMove={movePropertiesResize} onPointerUp={endPropertiesResize} onPointerCancel={endPropertiesResize}/>
-          <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{pageSettingsOpen && selected && <button type="button" className="btn btn-small" onClick={() => setPageSettingsOpen(false)}>Component properties</button>}{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
-          {selected && !pageSettingsOpen ? <>
+        <aside id="lightning-page-properties" style={activePanel !== 'properties' && activePanel !== 'page' ? { display: 'none' } : undefined}
+          className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
+          <div className="properties-header"><h2>{pageSettingsOpen || !selected || activePanel === 'page' ? 'Page properties' : 'Element properties'}</h2>
+            <button type="button" className="icon-button subtle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setActivePanel(null)}><X size={16}/></button>
+            {selected && !pageSettingsOpen && activePanel !== 'page' && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15}/></button>}</div>
+          {selected && !pageSettingsOpen && activePanel !== 'page' ? <>
             <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
-              {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+              {(['Overview', 'Design', 'Data & Actions', 'Position'] as const).map(tab => <button key={tab} type="button" role="tab"
                 aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
                 onClick={() => setInspectorTab(tab)}>{tab}</button>)}
             </div>
+            {inspectorTab === 'Position' ? <div className="canvas-position-editor">
+              <div className="properties-section-title">Arrange</div>
+              <div className="canvas-align-choices">
+                <button type="button" onClick={() => moveSelected(-1)} disabled={isCanvasLocked(selected)} title="Bring forward"><ArrowUp size={15}/> Forward</button>
+                <button type="button" onClick={() => moveSelected(1)} disabled={isCanvasLocked(selected)} title="Send backward"><ArrowDown size={15}/> Backward</button>
+                <button type="button" onClick={() => openPalette('Layers')} title="View all layers"><Layers3 size={15}/> Layers</button>
+              </div>
+              {page.layoutMode === 'free-canvas' && selected.position ? <>
+                <div className="properties-section-title">Align to page</div>
+                <div className="canvas-align-choices" role="group" aria-label="Horizontal alignment">
+                  {(['start','center','end'] as const).map((alignment, index) =>
+                    <button type="button" key={alignment} disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true}
+                      aria-label={['Align left','Align centre','Align right'][index]}
+                      onClick={() => alignSelected('x', alignment)}>{['Left','Centre','Right'][index]}</button>)}
+                </div>
+                <div className="canvas-align-choices" role="group" aria-label="Vertical alignment">
+                  {(['start','center','end'] as const).map((alignment, index) =>
+                    <button type="button" key={alignment} disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true}
+                      aria-label={['Align top','Align middle','Align bottom'][index]}
+                      onClick={() => alignSelected('y', alignment)}>{['Top','Middle','Bottom'][index]}</button>)}
+                </div>
+                <div className="properties-section-title">Size and position</div>
+                <div className="canvas-position-grid">
+                  {(['width','height','x','y'] as const).map(key => {
+                    const pos = selected.position!;
+                    const isSize = key === 'width' || key === 'height';
+                    const limit = key === 'width' || key === 'x' ? page.canvasWidth : page.canvasHeight;
+                    const other = key === 'width' ? pos.x : key === 'height' ? pos.y : key === 'x' ? pos.width : pos.height;
+                    return <label className="form-label" key={key}>{key.toUpperCase()} (px)
+                      <input type="number" className="form-control" step={1} min={isSize ? 1 : 0} max={Math.max(isSize ? 1 : 0, limit-other)}
+                        disabled={isCanvasLocked(selected) || selected.properties.canvasLocked === true} value={pos[key]}
+                        onChange={event => {const value = Number(event.target.value);
+                          if (Number.isFinite(value)) updateComponent(selected.id, { position: { ...pos,
+                            [key]: Math.max(isSize ? 1 : 0, Math.min(limit-other, Math.round(value))) } });
+                        }} />
+                    </label>;
+                  })}
+                </div>
+              </> : <p className="properties-help">Choose a free-canvas element to edit precise position and size. Template layouts position children responsively.</p>}
+              <button type="button" className="btn btn-small" onClick={() => openComponentInspector('Design')}>Appearance and styles</button>
+            </div> : <>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
@@ -1628,8 +1838,11 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
-            {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
-              onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />}
+            {inspectorTab !== 'Data & Actions' && <details className="visual-advanced-properties">
+              <summary>Advanced styles and responsive settings</summary>
+              <PageComponentStyleEditor properties={selected.properties}
+                onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />
+            </details>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
@@ -1814,7 +2027,8 @@ function PageBuilder({
                 updateComponent(selected.id, { properties });
               }} />
             </>}
-            <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
+            <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); setActivePanel('page'); }}>Done</button>
+            </>}
           </> : <>
             <p className="properties-help">Edit page details and activation assignments. The related object and device layout are fixed at creation.</p>
             <label className="form-label" htmlFor="lightning-page-label">Label</label><input id="lightning-page-label" className="form-control" value={page.label} onChange={(event) => applyPage({ ...page, label: event.target.value })} />
@@ -1939,10 +2153,10 @@ function PageBuilder({
               {['Record Page', 'App Page', 'Home Page'].map(type => <option key={type}>{type}</option>)}
             </select>
           </label>
-          <label className="form-label" htmlFor="new-lightning-page-object">Data object
+          <label className="form-label" htmlFor="new-lightning-page-object">Data object {newPageType === 'Record Page' ? '(required)' : '(optional)'}
             <select id="new-lightning-page-object" className="form-control" value={newPageTargetObject}
               onChange={event => setNewPageTargetObject(event.target.value)}>
-              <option value="">Choose an object…</option>
+              <option value="">No data object — bind later</option>
               {objects.map(object => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
             </select>
           </label>
@@ -1992,7 +2206,7 @@ function PageBuilder({
           <div className="modal-actions">
             <button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button>
             <button className="btn btn-brand"
-              disabled={saving || !newPageLabel.trim() || !newPageTargetObject}
+              disabled={saving || !newPageLabel.trim() || (newPageType === 'Record Page' && !newPageTargetObject)}
               onClick={() => void createPage()}><Plus size={14} />{saving ? 'Creating…' : 'Create draft'}</button>
           </div>
         </section>
