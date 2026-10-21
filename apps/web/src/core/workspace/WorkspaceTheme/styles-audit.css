@@ -573,3 +573,76 @@
     border:1px solid CanvasText;
   }
 }
+/* Phase 5: shared no-code builder affordances and editing clarity. */
+.lightning :is(.builder-titlebar,.builder-meta-bar,.dashboard-heading-actions) {
+  row-gap:8px;
+  min-width:0;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option) {
+  border-radius:var(--md-radius-md,8px);
+  transition:background-color 140ms ease,border-color 140ms ease;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option):focus-visible,
+.lightning :is(.canvas-drop-zone,.record-component,.page-region):focus-visible {
+  outline:2px solid var(--md-primary,#1d4ed8);
+  outline-offset:2px;
+}
+.lightning :is(.component-option,.flow-element-option,.field-option):active {
+  background:var(--md-canvas,#f8fafc);
+}
+.lightning :is(.canvas-drop-zone,.record-component.drop-target) {
+  scroll-margin:24px;
+}
+.lightning :is(.canvas-drop-zone,.record-component.drop-target):focus-within {
+  border-color:var(--md-primary,#1d4ed8);
+  box-shadow:0 0 0 2px rgb(29 78 216 / 15%);
+}
+.lightning :is(.properties-panel,.flow-settings) :is(.properties-help,.settings-panel-copy) {
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+@media(pointer:coarse) {
+  .lightning :is(.component-option,.flow-element-option,.field-option) { min-height:44px; }
+  .lightning :is(.properties-panel,.flow-settings) :is(button,[role="button"]) { min-height:44px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .lightning :is(.component-option,.flow-element-option,.field-option) { transition:none; }
+}
+
+/* Phase 5 completion: one coherent keyboard/touch language across optional builders. */
+.lightning :is(.page-manager-header-actions,.flow-toolbar-actions,.dashboard-heading-actions,.toolbar-actions) {
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+}
+.lightning :is(.flow-topbar,.dashboard-builder-header,.builder-titlebar,.page-manager-header) {
+  min-width:0; row-gap:10px;
+}
+.lightning :is(.flow-toolbox,.dashboard-builder-sidebar,.component-panel,.properties-panel) {
+  min-width:0; overscroll-behavior:contain;
+}
+.lightning :is(.flow-element-option,.dashboard-component-tools button,.page-layer-row,.dashboard-outline-select,.field-list-actions button) {
+  min-height:40px;
+}
+.lightning :is(.flow-element-option,.dashboard-component-tools button,.page-layer-row,.dashboard-outline-select):focus-visible {
+  outline:2px solid var(--md-primary,#1d4ed8); outline-offset:2px;
+}
+.lightning :is(.dashboard-builder-canvas,.flow-workarea,.free-canvas-stage,.page-region) {
+  min-width:0; scroll-margin:24px;
+}
+.lightning :is(.dashboard-empty-state,.page-nested-empty,.empty-list,.dashboard-sidebar-empty) {
+  line-height:1.5; overflow-wrap:anywhere;
+}
+.lightning :is(.component-search,.dashboard-name-input,.object-edit-form .form-control) {
+  max-width:100%; min-width:0;
+}
+.lightning :is(.flow-topbar,.dashboard-builder-header,.builder-titlebar) :is(button,[role="button"]):focus-visible {
+  outline:2px solid var(--md-primary,#1d4ed8);outline-offset:2px;
+}
+@media(max-width:900px) {
+  .lightning :is(.flow-workarea,.dashboard-builder-canvas,.page-manager-view) { min-width:0;max-width:100%; }
+  .lightning :is(.flow-topbar,.dashboard-builder-header,.builder-titlebar) { flex-wrap:wrap; }
+  .lightning :is(.flow-toolbar-actions,.dashboard-heading-actions,.toolbar-actions) { row-gap:8px; }
+  .lightning :is(.dashboard-builder-sidebar,.flow-toolbox) { max-width:100%; }
+}
+@media(pointer:coarse) {
+  .lightning :is(.flow-element-option,.dashboard-component-tools button,.page-layer-row,.dashboard-outline-select,.field-list-actions button) { min-height:44px; }
+}
