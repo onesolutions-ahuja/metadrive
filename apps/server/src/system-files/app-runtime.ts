@@ -223,6 +223,10 @@ export class AppRuntime {
         ON CONFLICT(tenant_id,app_id) DO UPDATE SET
           version=EXCLUDED.version,installed_at=now()
       `,[tenantId,app.id,published.version]);
+      if(app.api_name==='AceKiosk'){
+        const {seedAceKioskMenuForTenant}=await import('../app-seeders/acekiosk-menu-flow.js');
+        await seedAceKioskMenuForTenant(client,tenantId);
+      }
     });
   }
   async uninstall(tenantId:string,appApi:string) {
