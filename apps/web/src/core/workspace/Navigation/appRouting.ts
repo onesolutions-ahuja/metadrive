@@ -1,5 +1,6 @@
 import type { WorkspaceId } from '../../metadata/Definitions/metadata';
 import {shortAppEntry} from './shortAppEntry';
+import {standaloneEntryForAppId} from '../Standalone/standaloneEntries';
 
 
 export const objectSettings = [
@@ -160,8 +161,15 @@ export function appRoutePathWithoutBase(route: AppRoute): string {
     }
     return segments.join('/');
   }
-  if (route.kind === 'app-home') return `/une/apps/${encodeURIComponent(route.appId)}/home`;
-  if (route.kind === 'app-page') return `/une/apps/${encodeURIComponent(route.appId)}/pages/${encodeURIComponent(route.pageApiName)}`;
+  if (route.kind === 'app-home') {
+    const standalone=standaloneEntryForAppId(route.appId);
+    return standalone?`/${standalone.slug}`:`/une/apps/${encodeURIComponent(route.appId)}/home`;
+  }
+  if (route.kind === 'app-page') {
+    const standalone=standaloneEntryForAppId(route.appId);
+    return standalone?`/${standalone.slug}?page=${encodeURIComponent(route.pageApiName)}`:
+      `/une/apps/${encodeURIComponent(route.appId)}/pages/${encodeURIComponent(route.pageApiName)}`;
+  }
   if (route.kind === 'route-alias') return `/une/apps/${encodeURIComponent(route.appId)}/routes/${encodeURIComponent(route.slug)}`;
   if (route.kind === 'record-list') {
     const query = new URLSearchParams({ filterName: `All${route.objectApiName}s` });
