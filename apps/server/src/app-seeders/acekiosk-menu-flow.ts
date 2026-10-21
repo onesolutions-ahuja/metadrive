@@ -14,6 +14,29 @@ export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
  for(const {tenant_id:tenantId} of tenants.rows){
   const created=await db.transaction(async client=>{
    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':flow:AceKioskLoadMenu']);
+   // App-specific OneEngine permission set. Assignment is explicit, never inferred
+   // from a landing page or app installation.
+   await client.query(`INSERT INTO md_permission_sets
+      (tenant_id,api_name,label,description,navigation_default_access)
+      VALUES($1,'AceKioskUser','AceKiosk User',
+        'Authorised kiosk menu records and menu Flow','Deny')
+      ON CONFLICT(tenant_id,api_name) DO NOTHING`,[tenantId]);
+   await client.query(`
+      INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+      SELECT $1,p.id,rights.resource,rights.action,'allow'
+      FROM md_permission_sets p CROSS JOIN (VALUES
+        ('App:AceKiosk','read'),('Flow:AceKioskLoadMenu','execute'),
+        ('Product','read'),('MenuCategory','read'),
+        ('Product.Name','read'),('Product.Price','read'),
+        ('Product.UnitPrice','read'),('Product.SalePrice','read'),
+        ('Product.Description','read'),('Product.ImageUrl','read'),
+        ('Product.MenuCategory','read'),('Product.Active','read'),
+        ('Product.Category','read'),('Product.DisplayOrder','read'),
+        ('MenuCategory.Name','read'),('MenuCategory.DisplayOrder','read'),
+        ('MenuCategory.Active','read')
+      ) rights(resource,action)
+      WHERE p.tenant_id=$1 AND p.api_name='AceKioskUser'
+      ON CONFLICT DO NOTHING`,[tenantId]);
    const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 LIMIT 1',[tenantId,'AceKioskLoadMenu']);
    if(existing.rowCount)return false; // Never change or activate an existing tenant-customised Flow.
    // Only the installed application's missing schema is provisioned.
