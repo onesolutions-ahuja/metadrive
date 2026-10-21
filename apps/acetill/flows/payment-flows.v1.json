@@ -91,7 +91,7 @@
         "id": "13",
         "kind": "normal",
         "label": "Next",
-        "to": 13
+        "to": 20
       },
       {
         "from": 13,
@@ -105,7 +105,7 @@
         "id": "15",
         "kind": "normal",
         "label": "After Last",
-        "to": 16
+        "to": 22
       },
       {
         "from": 14,
@@ -119,7 +119,7 @@
         "id": "17",
         "kind": "normal",
         "label": "Next",
-        "to": 13
+        "to": 21
       },
       {
         "from": 16,
@@ -141,6 +141,34 @@
         "kind": "normal",
         "label": "Next",
         "to": 19
+      },
+      {
+        "id": "21",
+        "from": 20,
+        "to": 13,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "id": "21",
+        "from": 21,
+        "to": 13,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "id": "21",
+        "from": 22,
+        "to": 16,
+        "kind": "normal",
+        "label": "Match"
+      },
+      {
+        "id": "21",
+        "from": 22,
+        "to": 23,
+        "kind": "normal",
+        "label": "Default"
       }
     ],
     "elements": [
@@ -441,6 +469,56 @@
         "id": 19,
         "label": "End",
         "type": "End"
+      },
+      {
+        "id": 20,
+        "type": "Assignment",
+        "label": "Initialize saved line total",
+        "config": {
+          "variable": "secondTotal",
+          "operator": "Assign",
+          "value": 0
+        }
+      },
+      {
+        "id": 21,
+        "type": "Assignment",
+        "label": "Accumulate saved line amount",
+        "config": {
+          "variable": "secondTotal",
+          "operator": "Add",
+          "value": "{!lineAmount}"
+        }
+      },
+      {
+        "id": 22,
+        "type": "Decision",
+        "label": "Verify order and line totals",
+        "config": {
+          "outcomes": [
+            {
+              "name": "Match",
+              "label": "Match",
+              "conditions": [
+                {
+                  "field": "{!secondTotal}",
+                  "operator": "Equals",
+                  "value": "{!validatedTotal}"
+                }
+              ],
+              "conditionLogic": "All"
+            }
+          ]
+        }
+      },
+      {
+        "id": 23,
+        "type": "Custom Error",
+        "label": "Reject price changes",
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "Product price changed during checkout; no sale was recorded. Please try again."
+        }
       }
     ],
     "flowType": "Autolaunched Flow",
@@ -520,6 +598,11 @@
         "dataType": "Number",
         "name": "total",
         "type": "Variable"
+      },
+      {
+        "name": "secondTotal",
+        "type": "Variable",
+        "dataType": "Number"
       }
     ],
     "startConfig": {
@@ -527,7 +610,8 @@
     },
     "status": "Draft",
     "tests": [],
-    "versions": []
+    "versions": [],
+    "appApiName": "Acetill"
   },
   "AcetillPaymentCard": {
     "apiName": "AcetillPaymentCard",
@@ -621,7 +705,7 @@
         "id": "13",
         "kind": "normal",
         "label": "Next",
-        "to": 13
+        "to": 20
       },
       {
         "from": 13,
@@ -635,7 +719,7 @@
         "id": "15",
         "kind": "normal",
         "label": "After Last",
-        "to": 16
+        "to": 22
       },
       {
         "from": 14,
@@ -649,7 +733,7 @@
         "id": "17",
         "kind": "normal",
         "label": "Next",
-        "to": 13
+        "to": 21
       },
       {
         "from": 16,
@@ -671,6 +755,34 @@
         "kind": "normal",
         "label": "Next",
         "to": 19
+      },
+      {
+        "id": "21",
+        "from": 20,
+        "to": 13,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "id": "21",
+        "from": 21,
+        "to": 13,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "id": "21",
+        "from": 22,
+        "to": 16,
+        "kind": "normal",
+        "label": "Match"
+      },
+      {
+        "id": "21",
+        "from": 22,
+        "to": 23,
+        "kind": "normal",
+        "label": "Default"
       }
     ],
     "elements": [
@@ -963,6 +1075,56 @@
         "id": 19,
         "label": "End",
         "type": "End"
+      },
+      {
+        "id": 20,
+        "type": "Assignment",
+        "label": "Initialize saved line total",
+        "config": {
+          "variable": "secondTotal",
+          "operator": "Assign",
+          "value": 0
+        }
+      },
+      {
+        "id": 21,
+        "type": "Assignment",
+        "label": "Accumulate saved line amount",
+        "config": {
+          "variable": "secondTotal",
+          "operator": "Add",
+          "value": "{!lineAmount}"
+        }
+      },
+      {
+        "id": 22,
+        "type": "Decision",
+        "label": "Verify order and line totals",
+        "config": {
+          "outcomes": [
+            {
+              "name": "Match",
+              "label": "Match",
+              "conditions": [
+                {
+                  "field": "{!secondTotal}",
+                  "operator": "Equals",
+                  "value": "{!validatedTotal}"
+                }
+              ],
+              "conditionLogic": "All"
+            }
+          ]
+        }
+      },
+      {
+        "id": 23,
+        "type": "Custom Error",
+        "label": "Reject price changes",
+        "config": {
+          "errorLocation": "Page",
+          "errorMessage": "Product price changed during checkout; no sale was recorded. Please try again."
+        }
       }
     ],
     "flowType": "Autolaunched Flow",
@@ -1036,6 +1198,11 @@
         "dataType": "Number",
         "name": "total",
         "type": "Variable"
+      },
+      {
+        "name": "secondTotal",
+        "type": "Variable",
+        "dataType": "Number"
       }
     ],
     "startConfig": {
@@ -1043,6 +1210,7 @@
     },
     "status": "Draft",
     "tests": [],
-    "versions": []
+    "versions": [],
+    "appApiName": "Acetill"
   }
 }
