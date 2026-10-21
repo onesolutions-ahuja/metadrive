@@ -290,6 +290,13 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/health',route(async(_req,res)=>{
     await db.query('SELECT 1 FROM md_tenants LIMIT 1');res.json({status:'ok',persistence:'sql'});
   }));
+  // Landing routing is returned with the authenticated session, not fetched after rendering Setup.
+  const landingPreference=async(tenantId:string,userId:string)=>{
+    const {rows}=await db.query<{landing_app_api:string}>(
+      'SELECT landing_app_api FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
+      [tenantId,userId]);
+    return rows[0]?.landing_app_api??'Setup';
+  };
   app.post('/api/auth/login',route(async(req,res)=>{
     const {tenantSlug,email,password}=req.body??{};
     if(typeof email!=='string'||typeof password!=='string'||!email.trim()) {
@@ -303,7 +310,7 @@ export function createSystemServer(db:SqlPersistence) {
       if(challenge){res.json(challenge);return;}
       const session=await auth.issuePasswordSession(tenantId,userId,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId)});
     } catch(error) {
       // Distinguish rejected credentials from SQL/session failures. A successful
       // password check followed by a failed database write must not become 401.
@@ -318,7 +325,7 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const session=await auth.refresh(token,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id)});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
   app.post('/api/auth/password-reset/request',route(async(req,res)=>{
@@ -334,7 +341,8 @@ export function createSystemServer(db:SqlPersistence) {
   app.post('/api/auth/mfa/verify',route(async(req,res)=>{
     const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code,{ip:req.ip});
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-    res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+    const actor=await auth.authenticate(session.accessToken);
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id)});
   }));
   // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
   app.get('/api/oauth/callback',route(async(req,res)=>{
