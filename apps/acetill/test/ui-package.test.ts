@@ -69,6 +69,19 @@ test('Flow-only terminal requires confirmed payment before showing receipt',()=>
  assert.match(ui,/find\('GetProducts'\)/);
  assert.match(ui,/find\('PrintReceipt'\)/);
  assert.match(ui,/find\('EmailReceipt'\)/);
- assert.match(ui,/if\(completed\)\{setReceipt/);
+ assert.match(ui,/if\(completed\)\{\s*setReceipt/);
  assert.doesNotMatch(ui,/\/records\/|db\.query|OneShoppingCart|OneItemGrid/);
+});
+
+test('customer display mirrors cart, and payments use only permitted Cash/Card Flows',()=>{
+ const ui=readFileSync(fileURLToPath(new URL('../src/AcetillTerminal.tsx',import.meta.url)),'utf8');
+ assert.match(ui,/find\('PaymentCash'\)/);
+ assert.match(ui,/find\('PaymentCard'\)/);
+ assert.match(ui,/createPortal\(/);
+ assert.match(ui,/window\.open\(/);
+ assert.match(ui,/customer-window|customerWindow/);
+ assert.match(ui,/cashReceived:received,changeDue/);
+ assert.match(ui,/cardPaymentConfirmed:true/);
+ assert.match(ui,/if\(completed\)\{\s*setReceipt/);
+ assert.doesNotMatch(ui,/\/records\/|db\.query/);
 });

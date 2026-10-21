@@ -1,4 +1,5 @@
 import * as React from 'react';
+import {createPortal} from 'react-dom';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import './acetill-terminal.css';
 
@@ -6,7 +7,7 @@ type Row=Record<string,unknown>;
 type Action={apiName:string;label:string};
 type Item={id:string;name:string;price:number;image:string;category:string;categoryId:string;quantity:number};
 type Category={id:string;name:string;order:number};
-type Result={outputs?:Row;records?:Row[];interviewId?:string};
+type Result={outputs?:Row;records?:Row[];interviewId?:string;completed?:boolean};
 const asText=(v:unknown)=>v==null?'':String(v);
 const amount=(v:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v);
 function product(row:Row):Item|null {
@@ -45,6 +46,37 @@ export default function AcetillTerminal(){
   const [message,setMessage]=React.useState('');
   const [loading,setLoading]=React.useState(true);
   const [receipt,setReceipt]=React.useState<Row|null>(null);
+  const [paymentMode,setPaymentMode]=React.useState<'cash'|'card'|null>(null);
+  const [cashReceived,setCashReceived]=React.useState('');
+  const [customerWindow,setCustomerWindow]=React.useState<Window|null>(null);
+  const customerWindowRef=React.useRef<Window|null>(null);
+  const openCustomerDisplay=()=>{
+    const current=customerWindowRef.current;
+    if(current&&!current.closed){current.focus();return;}
+    const popup=window.open('','acetill-customer-display','popup=yes,width=900,height=720');
+    if(!popup){setError('Customer display popup was blocked. Allow popups for Acetill.');return;}
+    popup.document.title='Acetill • Customer display';
+    popup.document.body.innerHTML='';
+    const style=popup.document.createElement('style');
+    style.textContent='body{margin:0;background:#f6f9fe;color:#1c293b;font-family:Inter,system-ui,sans-serif} .customer-screen{min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;padding:clamp(20px,4vw,50px);gap:20px}.customer-screen h1{font-size:clamp(30px,5vw,58px);margin:0;color:#1267e5}.customer-items{flex:1;overflow-y:auto}.customer-item{display:flex;justify-content:space-between;padding:18px 0;border-bottom:1px solid #dfe7f1;font-size:clamp(18px,2.5vw,30px)}.customer-total{display:flex;justify-content:space-between;border-top:3px solid #cbd7e8;padding-top:24px;font-size:clamp(24px,4vw,48px);font-weight:800}.customer-thankyou{margin:auto;text-align:center;font-size:clamp(28px,5vw,60px)}';
+    popup.document.head.appendChild(style);
+    customerWindowRef.current=popup;
+    setCustomerWindow(popup);
+  };
+  React.useEffect(()=>{
+    return ()=>{const popup=customerWindowRef.current;if(popup&&!popup.closed)popup.close();};
+  },[]);
+  const customerDisplay=customerWindow&&!customerWindow.closed?createPortal(
+    <div className="customer-screen">
+      <h1>Welcome to Acetill</h1>
+      {receipt?<div className="customer-thankyou" role="status">Thank you for shopping with us!<p>Payment complete</p></div>:
+        <><h2>{cart.length?'Your order':'Your order will appear here'}</h2>
+          <div className="customer-items">{cart.map(item=><div className="customer-item" key={item.id}>
+            <span>{item.quantity} × {item.name}</span><strong>{amount(item.quantity*item.price)}</strong>
+          </div>)}</div>
+          <div className="customer-total"><span>Subtotal</span><span>{amount(cart.reduce((n,item)=>n+item.quantity*item.price,0))}</span></div>
+          <p>Final total confirmed at payment</p></>}
+    </div>,customerWindow.document.body):null;
   const pending=React.useRef(false);
   React.useEffect(()=>{
     let active=true;
@@ -66,7 +98,8 @@ export default function AcetillTerminal(){
   const find=(suffix:string)=>actions.find(a=>a.apiName.toLowerCase()==='acetill'+suffix.toLowerCase());
   const getProducts=find('GetProducts');
   const getCategories=find('GetCategories');
-  const checkout=find('Checkout')??find('CompleteSale');
+  const paymentCash=find('PaymentCash');
+  const paymentCard=find('PaymentCard');
   // Read-only catalogue flows may run simultaneously; checkout and write actions remain serialized.
   const executeRead=React.useCallback(async(action:Action,inputs:Row)=>{
     return apiRequest<Result>('/flows/'+encodeURIComponent(action.apiName)+'/execute',{
@@ -111,18 +144,59 @@ export default function AcetillTerminal(){
   const subtotal=cart.reduce((n,x)=>n+x.quantity*x.price,0);
   const add=(item:Item)=>setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});
   const change=(id:string,delta:number)=>setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));
-  const runCheckout=async()=>{
-    if(!checkout||!cart.length)return;
+  const received=Number(cashReceived);
+  const tenderValid=Number.isFinite(received)&&cashReceived.trim()!==''&&
+    Math.round(received*100)>=Math.round(subtotal*100);
+  const changeDue=tenderValid?(Math.round(received*100)-Math.round(subtotal*100))/100:0;
+  const confirmPayment=async()=>{
+    const method=paymentMode;
+    const flow=method==='cash'?paymentCash:paymentCard;
+    if(!method||!flow||!cart.length||busy||(method==='cash'&&!tenderValid))return;
     try {
-      const result=await execute(checkout,{cartItems:cart.map(x=>({productId:x.id,quantity:x.quantity})),cartTotal:subtotal});
-      const status=asText(result.outputs?.status).toLowerCase();
-      const completed=!result.interviewId&&(status==='complete'||status==='completed'||status==='success');
-      setMessage(completed?'Sale confirmed.':result.interviewId?'Checkout workflow started; sale is not yet confirmed.':asText(result.outputs?.message??'Checkout is not confirmed.'));
-      // Never clear the basket or offer a receipt until the Flow confirms the sale.
-      if(completed){setReceipt(result.outputs??{});setCart([]);}
+      const result=await execute(flow,{
+        cartItems:cart.map(x=>({productId:x.id,quantity:x.quantity,unitPrice:x.price})),
+        cartTotal:subtotal,paymentMethod:method==='cash'?'Cash':'Card',
+        ...(method==='cash'?{cashReceived:received,changeDue}:{cardPaymentConfirmed:true})
+      });
+      const outputs=result.outputs??{};
+      const status=asText(outputs.status).toLowerCase();
+      const completed=!result.interviewId&&(
+        result.completed===true||status==='complete'||status==='completed'||status==='success');
+      if(completed){
+        setReceipt(outputs);
+        setCart([]);
+        setPaymentMode(null);
+        setCashReceived('');
+        setMessage('Sale confirmed by '+flow.apiName+'.');
+      }else {
+        setError(result.interviewId?'Payment Flow is still running; sale was not confirmed.':
+          asText(outputs.message??'Payment Flow has not confirmed this sale.'));
+      }
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   };
-  return receipt?<main className="acetill-receipt-screen" aria-label="Sale completed">
+  const displayButton=<button type="button" className="acetill-display-button" onClick={openCustomerDisplay}
+    aria-label="Open customer display on second screen" title="Open customer display">▣ <span>Customer display</span></button>;
+  const paymentDialog=paymentMode?<div className="acetill-payment-backdrop" role="presentation">
+    <section className="acetill-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="acetill-payment-title">
+      <h2 id="acetill-payment-title">{paymentMode==='cash'?'Cash payment':'Card Payment Done?'}</h2>
+      {paymentMode==='cash'?<>
+        <p>Amount due: <strong>{amount(subtotal)}</strong></p>
+        <label>Cash received (£)<input type="number" inputMode="decimal" min={subtotal.toFixed(2)}
+          step="0.01" autoFocus value={cashReceived} onChange={e=>setCashReceived(e.target.value)}/></label>
+        <p>Change to return: <strong>{amount(changeDue)}</strong></p>
+      </>:<p>Has the card payment been completed successfully on the card terminal?</p>}
+      {error&&<p role="alert" className="acetill-error">{error}</p>}
+      <div className="acetill-payment-buttons">
+        <button type="button" disabled={busy} onClick={()=>{setPaymentMode(null);setError('');}}>No / Cancel</button>
+        <button type="button" className="acetill-charge" disabled={busy||
+          (paymentMode==='cash'?(!paymentCash||!tenderValid):!paymentCard)} onClick={()=>void confirmPayment()}>
+          {busy?'Saving…':paymentMode==='cash'?'Tender cash':'Yes, payment done'}
+        </button>
+      </div>
+      {!(paymentMode==='cash'?paymentCash:paymentCard)&&<p role="status">Configure and permit the {paymentMode==='cash'?'AcetillPaymentCash':'AcetillPaymentCard'} Flow.</p>}
+    </section>
+  </div>:null;
+  return receipt?<><main className="acetill-receipt-screen" aria-label="Sale completed">
     <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
       <h1>Payment complete</h1><p>Your OneEngine checkout Flow confirmed this transaction.</p>
       <dl><div><dt>Order reference</dt><dd>{asText(receipt.orderId??receipt.orderNumber??receipt.OrderId)||'Confirmed'}</dd></div>
@@ -132,13 +206,14 @@ export default function AcetillTerminal(){
         {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
         <button type="button" className="acetill-charge" onClick={()=>{setReceipt(null);setMessage('');setError('');}}>New sale</button>
       </div>{error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
-    </section></main>:<main className="acetill-terminal">
+    </section></main>{customerDisplay}</>:<><main className="acetill-terminal">
     <section className="acetill-shop" aria-label="Acetill product catalogue">
       <div className="acetill-topline">
         <nav aria-label="Product categories" className="acetill-category-tabs">
           <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
+        {displayButton}
         <label className="acetill-search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
@@ -177,10 +252,13 @@ export default function AcetillTerminal(){
       <div className="acetill-checkout"><div className="acetill-subtotal"><span>Estimated subtotal</span><span>{amount(subtotal)}</span></div>
         <p>Final tax, discounts and payment are calculated by OneEngine Flows.</p>
         <div className="acetill-total"><strong>Subtotal</strong><strong>{amount(subtotal)}</strong></div>
-        <button className="acetill-charge" disabled={!checkout||!cart.length||busy} type="button" onClick={()=>void runCheckout()}>
-          {busy?'Processing…':checkout?'Charge '+amount(subtotal):'Connect checkout Flow'} →
-        </button>
+        <div className="acetill-payment-choices">
+          <button type="button" className="acetill-charge" disabled={!cart.length||busy}
+            onClick={()=>{setError('');setCashReceived('');setPaymentMode('cash');}}>Cash</button>
+          <button type="button" className="acetill-charge" disabled={!cart.length||busy}
+            onClick={()=>{setError('');setPaymentMode('card');}}>Card</button>
+        </div>
       </div>
     </aside>
-  </main>;
+  </main>{paymentDialog}{customerDisplay}</>;
 }
