@@ -85,6 +85,7 @@
     "apps/server/test/system/system.test.ts",
     "apps/server/test/system/typed-runtime-contract.test.ts",
     "apps/server/test/system/user-account-lock-contract.test.ts",
+    "apps/server/test/system/whatsapp-named-credential.test.ts",
     "apps/web/test/acekiosk/contract.test.ts",
     "apps/web/test/authentication/login-bootstrap.test.mjs",
     "apps/web/test/authentication/readSubmittedLogin.test.mjs",
