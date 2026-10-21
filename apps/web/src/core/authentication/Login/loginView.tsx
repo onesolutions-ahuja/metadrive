@@ -16,8 +16,8 @@ type LandingBootstrap = {
     recordTypeAccess: Record<string, boolean>;
   };
 };
-type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
-type LoginResult={access_token?:string;landing?:LandingBootstrap;mfa_required?:boolean;challenge_token?:string;setup_secret?:string;enrollment_required?:boolean};
+type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap; landingAppApi?: string };
+type LoginResult={access_token?:string;landing?:LandingBootstrap;landingAppApi?:string;mfa_required?:boolean;challenge_token?:string;setup_secret?:string;enrollment_required?:boolean};
 let federationCompletion:Promise<LoginResult|undefined>|undefined;
 
 export type ProductLoginBrand = { label: string; eyebrow: string; tagline: string; accent: string; signInDescription: string };
@@ -39,10 +39,10 @@ export function createLoginView(logoUrl: string) {
     const [code,setCode]=useState('');
     const [providers,setProviders]=useState<Array<{id:string;label:string}>>([]);
     const [recovering,setRecovering]=useState(()=>new URLSearchParams(window.location.search).has('resetToken'));
-    const accept=(session:{access_token?:string;landing?:LandingBootstrap;mfa_required?:boolean;challenge_token?:string;setup_secret?:string;enrollment_required?:boolean},startedAt:number)=>{
+    const accept=(session:{access_token?:string;landing?:LandingBootstrap;landingAppApi?:string;mfa_required?:boolean;challenge_token?:string;setup_secret?:string;enrollment_required?:boolean},startedAt:number)=>{
       if(session.mfa_required&&session.challenge_token){setPassword('');setChallenge({...session,challenge_token:session.challenge_token});return;}
       if(!session.access_token)throw Error('Authentication did not return an access token');
-      setAccessToken(session.access_token);onSuccess?.({kind:'login',startedAt,authenticatedAt:performance.now(),landing:session.landing});
+      setAccessToken(session.access_token);onSuccess?.({kind:'login',startedAt,authenticatedAt:performance.now(),landing:session.landing,landingAppApi:session.landingAppApi});
     };
     useEffect(()=>{
       let active=true;
@@ -75,6 +75,7 @@ export function createLoginView(logoUrl: string) {
         const session = await apiRequest<{
           access_token?: string;
           landing?: LandingBootstrap;
+          landingAppApi?: string;
           mfa_required?: boolean;
           challenge_token?:string;setup_secret?:string;enrollment_required?:boolean;
         }>(challenge?'/auth/mfa/verify':'/auth/login?landing=1', {
