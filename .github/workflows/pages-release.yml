@@ -9,10 +9,11 @@ permissions:
   contents: read
   pages: write
   id-token: write
-# A newer release must supersede a stale, queued Pages deployment instead of
-# leaving the latest production frontend blocked behind obsolete commits.
+# A newer production release supersedes a stale one, but pull-request
+# verification runs use their own per-ref group so opening or updating a PR
+# can never cancel a publish from main.
 concurrency:
-  group: metadrive-pages-release
+  group: ${{ github.event_name == 'pull_request' && format('metadrive-pages-verify-{0}', github.ref) || 'metadrive-pages-release' }}
   cancel-in-progress: true
 jobs:
   verify:
