@@ -21,8 +21,6 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
   const [busy,setBusy]=useState(true);
   const [error,setError]=useState('');
   const [message,setMessage]=useState('');
-  const [editing,setEditing]=useState(false);
-  const [draft,setDraft]=useState<Record<string,unknown>>({});
   const [flowInput,setFlowInput]=useState('{}');
   const [flowActions,setFlowActions]=useState<Array<{apiName:string;label:string}>>([]);
   const [flowError,setFlowError]=useState('');
@@ -45,7 +43,7 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
     return()=>{active=false;};
   },[]);
   useEffect(()=>{
-    let active=true;setRows([]);setEditing(false);setMessage('');
+    let active=true;setRows([]);setMessage('');
     if(!metadata)return;
     setBusy(true);setError('');
     void apiRequest<{records:DataRow[]}>(`/records/${encodeURIComponent(metadata.apiName)}?limit=50`).then(response=>{
@@ -53,17 +51,6 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
     }).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;};
   },[metadata?.apiName,reload]);
-  const fields=(metadata?.fields??[]).filter(f=>!['Id','CreatedDate','LastModifiedDate','CreatedById','LastModifiedById'].includes(f.apiName));
-  const editable=fields.filter(f=>!['formula','rollup','autonumber'].includes((f.type??'').toLowerCase()));
-  const save=async()=>{
-    if(!metadata)return;
-    setBusy(true);setError('');
-    try{
-      await apiRequest('/records/'+encodeURIComponent(metadata.apiName),{method:'POST',body:JSON.stringify(draft)});
-      setEditing(false);setDraft({});setMessage('Record created');setReload(v=>v+1);
-    }catch(e){setError(e instanceof Error?e.message:String(e));}
-    finally{setBusy(false);}
-  };
   const execute=async(flow:string)=>{
     try{
       const values=JSON.parse(flowInput);
@@ -89,23 +76,14 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
     </nav>
     <main className="standalone-product-content">
       <h1>{current?.label??entry.label}</h1>
-      <p>Live tenant records and shared OneEngine permissions. Access and validation are enforced by the server.</p>
+      <p>Live tenant records are read-only here. All business changes run through centrally authorised OneEngine workflows.</p>
       {error&&<p role="alert" className="standalone-product-message">{error}</p>}
       {message&&<p role="status" className="standalone-product-message">{message}</p>}
       {!metadata&&!busy&&<p role="status">The {current?.object} object is not available to this user or tenant. Check Object Manager and permissions.</p>}
       {metadata&&<>
-        <div style={{display:'flex',gap:12,marginBottom:16}}>
+        <div style={{marginBottom:16}}>
           <button type="button" disabled={busy} onClick={()=>setReload(v=>v+1)}>Refresh</button>
-          <button type="button" disabled={busy} onClick={()=>{setDraft({});setEditing(v=>!v);}}>{editing?'Cancel':'New '+(metadata.label??current.label)}</button>
         </div>
-        {editing&&<form onSubmit={e=>{e.preventDefault();void save();}} style={{display:'grid',gap:12,maxWidth:580,marginBottom:24}}>
-          {editable.map(f=><label key={f.apiName}>{f.label??f.apiName}
-            {['boolean','checkbox'].includes((f.type??'').toLowerCase())
-              ?<input type="checkbox" checked={draft[f.apiName]===true} onChange={e=>setDraft(v=>({...v,[f.apiName]:e.target.checked}))}/>
-              :<input style={{display:'block',width:'100%'}} value={String(draft[f.apiName]??'')} onChange={e=>setDraft(v=>({...v,[f.apiName]:e.target.value}))}/>}
-          </label>)}
-          <button disabled={busy} type="submit">Create record</button>
-        </form>}
         {busy?<p role="status">Loading records…</p>:rows.length===0?<p>No accessible records.</p>:
         <div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse'}}>
           <thead><tr>{Object.keys(rows[0]).slice(0,8).map(key=><th key={key} scope="col" style={{padding:10,textAlign:'left'}}>{key}</th>)}</tr></thead>
