@@ -75,7 +75,7 @@ export class FlowRecordQuery {
         throw new Error('Flow filter field is not readable: '+field.api_name);
       const operator=String(item.operator??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
       const valueExpression=item.field==='Id'?'r.id::text':`(
-        SELECT COALESCE(v.value_text,v.reference_record_id::text)
+        SELECT COALESCE(v.value_text,v.reference_record_id::text,v.value_boolean::text,v.value_number::text,v.value_date::text,v.value_datetime::text)
         FROM md_record_values v
         WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
           AND v.field_api=${'$'+(params.length+1)}
@@ -144,7 +144,7 @@ export class FlowRecordQuery {
         throw new Error('Invalid Flow sort order');
       const direction=['Descending','desc'].includes(options.sortOrder??'')?'DESC':'ASC';
       sort=options.sortField==='Id'?`r.id ${direction}`:`(
-        SELECT COALESCE(sv.value_text,sv.reference_record_id::text)
+        SELECT COALESCE(sv.value_text,sv.reference_record_id::text,sv.value_boolean::text,sv.value_number::text,sv.value_date::text,sv.value_datetime::text)
         FROM md_record_values sv
         WHERE sv.tenant_id=r.tenant_id AND sv.record_id=r.id AND sv.object_api=r.object_api
           AND sv.field_api=${'$'+(params.length+1)}
