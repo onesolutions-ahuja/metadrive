@@ -98,13 +98,16 @@ test('cash/card payment Flow graphs use server Product prices and create both Or
    &&r.dataType==='OrderLine'&&r.isCollection&&r.availableForInput));
   const nodes=graph.elements;
   assert.ok(nodes.some(n=>n.type==='Get Records'&&n.config.object==='Product'
-   &&n.config.conditions.some(c=>c.field==='Id'&&c.value==='{!currentLine.Product}')));
+   &&n.config.conditions.some(c=>c.field==='Id'&&(c.value==='{!verifyLine.Product}'||c.value==='{!saveLine.Product}'))));
   const order=nodes.find(n=>n.type==='Create Records'&&n.config.object==='Order');
   const line=nodes.find(n=>n.type==='Create Records'&&n.config.object==='OrderLine');
   assert.ok(order&&line);
   assert.equal(order.config.fieldValues.find(f=>f.field==='Total')?.value,'{!validatedTotal}');
   assert.equal(line.config.fieldValues.find(f=>f.field==='UnitPrice')?.value,'{!currentProduct.Price}');
-  assert.equal(line.config.fieldValues.find(f=>f.field==='LineTotal')?.value,'{!lineAmount}');
+  assert.equal(line.config.fieldValues.find(f=>f.field==='LineTotal')?.value,'{!saveLineAmount}');
+  assert.equal(graph.appApiName,'Acetill');
+  assert.ok(nodes.some(n=>n.type==='Decision'&&n.config.outcomes?.some(o=>o.label==='Match')));
+  assert.ok(nodes.some(n=>n.type==='Custom Error'&&String(n.config.errorMessage).includes('Product price changed')));
   assert.ok(nodes.some(n=>n.type==='Loop'&&n.config.collection==='cartItems'));
   assert.ok(nodes.some(n=>n.type==='Custom Error'));
   assert.ok(nodes.some(n=>n.type==='Assignment'&&n.config.variable==='status'&&n.config.value==='completed'));
