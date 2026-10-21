@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 14,
+  "version": 15,
   "scope": "platform-core",
   "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
   "cssFile": "one/OneItemGrid/OneItemGrid.css",
@@ -348,6 +348,13 @@
           "label": "Scale down"
         }
       ]
+    },
+    {
+      "propertyKey": "imageRadius",
+      "label": "Product image corner radius (px)",
+      "kind": "NUMBER",
+      "defaultValue": 18,
+      "displayOrder": 532
     },
     {
       "propertyKey": "imageAspectRatio",
