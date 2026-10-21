@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ACETILL} from '../src/manifest.js';
-import {parseAppRoute} from '../../web/src/core/workspace/Navigation/appRouting.js';
+import {shortAppEntry} from '../../web/src/core/workspace/Navigation/shortAppEntry.js';
 import {buildAcetillNavigation,canOpenAcetill,isAcetillPage} from '../src/contract.js';
 
 test('Acetill keeps administration and shared platform outside its package',()=>{
@@ -23,7 +23,7 @@ test('only declared metadata pages enter navigation',()=>{
 });
 
 test('public /acetill entrypoint retains shared authenticated app home routing',()=>{
- assert.deepEqual(parseAppRoute('/acetill'),{kind:'app-home',appId:'Acetill'});
- assert.deepEqual(parseAppRoute('/une/apps/Acetill/home'),{kind:'app-home',appId:'Acetill'});
- assert.deepEqual(parseAppRoute('/une/setup/home'),{kind:'setup',workspace:'home'});
+ assert.equal(shortAppEntry('/acetill'),'Acetill');
+ assert.equal(shortAppEntry('/une/apps/Acetill/home'),null);
+ assert.equal(shortAppEntry('/une/setup/home'),null);
 });
