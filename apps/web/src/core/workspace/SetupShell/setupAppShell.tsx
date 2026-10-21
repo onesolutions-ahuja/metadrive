@@ -692,7 +692,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     if (item === 'Tenant Management') {
       openSetupWorkspace('tenant-management'); return;
     }
-    if (item === 'Named Credentials') {
+    if (item === 'Named Credentials' || item === 'Webhook Endpoints') {
       openSetupWorkspace('named-credentials');
       return;
     }

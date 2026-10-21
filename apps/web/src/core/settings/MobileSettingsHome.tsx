@@ -63,7 +63,7 @@ export default function MobileSettingsHome({rights, request, loading, onOpen}:{
       if (label === 'Setup Home') return false;
       if (label === 'Tenant Management') return rights.manageTenants || rights.viewMetadata;
       if (label === 'Named Devices') return rights.namedDevices;
-      if (label === 'Named Credentials') return credentialAccess;
+      if (label === 'Named Credentials' || label === 'Webhook Endpoints') return credentialAccess || rights.viewMetadata;
       if (group === 'Security') return rights.viewSecurity;
       if (group === 'Automation') return rights.viewMetadata || rights.manageFlows;
       return rights.viewMetadata;
