@@ -489,7 +489,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     // leaves SetupApp mounted and renders the wrong (admin) application shell.
     if ((routeWithApp.kind === 'app-home' || routeWithApp.kind === 'app-page' || routeWithApp.kind === 'route-alias')
       && routeWithApp.appId.toLowerCase() === 'acetill') {
-      window.location.assign('/acetill');
+      window.location.assign('/acetill/');
       return true;
     }
     const path = appRoutePath(routeWithApp);
