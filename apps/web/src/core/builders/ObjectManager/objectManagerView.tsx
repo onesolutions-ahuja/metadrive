@@ -1,3 +1,4 @@
+import { PicklistValueRows } from './PicklistValueRows';
 import { createSetupHome } from '../../settings/SetupHome/setupHomeView';
 import { relatedListRelationships } from '../PageBuilder/relatedListRelationships';
 import { createSettingsViews } from '../../settings/SettingsWorkspace/settingsWorkspaceViews';
@@ -1875,18 +1876,20 @@ function ObjectManager({
                 maxLength={editingTextMaximum ? Number(editingTextMaximum) : editingField.dataType === 'Text' ? 255 : undefined}
                 value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label></PlatformPageSlot>)}
           {(editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist') && <>
-            <PlatformPageSlot slotKey="field-object-39"><label className="form-label">Picklist Values<textarea className="form-control" rows={4} readOnly={Boolean(editingField.globalValueSetApiName)} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
-              const picklistValues = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+            <PlatformPageSlot slotKey="field-object-39"><PicklistValueRows key={editingField.apiName + ':' + (editingField.globalValueSetApiName ?? '')} values={editingField.picklistValues ?? []} disabled={Boolean(editingField.globalValueSetApiName)} onChange={(picklistValues, previous, replacement) => {
               const valueSettings = editingField.valueSettings
-                ? Object.fromEntries(Object.entries(editingField.valueSettings).map(([key, values]) => [key, values.filter((value) => picklistValues.includes(value))]))
+                ? Object.fromEntries(Object.entries(editingField.valueSettings).map(([key, values]) =>
+                  [key, values.map((value) => value === previous ? replacement ?? '' : value).filter((value) => picklistValues.includes(value))]))
                 : undefined;
               const nextField: FieldMetadata = { ...editingField, picklistValues, valueSettings };
-              if (typeof editingField.defaultValue === 'string'
-                && editingField.defaultValue.split(';').some((value) => !picklistValues.includes(value))) {
-                delete nextField.defaultValue;
+              if (typeof nextField.defaultValue === 'string') {
+                const current = nextField.defaultValue.split(';');
+                const updated = current.map((value) => value === previous ? replacement ?? '' : value).filter((value) => picklistValues.includes(value));
+                if (updated.length) nextField.defaultValue = updated.join(';');
+                else delete nextField.defaultValue;
               }
               setEditingField(nextField);
-            }} placeholder={'New\nIn Progress\nCompleted'} /></label></PlatformPageSlot>
+            }} /></PlatformPageSlot>
             {editingField.globalValueSetApiName&&<p className="permission-help">Values are managed by Global Value Set {editingField.globalValueSetApiName}.</p>}
             <label className="checkbox-row"><input type="checkbox" checked={editingField.picklistRestricted ?? false} onChange={(event) => setEditingField({ ...editingField, picklistRestricted: event.target.checked })} />Restrict to the values defined in the value set</label>
             <><PlatformPageSlot slotKey="field-object-40"><label className="form-label">Controlling Field<select className="form-control" value={editingField.controllerFieldApiName ?? ''} onChange={(event) => {
