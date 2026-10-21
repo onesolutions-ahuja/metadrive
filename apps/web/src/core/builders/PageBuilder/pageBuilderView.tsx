@@ -275,10 +275,15 @@ function PageBuilder({
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
   const [favouritesLoaded, setFavouritesLoaded] = useState(false);
   const [componentPanelWidth, setComponentPanelWidth] = useState(280);
-  const [componentPanelVisible, setComponentPanelVisible] = useState(true);
-  const [propertiesPanelVisible, setPropertiesPanelVisible] = useState(true);
-  const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
-  const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
+  // One Canva-style contextual rail and one collapsible panel; never two competing sidebars.
+  const [activePanel, setActivePanel] = useState<'palette' | 'properties' | 'page' | null>(() => {
+    try { return window.localStorage.getItem('metadrive:page-builder:panel') === 'collapsed' ? null : 'palette'; }
+    catch { return 'palette'; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem('metadrive:page-builder:panel', activePanel === null ? 'collapsed' : 'expanded'); }
+    catch { /* Optional browser preference, not page metadata. */ }
+  }, [activePanel]);
   const [pageListObject, setPageListObject] = useState('');
   const [pageListSearch, setPageListSearch] = useState('');
   const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
@@ -342,14 +347,15 @@ function PageBuilder({
   type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; x: number; y: number; width: number; height: number } | null>(null);
-  const canvasSnap = false;
+  const [canvasSnap, setCanvasSnap] = useState(true);
+  const [componentMenuId, setComponentMenuId] = useState('');
   const canvasMoveStart = useRef<{
     id: string; pointerId: number; pointerX: number; pointerY: number;
     original: { x: number; y: number; width: number; height: number };
     element: HTMLElement; x: number; y: number;
   } | null>(null);
   const [showLayers, setShowLayers] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions'>('Overview');
+  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions' | 'Position'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -550,9 +556,13 @@ function PageBuilder({
   const endComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (paletteResizeStart.current?.pointerId === event.pointerId) paletteResizeStart.current = null;
   };
-  const startPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); propertiesResizeStart.current = { pointerId: event.pointerId, pointerX: event.clientX, width: propertiesPanelWidth }; };
-  const movePropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { const start = propertiesResizeStart.current; if (start?.pointerId === event.pointerId) setPropertiesPanelWidth(Math.max(240, Math.min(520, start.width + start.pointerX - event.clientX))); };
-  const endPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { if (propertiesResizeStart.current?.pointerId === event.pointerId) propertiesResizeStart.current = null; };
+  const openComponentInspector = (tab: typeof inspectorTab = 'Overview') => {
+    setInspectorTab(tab); setPageSettingsOpen(false); setActivePanel('properties'); setComponentMenuId('');
+  };
+  const openPalette = (tab: typeof paletteTab = 'Components', category?: typeof paletteCategory) => {
+    setPaletteTab(tab); if (category) setPaletteCategory(category);
+    setActivePanel('palette'); setComponentMenuId('');
+  };
   const updateCustomProperties = (value: string) => {
     setCustomPropertiesDraft(value);
     try {
@@ -1459,9 +1469,13 @@ function PageBuilder({
           <span className="builder-layout-chip">{pageDeviceLabel(page)} · {page.canvasWidth} × {page.canvasHeight}px · {canvasOrientation(page.canvasWidth,page.canvasHeight)}</span>
         </div>
         <div className="toolbar-actions">
-          <button type="button" className="icon-button subtle" aria-label={componentPanelVisible ? "Hide components panel" : "Show components panel"} aria-pressed={componentPanelVisible} title={componentPanelVisible ? "Hide components" : "Show components"} onClick={() => setComponentPanelVisible(value => !value)}><PanelLeft size={17}/></button>
-          <button type="button" className="icon-button subtle" aria-label={propertiesPanelVisible ? "Hide properties panel" : "Show properties panel"} aria-pressed={propertiesPanelVisible} title={propertiesPanelVisible ? "Hide properties" : "Show properties"} onClick={() => setPropertiesPanelVisible(value => !value)}><PanelRight size={17}/></button>
-          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setPageSettingsOpen(true);setPropertiesPanelVisible(true)}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label={activePanel ? 'Collapse left panel' : 'Expand left panel'} aria-pressed={activePanel !== null}
+            title={activePanel ? 'Collapse left panel' : 'Expand left panel'} onClick={() => setActivePanel(value => value ? null : 'palette')}><PanelLeft size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={() => {setPageSettingsOpen(true);setActivePanel('page');}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onClick={undo}><Undo2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!redoStack.length} onClick={redo}><Redo2 size={17}/></button>
+          {page.layoutMode === 'free-canvas' && <button type="button" className={canvasSnap ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
+            aria-pressed={canvasSnap} onClick={() => setCanvasSnap(value => !value)}>Snap {canvasSnap ? 'on' : 'off'}</button>}
           <button type="button" className="icon-button subtle" aria-label="Fit canvas to view" title="Fit canvas" onClick={()=>setFitCanvas(v=>!v)}><Maximize2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Preview page" title="Preview in new window" onClick={openExternalPreview}><Eye size={17}/></button>
           <button type="button" className="btn btn-small"
@@ -1476,8 +1490,38 @@ function PageBuilder({
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
       </div>
-      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''} ${!componentPanelVisible ? 'canvas-left-hidden' : ''} ${!propertiesPanelVisible ? 'canvas-right-hidden' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px`, '--properties-panel-width': `${propertiesPanelWidth}px` } as React.CSSProperties}>
-        <aside className="component-panel" style={!componentPanelVisible ? { display: "none" } : undefined}>
+      <div className={`page-builder-layout canvas-unified-builder ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''} ${activePanel === null ? 'unified-panel-collapsed' : ''}`}
+        style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
+        <nav className="builder-icon-rail" aria-label="Builder tools">
+          {([
+            ['All Components', Grid2X2, 'All elements'],
+            ['Layout', PanelLeft, 'Layouts'],
+            ['Display', FileText, 'Display'],
+            ['Inputs', SlidersHorizontal, 'Inputs'],
+            ['Data', Database, 'Data'],
+            ['Navigation', ArrowRight, 'Navigation'],
+            ['Favourites', Star, 'Favourites']
+          ] as const).map(([category, Icon, label]) => <button type="button" key={category}
+            aria-label={label} title={label} aria-pressed={activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category}
+            className={activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category ? 'active' : ''}
+            onClick={() => activePanel === 'palette' && paletteTab === 'Components' && paletteCategory === category ? setActivePanel(null) : openPalette('Components', category)}>
+            <Icon size={19}/><span>{label}</span>
+          </button>)}
+          {page.pageType === 'Record Page' && <button type="button" title="Fields" aria-label="Fields"
+            aria-pressed={activePanel === 'palette' && paletteTab === 'Fields'}
+            className={activePanel === 'palette' && paletteTab === 'Fields' ? 'active' : ''}
+            onClick={() => openPalette('Fields')}><Database size={19}/><span>Fields</span></button>}
+          <button type="button" title="Layers" aria-label="Layers" aria-pressed={activePanel === 'palette' && paletteTab === 'Layers'}
+            className={activePanel === 'palette' && paletteTab === 'Layers' ? 'active' : ''}
+            onClick={() => openPalette('Layers')}><Layers3 size={19}/><span>Layers</span></button>
+          <button type="button" title="Element properties" aria-label="Element properties" aria-pressed={activePanel === 'properties'}
+            className={activePanel === 'properties' ? 'active' : ''} onClick={() => openComponentInspector()}>
+            <Settings2 size={19}/><span>Properties</span></button>
+          <button type="button" title="Page settings" aria-label="Page settings" aria-pressed={activePanel === 'page'}
+            className={activePanel === 'page' ? 'active' : ''} onClick={() => {setPageSettingsOpen(true);setActivePanel('page');}}>
+            <SlidersHorizontal size={19}/><span>Page</span></button>
+        </nav>
+        <aside className="component-panel" style={activePanel !== 'palette' ? { display: 'none' } : undefined}>
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
             <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
@@ -1610,11 +1654,14 @@ function PageBuilder({
             </div>
           </div>
         </div>
-        <aside id="lightning-page-properties" style={!propertiesPanelVisible ? { display: "none" } : undefined} className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}><button className="properties-panel-resize" type="button" aria-label="Resize properties panel" title="Drag to resize" onPointerDown={startPropertiesResize} onPointerMove={movePropertiesResize} onPointerUp={endPropertiesResize} onPointerCancel={endPropertiesResize}/>
-          <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{pageSettingsOpen && selected && <button type="button" className="btn btn-small" onClick={() => setPageSettingsOpen(false)}>Component properties</button>}{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
-          {selected && !pageSettingsOpen ? <>
+        <aside id="lightning-page-properties" style={activePanel !== 'properties' && activePanel !== 'page' ? { display: 'none' } : undefined}
+          className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
+          <div className="properties-header"><h2>{pageSettingsOpen || !selected || activePanel === 'page' ? 'Page properties' : 'Element properties'}</h2>
+            <button type="button" className="icon-button subtle" aria-label="Collapse panel" title="Collapse panel" onClick={() => setActivePanel(null)}><X size={16}/></button>
+            {selected && !pageSettingsOpen && activePanel !== 'page' && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15}/></button>}</div>
+          {selected && !pageSettingsOpen && activePanel !== 'page' ? <>
             <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
-              {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+              {(['Overview', 'Design', 'Data & Actions', 'Position'] as const).map(tab => <button key={tab} type="button" role="tab"
                 aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
                 onClick={() => setInspectorTab(tab)}>{tab}</button>)}
             </div>
