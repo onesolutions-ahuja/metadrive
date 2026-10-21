@@ -52,4 +52,18 @@ console.log('Login preflight:',cors.status,'origin:',cors.headers.get('access-co
 if(cors.status!==204||cors.headers.get('access-control-allow-origin')!==site||
   cors.headers.get('access-control-allow-credentials')!=='true')
   throw new Error('Credentialed login CORS is not valid: HTTP '+cors.status);
-console.log('Public Pages entry, Render SQL, and credentialed login CORS verified');
+const loginResponse=await fetch(api+'/auth/login',{
+  method:'POST',
+  headers:{
+    Origin:site,
+    'Content-Type':'application/json',
+    'X-MetaDrive-Request-Source':'web-app'
+  },
+  body:'{}',
+  signal:AbortSignal.timeout(20000)
+});
+if(loginResponse.status!==400 ||
+  loginResponse.headers.get('access-control-allow-origin')!==site ||
+  loginResponse.headers.get('access-control-allow-credentials')!=='true')
+  throw new Error('Credentialed browser login endpoint response unavailable: HTTP '+loginResponse.status);
+console.log('Public Pages entry, Render SQL, and credentialed login POST verified');
