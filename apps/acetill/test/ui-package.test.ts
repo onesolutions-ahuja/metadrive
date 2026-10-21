@@ -30,15 +30,12 @@ test('catalogue and basket bind shared Product fields and same cart state',()=>{
  assert.match(sql,/OneShoppingCart','sidebar',30,'cartTargetKey','string','acetill'/);
 });
 
-test('standalone entrypoint mounts Acetill without importing full admin workspace',()=>{
- const shell=readFileSync(fileURLToPath(new URL('../src/AcetillShell.tsx',import.meta.url)),'utf8');
+test('standalone entrypoint uses the shared product-aware workspace shell',()=>{
  const main=readFileSync(fileURLToPath(new URL('../../web/src/main.tsx',import.meta.url)),'utf8');
- assert.match(main,/isAcetillEntry/);
- assert.match(main,/<Acetill \/>/);
- assert.doesNotMatch(shell,/SetupApp|MarketingSite|AppExchange|object-manager/);
- assert.match(shell,/createLoginView/);
- assert.match(shell,/\/auth\/refresh\?landing=1/);
- assert.match(shell,/\/apps\/Acetill\/home-page/);
- assert.match(shell,/OneShoppingCart/);
- assert.match(shell,/previewOnly=\{true\}/);
+ const app=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/App/App.tsx',import.meta.url)),'utf8');
+ assert.doesNotMatch(main,/import\(['"]\.\.\/\.\.\/acetill\/src\/AcetillShell/);
+ assert.match(main,/isMarketingHome/);
+ assert.match(app,/resolveStandaloneEntry\(window\.location\.pathname/);
+ assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
+ assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
 });

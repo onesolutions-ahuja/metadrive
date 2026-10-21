@@ -16,8 +16,6 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 
 // Keep the authenticated workspace, including its large builder code and CSS,
 // out of the initial public marketing bundle.
-const Acetill = lazy(() => import('../../acetill/src/AcetillShell'));
-
 const Workspace = lazy(async () => {
   await Promise.all([
     import('./core/workspace/WorkspaceTheme/styles.css'), import('./core/workspace/WorkspaceTheme/styles-part2.css'), import('./core/workspace/WorkspaceTheme/styles-audit.css')
@@ -75,9 +73,6 @@ const pathname = basePath && window.location.pathname.startsWith(basePath + '/')
 // Browser regression and local metadata workspaces open the authenticated app at /.
 // The public marketing homepage remains the production default.
 const workspaceDevelopmentRoot = import.meta.env.DEV && Boolean(import.meta.env.VITE_API_BASE_URL);
-const isAcetillEntry = pathname.toLowerCase() === '/acetill'
-  || pathname.toLowerCase().startsWith('/acetill/')
-  || pathname.toLowerCase().startsWith('/une/apps/acetill/');
 // Redirect old metadata workspace links to the Acetill-owned login/POS entry.
 if (pathname.toLowerCase().startsWith('/une/apps/acetill/')) {
   window.history.replaceState({}, '', '/acetill');
@@ -88,8 +83,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isMarketingHome
       ? <MarketingSite />
-      : isAcetillEntry
-        ? <WorkspaceFailureBoundary><Suspense fallback={<WorkspaceLoadingFallback />}><Acetill /></Suspense></WorkspaceFailureBoundary>
       : <WorkspaceFailureBoundary><Suspense fallback={<WorkspaceLoadingFallback />}><Workspace /></Suspense></WorkspaceFailureBoundary>}
   </React.StrictMode>
 );
