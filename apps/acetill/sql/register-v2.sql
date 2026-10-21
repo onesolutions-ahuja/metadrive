@@ -117,6 +117,7 @@ CROSS JOIN (VALUES
  ('AcetillSale','OneItemGrid','main',20,'cardPadding','number','9'),
  ('AcetillSale','OneItemGrid','main',20,'cardHover','string','lift'),
  ('AcetillSale','OneItemGrid','main',20,'imageFit','string','cover'),
+ ('AcetillSale','OneItemGrid','main',20,'imageRadius','number','18'),
  ('AcetillSale','OneItemGrid','main',20,'imageAspectRatio','string','4/3'),
  ('AcetillSale','OneItemGrid','main',20,'cardShadow','string','sm'),
  ('AcetillSale','OneItemGrid','main',20,'currencyCode','string','GBP'),
