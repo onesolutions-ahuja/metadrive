@@ -48,3 +48,76 @@
     grid-column: 1 / -1; grid-row: 4;
   }
 }
+
+
+/* Opt-in contemporary touch POS styling, fully reusable across licensed apps.
+   Image/card rounding is editable via the component's radius property. */
+.one-shopping-modern-touch {
+  --one-modern-radius: var(--one-radius, 18px);
+  --one-modern-image-radius: var(--one-image-radius, 18px);
+  --one-border: #e5eaf2;
+  --one-bg: #fff;
+  --one-fg: #1f2937;
+  color: var(--one-fg);
+  background: #f7f9fc;
+  border: 1px solid #e5eaf2;
+  border-radius: var(--one-modern-radius);
+  padding: clamp(12px, 1.8vw, 24px);
+  overflow: hidden;
+}
+.one-shopping-modern-touch .one-shopping-layout {
+  grid-template-columns: minmax(0,var(--one-catalogue-ratio)) minmax(290px,var(--one-basket-ratio));
+  gap: 20px;
+  align-items: stretch;
+  margin-top: 12px;
+}
+.one-shopping-modern-touch .one-shopping-layout > section { min-width:0; }
+.one-shopping-modern-touch .one-shopping-categories { order:-1; gap: 4px; padding: 6px 0 15px; border-bottom: 1px solid #e5eaf2; margin-bottom: 14px; }
+.one-shopping-modern-touch .one-shopping-categories .one-btn {
+  border:0; box-shadow:none; border-radius:9px; background:transparent; color:#546172;
+  padding:12px 16px; font-size: 13px; font-weight: 650; min-height:46px;
+}
+.one-shopping-modern-touch .one-shopping-categories .one-btn[aria-pressed="true"] {
+  background:#ebf3ff; color:var(--one-accent,#2563eb); box-shadow:inset 0 -3px 0 var(--one-accent,#2563eb);
+}
+.one-shopping-modern-touch .one-shopping-products { gap: 14px; margin-top: 16px; }
+.one-shopping-modern-touch .one-shopping-products .one-item {
+  border:1px solid #e6eaf0; border-radius:var(--one-modern-radius); overflow:hidden;
+  padding:8px; background:white; box-shadow:0 2px 9px rgba(22,35,52,.045);
+  display:flex; flex-direction:column; align-items:stretch; gap:5px; min-height:175px;
+  transition:transform .13s ease,box-shadow .13s ease,border-color .13s ease;
+}
+.one-shopping-modern-touch .one-shopping-products .one-item:hover {
+  transform:translateY(-2px); box-shadow:0 8px 20px rgba(22,35,52,.09); border-color:var(--one-accent,#2563eb);
+}
+.one-shopping-modern-touch .one-shopping-products .one-item:focus-visible {outline:3px solid var(--one-accent,#2563eb);outline-offset:2px;}
+.one-shopping-modern-touch .one-shopping-products img {
+  border-radius:var(--one-modern-image-radius); width:100%;aspect-ratio:1.32;
+  object-fit:cover; background:#f0f2f5; display:block;
+}
+.one-shopping-modern-touch .one-shopping-products strong {font-weight:700;font-size:14px;margin:4px 4px 0;}
+.one-shopping-modern-touch .one-shopping-products span:not(.md-card-add-icon){font-size:13px;font-weight:650;color:#4b5563;margin:0 4px 6px;}
+.one-shopping-modern-touch .one-control {background:white;border-radius:12px;min-height:48px;border:1px solid #dbe3ed;}
+.one-shopping-modern-touch .one-shopping-layout > aside {
+  background:white; border:1px solid #e5eaf2; border-radius:var(--one-modern-radius);
+  padding:18px; min-height:520px; display:flex;flex-direction:column;gap:10px;
+  box-shadow:0 2px 8px rgba(22,35,52,.035);
+}
+.one-shopping-modern-touch .one-shopping-layout > aside > .one-heading {font-size:18px;font-weight:800;letter-spacing:-.02em;}
+.one-shopping-modern-touch .one-shopping-layout > aside > div[aria-live] {flex:1;min-height:0;overflow-y:auto;}
+.one-shopping-modern-touch .one-shopping-line {gap:9px;padding:13px 0;border-bottom:1px solid #edf0f4;}
+.one-shopping-modern-touch .one-shopping-line .one-btn {min-width:34px;min-height:34px;padding:5px;border-radius:50%;background:#f5f8fc;}
+.one-shopping-modern-touch .one-shopping-line strong {font-size:13px;}
+.one-shopping-modern-touch .one-shopping-total {padding-top:14px;border-top:1px solid #e5eaf2;align-items:center;}
+.one-shopping-modern-touch .one-shopping-total strong {font-size:21px;}
+.one-shopping-modern-touch .one-shopping-layout > aside > .one-btn--primary {min-height:56px;border-radius:12px;background:var(--one-accent,#2563eb);color:#fff;font-weight:800;font-size:16px;}
+.one-shopping-modern-touch .one-shopping-layout > aside > .one-btn:not(.one-btn--primary){min-height:43px;border-radius:11px;}
+@media(max-width:850px) {
+  .one-shopping-modern-touch .one-shopping-layout {grid-template-columns:minmax(0,1fr);}
+  .one-shopping-modern-touch .one-shopping-layout > aside {min-height:260px;}
+}
+@media(max-width:480px) {
+  .one-shopping-modern-touch {padding:10px;}
+  .one-shopping-modern-touch .one-shopping-products {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .one-shopping-modern-touch .one-shopping-products .one-item {min-height:140px;}
+}
