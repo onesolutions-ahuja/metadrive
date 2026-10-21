@@ -209,16 +209,16 @@ function App() {
   },[authState,standaloneEntry]);
 
   useEffect(()=>{
-    if(authState==='anonymous'&&window.location.pathname!=='/login'&&window.location.pathname!=='/oauth/authorize'){
+    if(authState==='anonymous'&&!standaloneEntry&&window.location.pathname!=='/login'&&window.location.pathname!=='/oauth/authorize'){
       window.location.replace('/login');
     }
-  },[authState]);
+  },[authState,standaloneEntry]);
   const loginSuccess = (timing: EntryTiming) => { sessionGeneration.current += 1; setEntryTiming(timing); setAuthState('authenticated'); };
   const cancelRestore = () => { sessionGeneration.current += 1; };
   if (authState === 'restoring') return <div className="auth-loading" role="status">Restoring session…</div>;
-  if (authState === 'anonymous' && window.location.pathname!=='/login') return <div role="status">Opening login…</div>;
-  if (authState === 'anonymous') return <Login onStart={cancelRestore} onSuccess={loginSuccess} />;
-  if (authState === 'error') return <Login error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
+  if (authState === 'anonymous' && !standaloneEntry && window.location.pathname!=='/login') return <div role="status">Opening login…</div>;
+  if (authState === 'anonymous') return <Login branding={standaloneEntry??undefined} onStart={cancelRestore} onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login branding={standaloneEntry??undefined} error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
   const onLogout=()=>{sessionGeneration.current += 1;setEntryTiming(null);setAccessToken(undefined);setAuthState('anonymous');};
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}><LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/></React.Suspense>;

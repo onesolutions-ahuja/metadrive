@@ -29,3 +29,12 @@
 .acetill-state,.acetill-error{background:#f4f7fc;padding:14px;border-radius:12px;color:#5a6779}.acetill-error{color:#b42318}
 @media(max-width:880px){.acetill-terminal{grid-template-columns:1fr}.acetill-current-order{border-left:0;border-top:1px solid #e7eaf0;min-height:320px}.acetill-shop{padding:15px}.acetill-topline{flex-wrap:wrap}.acetill-product-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
 @media(max-width:480px){.acetill-product-art{height:105px}.acetill-quick-actions button{font-size:11px}.acetill-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.acetill-receipt-screen{min-height:calc(100vh - 80px);display:grid;place-items:center;padding:24px;background:#f5f8fc}
+.acetill-receipt-panel{width:min(100%,510px);padding:42px;background:white;border:1px solid #e6ebf3;border-radius:24px;box-shadow:0 18px 50px #15294d13;text-align:center}
+.acetill-receipt-panel h1{font-size:28px;letter-spacing:-.04em;margin:12px 0}
+.acetill-receipt-panel p{color:#627187}
+.acetill-receipt-icon{display:grid;place-items:center;margin:auto;background:#e4f8ed;color:#087e47;border-radius:50%;width:66px;height:66px;font-size:33px;font-weight:bold}
+.acetill-receipt-panel dl{margin:24px 0;padding:15px;border-radius:14px;background:#f6f8fb}
+.acetill-receipt-panel dl div{display:flex;justify-content:space-between;gap:8px;padding:7px;font-size:14px}.acetill-receipt-panel dt{color:#627187}.acetill-receipt-panel dd{margin:0;font-weight:750}
+.acetill-receipt-actions{display:grid;gap:10px}.acetill-receipt-actions button{min-height:48px;border-radius:12px;border:1px solid #dfe6ef;background:white;color:#1769d2;font-weight:750;cursor:pointer}.acetill-receipt-actions .acetill-charge{background:#1267e5;color:white;border:0}
