@@ -17,64 +17,10 @@ const coreObjects:SeedObject[]=FRESH_CORE_OBJECTS.map(o=>({
     .map(f=>({...f}))
 }));
 const cartObjects:SeedObject[]=CART_OBJECTS.map(o=>({apiName:o.apiName,label:o.label,fields:o.fields.map(f=>({...f}))}));
-const kioskObjects:SeedObject[]=[
- {apiName:'MenuCategory',label:'Menu Category',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},{apiName:'DisplayOrder',label:'Display Order',dataType:'number'},
-  {apiName:'CategoryImage',label:'Category Image',dataType:'text'},
-  {apiName:'ParentCategory',label:'Parent Category',dataType:'reference',relatedObject:'MenuCategory'},
-  {apiName:'Active',label:'Active',dataType:'boolean'}]},
- {apiName:'MealChoiceGroup',label:'Meal Choice Group',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},{apiName:'ParentProduct',label:'Parent Product',dataType:'reference',relatedObject:'Product'},
-  {apiName:'MinimumChoices',label:'Minimum Choices',dataType:'number'},
-  {apiName:'MaximumChoices',label:'Maximum Choices',dataType:'number'},
-  {apiName:'IncludedQuantity',label:'Included Quantity',dataType:'number'},
-  {apiName:'DisplayOrder',label:'Display Order',dataType:'number'},{apiName:'Active',label:'Active',dataType:'boolean'}]},
- {apiName:'MealChoiceOption',label:'Meal Choice Option',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},
-  {apiName:'ChoiceGroup',label:'Choice Group',dataType:'reference',relatedObject:'MealChoiceGroup'},
-  {apiName:'ChoiceProduct',label:'Choice Product',dataType:'reference',relatedObject:'Product'},
-  {apiName:'AdditionalPrice',label:'Additional Price',dataType:'number'},
-  {apiName:'DisplayOrder',label:'Display Order',dataType:'number'},{apiName:'Active',label:'Active',dataType:'boolean'}]},
- {apiName:'CartSession',label:'Cart Session',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},{apiName:'SessionKey',label:'Session Key',dataType:'text'},
-  {apiName:'Status',label:'Status',dataType:'picklist'},{apiName:'ServiceMode',label:'Service Mode',dataType:'picklist'},
-  {apiName:'ExpiresAt',label:'Expires At',dataType:'datetime'}]},
- {apiName:'CartLineSelection',label:'Cart Line Selection',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},
-  {apiName:'CartLine',label:'Cart Line',dataType:'reference',relatedObject:'CartLine'},
-  {apiName:'ChoiceGroup',label:'Choice Group',dataType:'reference',relatedObject:'MealChoiceGroup'},
-  {apiName:'ChoiceProduct',label:'Choice Product',dataType:'reference',relatedObject:'Product'},
-  {apiName:'Quantity',label:'Quantity',dataType:'number'},
-  {apiName:'AdditionalPrice',label:'Additional Price',dataType:'number'}]},
- {apiName:'Order',label:'Order',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},{apiName:'OrderNumber',label:'Order Number',dataType:'text'},
-  {apiName:'Status',label:'Status',dataType:'picklist'},{apiName:'ServiceMode',label:'Service Mode',dataType:'picklist'},
-  {apiName:'Subtotal',label:'Subtotal',dataType:'number'},{apiName:'Tax',label:'Tax',dataType:'number'},
-  {apiName:'Total',label:'Total',dataType:'number'},
-  {apiName:'CartSession',label:'Cart Session',dataType:'reference',relatedObject:'CartSession'}]},
- {apiName:'OrderLine',label:'Order Line',fields:[
-  {apiName:'Name',label:'Name',dataType:'text'},
-  {apiName:'Order',label:'Order',dataType:'reference',relatedObject:'Order'},
-  {apiName:'Product',label:'Product',dataType:'reference',relatedObject:'Product'},
-  {apiName:'ProductNameSnapshot',label:'Product Name Snapshot',dataType:'text'},
-  {apiName:'Quantity',label:'Quantity',dataType:'number'},
-  {apiName:'UnitPrice',label:'Unit Price',dataType:'number'},
-  {apiName:'SelectedOptionsSnapshot',label:'Selected Options Snapshot',dataType:'text'},
-  {apiName:'LineTotal',label:'Line Total',dataType:'number'}]}
-];
 const seeds:Seed[]=[
  {id:'core-objects',label:'Core object catalog',description:'Standard and system object definitions and fields',objects:coreObjects},
  {id:'cart-objects',label:'Cart objects',description:'Cart and Cart Line',objects:cartObjects},
  {id:'product-image',label:'Product image field',description:'Adds Product.ImageUrl where missing',objects:[{apiName:'Product',label:'Product',fields:[{...PRODUCT_IMAGE_FIELD,apiName:PRODUCT_IMAGE_FIELD.apiName,label:PRODUCT_IMAGE_FIELD.label,dataType:PRODUCT_IMAGE_FIELD.dataType}]}]},
- {id:'onekiosk',label:'OneKiosk objects',description:'Menu, meal choices, basket sessions and orders, plus Product and Cart Line extensions',objects:[
-  ...cartObjects.map(o=>({...o,fields:[...o.fields,...(o.apiName==='CartLine'?[{apiName:'CartSession',label:'Cart Session',dataType:'reference',relatedObject:'CartSession'}]:[])]})),
-  ...kioskObjects,
-  {apiName:'Product',label:'Product',fields:[
-   {apiName:'ImageUrl',label:'Image URL',dataType:'text',maxLength:2048},
-   {apiName:'MenuCategory',label:'Menu Category',dataType:'reference',relatedObject:'MenuCategory'},
-   {apiName:'ProductType',label:'Product Type',dataType:'picklist'},
-   {apiName:'DisplayOrder',label:'Display Order',dataType:'number'}]}
- ]}
 ];
 
 async function diff(client:PoolClient,tenantId:string,seed:Seed){
