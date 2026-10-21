@@ -5,7 +5,7 @@
 export const ACETILL = Object.freeze({
   apiName: 'Acetill',
   label: 'Acetill',
-  version: 1,
+  version: 2,
   description: 'Independent POS transaction terminal using UNE Solutions MetaDrive',
   brandColor: '#1769D2',
   entryPage: 'AcetillRegister',

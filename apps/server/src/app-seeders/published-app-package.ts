@@ -64,6 +64,22 @@ export async function seedPublishedAppPackage(
     VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING
   `,[tenantId,item.api_name,item.title]);
 
+  const {rows:homePages}=await client.query<{page_api:string;form_factor:'desktop'|'tablet'|'phone'}>(`
+    SELECT page_api,form_factor FROM md_app_package_home_page_templates
+    WHERE app_id=$1 AND version=$2 ORDER BY form_factor
+  `,[appId,version]);
+  for(const item of homePages){
+    const {rows:page}=await client.query<{id:string}>(`
+      SELECT id FROM md_page_definitions
+      WHERE tenant_id=$1 AND api_name=$2 AND enabled=true
+    `,[tenantId,item.page_api]);
+    if(!page.length)throw new Error('App package Home Page dependency missing: '+item.page_api);
+    await client.query(`
+      INSERT INTO md_app_home_pages(tenant_id,app_id,form_factor,page_id)
+      VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,app_id,form_factor) DO NOTHING
+    `,[tenantId,appId,item.form_factor,page[0].id]);
+  }
+
   const {rows:pageParts}=await client.query<{
     page_api:string;component_api:string;slot:string;sort_order:number
   }>(`

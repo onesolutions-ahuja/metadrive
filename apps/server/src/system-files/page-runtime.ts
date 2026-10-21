@@ -34,8 +34,15 @@ export class PageRuntime {
       object_id:string|null;field_id:string|null;flow_id:string|null
     }>(`SELECT p.* FROM md_page_component_properties p JOIN md_page_components c ON c.tenant_id=p.tenant_id AND c.id=p.component_id
       WHERE c.tenant_id=$1 AND c.page_id=$2`,[tenantId,page.rows[0].id]);
-    const configured=components.rows.map(c=>({...c,properties:expandAppProperties(properties.rows.filter(p=>p.component_id===c.id))}));
-    return {page:{...page.rows[0],components:configured},components:configured};
+    const configured=components.rows.map(c=>({
+      id:c.id,type:c.component_api,label:c.component_api,region:c.slot,visible:true,
+      properties:expandAppProperties(properties.rows.filter(p=>p.component_id===c.id))
+    }));
+    return {page:{
+      apiName:pageApi,label:page.rows[0].title,targetObject:'',pageType:'App Page',
+      layoutMode:'template',canvasWidth:1200,canvasHeight:800,status:'Active',
+      devices:['Desktop','Phone'],components:configured
+    },components:configured};
   }
 
   async metadata(tenantId:string,pageApi:string){
@@ -204,7 +211,6 @@ export class PageRuntime {
   async resolveAppPage(tenantId:string,appId:string,pageApi:string,device:string){
     if(device!=='Desktop'&&device!=='Phone')throw new Error('Invalid form factor');
     const {rows}=await this.db.query<{api_name:string}>(`SELECT p.api_name FROM md_page_definitions p
-      JOIN md_lightning_page_details d ON d.tenant_id=p.tenant_id AND d.page_id=p.id
       JOIN md_app_installations i ON i.tenant_id=p.tenant_id
       JOIN md_apps a ON a.id=i.app_id AND a.enabled=true
         AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=p.tenant_id)
@@ -212,12 +218,22 @@ export class PageRuntime {
       JOIN md_app_entitlements e ON e.tenant_id=i.tenant_id AND e.app_id=i.app_id AND e.active=true
       WHERE p.tenant_id=$1 AND p.api_name=$3 AND p.enabled=true
         AND COALESCE(m.api_name,a.api_name)=$2
-        AND d.status='Active' AND d.page_type='App Page'
         AND (e.expires_at IS NULL OR e.expires_at>now())
-        AND EXISTS(SELECT 1 FROM md_lightning_page_activation x
-          WHERE x.tenant_id=p.tenant_id AND x.page_id=p.id
-          AND x.app_api=$2 AND (($4='Desktop' AND x.desktop) OR ($4='Phone' AND x.phone)))`,
+        AND (
+          EXISTS(SELECT 1 FROM md_lightning_page_details d
+            JOIN md_lightning_page_activation x ON x.tenant_id=d.tenant_id AND x.page_id=d.page_id
+            WHERE d.tenant_id=p.tenant_id AND d.page_id=p.id
+              AND d.status='Active' AND d.page_type='App Page' AND x.app_api=$2
+              AND (($4='Desktop' AND x.desktop) OR ($4='Phone' AND x.phone)))
+          OR (
+            NOT EXISTS(SELECT 1 FROM md_lightning_page_details d
+              WHERE d.tenant_id=p.tenant_id AND d.page_id=p.id)
+            AND EXISTS(SELECT 1 FROM md_tenant_app_navigation n
+              WHERE n.tenant_id=i.tenant_id AND n.app_id=i.app_id
+                AND n.entry_type='App Page' AND n.api_name=p.api_name)
+          )
+        )`,
       [tenantId,appId,pageApi,device]);
-    return rows[0]?this.metadata(tenantId,rows[0].api_name):null;
+    return rows[0]?this.load(tenantId,rows[0].api_name):null;
   }
 }

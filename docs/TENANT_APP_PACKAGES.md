@@ -19,7 +19,7 @@ remain shared. App-owned metadata loads only for installed, entitled tenants.
   validated transactionally. Dependencies are **never auto-installed** or
   auto-licensed; the tenant must explicitly choose them.
 - `md_app_package_object_templates`, `_field_templates`,
-  `_component_templates`, `_page_templates` and
+  `_component_templates`, `_page_templates`, `_home_page_templates` and
   `_page_component_templates`: declarative SQL-backed templates.
   These materialise only when that tenant installs the app. Components reference
   platform renderer keys, not tenant-executable packages.
@@ -36,6 +36,12 @@ Flows, actions, RBAC and components. Use the existing versioned app seeder for
 specialised typed metadata not represented by these templates; never embed
 app-specific logic in shared Core.
 
+Package resource declarations verify install prerequisites; they do not grant
+Object, Field or Flow permissions. Runtime access remains governed by central
+tenant RBAC. The SQL publisher script is an operator workflow, not a separate
+security boundary; authoring/import tooling can streamline it without changing
+those runtime checks.
+
 ## Tenant lifecycle
 
 1. Tenant sees central AppExchange catalogue and its current licence status.
@@ -45,7 +51,9 @@ app-specific logic in shared Core.
    checks tenant, permission, entitlement/expiry and published dependencies.
 4. In one SQL transaction, only the chosen version's templates are seeded,
    requirements validated, installation and version receipt saved, and
-   tenant-owned app metadata/navigation created. Shared references stay shared.
+   tenant-owned app metadata/navigation created. A package-declared Home Page is
+   assigned only when no tenant assignment exists for that app and form factor.
+   Shared references stay shared.
 5. Opening an app loads generic published runtime and its SQL metadata.
    The connector settings UI is dynamically imported only when opened.
 6. A later published version can be applied through the same Install endpoint:

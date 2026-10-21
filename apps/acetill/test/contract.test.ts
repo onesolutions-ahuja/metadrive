@@ -6,6 +6,7 @@ import {resolveStandaloneEntry} from '../../web/src/core/workspace/Standalone/st
 import {buildAcetillNavigation,canOpenAcetill,isAcetillPage} from '../src/contract.js';
 
 test('Acetill keeps administration and shared platform outside its package',()=>{
+ assert.equal(ACETILL.version,2);
  assert.equal(ACETILL.auth,'metadrive-session');
  assert.equal(ACETILL.componentRegistry,'metadrive-one');
  assert.deepEqual([...ACETILL.requiredObjects],['Product','Cart','CartLine','Order','OrderLine']);

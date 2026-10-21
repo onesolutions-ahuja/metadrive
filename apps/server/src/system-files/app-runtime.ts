@@ -184,7 +184,7 @@ export class AppRuntime {
           :null;
         if(!sql)throw new Error('Unsupported app package resource');
         const result=await client.query(sql,
-          type==='Field'?[tenantId,requirement.api_name,requirement.parent_api]
+          type==='Field'?[tenantId,requirement.parent_api,requirement.api_name]
             :[tenantId,requirement.api_name]);
         if(!result.rowCount)throw new Error('Missing app package resource: '+type+' '+(
           type==='Field'?requirement.parent_api+'.':'')+requirement.api_name);

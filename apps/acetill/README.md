@@ -7,12 +7,32 @@ Acetill is an optional independently licensed/installed POS-facing application, 
 **Acetill-owned:** package identity, branding, register/sale/checkout/receipt page metadata and POS workflow configuration. Manage product catalogues, stock, reports, customers and locations in UNE Solutions.
 
 ## Status
-This workspace establishes the package and tested access/navigation contract. It does **not** activate a tenant, process a payment, or create a login fork. Neither payment-provider integrations nor transaction-safe checkout are claimed ready.
+The published v2 package supplies editable Register, New Sale, Checkout and Receipt pages
+and sets Register as the app's initial Home Page. It does **not** install or license Acetill
+for a tenant, seed business records, process a payment, or create a login fork.
+Payment-provider integrations and transaction-safe checkout are not bundled.
 
 ## Installation path
-Publish versioned SQL metadata via the existing central AppExchange package publisher, after verifying each required Object/Field and renderer Component exists. Use the existing package tables (md_app_package_versions, md_app_package_page_templates, md_app_package_navigation, etc.), SQL-only tenant-scoped metadata, and the central installer. Register actual published page components and flows through that publisher. No tenant business-data seed and no dummy products.
+Register the versioned SQL metadata through authorised publisher tooling. The installer
+verifies required shared Objects, Product fields and One renderer Components before
+materialising tenant-scoped pages/navigation. It assigns the package-declared Home Page only
+when the tenant has not already assigned one. Install Acetill from AppExchange after the
+package release is deployed. No tenant business-data seed and no dummy products.
 
-For the sale screen, bind existing Product data through One components, and call a published central RBAC-checked checkout Flow. Atomic order, payment, stock and receipt handling need integration testing before enabling real checkout. No app-specific API/auth/database.
+The package binds existing Product data through One components. Checkout and receipt actions
+call `AcetillCompleteSale` and `AcetillPrintReceipt` only when those tenant Flows are active
+and the user has central `Flow:<apiName>:execute` permission. The checkout Flow must be an
+Autolaunched Flow, validate the request and perform atomic order/payment/stock work; it must
+return the request ID and a verified status (`pending`, `complete`, `failed`, or `cancelled`)
+before Acetill displays success. A missing, inactive or unauthorized Flow cannot transact.
+No app-specific API/auth/database.
+
+Package resource declarations are install-time dependency checks, not permission grants.
+They make sure the shared Object fields and Components a page references exist. Runtime
+Object/Field access and Flow execution are still decided by central RBAC. Standalone
+Autolaunched actions use the Flow name and declared type from page metadata, then let the
+server enforce active status, tenant/app entitlement and Flow execution permission; they do
+not require the app user to have Flow Definition read access.
 
 ## Acceptance
 - Core works without Acetill.
@@ -24,19 +44,19 @@ For the sale screen, bind existing Product data through One components, and call
 
 ## UI-only handoff to Flow Builder
 
-The SQL draft package now declares four editable Acetill pages and reuses OneText, OneBadge,
+The SQL package declares four editable Acetill pages and reuses OneText, OneBadge,
 OneSearch, OneItemGrid, OneShoppingCart and OneButton. Sale components reference Product.Name,
 Product.Price and Product.Active, and share the same `acetill` cart target.
 
-**Flow authoring is owned by the UNE Solutions administrator.** These are handoff contracts,
-not pre-created or activated Flows:
-- Register selection: resolve authorised store/register and enter the sale page.
-- Complete sale: validate cart, confirm payment, write Order/OrderLine, return verified result.
-- Receipt: take confirmed Order ID and render/print authorised receipt.
+**Flow authoring is owned by the UNE Solutions administrator.** `AcetillCompleteSale` accepts
+the `checkoutRequest` event payload and must return `status`, `requestId`, `message`,
+`changeDueMinor`, and `orderId`. `AcetillPrintReceipt` accepts the confirmed `orderId` from
+page state. Keep these as active, validated Autolaunched Flows and grant execution through
+central RBAC only to authorised users. No Flow is silently created or granted by this package.
 
-The register, complete-sale and print buttons are disabled until connected and validated.
-The draft package remains unpublished: do not install it until SQL page layout/publishing and
-the required shared fields are verified against a disposable tenant.
+The page buttons remain available; an absent/inactive Flow fails closed in the shared runtime
+and the server independently enforces active Flow and RBAC checks. Validate tenant financial
+settings, Product VAT metadata and checkout/receipt Flows before processing real transactions.
 
 The intended public route is `https://unesolutions.co.uk/acetill`. The same hosted SPA and
 MetaDrive authentication handle it; domain hosting/deployment must be verified separately.

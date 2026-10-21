@@ -496,9 +496,13 @@ function MetadataBoundPageComponent({
       },onNavigate});
     }
     const flowApiName = String(binding.flowApiName ?? '');
-    const selected = availableFlows.find((flow) => flow.apiName === flowApiName && flow.status === 'Active');
-    if (!selected || selected.status !== 'Active') {
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    const flowType = selected?.flowType ?? binding.flowType;
+    if (selected && selected.status !== 'Active') {
       throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
+    }
+    if (flowType !== 'Screen Flow' && flowType !== 'Autolaunched Flow') {
+      throw new Error('Configure an Autolaunched Flow for this standalone app action.');
     }
     const payload = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
       ? action.value as Record<string, unknown> : { value: action.value };
@@ -512,15 +516,13 @@ function MetadataBoundPageComponent({
     if(binding.outputs!==undefined)Object.assign(outputMappings,binding.outputs);
     resolveFlowOutputBindings({},outputMappings);
     setActionError('');
-    if (selected.flowType === 'Screen Flow') {
+    if (flowType === 'Screen Flow') {
+      if (!selected) throw new Error('Screen Flow metadata is unavailable for this action.');
       const requestId=crypto.randomUUID();
       if(pendingFlowOutputs.current.size>=10)throw new Error('Too many pending Flow output mappings.');
       pendingFlowOutputs.current.set(requestId,{flowApiName,mappings:outputMappings});
       onLaunchFlow(flowApiName, inputs,{requestId});
       return { interviewStarted: true };
-    }
-    if (selected.flowType !== 'Autolaunched Flow') {
-      throw new Error('Component event Flow must be Screen or Autolaunched.');
     }
     try {
       const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
@@ -576,6 +578,7 @@ function MetadataBoundPageComponent({
       loadAsset: (id:string) => /^[0-9a-f-]{36}$/i.test(id)
         ? apiRequest<{contentType:string;contentBase64:string}>('/media-assets/'+id)
         : Promise.reject(new Error('Invalid media asset ID')), viewRevision: revision,
+      loadCompanySettings: () => apiRequest('/metadata/currencies'),
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
