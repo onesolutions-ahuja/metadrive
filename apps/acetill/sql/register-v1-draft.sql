@@ -40,4 +40,56 @@ SELECT a.id,1,'Object',o.api_name,'' FROM md_apps a
 CROSS JOIN (VALUES ('Product'),('Cart'),('CartLine'),('Order'),('OrderLine')) o(api_name)
 WHERE a.api_name='Acetill'
 ON CONFLICT DO NOTHING;
+
+-- Reuse existing core One components, with no Acetill-specific copies.
+-- The package installer resolves each required Component against tenant SQL.
+INSERT INTO md_app_package_resources(app_id,version,resource_type,api_name,parent_api)
+SELECT a.id,1,'Component',c.api_name,'' FROM md_apps a
+CROSS JOIN (VALUES ('OneText'),('OneSearch'),('OneItemGrid'),('OneShoppingCart'),('OneButton')) c(api_name)
+WHERE a.api_name='Acetill'
+ON CONFLICT DO NOTHING;
+
+-- SQL-backed, editable published page component instances.
+INSERT INTO md_app_package_page_component_templates(app_id,version,page_api,component_api,slot,sort_order)
+SELECT a.id,1,p.page_api,p.component_api,p.slot,p.sort_order
+FROM md_apps a
+CROSS JOIN (VALUES
+ ('AcetillRegister','OneText','main',10),
+ ('AcetillRegister','OneButton','main',20),
+ ('AcetillSale','OneSearch','main',10),
+ ('AcetillSale','OneItemGrid','main',20),
+ ('AcetillSale','OneShoppingCart','sidebar',30),
+ ('AcetillCheckout','OneShoppingCart','main',10),
+ ('AcetillReceipt','OneText','main',10)
+) p(page_api,component_api,slot,sort_order)
+WHERE a.api_name='Acetill'
+ON CONFLICT DO NOTHING;
+
+-- Declarative properties, not application-specific TypeScript render branches.
+INSERT INTO md_app_package_page_property_templates
+ (app_id,version,page_api,component_api,slot,sort_order,property_path,data_type,value_text)
+SELECT a.id,1,p.page_api,p.component_api,p.slot,p.sort_order,p.property_path,p.data_type,p.value_text
+FROM md_apps a
+CROSS JOIN (VALUES
+ ('AcetillRegister','OneText','main',10,'text','string','Select a register to begin'),
+ ('AcetillRegister','OneButton','main',20,'label','string','Open register'),
+ ('AcetillRegister','OneButton','main',20,'disabled','boolean','true'),
+ ('AcetillSale','OneSearch','main',10,'placeholder','string','Search products or scan a barcode'),
+ ('AcetillSale','OneSearch','main',10,'searchKey','string','acetill-catalogue'),
+ ('AcetillSale','OneItemGrid','main',20,'title','string','Products'),
+ ('AcetillSale','OneItemGrid','main',20,'objectApiName','string','Product'),
+ ('AcetillSale','OneItemGrid','main',20,'titleFieldApiName','string','Name'),
+ ('AcetillSale','OneItemGrid','main',20,'priceFieldApiName','string','Price'),
+ ('AcetillSale','OneItemGrid','main',20,'searchKey','string','acetill-catalogue'),
+ ('AcetillSale','OneItemGrid','main',20,'cartTargetKey','string','acetill'),
+ ('AcetillSale','OneShoppingCart','sidebar',30,'title','string','Current sale'),
+ ('AcetillSale','OneShoppingCart','sidebar',30,'cartTargetKey','string','acetill'),
+ ('AcetillSale','OneShoppingCart','sidebar',30,'checkoutLabel','string','Checkout'),
+ ('AcetillCheckout','OneShoppingCart','main',10,'title','string','Checkout'),
+ ('AcetillCheckout','OneShoppingCart','main',10,'cartTargetKey','string','acetill'),
+ ('AcetillReceipt','OneText','main',10,'text','string','Receipt is available after an authorised completed transaction')
+) p(page_api,component_api,slot,sort_order,property_path,data_type,value_text)
+WHERE a.api_name='Acetill'
+ON CONFLICT DO NOTHING;
+
 COMMIT;
