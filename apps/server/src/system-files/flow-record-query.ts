@@ -10,7 +10,7 @@ export type FlowRecordCondition = {
 type FieldRow = {api_name:string;data_type:string};
 type ValueRow = {
   id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
-  field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null;
+  field_api:string|null;value_text:string|null;reference_record_id:string|null;value_number:string|null;value_boolean:boolean|null;value_date:string|null;value_datetime:string|null;data_type:string|null;
 };
 
 function logicSql(logic:string|undefined,conditions:readonly string[]):string {
@@ -75,7 +75,7 @@ export class FlowRecordQuery {
         throw new Error('Flow filter field is not readable: '+field.api_name);
       const operator=String(item.operator??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
       const valueExpression=item.field==='Id'?'r.id::text':`(
-        SELECT COALESCE(v.value_text,v.reference_record_id::text)
+        SELECT COALESCE(v.value_text,v.reference_record_id::text,v.value_boolean::text,v.value_number::text,v.value_date::text,v.value_datetime::text)
         FROM md_record_values v
         WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
           AND v.field_api=${'$'+(params.length+1)}
@@ -126,7 +126,7 @@ export class FlowRecordQuery {
       }else{
         const op={equals:'=',notequals:'<>',greaterthan:'>',greaterthanorequalto:'>=',
           lessthan:'<',lessthanorequalto:'<='}[operator]!;
-        predicates.push(`${expression} ${op} ${valueParam}`);
+        predicates.push(`${expression} ${op} ${typeof value==='boolean'?valueParam+'::text':valueParam}`);
       }
     }
     const logic=logicSql(conditionLogic,predicates);
@@ -144,7 +144,7 @@ export class FlowRecordQuery {
         throw new Error('Invalid Flow sort order');
       const direction=['Descending','desc'].includes(options.sortOrder??'')?'DESC':'ASC';
       sort=options.sortField==='Id'?`r.id ${direction}`:`(
-        SELECT COALESCE(sv.value_text,sv.reference_record_id::text)
+        SELECT COALESCE(sv.value_text,sv.reference_record_id::text,sv.value_boolean::text,sv.value_number::text,sv.value_date::text,sv.value_datetime::text)
         FROM md_record_values sv
         WHERE sv.tenant_id=r.tenant_id AND sv.record_id=r.id AND sv.object_api=r.object_api
           AND sv.field_api=${'$'+(params.length+1)}
@@ -162,7 +162,7 @@ export class FlowRecordQuery {
         ORDER BY ${sort} LIMIT $${params.length}
       )
       SELECT m.id,m.created_at,m.updated_at,m.owner_id,m.record_type_id,
-        v.field_api,v.value_text,v.reference_record_id,f.data_type
+        v.field_api,v.value_text,v.reference_record_id,v.value_number,v.value_boolean,v.value_date,v.value_datetime,f.data_type
       FROM matching m
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=m.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -178,10 +178,10 @@ export class FlowRecordQuery {
       if(!records.has(row.id))records.set(row.id,{Id:row.id,CreatedAt:row.created_at.toISOString(),
         LastModifiedDate:row.updated_at.toISOString(),OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
       if(!row.field_api||row.field_api==='OwnerId'||!readable.has(row.field_api))continue;
-      const value=row.reference_record_id??row.value_text;
+      const value=row.reference_record_id??row.value_text??row.value_number??row.value_boolean??row.value_date??row.value_datetime;
       records.get(row.id)![row.field_api]=value===null?null:
         ['number','currency','percent'].includes(String(row.data_type))?Number(value):
-          row.data_type==='boolean'?value==='true':value;
+          row.data_type==='boolean'?(value===true||value==='true'):value;
     }
     return [...records.values()];
   }

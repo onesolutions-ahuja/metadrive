@@ -142,8 +142,8 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     errors.push('Before-save $Record assignments support only the Assign operator');
   }
   if(type==='Custom Error'){
-   if(data.flowType!=='Record-Triggered Flow')
-    errors.push('Custom Error is supported only in Record-Triggered Flows');
+   if(!['Record-Triggered Flow','Autolaunched Flow'].includes(String(data.flowType)))
+    errors.push('Custom Error is supported only in Record-Triggered and Autolaunched Flows');
    if(typeof properties.errorMessage!=='string'||!properties.errorMessage.trim()
      ||properties.errorMessage.length>1000)
     errors.push('Custom Error requires a message of at most 1000 characters');
