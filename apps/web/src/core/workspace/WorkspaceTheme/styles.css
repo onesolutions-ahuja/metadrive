@@ -1051,7 +1051,14 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .workspace-records { overflow: auto; }
 .records-page { max-width: 1500px; margin: 0 auto; padding: 26px 30px 40px; }
 .records-page-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-.records-page-heading > div:nth-child(2) { flex: 1; }
+.records-page-heading > div:nth-child(2) { flex: 0 1 auto; }
+.records-heading-object-picker { min-width: 150px; max-width: min(220px, 40vw); }
+.records-heading-object-picker .records-object-select { width: 100%; min-width: 0; }
+.records-page-heading .records-heading-actions { margin-left: auto; }
+@media (max-width: 640px) {
+  .records-page-heading { flex-wrap: wrap; }
+  .records-heading-object-picker { flex: 1 1 155px; }
+}
 .records-page-heading h1, .record-detail-heading h1 { margin: 0; color: var(--text); font-size: 22px; }
 .records-page-heading .eyebrow { margin-bottom: 3px; font-size:var(--md-fs-xs,11px); letter-spacing: .08em; }
 .records-heading-actions { display: flex; align-items: center; gap: 8px; }
