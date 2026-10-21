@@ -10,10 +10,6 @@ const sections:Record<string,Array<{label:string;object:string}>>={
   acetill:[{label:'Products',object:'Product'},{label:'Customers',object:'Customer'},{label:'Carts',object:'Cart'},{label:'Orders',object:'Order'}],
   aceassist:[{label:'Appointments',object:'Appointment'},{label:'Customers',object:'Customer'},{label:'Quotations',object:'Quotation'},{label:'Quotation lines',object:'QuotationLine'},{label:'Invoices',object:'Invoice'}]
 };
-const flowActions:Record<string,Array<{label:string;flow:string}>>={
-  acetill:[{label:'Complete sale',flow:'AcetillCompleteSale'},{label:'Print receipt',flow:'AcetillPrintReceipt'}],
-  aceassist:[{label:'Complete visit',flow:'AceAssistCompleteVisit'},{label:'Reschedule visit',flow:'AceAssistRescheduleVisit'}]
-};
 const show=(value:unknown)=>value==null?'—':typeof value==='object'?JSON.stringify(value):String(value);
 
 /** Dedicated React product workspaces. Server-side tenant and RBAC rules remain authoritative. */
@@ -28,7 +24,17 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
   const [editing,setEditing]=useState(false);
   const [draft,setDraft]=useState<Record<string,unknown>>({});
   const [flowInput,setFlowInput]=useState('{}');
+  const [flowActions,setFlowActions]=useState<Array<{apiName:string;label:string}>>([]);
+  const [flowError,setFlowError]=useState('');
   const [reload,setReload]=useState(0);
+  useEffect(()=>{
+    let active=true;
+    void apiRequest<{actions:Array<{apiName:string;label:string}>}>(
+      '/flows/available-actions?product='+encodeURIComponent(entry.appId)
+    ).then(response=>{if(active){setFlowActions(response.actions??[]);setFlowError('');}})
+      .catch(e=>{if(active){setFlowActions([]);setFlowError(e instanceof Error?e.message:String(e));}});
+    return()=>{active=false;};
+  },[entry.appId]);
   const current=tabs[selected];
   const metadata=objects.find(o=>o.apiName.toLowerCase()===current?.object.toLowerCase());
   useEffect(()=>{
@@ -107,10 +113,12 @@ export default function StandaloneRuntime({entry,onLogout}:{entry:StandaloneEntr
         </table></div>}
       </>}
       <section style={{marginTop:32}}>
-        <h2>Backend actions</h2><p>Run active OneEngine flows. Flow execution permissions are checked by the server.</p>
+        <h2>Backend workflows</h2><p>Only active OneEngine flows authorised for this user appear here. Administrators manage them in Flow Builder.</p>
+        {flowError&&<p role="alert">Could not load workflows: {flowError}</p>}
+        {!flowError&&flowActions.length===0&&<p>No active, permitted workflows configured for this frontend.</p>}
         <label>Flow inputs (JSON)<textarea style={{display:'block',width:'100%',maxWidth:650}} rows={3} value={flowInput} onChange={e=>setFlowInput(e.target.value)}/></label>
-        <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:12}}>{(flowActions[entry.slug]??[]).map(action=>
-          <button type="button" key={action.flow} disabled={busy} onClick={()=>void execute(action.flow)}>{action.label}</button>)}</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:12}}>{flowActions.map(action=>
+          <button type="button" key={action.apiName} disabled={busy} onClick={()=>void execute(action.apiName)}>{action.label}</button>)}</div>
       </section>
     </main>
   </div>;
