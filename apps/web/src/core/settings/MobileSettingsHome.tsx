@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { Building2, ChevronRight, Database, LockKeyhole, Search, Settings2, Workflow, ChartNoAxesColumn, Plug, X, ShieldCheck } from 'lucide-react';
-import { setupNavigation } from '../../metadata/Definitions/metadata';
+import { setupNavigation } from '../metadata/Definitions/metadata';
 import './MobileSettingsHome.css';
 
 type Rights = {
