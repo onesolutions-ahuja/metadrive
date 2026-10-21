@@ -113,6 +113,7 @@ export const COMMUNICATION_OBJECTS=[{apiName:'Communication',label:'Communicatio
     "maxLength": 2000
   }
 ]}] as const;
+export const COMMUNICATION_PICKLISTS={Channel:['Email','SMS','WhatsApp','Phone','WebChat','Push','Other'],Direction:['Inbound','Outbound'],Status:['Draft','Queued','Sending','Sent','Delivered','Read','Failed','Received']} as const;
 export const COMMUNICATION_OBJECTS_SEED_VERSION='core-communication-objects-v1';
 
 export async function seedCommunicationObjects(client:PoolClient,tenantId:string):Promise<void>{
@@ -122,11 +123,16 @@ export async function seedCommunicationObjects(client:PoolClient,tenantId:string
       await client.query('INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
         [tenantId,object.apiName,field.apiName,field.label,field.dataType,'relatedObject' in field?field.relatedObject:null,'maxLength' in field?field.maxLength:null]);
     }
+    for(const [fieldApi,values] of Object.entries(COMMUNICATION_PICKLISTS)){
+      for(const [index,value] of values.entries()){
+        await client.query('INSERT INTO md_field_picklist_values(tenant_id,object_api,field_api,value,sort_order) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',[tenantId,object.apiName,fieldApi,value,(index+1)*10]);
+      }
+    }
   }
 }
 
 export async function seedCommunicationObjectsForExistingTenants(db:SqlPersistence):Promise<number>{
-  const checksum=createHash('sha256').update(JSON.stringify(COMMUNICATION_OBJECTS)).digest('hex');
+  const checksum=createHash('sha256').update(JSON.stringify([COMMUNICATION_OBJECTS,COMMUNICATION_PICKLISTS])).digest('hex');
   return db.transaction(async client=>{
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['metadrive:system:migrations']);
     const applied=await client.query<{checksum:string}>('SELECT checksum FROM md_system_migrations WHERE version=$1',[COMMUNICATION_OBJECTS_SEED_VERSION]);
