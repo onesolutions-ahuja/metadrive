@@ -1,5 +1,5 @@
-import { PicklistValueRows } from './PicklistValueRows';
 // @ts-nocheck
+import { PicklistValueRows } from './PicklistValueRows';
 // Shared metadata-driven field creation wizard. View-only; actions remain in the object engine.
 import { useEffect, useState } from 'react';
 import type { RelatedLookupFilterMetadata } from '../../metadata/Definitions/metadata';
