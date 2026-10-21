@@ -5,7 +5,7 @@ import test from 'node:test';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 import {validateFlowDraft} from '../../src/system-files/flow-validation.js';
 
-const file=fileURLToPath(new URL('../../../../acetill/flows/payment-flows.v1.json',import.meta.url));
+const file=fileURLToPath(new URL('../../../acetill/flows/payment-flows.v1.json',import.meta.url));
 const graphs=JSON.parse(readFileSync(file,'utf8')) as Record<string,Record<string,unknown>>;
 const rbac={require:async()=>undefined} as unknown as RbacEngine;
 
