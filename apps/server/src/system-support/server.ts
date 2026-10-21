@@ -18,6 +18,8 @@ import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotat
 import {seedAcetillAppCatalog} from '../app-seeders/acetill-app-catalog.js';
 import {seedAceKioskAppCatalog} from '../app-seeders/acekiosk-app-catalog.js';
 import {seedAceKioskMenuFlows} from '../app-seeders/acekiosk-menu-flow.js';
+import {seedAceChatterAppCatalog} from '../app-seeders/acechatter-app-catalog.js';
+import {seedAceChatterFlows} from '../app-seeders/acechatter-flow.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -2016,9 +2018,11 @@ export async function startSystemServer() {
   try { await applySystemMigrations(db); await db.verifySchema();
     await seedAcetillAppCatalog(db); // Catalog only: tenant installation/RBAC stay in AppExchange.
     await seedAceKioskAppCatalog(db); // Custom frontend discovery; no automatic tenant licence/install.
+    await seedAceChatterAppCatalog(db); // Catalog only; app installation is explicit.
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     await seedCartObjectsForExistingTenants(db);
     await seedAceKioskMenuFlows(db); // Installed tenants only, never overwrites existing Flow versions.
+    await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
     await seedQuotationObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
