@@ -126,7 +126,7 @@ export class FlowRecordQuery {
       }else{
         const op={equals:'=',notequals:'<>',greaterthan:'>',greaterthanorequalto:'>=',
           lessthan:'<',lessthanorequalto:'<='}[operator]!;
-        predicates.push(`${expression} ${op} ${valueParam}`);
+        predicates.push(`${expression} ${op} ${typeof value==='boolean'?valueParam+'::text':valueParam}`);
       }
     }
     const logic=logicSql(conditionLogic,predicates);
