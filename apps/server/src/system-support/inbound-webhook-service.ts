@@ -180,6 +180,9 @@ export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
    RETURNING id`,[actor.tenant_id,body.apiName,apps[0].id,body.flowApi,
     body.executionUserId,digest(body.verifyToken),secured.ciphertext,secured.keyId,
     body.provider??'Meta',body.enabled===true,actor.user_id]);
+  await db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+   VALUES($1,$2,'InboundWebhookCreated',$3::jsonb)`,
+   [actor.tenant_id,actor.user_id,JSON.stringify({endpointId:rows[0].id,appApiName:body.appApiName,flowApi:body.flowApi})]);
   res.status(201).json({id:rows[0].id,callbackUrl:publicUrl(req,rows[0].id)});
  }));
  app.patch('/api/metadata/inbound-webhooks/:id',handler(async(req,res)=>{
@@ -192,6 +195,9 @@ export function registerInboundWebhookAdminRoutes(app:Express,db:SqlPersistence,
    SET enabled=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id`,
    [actor.tenant_id,req.params.id,req.body.enabled]);
   if(!rows[0]){res.status(404).json({error:'Webhook not found'});return;}
+  await db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+   VALUES($1,$2,'InboundWebhookStatusChanged',$3::jsonb)`,
+   [actor.tenant_id,actor.user_id,JSON.stringify({endpointId:req.params.id,enabled:req.body.enabled})]);
   res.json({enabled:req.body.enabled});
  }));
 }
