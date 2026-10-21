@@ -538,6 +538,21 @@ function RecordWorkspace({
       .catch(()=>{if(active)setDuplicateMatches([]);});
     return ()=>{active=false};
   },[route.kind,route.kind==='record-detail'?route.recordId:'',object?.apiName,record?.Id,refreshKey]);
+  // Reset nested workspace scroll when navigating to a different record.
+  // Workspace route changes don't remount this component, so old scroll offsets survive.
+  useEffect(() => {
+    if (route.kind !== 'record-detail') return;
+    const reset = () => {
+      for (const selector of ['.workspace-records', '.workspace-content', '.setup-content', '.record-detail-overlay']) {
+        document.querySelectorAll(selector).forEach(node => {
+          if (node instanceof HTMLElement) node.scrollTop = 0;
+        });
+      }
+      window.scrollTo(0, 0);
+    };
+    reset();
+    requestAnimationFrame(reset);
+  }, [route.kind, route.kind === 'record-detail' ? route.recordId : '']);
   const [formOpen, setFormOpen] = useState(false);
   // Switching from a scrolled record list to its editor must start at the top.
   // Otherwise the editor header remains hidden above the sticky workspace bar.
@@ -1973,6 +1988,18 @@ function RecordWorkspace({
               : null}
           </div>
         </div>}
+        {/* Full-field view supplements metadata layouts without altering their sections.
+            Only server-readable fields are included; it never bypasses FLS. */}
+        <details className="record-fields-card surface record-all-fields" open>
+          <summary className="record-fields-heading">All readable fields ({readableRecordFields.length})</summary>
+          <dl className="record-fields-grid">
+            {readableRecordFields.map(field =>
+              <div className="record-field" key={field.apiName}>
+                <dt>{field.label}</dt>
+                <dd>{formatFieldValue(field, record[field.apiName])}</dd>
+              </div>)}
+          </dl>
+        </details>
         {!assignedPage && compactFields.length > 0 && <section className="record-highlights surface" aria-label="Record highlights">
           {compactFields.map((field) => <div key={field.apiName}><span>{field.label}</span><strong>{formatFieldValue(field, record[field.apiName])}</strong></div>)}
         </section>}
