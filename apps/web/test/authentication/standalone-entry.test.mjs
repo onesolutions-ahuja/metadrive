@@ -88,7 +88,7 @@ test('user landing preference opens the assigned app without granting access',()
 
 test('AceKiosk loads a custom lazy frontend and delegates personalisation and checkout to Flows',()=>{
   const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
-  const kiosk=readFileSync(new URL('../../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
+  const kiosk=readFileSync(new URL('../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
   assert.match(app,/AceKioskAccessGate/);
   assert.match(app,/LazyAceKiosk/);
   assert.match(kiosk,/AceKioskLoadMenu/);
