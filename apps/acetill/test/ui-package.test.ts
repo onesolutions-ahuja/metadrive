@@ -30,15 +30,17 @@ test('catalogue and basket bind shared Product fields and same cart state',()=>{
  assert.match(sql,/OneShoppingCart','sidebar',30,'cartTargetKey','string','acetill'/);
 });
 
-test('standalone entrypoint mounts Acetill without importing full admin workspace',()=>{
- const shell=readFileSync(fileURLToPath(new URL('../src/AcetillShell.tsx',import.meta.url)),'utf8');
+test('standalone entrypoint reuses shared authentication and published metadata runtime',()=>{
+ const entry=readFileSync(fileURLToPath(new URL('../../web/src/acetillEntry.tsx',import.meta.url)),'utf8');
  const main=readFileSync(fileURLToPath(new URL('../../web/src/main.tsx',import.meta.url)),'utf8');
- assert.match(main,/isAcetillEntry/);
- assert.match(main,/<Acetill \/>/);
- assert.doesNotMatch(shell,/SetupApp|MarketingSite|AppExchange|object-manager/);
- assert.match(shell,/createLoginView/);
- assert.match(shell,/\/auth\/refresh\?landing=1/);
- assert.match(shell,/\/apps\/Acetill\/home-page/);
- assert.match(shell,/OneShoppingCart/);
- assert.match(shell,/previewOnly=\{true\}/);
+ const auth=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/App/App.tsx',import.meta.url)),'utf8');
+ const runtime=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url)),'utf8');
+ assert.match(entry,/import App from '.\/core\/workspace\/App\/App'/);
+ assert.doesNotMatch(entry,/AcetillShell|SetupApp|MarketingSite/);
+ assert.doesNotMatch(main,/AcetillShell/);
+ assert.match(auth,/resolveStandaloneEntry/);
+ assert.match(auth,/LazyStandaloneRuntime/);
+ assert.match(runtime,/\/metadata\/apps/);
+ assert.match(runtime,/LazyPublishedRuntime/);
+ assert.match(runtime,/resolveSqlComponentLibrary/);
 });
