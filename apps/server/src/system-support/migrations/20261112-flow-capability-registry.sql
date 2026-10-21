@@ -85,7 +85,7 @@ SELECT e.element_type,f.flow_type,
  FROM md_flow_capability_elements e CROSS JOIN md_flow_capability_flow_types f
  WHERE f.validate_enabled AND e.enabled
  AND (e.element_type <> 'Screen' OR f.flow_type = 'Screen Flow')
- AND (e.element_type <> 'Custom Error' OR f.flow_type IN ('Record-Triggered Flow','Autolaunched Flow'))
+ AND (e.element_type <> 'Custom Error' OR f.flow_type = 'Record-Triggered Flow')
  AND (e.element_type <> 'Publish Platform Event' OR f.flow_type <> 'Platform Event-Triggered Flow')
 ON CONFLICT (element_type,flow_type) DO NOTHING;
 
