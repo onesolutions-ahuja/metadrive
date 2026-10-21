@@ -204,7 +204,7 @@
         "config": {
           "collection": "cartItems",
           "direction": "First to last",
-          "loopVariable": "currentLine"
+          "loopVariable": "verifyLine"
         },
         "id": 4,
         "label": "Verify each cart item",
@@ -217,7 +217,7 @@
             {
               "field": "Id",
               "operator": "Equals",
-              "value": "{!currentLine.Product}"
+              "value": "{!verifyLine.Product}"
             },
             {
               "field": "Active",
@@ -244,7 +244,7 @@
                   "operator": "IsNotNull"
                 },
                 {
-                  "field": "{!currentLine.Quantity}",
+                  "field": "{!verifyLine.Quantity}",
                   "operator": "Greater",
                   "value": 0
                 },
@@ -266,7 +266,7 @@
       {
         "config": {
           "operator": "Add",
-          "value": "{!lineAmount}",
+          "value": "{!verifyLineAmount}",
           "variable": "validatedTotal"
         },
         "id": 7,
@@ -374,7 +374,7 @@
         "config": {
           "collection": "cartItems",
           "direction": "First to last",
-          "loopVariable": "currentLine"
+          "loopVariable": "saveLine"
         },
         "id": 13,
         "label": "Save each order line",
@@ -387,7 +387,7 @@
             {
               "field": "Id",
               "operator": "Equals",
-              "value": "{!currentLine.Product}"
+              "value": "{!saveLine.Product}"
             },
             {
               "field": "Active",
@@ -412,11 +412,11 @@
             },
             {
               "field": "Product",
-              "value": "{!currentLine.Product}"
+              "value": "{!saveLine.Product}"
             },
             {
               "field": "Quantity",
-              "value": "{!currentLine.Quantity}"
+              "value": "{!saveLine.Quantity}"
             },
             {
               "field": "UnitPrice",
@@ -424,7 +424,7 @@
             },
             {
               "field": "LineTotal",
-              "value": "{!lineAmount}"
+              "value": "{!saveLineAmount}"
             }
           ],
           "object": "OrderLine",
@@ -487,7 +487,7 @@
         "config": {
           "variable": "secondTotal",
           "operator": "Add",
-          "value": "{!lineAmount}"
+          "value": "{!saveLineAmount}"
         }
       },
       {
@@ -566,12 +566,6 @@
       },
       {
         "dataType": "Number",
-        "name": "lineAmount",
-        "type": "Formula",
-        "value": "currentProduct.Price * currentLine.Quantity"
-      },
-      {
-        "dataType": "Number",
         "name": "changeAmount",
         "type": "Formula",
         "value": "cashReceived - validatedTotal"
@@ -598,6 +592,18 @@
         "name": "secondTotal",
         "type": "Variable",
         "dataType": "Number"
+      },
+      {
+        "name": "verifyLineAmount",
+        "type": "Formula",
+        "dataType": "Number",
+        "value": "currentProduct.Price * verifyLine.Quantity"
+      },
+      {
+        "name": "saveLineAmount",
+        "type": "Formula",
+        "dataType": "Number",
+        "value": "currentProduct.Price * saveLine.Quantity"
       }
     ],
     "startConfig": {
@@ -813,7 +819,7 @@
         "config": {
           "collection": "cartItems",
           "direction": "First to last",
-          "loopVariable": "currentLine"
+          "loopVariable": "verifyLine"
         },
         "id": 4,
         "label": "Verify each cart item",
@@ -826,7 +832,7 @@
             {
               "field": "Id",
               "operator": "Equals",
-              "value": "{!currentLine.Product}"
+              "value": "{!verifyLine.Product}"
             },
             {
               "field": "Active",
@@ -853,7 +859,7 @@
                   "operator": "IsNotNull"
                 },
                 {
-                  "field": "{!currentLine.Quantity}",
+                  "field": "{!verifyLine.Quantity}",
                   "operator": "Greater",
                   "value": 0
                 },
@@ -875,7 +881,7 @@
       {
         "config": {
           "operator": "Add",
-          "value": "{!lineAmount}",
+          "value": "{!verifyLineAmount}",
           "variable": "validatedTotal"
         },
         "id": 7,
@@ -975,7 +981,7 @@
         "config": {
           "collection": "cartItems",
           "direction": "First to last",
-          "loopVariable": "currentLine"
+          "loopVariable": "saveLine"
         },
         "id": 13,
         "label": "Save each order line",
@@ -988,7 +994,7 @@
             {
               "field": "Id",
               "operator": "Equals",
-              "value": "{!currentLine.Product}"
+              "value": "{!saveLine.Product}"
             },
             {
               "field": "Active",
@@ -1013,11 +1019,11 @@
             },
             {
               "field": "Product",
-              "value": "{!currentLine.Product}"
+              "value": "{!saveLine.Product}"
             },
             {
               "field": "Quantity",
-              "value": "{!currentLine.Quantity}"
+              "value": "{!saveLine.Quantity}"
             },
             {
               "field": "UnitPrice",
@@ -1025,7 +1031,7 @@
             },
             {
               "field": "LineTotal",
-              "value": "{!lineAmount}"
+              "value": "{!saveLineAmount}"
             }
           ],
           "object": "OrderLine",
@@ -1088,7 +1094,7 @@
         "config": {
           "variable": "secondTotal",
           "operator": "Add",
-          "value": "{!lineAmount}"
+          "value": "{!saveLineAmount}"
         }
       },
       {
@@ -1166,12 +1172,6 @@
         "type": "Variable"
       },
       {
-        "dataType": "Number",
-        "name": "lineAmount",
-        "type": "Formula",
-        "value": "currentProduct.Price * currentLine.Quantity"
-      },
-      {
         "availableForOutput": true,
         "dataType": "Text",
         "name": "orderId",
@@ -1193,6 +1193,18 @@
         "name": "secondTotal",
         "type": "Variable",
         "dataType": "Number"
+      },
+      {
+        "name": "verifyLineAmount",
+        "type": "Formula",
+        "dataType": "Number",
+        "value": "currentProduct.Price * verifyLine.Quantity"
+      },
+      {
+        "name": "saveLineAmount",
+        "type": "Formula",
+        "dataType": "Number",
+        "value": "currentProduct.Price * saveLine.Quantity"
       }
     ],
     "startConfig": {
