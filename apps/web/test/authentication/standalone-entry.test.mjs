@@ -22,7 +22,8 @@ test('product login keeps shared MetaDrive session, MFA and password recovery',(
   assert.match(login,/auth\/mfa\/verify/);
   assert.match(login,/LoginRecovery/);
   const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
-  assert.match(app,/resolveStandaloneEntry\(window\.location\.pathname/);
+  assert.match(app,/standaloneCanonicalPath\(window\.location\.pathname/);
+  assert.match(app,/resolveStandaloneEntry\(entryPath/);
   assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
   assert.match(app,/return <SetupApp entryTiming=/);
 });
