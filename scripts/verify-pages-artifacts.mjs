@@ -1,12 +1,23 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 const dist = resolve('apps/web/dist');
-for (const file of ['index.html', '404.html', 'component-sandbox.js']) {
+for (const file of ['index.html', '404.html', 'component-sandbox.js', 'acetill/index.html']) {
   if (!existsSync(resolve(dist,file))) throw new Error('Missing release asset: '+file);
 }
 const html=readFileSync(resolve(dist,'index.html'),'utf8');
 const fallback=readFileSync(resolve(dist,'404.html'),'utf8');
 if (!html.includes('<html') || !fallback.includes('<html')) throw new Error('Invalid HTML entrypoint');
+const acetillHtml=readFileSync(resolve(dist,'acetill/index.html'),'utf8');
+if (!acetillHtml.includes('<html') || !acetillHtml.includes('Acetill | Point of Sale'))
+  throw new Error('Acetill must have an independent built HTML entrypoint, not a redirect');
+const acetillScripts=[...acetillHtml.matchAll(/src=["']([^"']+\.js)["']/g)].map(match=>match[1]);
+if(!acetillScripts.length)throw new Error('Acetill HTML does not reference a compiled JS entrypoint');
+for(const ref of acetillScripts){
+  const asset=resolve(dist,ref.replace(/^\//,''));
+  if(!asset.startsWith(dist+'/') || !existsSync(asset))
+    throw new Error('Acetill entry asset missing: '+ref);
+}
+
 const refs=[...html.matchAll(/(?:src|href)=[\"']([^\"']+\.(?:js|css))[\"']/g)].map(x=>x[1]);
 if (!refs.length) throw new Error('No JS or CSS bundle references');
 for(const ref of refs) {
@@ -57,5 +68,18 @@ if (process.argv.includes('--live')) {
     if (attempt<24) await new Promise(resolve=>setTimeout(resolve,5000));
   }
   if (!verified) throw new Error('Live application still differs from published build: '+lastObserved);
+  // An independently published Acetill document is required; homepage fallback
+  // or a stale __spa redirect must fail release verification.
+  const response=await fetch(host+'/acetill/?metadrive_release_probe='+Date.now(),{
+    cache:'no-store',headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(15000)
+  });
+  if(!response.ok)throw new Error('Published Acetill route unavailable: HTTP '+response.status);
+  const observed=await response.text();
+  const expectedAcetillJs=acetillScripts.map(ref=>ref.split('/').at(-1));
+  const observedJs=[...observed.matchAll(/src=["']([^"']+\.js)["']/g)].map(m=>m[1].split('/').at(-1));
+  if(!observed.includes('Acetill | Point of Sale') ||
+     !expectedAcetillJs.every(name=>observedJs.includes(name)))
+    throw new Error('Live /acetill/ is not the published independent Acetill frontend');
+
 }
 console.log('Pages build verified'+(process.argv.includes('--live')?' live':''));

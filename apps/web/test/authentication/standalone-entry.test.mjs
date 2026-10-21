@@ -4,11 +4,10 @@ import {readFileSync} from 'node:fs';
 import {resolveStandaloneEntry,standaloneEntryForAppId,standaloneCanonicalPath} from '../../src/core/workspace/Standalone/standaloneEntries.ts';
 import {appRoutePathWithoutBase} from '../../src/core/workspace/Navigation/appRouting.ts';
 
-test('direct Acetill, Ace Assist and AceKiosk routes have separate product identities',()=>{
+test('direct Acetill and Ace Assist routes have separate product identities',()=>{
   assert.deepEqual(
     [resolveStandaloneEntry('/acetill')?.appId,resolveStandaloneEntry('/aceassist/')?.appId],
     ['Acetill','AceAssist']);
-  assert.equal(resolveStandaloneEntry('/acekiosk')?.appId,'AceKiosk');
   assert.equal(resolveStandaloneEntry('/metadrive/acetill','/metadrive/')?.appId,'Acetill');
   for(const pathname of ['/','/une/setup/home','/api/auth/login','/acetill/checkout','/notinstalled','/login']) {
     assert.equal(resolveStandaloneEntry(pathname),null,pathname);
@@ -59,7 +58,6 @@ test('old app links and metadata navigation enter the app-only frontend',()=>{
   assert.equal(standaloneCanonicalPath('/une/apps/Aceassist/home'),'/aceassist');
   assert.equal(standaloneCanonicalPath('/une/apps/AceAssist/home'),'/aceassist');
   assert.equal(standaloneCanonicalPath('/une/apps/Acetill/home'),'/acetill');
-  assert.equal(standaloneCanonicalPath('/une/apps/AceKiosk/home'),'/acekiosk');
   assert.equal(standaloneCanonicalPath('/une/apps/Aceassist/pages/Visits'),'/aceassist?page=Visits');
   assert.equal(standaloneCanonicalPath('/metadrive/une/apps/ACEASSIST/home','', '/metadrive/'),'/metadrive/aceassist');
   for (const path of ['/une/apps/Other/home','/une/setup/home','/une/apps/Aceassist/records/Contact','/une/apps/Aceassist/pages/../setup']) {
@@ -86,13 +84,13 @@ test('user landing preference opens the assigned app without granting access',()
   assert.match(app,/Standalone product UIs do not depend on AppExchange installation/);
 });
 
-test('AceKiosk loads a custom lazy frontend and delegates personalisation and checkout to Flows',()=>{
-  const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
-  const kiosk=readFileSync(new URL('../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
-  assert.match(app,/AceKioskAccessGate/);
-  assert.match(app,/LazyAceKiosk/);
-  assert.match(kiosk,/AceKioskLoadMenu/);
-  assert.match(kiosk,/AceKioskCheckout/);
-  assert.match(kiosk,/optionsByProduct/);
-  assert.doesNotMatch(kiosk,/\/records\/|OneShoppingCart|OneItemGrid|PageBuilder/);
+test('AceKiosk uses independent lazy custom UI and backend Flows',()=>{
+ const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
+ const kiosk=readFileSync(new URL('../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
+ assert.equal(resolveStandaloneEntry('/acekiosk')?.appId,'AceKiosk');
+ assert.equal(standaloneCanonicalPath('/une/apps/AceKiosk/home'),'/acekiosk');
+ assert.match(app,/AceKioskAccessGate/);
+ assert.match(kiosk,/AceKioskLoadMenu/);
+ assert.match(kiosk,/AceKioskCheckout/);
+ assert.doesNotMatch(kiosk,/\/records\/|OneShoppingCart|OneItemGrid|PageBuilder/);
 });

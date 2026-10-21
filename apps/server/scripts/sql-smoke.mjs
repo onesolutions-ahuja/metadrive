@@ -102,7 +102,7 @@ try{
   components:[],activationAssignments:[{id:'appPage',scope:'App Default',appId:'AuditApp',
    profileId:null,recordTypeId:null,formFactors:['Desktop']}]
  });
- assert.equal((await pageService.resolveAppPage(tenantId,'AuditApp',appPage.apiName,'Desktop'))?.apiName,appPage.apiName);
+ assert.equal((await pageService.resolveAppPage(tenantId,'AuditApp',appPage.apiName,'Desktop'))?.page.apiName,appPage.apiName);
 
  const {RecordEngine}=await import(new URL('record-engine.js',built).href);
  const records=new RecordEngine(db,new RbacEngine(db));

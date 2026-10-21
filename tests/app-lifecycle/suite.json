@@ -8,6 +8,8 @@
     "apps/server/test/system/app-runtime-modules.test.ts",
     "apps/server/test/system/component-library-lifecycle.test.ts",
     "apps/server/test/system/connector-licence-contract.test.ts",
-    "apps/server/test/system/durable-app-lifecycle.test.ts"
+    "apps/server/test/system/durable-app-lifecycle.test.ts",
+    "apps/server/test/system/page-runtime-app-pages.test.ts",
+    "apps/server/test/system/published-app-package.test.ts"
   ]
 }

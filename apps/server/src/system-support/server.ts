@@ -15,6 +15,7 @@ import {finishFlowOrchestrationDecision} from '../system-files/flow-orchestratio
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js';
 import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotation-objects.js';
+import {seedAcetillAppCatalog} from '../app-seeders/acetill-app-catalog.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -1987,6 +1988,7 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
   try { await applySystemMigrations(db); await db.verifySchema();
+    await seedAcetillAppCatalog(db); // Catalog only: tenant installation/RBAC stay in AppExchange.
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     await seedCartObjectsForExistingTenants(db);
     await seedQuotationObjectsForExistingTenants(db);

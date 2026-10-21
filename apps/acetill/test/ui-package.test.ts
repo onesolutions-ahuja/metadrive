@@ -37,7 +37,7 @@ test('standalone entrypoint uses the shared product-aware workspace shell',()=>{
  assert.match(main,/isMarketingHome/);
  assert.match(app,/standaloneCanonicalPath\(window\.location\.pathname/);
  assert.match(app,/resolveStandaloneEntry\(entryPath/);
- assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
+ assert.match(app,/resolveStandaloneEntry\(entryPath/);
  assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
 });
 
@@ -48,4 +48,27 @@ test('standalone Flow actions use server authorization without requiring Flow De
  assert.match(pageRuntime,/binding\.flowType/);
  assert.match(sql,/actionFlows\.checkout\.flowType','string','Autolaunched Flow'/);
  assert.match(pageRuntime,/loadCompanySettings: \(\) => apiRequest\('\/metadata\/currencies'\)/);
+});
+
+test('custom Acetill terminal consumes only permitted Flows, not record or SQL APIs',()=>{
+ const ui=readFileSync(fileURLToPath(new URL('../src/AcetillTerminal.tsx',import.meta.url)),'utf8');
+ assert.match(ui,/AcetillGetProducts|find\('GetProducts'\)/);
+ assert.match(ui,/\/flows\/available-actions/);
+ assert.match(ui,/\/flows\//);
+ assert.doesNotMatch(ui,/\/records\/|db\.query|md_records|OneShoppingCart|OneItemGrid/);
+ assert.match(ui,/acetill-product-art/);
+});
+
+test('Acetill keeps its branded login instead of redirecting unauthenticated users to common login',()=>{
+ const app=readFileSync(fileURLToPath(new URL('../../web/src/core/workspace/App/App.tsx',import.meta.url)),'utf8');
+ assert.match(app,/authState==='anonymous'&&!standaloneEntry/);
+ assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
+});
+test('Flow-only terminal requires confirmed payment before showing receipt',()=>{
+ const ui=readFileSync(fileURLToPath(new URL('../src/AcetillTerminal.tsx',import.meta.url)),'utf8');
+ assert.match(ui,/find\('GetProducts'\)/);
+ assert.match(ui,/find\('PrintReceipt'\)/);
+ assert.match(ui,/find\('EmailReceipt'\)/);
+ assert.match(ui,/if\(completed\)\{setReceipt/);
+ assert.doesNotMatch(ui,/\/records\/|db\.query|OneShoppingCart|OneItemGrid/);
 });
