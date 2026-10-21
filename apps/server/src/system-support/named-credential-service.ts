@@ -115,12 +115,27 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
-   header_name:string;secret_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean;updated_at:Date
-  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
-  return rows.map(x=>({id:x.id,name:x.name,label:x.label,protocol:x.protocol,
-   baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
-   hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration:{},
-   keyId:x.encryption_key_id,updatedAt:x.updated_at}));
+   header_name:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
+   encryption_key_id:string;enabled:boolean;updated_at:Date
+  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
+  const publicKeys=new Set(['graphApiVersion','wabaId','phoneNumberId',
+   'businessPortfolioId','metaAppId','businessPhoneE164','templateLanguage',
+   'webhookCallbackUrl','displayName']);
+  return rows.map(x=>{
+   let configuration:Record<string,string>={};
+   if(x.name==='WhatsApp_Cloud_API'&&x.configuration_ciphertext){
+    try{
+     const raw=JSON.parse(this.decryptOpaque(x.configuration_ciphertext,x.encryption_key_id)) as unknown;
+     if(raw&&typeof raw==='object'&&!Array.isArray(raw))
+      configuration=Object.fromEntries(Object.entries(raw)
+       .filter(([key,value])=>publicKeys.has(key)&&typeof value==='string')) as Record<string,string>;
+    }catch{/* Never expose unreadable or confidential credential values. */}
+   }
+   return {id:x.id,name:x.name,label:x.label,protocol:x.protocol,
+    baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
+    hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration,
+    keyId:x.encryption_key_id,updatedAt:x.updated_at};
+  });
  }
  async create(tenantId:string,userId:string,body:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
