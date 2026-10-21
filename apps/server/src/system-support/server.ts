@@ -21,7 +21,6 @@ import {seedAceKioskAppCatalog} from '../app-seeders/acekiosk-app-catalog.js';
 import {seedAceKioskMenuFlows} from '../app-seeders/acekiosk-menu-flow.js';
 import {seedAceChatterAppCatalog} from '../app-seeders/acechatter-app-catalog.js';
 import {seedAceChatterFlows} from '../app-seeders/acechatter-flow.js';
-import {seedWhatsAppNamedCredentialVariables} from '../app-seeders/whatsapp-named-credential.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -2033,7 +2032,6 @@ export async function startSystemServer() {
     await seedCartObjectsForExistingTenants(db);
     await seedAceKioskMenuFlows(db); // Installed tenants only, never overwrites existing Flow versions.
     await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
-    await seedWhatsAppNamedCredentialVariables(db); // Encrypted, blank, tenant-scoped provider IDs only.
     await seedQuotationObjectsForExistingTenants(db);
     await seedCommunicationObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
