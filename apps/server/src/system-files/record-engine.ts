@@ -1,3 +1,5 @@
+import {validateAndMatchRecord} from '../business-rule-engine/RuleExecutionCoordinator.js';
+import {requiresUniqueValue} from '../business-rule-engine/UniqueConstraintManager.js';
 import {registeredRelationships} from '../relationship-engine/RelationshipRegistry.js';
 import {assertDeletionAllowed} from '../relationship-engine/ReferentialIntegrityGuard.js';
 import {assertLookupTargetExists} from '../relationship-engine/LookupResolver.js';
@@ -398,7 +400,7 @@ export class RecordEngine {
       if(field.data_type==='formula'||field.data_type==='autonumber'||field.data_type==='rollup')
         throw new Error('Field is read-only: '+key);
       await this.rbac.require(tenantId,userId,objectApi+'.'+key,creating?'create':'edit');
-      const metadata={is_unique:field.is_unique||field.external_id,case_sensitive:field.case_sensitive};
+      const metadata={is_unique:requiresUniqueValue(field),case_sensitive:field.case_sensitive};
       if(value===null) {
         if(field.required&&!deferRequired)throw new Error('Required field cannot be null: '+key);
         prepared.set(key,{value_text:null,reference_record_id:null,
@@ -565,8 +567,8 @@ export class RecordEngine {
           rowValues,null,'before-save',isClone)??rowValues;
       }
       const finalValues=await this.prepare(tenantId,userId,objectApi,rowValues,true,client);
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,rowValues,null);
-      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,rowValues);
+      const matches=await validateAndMatchRecord(this.declarativeRules,this.recordMatching,
+        client,tenantId,userId,objectApi,rowValues,null);
       const id=await this.insertPrepared(client,tenantId,userId,objectApi,finalValues,isClone);
       await this.recordMatching.save(client,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
@@ -606,8 +608,8 @@ export class RecordEngine {
           ?field.default_value==='true':field.default_value]));
     const supplied=await this.declarativeRules.defaults(client,tenantId,userId,objectApi,{...values},literals);
     const prepared=await this.prepare(tenantId,userId,objectApi,supplied,true,client);
-    await this.declarativeRules.validate(client,tenantId,userId,objectApi,supplied,null);
-    const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,supplied);
+    const matches=await validateAndMatchRecord(this.declarativeRules,this.recordMatching,
+      client,tenantId,userId,objectApi,supplied,null);
     const id=await this.insertPrepared(client,tenantId,userId,objectApi,prepared);
     await this.recordMatching.save(client,tenantId,objectApi,id,matches);
     return id;
@@ -685,7 +687,7 @@ export class RecordEngine {
       if(!sequence)throw new Error('Unable to allocate auto-number value');
       const value=formatAutoNumberValue(field.auto_number_format??'{000000}',Number(sequence));
       prepared.set(field.api_name,{value_text:value,reference_record_id:null,
-        is_unique:field.is_unique||field.external_id,case_sensitive:field.case_sensitive});
+        is_unique:requiresUniqueValue(field),case_sensitive:field.case_sensitive});
     }
     for(const [field,value] of prepared){if(field.startsWith('__'))continue;await client.query(
       `INSERT INTO md_record_values
@@ -1253,8 +1255,8 @@ export class RecordEngine {
         }
       }
       const snapshot=async()=>({...await loadPrior(),...proposedValues});
-      await this.declarativeRules.validate(client,tenantId,userId,objectApi,snapshot,loadPrior);
-      const matches=await this.recordMatching.check(client,tenantId,userId,objectApi,snapshot,id);
+      const matches=await validateAndMatchRecord(this.declarativeRules,this.recordMatching,
+        client,tenantId,userId,objectApi,snapshot,loadPrior,id);
       await write(client,writeValues);
       await this.recordMatching.save(client,tenantId,objectApi,id,matches);
       if(runTriggers&&this.recordTrigger){
@@ -1294,8 +1296,8 @@ export class RecordEngine {
             ?(value.value_number===null||value.value_number===undefined?null:Number(value.value_number))
             :value.value_text);
       }
-      await this.declarativeRules.validate(transactionClient,tenantId,userId,objectApi,proposedValues,prior);
-      const matches=await this.recordMatching.check(transactionClient,tenantId,userId,objectApi,proposedValues,id);
+      const matches=await validateAndMatchRecord(this.declarativeRules,this.recordMatching,
+        transactionClient,tenantId,userId,objectApi,proposedValues,prior,id);
       await write(transactionClient,finalPrepared);
       await this.recordMatching.save(transactionClient,tenantId,objectApi,id,matches);
       if(this.recordTrigger){
