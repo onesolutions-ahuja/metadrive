@@ -1150,9 +1150,14 @@ export function createSystemServer(db:SqlPersistence) {
       apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,availableApps),
       objects,components:library
     };
-    const digest=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    // Hash the exact JSON-safe content that will be transmitted. Repository
+    // metadata can contain optional properties or values with JSON serializers;
+    // a digest over pre-serialization objects may not match the browser's
+    // JSON.parse response, causing valid publications to be rejected.
+    const wireContent=JSON.parse(JSON.stringify(content)) as typeof content;
+    const digest=createHash('sha256').update(JSON.stringify(wireContent)).digest('hex');
     res.setHeader('Cache-Control','no-store');
-    res.json({content,publication:{
+    res.json({content:wireContent,publication:{
       revision:{version:1,publishedAt:Date.now(),digest},
       verifiedDigest:digest,minimumVersion:1
     }});
