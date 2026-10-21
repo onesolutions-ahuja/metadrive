@@ -604,9 +604,12 @@ function PageBuilder({
     const scale = fitCanvas ? fitScale : 1;
     const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
     const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
-    const next = snapCanvasPosition({ ...start.original, x, y },
-      { width: page.canvasWidth, height: page.canvasHeight },
-      page.components.filter(item => item.id !== start.id && !rawLayoutParentId(item) && item.position).map(item => item.position!), canvasSnap);
+    const next = canvasSnap
+      ? snapCanvasPosition({ ...start.original, x, y },
+          { width: page.canvasWidth, height: page.canvasHeight },
+          page.components.filter(item => item.id !== start.id && !rawLayoutParentId(item) && item.position).map(item => item.position!), true)
+      : { position: canvasBoundPosition({ ...start.original, x, y }, { width: page.canvasWidth, height: page.canvasHeight }, false),
+          guides: { x: false, y: false } };
     start.x = next.position.x; start.y = next.position.y;
     if (canvasGuideXRef.current) {
       canvasGuideXRef.current.style.display = next.guides.x ? 'block' : 'none';
@@ -1593,6 +1596,10 @@ function PageBuilder({
             <SlidersHorizontal size={19}/><span>Page</span></button>
         </nav>
         <aside className="component-panel" style={activePanel !== 'palette' ? { display: 'none' } : undefined}>
+          <div className="builder-panel-collapse-row"><strong>{paletteTab === 'Components' ? paletteCategory : paletteTab}</strong>
+            <button type="button" aria-label="Collapse element panel" title="Collapse panel" className="icon-button subtle"
+              onClick={() => setActivePanel(null)}><X size={16}/></button>
+          </div>
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
             <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
