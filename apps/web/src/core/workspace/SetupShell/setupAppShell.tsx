@@ -591,12 +591,36 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     window.setTimeout(() => setToast(''), 2400);
   };
   const saveAccessControl = async (nextAccessControl: AccessControlMetadata) => {
-    const saved=await apiRequest<AccessControlMetadata>('/metadata/permissions',{
-      method:'PUT',body:JSON.stringify(nextAccessControl)
-    });
-    setAccessControl(saved);
-    setAccessControlError('');
-    notify('Permissions and assignments saved');
+    const controller=new AbortController();
+    const timer=window.setTimeout(()=>controller.abort(),30000);
+    try {
+      const saved=await apiRequest<AccessControlMetadata>('/metadata/permissions',{
+        method:'PUT',body:JSON.stringify(nextAccessControl),signal:controller.signal
+      });
+      setAccessControl(saved);
+      setAccessControlError('');
+      notify('Permissions and assignments saved');
+    } catch (failure) {
+      if (!controller.signal.aborted) throw failure;
+      // A request can commit in SQL while its HTTP response is lost. Read
+      // current state rather than resending a security-sensitive mutation.
+      try {
+        const current=await apiRequest<AccessControlMetadata>('/metadata/permissions',{
+          signal:AbortSignal.timeout(10000)
+        });
+        setAccessControl(current);
+        setAccessControlError('');
+        if (rbacUserSaveWasCommitted(accessControl,nextAccessControl,current)) {
+          notify('User settings saved and verified in SQL');
+          return;
+        }
+      } catch {
+        // Preserve the operator's unsaved draft; avoid blind retries.
+      }
+      throw new Error('Save timed out. The change may have reached SQL. Reload Users & Assignments to check before trying again.');
+    } finally {
+      window.clearTimeout(timer);
+    }
   };
   const saveConnectorProvider = async (provider: ConnectorProviderMetadata) => {
     const result = await apiRequest<{ provider: ConnectorProviderMetadata }>(
