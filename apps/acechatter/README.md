@@ -40,3 +40,13 @@ Assign the `AceChatterUser` permission set explicitly to the intended users and 
 In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/vXX.X/` and the Meta WhatsApp access token. Set the callout's `namedCredentialId` to that saved credential. Replace `vXX.X` with the supported Graph API version. No access token or phone number ID is seeded.
 
 The UI currently supplies `conversationId` and `message`. Before activating, update the Flow to retrieve the selected `ChatConversation`, authorise record access, and resolve `recipientPhone` and `phoneNumberId` from tenant-controlled metadata/settings rather than trusting arbitrary browser input. Configure receipt/inbound webhook Flows independently. **Do not activate until configured and tested.** The send draft is purposely inactive and will not claim a message was delivered.
+
+
+### Recipient and sender lookup (secure Flow defaults)
+
+The WhatsApp send draft uses the shared **Get Records** elements before its HTTP Callout:
+1. Find the **ChatConversation** by the supplied `conversationId`, within OneEngine Record permissions. Its `PhoneNumber` becomes `{!conversation.PhoneNumber}`.
+2. Find an **active ChatChannelSettings** record, configured in MetaDrive Records UI. Its `PhoneNumberId` becomes `{!channel.PhoneNumberId}`.
+3. POST to `{!channel.PhoneNumberId}/messages` with a Graph API body addressing `{!conversation.PhoneNumber}`.
+
+`ChatChannelSettings` is app metadata with `Name`, `Active`, `PhoneNumberId` fields; no dummy sender ID, secret or business record is installed. Create one enabled record with your Meta WhatsApp Business phone-number ID. Configure and link the tenant Named Credential in Flow Builder, then validate and activate the Flow using OneEngine. The browser never chooses the recipient or sender independently.
