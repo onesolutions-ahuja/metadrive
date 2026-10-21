@@ -72,16 +72,20 @@ test('old app links and metadata navigation enter the app-only frontend',()=>{
 test('user landing preference opens the assigned app without granting access',()=>{
   const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
   const server=readFileSync(new URL('../../../server/src/system-files/session-metadata.ts',import.meta.url),'utf8');
+  const auth=readFileSync(new URL('../../../server/src/system-support/server.ts',import.meta.url),'utf8');
   const schema=readFileSync(new URL('../../../server/src/system-support/migrations/20261021-user-landing-app.sql',import.meta.url),'utf8');
-  assert.match(app,/landingAppApi\?:string/);
-  assert.match(app,/\/auth\/me/);
-  assert.match(app,/landingAppApi\?\?'Setup'/);
-  assert.match(app,/standaloneEntryForAppId\(preferredApp\)/);
-  assert.match(app,/window\.location\.assign\('\/'\+standalone\.slug\)/);
+  assert.match(app,/landingAppApi\\?: string/);
+  assert.match(app,/entryTiming\\?\\.landingAppApi\\?\\?/);
+  assert.match(app,/standaloneEntryForAppId\\(landingApp\\)/);
+  assert.match(app,/window\\.location\\.replace\\(destination\\)/);
+  assert.match(app,/if\\(needsLandingRedirect\\)return/);
+  assert.doesNotMatch(app,/apiRequest<\\{user:\\{landingAppApi/);
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
-  assert.match(server,/landingAppApi:landing\.rows\[0\]\?\.landing_app_api\?\?'Setup'/);
+  assert.match(server,/landingAppApi:landing\\.rows\\[0\\]\\?\\.landing_app_api\\?\\?'Setup'/);
   assert.match(schema,/landing_app_api text NOT NULL DEFAULT 'Setup'/);
-  assert.match(app,/Standalone product UIs do not depend on AppExchange installation/);
+  assert.match(auth,/landingAppApi:await landingPreference\\(tenantId,userId\\)/);
+  assert.match(auth,/landingAppApi:await landingPreference\\(session\\.tenant_id,session\\.user_id\\)/);
+  assert.match(app,/standaloneEntryForAppId\\(landingApp\\)/);
 });
 
 test('AceKiosk uses independent lazy custom UI and backend Flows',()=>{
