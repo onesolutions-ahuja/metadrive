@@ -20,11 +20,9 @@
     "apps/server/test/system/object-engine-modules.test.ts",
     "apps/server/test/system/openapi-external-service.test.ts",
     "apps/server/test/system/outbound-webhook.test.ts",
-    "apps/server/test/system/page-runtime-app-pages.test.ts",
     "apps/server/test/system/platform-event-dispatcher.test.ts",
     "apps/server/test/system/platform-event-service.test.ts",
     "apps/server/test/system/platform-event-stream.test.ts",
-    "apps/server/test/system/published-app-package.test.ts",
     "apps/server/test/system/record-query.test.ts",
     "apps/server/test/system/relationship-engine.test.ts",
     "apps/server/test/system/versioned-api-query.test.ts"
