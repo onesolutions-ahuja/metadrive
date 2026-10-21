@@ -4,6 +4,7 @@ import {useEffect,useState} from 'react';
 import {apiRequest} from '../../authentication/Client/authClient';
 import type {StandaloneEntry} from './standaloneEntries';
 import './standaloneRuntime.css';
+const LazyAceChatter=React.lazy(()=>import('./AceChatterRuntime'));
 
 type DataRow=Record<string,unknown>;
 type ObjectInfo={apiName:string;label?:string;fields?:Array<{apiName:string;label?:string;type?:string;required?:boolean}>};
@@ -166,6 +167,7 @@ function LegacyStandaloneRuntime({entry,onLogout}:{entry:StandaloneEntry;onLogou
 
 /** Independent Acetill React screen; only UNE backend OneEngine Flows own data changes. */
 export default function StandaloneRuntime(props:{entry:StandaloneEntry;onLogout:()=>void}){
+  if(props.entry.slug==='acechatter')return <React.Suspense fallback={<div role="status">Opening AceChatter…</div>}><LazyAceChatter onLogout={props.onLogout}/></React.Suspense>;
   if(props.entry.slug!=='acetill')return <LegacyStandaloneRuntime {...props}/>;
   const logout=async()=>{
     try{await apiRequest('/auth/logout',{method:'POST'});}catch{}
