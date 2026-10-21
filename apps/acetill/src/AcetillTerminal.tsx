@@ -19,8 +19,8 @@ function product(row:Row):Item|null {
 function parseCategory(row:Row):Category|null {
   const id=asText(row.Id??row.id??row.CategoryId);
   const name=asText(row.Name??row.name);
-  if(!id||!name||row.Active===false||row.Active==='false')return null;
-  const order=Number(row.DisplayOrder??0);
+  if(!id||!name||row.Active===false||row.Active==='false'||row.IsVisiblePOS===false||row.IsVisiblePOS==='false')return null;
+  const order=Number(row.POSSortOrder??row.DisplayOrder??0);
   return {id,name,order:Number.isFinite(order)?order:0};
 }
 function extractRows(result:Result):Row[] {
@@ -79,7 +79,7 @@ export default function AcetillTerminal(){
   React.useEffect(()=>{
     if(!getCategories)return;
     let active=true;
-    void executeRead(getCategories,{active:true,sortField:'DisplayOrder',sortOrder:'Ascending'})
+    void executeRead(getCategories,{active:true,isVisiblePOS:true,sortField:'POSSortOrder',sortOrder:'Ascending'})
       .then(result=>{if(active)setCategories(extractRows(result).map(parseCategory)
         .filter((c):c is Category=>c!==null).sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name)));})
       .catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));});
