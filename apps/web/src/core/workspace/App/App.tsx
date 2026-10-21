@@ -5,7 +5,7 @@ import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, i
 
 
 import { parseAppRoute, appRoutePath } from '../Navigation/appRouting';
-import {resolveStandaloneEntry} from '../Standalone/standaloneEntries';
+import {resolveStandaloneEntry,standaloneCanonicalPath} from '../Standalone/standaloneEntries';
 
 
 
@@ -87,7 +87,13 @@ type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticated
 
 
 function App() {
-  const standaloneEntry=resolveStandaloneEntry(window.location.pathname,import.meta.env.BASE_URL);
+  // Handle bookmarked UNE app routes before the generic Setup shell initialises.
+  const legacyStandalonePath=standaloneCanonicalPath(window.location.pathname,window.location.search,import.meta.env.BASE_URL);
+  const entryPath=legacyStandalonePath?legacyStandalonePath.split('?')[0]:window.location.pathname;
+  const standaloneEntry=resolveStandaloneEntry(entryPath,import.meta.env.BASE_URL);
+  React.useLayoutEffect(()=>{
+    if(legacyStandalonePath)window.history.replaceState({},'',legacyStandalonePath);
+  },[legacyStandalonePath]);
   const [authState, setAuthState] = useState<AuthState>('restoring');
   const [authError, setAuthError] = useState('');
   const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);

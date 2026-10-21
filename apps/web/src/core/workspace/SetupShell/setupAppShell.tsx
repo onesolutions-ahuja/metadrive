@@ -9,6 +9,7 @@ import { relatedLookupFilterOperators } from '../../records/RecordWorkspace/reco
 
 
 import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from '../Navigation/appRouting';
+import {standaloneEntryForAppId} from '../Standalone/standaloneEntries';
 import { NavigationLoadTime, resolveCurrentAppNavigation } from '../Navigation/appNavigationView';
 import { isStandalonePagePresentation } from '../../pages/PageRuntime/pageRuntimePresentation';
 import { insertFlowElementAtPath } from '../../builders/FlowBuilder/flowInsertElement.mjs';
@@ -487,10 +488,13 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     const routeWithApp = nextRoute.kind === 'setup' ? nextRoute : { ...nextRoute, appId: nextRoute.appId ?? currentAppId };
     // Standalone frontends must replace the workspace document; pushState alone
     // leaves SetupApp mounted and renders the wrong (admin) application shell.
-    if ((routeWithApp.kind === 'app-home' || routeWithApp.kind === 'app-page' || routeWithApp.kind === 'route-alias')
-      && routeWithApp.appId.toLowerCase() === 'acetill') {
-      window.location.assign('/acetill');
-      return true;
+    if (routeWithApp.kind === 'app-home' || routeWithApp.kind === 'app-page' || routeWithApp.kind === 'route-alias') {
+      const standalone=standaloneEntryForAppId(routeWithApp.appId);
+      if (standalone) {
+        const path=routeWithApp.kind==='route-alias' ? `/${standalone.slug}` : appRoutePath(routeWithApp);
+        window.location.assign(path);
+        return true;
+      }
     }
     const path = appRoutePath(routeWithApp);
     if (`${window.location.pathname}${window.location.search}` !== path) {
