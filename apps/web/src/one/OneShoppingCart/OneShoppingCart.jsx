@@ -967,6 +967,7 @@ export default function OneShoppingCart(props) {
   const style = {
     "--one-accent": p.accentColor || "var(--md-primary,#1d4ed8)",
     "--one-radius": Math.max(0, Number(p.radius ?? 16)) + "px",
+    "--one-image-radius": Math.max(0, Math.min(64, Number(p.productImageRadius ?? 18))) + "px",
     "--one-gap": Math.max(0, Number(p.gap ?? 12)) + "px",
     "--one-pad": Math.max(0, Number(p.padding ?? 16)) + "px",
     width: p.width || "100%",
@@ -1004,7 +1005,8 @@ export default function OneShoppingCart(props) {
         "one-ui one-ui--" +
         (p.theme || "glass") +
         " one-ui--" +
-        (p.size || "medium")
+        (p.size || "medium") +
+        (p.presentationStyle === "modernTouch" && p.viewMode !== "display" ? " one-shopping-modern-touch" : "")
       }
       style={style}
     >
