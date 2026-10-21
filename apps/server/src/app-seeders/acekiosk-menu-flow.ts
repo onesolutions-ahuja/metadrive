@@ -1,18 +1,11 @@
+import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 
 /** Add only a missing Flow to tenants which actually installed AceKiosk.
  * Never overwrite tenant-authored Flow versions, grant RBAC, or seed business products.
  */
-export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
- const tenants=await db.query<{tenant_id:string}>(`
-   SELECT DISTINCT i.tenant_id FROM md_app_installations i
-   JOIN md_apps a ON a.id=i.app_id AND a.api_name='AceKiosk' AND a.enabled=true
-   JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=i.tenant_id
-   WHERE e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())`);
- let seeded=0;
- for(const {tenant_id:tenantId} of tenants.rows){
-  const created=await db.transaction(async client=>{
+export async function seedAceKioskMenuForTenant(client:PoolClient,tenantId:string):Promise<boolean>{
    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':flow:AceKioskLoadMenu']);
    // App-specific OneEngine permission set. Assignment is explicit, never inferred
    // from a landing page or app installation.
@@ -78,8 +71,18 @@ export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
       INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
       VALUES($1,$2,$3,$4,$5)`,[tenantId,rows[0].id,item.path,item.kind,item.text]);
    return true;
-  });
-  if(created)seeded++;
+}
+
+/** Backfill only installed, active, licensed tenant apps after SQL bootstrap. */
+export async function seedAceKioskMenuFlows(db:SqlPersistence):Promise<number>{
+ const {rows}=await db.query<{tenant_id:string}>(`
+   SELECT DISTINCT i.tenant_id FROM md_app_installations i
+   JOIN md_apps a ON a.id=i.app_id AND a.api_name='AceKiosk' AND a.enabled=true
+   JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=i.tenant_id
+   WHERE e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())`);
+ let seeded=0;
+ for(const {tenant_id} of rows){
+   if(await db.transaction(client=>seedAceKioskMenuForTenant(client,tenant_id)))seeded++;
  }
  return seeded;
 }
