@@ -159,6 +159,10 @@ export class AppRuntime {
         const {seedPublishedAppPackage}=await import('../app-seeders/published-app-package.js');
         await seedPublishedAppPackage(client,tenantId,app.id,published.version);
       }
+      // Install app-owned metadata in the same transaction as licensing and package
+      // materialisation. The generic hook resolves optional seeder modules lazily.
+      const {seedInstalledAppMetadata}=await import('../app-seeders/installed-app-seeders.js');
+      await seedInstalledAppMetadata(client,tenantId,app.api_name);
       if(seed){
         const {seedAppPage}=await import('../system-support/app-page-seeder.js');
         await seedAppPage(client,tenantId,app.id,seed);
