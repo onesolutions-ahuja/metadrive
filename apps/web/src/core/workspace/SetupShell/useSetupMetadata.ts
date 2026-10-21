@@ -6,16 +6,41 @@ import { saveVerifiedMetadata, type MetadataPublicationResponse } from '../../me
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 
 export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
-  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder');
+  return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder' || workspace === 'scheduled-flows');
 }
 
 export function useSetupMetadata(ctx: any) {
-  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setFlowDefinitionsLoaded, setFlowDefinitionsError, setReportsLoaded, setReportsError, setDashboardsLoaded, setDashboardsError, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
   // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
+  // Load tenant permissions as soon as a screen needs them, without waiting for
+  // the large editor bootstrap. No demo identities/policies are shown meanwhile.
+  const permissionRequestStarted = useRef(false);
+  useEffect(() => {
+    const needsPermissionSnapshot = route.kind === 'setup' &&
+      ['rbac', 'object-manager', 'page-builder', 'report-builder', 'dashboard-builder', 'flow-builder']
+        .includes(workspace);
+    if (!needsPermissionSnapshot || permissionRequestStarted.current) return;
+    permissionRequestStarted.current = true;
+    void apiRequest<AccessControlMetadata>('/metadata/permissions')
+      .then(snapshot => {
+        setAccessControl(snapshot);
+        setAccessControlError('');
+        setAccessControlLoaded(true);
+      })
+      .catch(error => {
+        permissionRequestStarted.current = false;
+        setAccessControlError(error instanceof Error ? error.message : String(error));
+        setAccessControlLoaded(false);
+      });
+  }, [route.kind, workspace]);
   const analyticsLoads = useRef(new Set<string>());
   useEffect(() => {
-    if (!advancedMetadataLoaded) return;
+    // Direct analytics/automation lists fetch immediately, rather than waiting
+    // for the unrelated editor/component-library bootstrap to finish.
+    const directDataRoute=route.kind === 'setup' &&
+      ['report-builder', 'dashboard-builder', 'scheduled-flows'].includes(workspace);
+    if (!advancedMetadataLoaded && !directDataRoute) return;
     const currentPage = pages.filter((page) =>
       (route.kind === 'app-page' && page.apiName === route.pageApiName)
       || (route.kind === 'app-home' && page.pageType === 'Home Page' &&
@@ -47,6 +72,8 @@ export function useSetupMetadata(ctx: any) {
               setFlow(definitions[0]);
               setSelectedFlowId(definitions[0].elements[0]?.id ?? 1);
             }
+            setFlowDefinitionsError('');
+            setFlowDefinitionsLoaded(true);
           })
       },
       {
@@ -68,7 +95,10 @@ export function useSetupMetadata(ctx: any) {
     for (const group of optionalGroups) {
       if (!group.enabled || analyticsLoads.current.has(group.key)) continue;
       analyticsLoads.current.add(group.key);
-      void group.run().catch(() => analyticsLoads.current.delete(group.key));
+      void group.run().catch((error:unknown) => {
+        analyticsLoads.current.delete(group.key);
+        if(group.key==='flow-definitions')setFlowDefinitionsError(error instanceof Error?error.message:String(error));
+      });
     }
     if (reportNeeded && !analyticsLoads.current.has('reports')) {
       analyticsLoads.current.add('reports');
@@ -79,7 +109,11 @@ export function useSetupMetadata(ctx: any) {
         setReports(reportsPayload.reports ?? []);
         setReportFolders(foldersPayload.folders ?? []);
         setCanManageReportFolders(Boolean(foldersPayload.canManageAll));
-      }).catch(() => analyticsLoads.current.delete('reports'));
+        setReportsError('');setReportsLoaded(true);
+      }).catch((error:unknown) => {
+        analyticsLoads.current.delete('reports');
+        setReportsError(error instanceof Error?error.message:String(error));
+      });
     }
     if (dashboardNeeded && !analyticsLoads.current.has('dashboards')) {
       analyticsLoads.current.add('dashboards');
@@ -97,7 +131,11 @@ export function useSetupMetadata(ctx: any) {
         setDashboardFolders(foldersPayload.folders ?? []);
         setDashboardTerritories(territoryPayload.territories ?? []);
         setCanManageDashboardTerritories(Boolean(territoryPayload.canManage));
-      }).catch(() => analyticsLoads.current.delete('dashboards'));
+        setDashboardsError('');setDashboardsLoaded(true);
+      }).catch((error:unknown) => {
+        analyticsLoads.current.delete('dashboards');
+        setDashboardsError(error instanceof Error?error.message:String(error));
+      });
     }
   }, [advancedMetadataLoaded, route, workspace, pages]);
 
@@ -170,6 +208,18 @@ export function useSetupMetadata(ctx: any) {
           // immediately, preserving the previous deep-link behaviour.
           await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
         }
+        // Authorise direct Setup tabs as soon as /auth/me responds rather than
+        // waiting for unrelated component-library, page and app metadata.
+        const sessionRequest = recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } });
+        void sessionRequest.then(({user}) => {
+          setCurrentProfileId(user.profileId);
+          setCanManageUserIdentities(user.permissions.includes('security:manage'));
+          setCanReadSecurity(user.permissions.includes('security:read') || user.permissions.includes('security:manage'));
+          setCanReadMetadata(user.permissions.includes('metadata:read') || user.permissions.includes('metadata:write'));
+          setCanManageApps(user.permissions.includes('metadata:write'));
+          setCurrentFieldAccess(user.fieldAccess);
+          setCurrentRecordTypeAccess(user.recordTypeAccess);
+        }).catch(() => {}); // The awaited bootstrap handles session-expiry errors.
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           Promise.resolve({ flows: [] as FlowDefinitionMetadata[] }), // Flow definitions belong to the Builder, not login.
@@ -187,18 +237,8 @@ export function useSetupMetadata(ctx: any) {
           Promise.resolve({ territories: [] as DashboardTerritoryMetadata[], canManage: false }),
           Promise.resolve({ folders: [] as ReportFolderMetadata[], canManageAll: false }),
           Promise.resolve({ reports: [] as ReportMetadata[] }),
-          recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
+          sessionRequest
         ]);
-        // RBAC settings are optional for initial page rendering. Fetch them
-        // independently so a slow permissions response cannot block all pages.
-        void apiRequest<AccessControlMetadata>('/metadata/permissions')
-          .then((permissions) => {
-            setAccessControl(permissions);
-            setAccessControlError('');
-          })
-          .catch((error) => {
-            setAccessControlError(error instanceof Error ? error.message : String(error));
-          });
         setObjects(objectPayload.objects);
         if(objectPayload.objects.length)setObject(objectPayload.objects.find(item=>item.apiName===object.apiName)??objectPayload.objects[0]);
         setPlatformEvents(platformEventPayload.platformEvents);
