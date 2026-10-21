@@ -307,8 +307,8 @@ export function renderSetupShell(ctx: any) {
             onToggleEnabled={toggleNamedCredentialEnabled}
           /></PlatformPageSlot></PlatformWorkspaceSurface>)}
           {route.kind === 'setup' && workspace === 'app-exchange' && (
-            namedCredentialsError || connectorRightsError ? <section className="setup-card" role="alert">Unable to load AppExchange access and credentials: {namedCredentialsError || connectorRightsError}</section> :
-            !namedCredentialsLoaded || !connectorRightsLoaded || !advancedMetadataLoaded || !flowDefinitionsLoaded ? <section className="setup-card" role="status">Loading live AppExchange configuration…</section> :
+            connectorRightsError ? <section className="setup-card" role="alert">Unable to verify AppExchange access: {connectorRightsError}</section> :
+            !namedCredentialsLoaded || !connectorRightsLoaded || !advancedMetadataLoaded ? <section className="setup-card" role="status">Loading live AppExchange configuration…</section> :
             <PlatformWorkspaceSurface workspace="app-exchange" componentRuntime={protectedPageRuntime} permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
