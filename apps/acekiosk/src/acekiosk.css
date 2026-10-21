@@ -30,3 +30,9 @@
 .ak-floating{bottom:12px;min-width:min(580px,calc(100vw - 35px));justify-content:space-between;border-radius:4px;background:#fff;color:#222;border:1px solid #eee;box-shadow:0 6px 25px #0002}
 .ak-floating button{background:#7fa916;border-radius:4px}
 @media(max-width:850px){.ak-categories{position:static;padding:8px}.ak-categories button{white-space:nowrap}.ak-floating{gap:12px}}
+
+.ak-menu-content{min-width:0}
+.ak-subcategories{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:18px}
+.ak-subcategories button{background:#fff;border:1px solid #ddd;border-radius:22px;padding:8px 14px;font-size:12px!important;font-weight:700!important;text-transform:uppercase}
+.ak-subcategories button.active{color:#e31b23;border-color:#e31b23}
+.ak-product-badge{display:inline-block;background:#7fa916;color:white;padding:5px 8px;font-size:10px;font-weight:800;text-transform:uppercase;margin-bottom:9px}
