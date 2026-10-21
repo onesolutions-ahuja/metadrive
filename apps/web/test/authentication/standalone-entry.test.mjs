@@ -94,3 +94,16 @@ test('AceKiosk uses independent lazy custom UI and backend Flows',()=>{
  assert.match(kiosk,/AceKioskCheckout/);
  assert.doesNotMatch(kiosk,/\/records\/|OneShoppingCart|OneItemGrid|PageBuilder/);
 });
+
+test('AceKiosk all-screen client demo uses record images and optional OneEngine Flows',()=>{
+ const ui=readFileSync(new URL('../../../acekiosk/src/AceKiosk.tsx',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../../../acekiosk/src/acekiosk.css',import.meta.url),'utf8');
+ for(const action of ['AceKioskStartSession','AceKioskFilterMenu','AceKioskProductOptions','AceKioskAddToCart','AceKioskUpdateCart','AceKioskRestart','AceKioskCheckout'])
+   assert.match(ui,new RegExp(action));
+ for(const screen of ["screen==='welcome'","screen==='menu'","screen==='cart'","screen==='checkout'","screen==='confirmation'"]) assert.ok(ui.includes(screen),screen);
+ assert.match(ui,/categoryName\(p\.category\)/);
+ assert.match(css,/\.ak-product-body>div strong\{font-size:22px/);
+ assert.match(css,/\.ak-image img\{[^}]*border-radius/);
+ assert.match(ui,/ImageUrl/);
+ assert.doesNotMatch(ui,/\/records\/|INSERT INTO|OneShoppingCart/);
+});
