@@ -89,9 +89,9 @@ export default function NamedCredentials({
   // Meta-owned non-secret configuration fields. Access tokens remain in the
   // encrypted Secret field, not in these editable ID/settings variables.
   const whatsAppFields:Record<string,string>={
-    graphApiVersion:'',wabaId:'',phoneNumberId:'',
-    businessPortfolioId:'',metaAppId:'',businessPhoneE164:'',
-    templateLanguage:'en_US',webhookCallbackUrl:'',displayName:''
+    public_graphApiVersion:'',public_wabaId:'',public_phoneNumberId:'',
+    public_businessPortfolioId:'',public_metaAppId:'',public_businessPhoneE164:'',
+    public_templateLanguage:'en_US',public_webhookCallbackUrl:'',public_displayName:''
   };
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
