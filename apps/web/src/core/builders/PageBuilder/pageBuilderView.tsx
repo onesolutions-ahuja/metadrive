@@ -1838,8 +1838,11 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
-            {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
-              onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />}
+            {inspectorTab !== 'Data & Actions' && <details className="visual-advanced-properties">
+              <summary>Advanced styles and responsive settings</summary>
+              <PageComponentStyleEditor properties={selected.properties}
+                onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />
+            </details>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
