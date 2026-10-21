@@ -890,8 +890,7 @@ export class ObjectDefinitionService {
         relationship_name=$17,child_relationship_name=$18,delete_behavior=$19,allow_reparenting=$20,
         related_object=$21,relationship_type=$22,rollup_child_object=$23,
         rollup_relationship_field=$24,rollup_operation=$25,rollup_source_field=$26,
-        auto_number_format=$27,formula_expression=$28,formula_return_type=$29,rollup_filter_logic=$30,
-        controller_field_api=$31
+        auto_number_format=$27,formula_expression=$28,formula_return_type=$29,rollup_filter_logic=$30
         WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id`,
       [tenantId,objectApi,fieldApi,label,field.dataType,field.maxLength,field.precision,field.scale,
         effectiveRequired,unique,externalId,caseSensitive,defaultValue,
@@ -901,7 +900,7 @@ export class ObjectDefinitionService {
         field.relatedObject,field.relationshipType,field.rollup?.childObject??null,
         field.rollup?.relationshipField??null,field.rollup?.operation??null,field.rollup?.sourceField??null,
         field.autoNumberFormat,field.formulaExpression,field.formulaReturnType,
-        field.rollup?.filterLogic??'All',field.controllerFieldApiName]);
+        field.rollup?.filterLogic??'All']);
       if(!changed.rowCount)throw new Error('Field not found');
       if(typeDefinitionChanged){
         await client.query(`DELETE FROM md_field_rollup_filters
