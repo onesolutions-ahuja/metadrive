@@ -27,3 +27,16 @@ Both loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. Ed
 **Outbound WhatsApp sending deliberately remains a Draft until a tenant administrator configures an appropriate Named Credential, authorised WhatsApp HTTP callout, provider delivery statuses and failure handling.** Activating a no-op send Flow would falsely imply delivery. Incoming WhatsApp webhooks and provider callbacks likewise require tenant-secured integration Flows. Confirm provider consent, conversation-window/template requirements and webhook authenticity before activation.
 
 Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
+
+
+## WhatsApp Cloud API send draft
+
+`AceChatterSendMessage` includes an editable **HTTP Callout** node with:
+- Method: `POST`
+- Relative path: `{!phoneNumberId}/messages`
+- Body: WhatsApp Cloud API text message JSON, mapping `recipientPhone` and `message`
+- Delivery: `DURABLE_ASYNC` through the shared MetaDrive callout dispatcher
+
+In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/vXX.X/` and the Meta WhatsApp access token. Set the callout's `namedCredentialId` to that saved credential. Replace `vXX.X` with the supported Graph API version. No access token or phone number ID is seeded.
+
+The UI currently supplies `conversationId` and `message`. Before activating, update the Flow to retrieve the selected `ChatConversation`, authorise record access, and resolve `recipientPhone` and `phoneNumberId` from tenant-controlled metadata/settings rather than trusting arbitrary browser input. Configure receipt/inbound webhook Flows independently. **Do not activate until configured and tested.** The send draft is purposely inactive and will not claim a message was delivered.
