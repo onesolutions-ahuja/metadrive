@@ -7,7 +7,10 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 export async function applySystemMigrations(db:SqlPersistence) {
  const folder=fileURLToPath(new URL('./migrations/',import.meta.url));
  const files=readdirSync(folder).filter(name=>/^(?:\d{3}|\d{8})-[a-z0-9-]+\.sql$/.test(name)).sort();
- await db.transaction(async client=>{
+ for(let attempt=0;attempt<4;attempt++){
+  try {
+   await db.transaction(async client=>{
+    let appliedNewMigration=false;
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['metadrive:system:migrations']);
   await client.query(`CREATE TABLE IF NOT EXISTS md_system_migrations (
    version text PRIMARY KEY,
@@ -25,9 +28,19 @@ export async function applySystemMigrations(db:SqlPersistence) {
     continue;
    }
    await client.query(source);
+   appliedNewMigration=true;
    await client.query('INSERT INTO md_system_migrations(version,checksum) VALUES($1,$2)',[name,checksum]);
   }
   // Cover setup tables introduced by later migrations in the same transaction.
-  await client.query('SELECT md_install_setup_audit()');
- });
+  if(appliedNewMigration)await client.query('SELECT md_install_setup_audit()');
+   });
+   return;
+  } catch(error) {
+   // A rolling deploy may overlap with the old instance's SQL work.
+   // Retry the entire atomic migration transaction only for PG deadlocks.
+   if((error as {code?:string})?.code!=='40P01'||attempt===3)throw error;
+   await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+  }
+ }
+
 }
