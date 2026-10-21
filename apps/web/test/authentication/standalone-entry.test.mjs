@@ -33,6 +33,10 @@ test('standalone app UI uses direct OneEngine records and flows without app inst
   assert.match(runtime,/\/metadata\/objects/);
   assert.match(runtime,/\/records\//);
   assert.match(runtime,/\/flows\//);
+  assert.match(runtime,/available-actions\?product=/);
+  assert.match(runtime,/flowActions\.map/);
+  assert.doesNotMatch(runtime,/AcetillCompleteSale|AcetillPrintReceipt|AceAssistCompleteVisit|AceAssistRescheduleVisit/);
+  assert.doesNotMatch(runtime,/method:'POST'.*\/records\//);
   assert.match(runtime,/\/auth\/logout/);
   assert.doesNotMatch(runtime,/\/metadata\/apps|LazyPublishedRuntime|PageBuilder|component-library/);
 });
