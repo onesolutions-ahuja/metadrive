@@ -104,7 +104,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
      method:'POST',path:'{!phoneNumberId}/messages',
-     bodyMapping:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
+     body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!recipientPhone}',type:'text',text:{preview_url:false,body:'{!message}'}}),
      onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
    {id:3,type:'End',label:'End',config:{}}
