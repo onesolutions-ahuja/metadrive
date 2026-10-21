@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -11,6 +12,16 @@ if (pagesBase !== '/' && pagesBase !== '/metadrive/') {
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Multi-page build gives /acetill/ its own real document and JS entry,
+    // independent of MetaDrive admin router and GitHub Pages SPA fallback.
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        acetill: fileURLToPath(new URL('./acetill/index.html', import.meta.url))
+      }
+    }
+  },
   base: process.env.GITHUB_PAGES === 'true' ? pagesBase : '/',
   server: {
     port: 5173,
