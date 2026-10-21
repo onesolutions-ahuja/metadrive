@@ -9,17 +9,19 @@ const pick=(row:Row,...keys:string[])=>keys.map(key=>row[key]).find(value=>value
 const label=(row:Row)=>String(pick(row,'Name','Subject','DisplayName','ContactName','PhoneNumber','Id')??'Conversation');
 const identify=(row:Row)=>String(pick(row,'Id','id')??'');
 const errorText=(e:unknown)=>e instanceof Error?e.message:String(e);
-/** Collections are exposed as a bounded JSON string by an authorised, editable Flow.
- * Flow Builder owns filtering, ordering, pagination and the returned rows.
- * Do not fetch tenant records directly or silently fall back to unfiltered reads. */
-function readRows(outputs:Record<string,unknown>|undefined, key:'conversationsJson'|'messagesJson'):Row[] {
-  const value=outputs?.[key]??outputs?.recordsJson;
-  if(typeof value!=='string')throw new Error('Flow must publish an output Text variable '+key+' containing a JSON array.');
-  if(value.length>500000)throw new Error('Flow output exceeds inbox limit.');
-  let parsed:unknown;
-  try{parsed=JSON.parse(value);}catch{throw new Error('Flow returned invalid '+key+' JSON.');}
-  if(!Array.isArray(parsed)||parsed.length>200||!parsed.every(row=>row!==null&&typeof row==='object'&&!Array.isArray(row)))
-    throw new Error('Flow '+key+' must be an array of up to 200 record objects.');
+/** Accept native record collections returned by a permitted OneEngine Flow.
+ * The Flow owns object selection, filtering, sorting, pagination and RBAC.
+ * No browser-side Record API fallback or client-selected object names. */
+function readRows(outputs:Record<string,unknown>|undefined,key:'conversationsJson'|'messagesJson'):Row[]{
+  const nativeKey=key==='conversationsJson'?'conversations':'messages';
+  const value=outputs?.[nativeKey]??outputs?.[key]??outputs?.recordsJson;
+  let parsed:unknown=value;
+  if(typeof value==='string'){
+    if(value.length>500000)throw new Error('Flow output exceeds inbox limit.');
+    try{parsed=JSON.parse(value);}catch{throw new Error('Invalid JSON returned by chat Flow.');}
+  }
+  if(!Array.isArray(parsed)||parsed.length>200||!parsed.every(item=>item&&typeof item==='object'&&!Array.isArray(item)))
+    throw new Error('Flow must return a record collection named '+nativeKey+' (up to 200 records).');
   return parsed as Row[];
 }
 const flowBySuffix=(actions:Action[],suffix:string)=>
