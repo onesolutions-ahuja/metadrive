@@ -32,6 +32,23 @@ WHERE r.object_api='MenuCategory' AND r.deleted_at IS NULL
     WHERE f.tenant_id=r.tenant_id AND f.api_name='AcetillGetCategories' AND f.archived=false)
 ON CONFLICT(tenant_id,record_id,field_api) DO NOTHING;
 
+-- Existing NULL projections may have been created by older metadata seeders.
+-- Backfill only NULL values; never replace a tenant's existing POS preferences.
+UPDATE md_record_values v SET value_boolean=true
+WHERE v.object_api='MenuCategory' AND v.field_api='IsVisiblePOS'
+ AND v.value_boolean IS NULL
+ AND EXISTS(SELECT 1 FROM md_flow_definitions f WHERE f.tenant_id=v.tenant_id
+   AND f.api_name='AcetillGetCategories' AND f.archived=false);
+
+UPDATE md_record_values v SET value_number=ord.value_number
+FROM md_record_values ord
+WHERE ord.tenant_id=v.tenant_id AND ord.record_id=v.record_id
+ AND ord.object_api='MenuCategory' AND ord.field_api='DisplayOrder'
+ AND v.object_api='MenuCategory' AND v.field_api='POSSortOrder'
+ AND v.value_number IS NULL
+ AND EXISTS(SELECT 1 FROM md_flow_definitions f WHERE f.tenant_id=v.tenant_id
+   AND f.api_name='AcetillGetCategories' AND f.archived=false);
+
 -- Upgrade the generated category Flow only if it still has the original
 -- Active/DisplayOrder settings. Do not overwrite customer-edited Flows.
 UPDATE md_flow_editor_values v SET value_text='POSSortOrder'
