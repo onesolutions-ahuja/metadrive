@@ -85,3 +85,33 @@ test('customer display mirrors cart, and payments use only permitted Cash/Card F
  assert.match(ui,/if\(completed\)\{\s*setReceipt/);
  assert.doesNotMatch(ui,/\/records\/|db\.query/);
 });
+
+
+test('cash/card payment Flow graphs use server Product prices and create both Order and OrderLine',()=>{
+ const graphs=JSON.parse(readFileSync(fileURLToPath(new URL('../flows/payment-flows.v1.json',import.meta.url)),'utf8'));
+ const ui=readFileSync(fileURLToPath(new URL('../src/AcetillTerminal.tsx',import.meta.url)),'utf8');
+ for(const name of ['AcetillPaymentCash','AcetillPaymentCard']){
+  const graph=graphs[name];
+  assert.equal(graph.flowType,'Autolaunched Flow');
+  const resources=graph.resources;
+  assert.ok(resources.some(r=>r.name==='cartItems'&&r.type==='Record Collection'
+   &&r.dataType==='OrderLine'&&r.isCollection&&r.availableForInput));
+  const nodes=graph.elements;
+  assert.ok(nodes.some(n=>n.type==='Get Records'&&n.config.object==='Product'
+   &&n.config.conditions.some(c=>c.field==='Id'&&c.value==='{!currentLine.Product}')));
+  const order=nodes.find(n=>n.type==='Create Records'&&n.config.object==='Order');
+  const line=nodes.find(n=>n.type==='Create Records'&&n.config.object==='OrderLine');
+  assert.ok(order&&line);
+  assert.equal(order.config.fieldValues.find(f=>f.field==='Total')?.value,'{!validatedTotal}');
+  assert.equal(line.config.fieldValues.find(f=>f.field==='UnitPrice')?.value,'{!currentProduct.Price}');
+  assert.equal(line.config.fieldValues.find(f=>f.field==='LineTotal')?.value,'{!lineAmount}');
+  assert.ok(nodes.some(n=>n.type==='Loop'&&n.config.collection==='cartItems'));
+  assert.ok(nodes.some(n=>n.type==='Custom Error'));
+  assert.ok(nodes.some(n=>n.type==='Assignment'&&n.config.variable==='status'&&n.config.value==='completed'));
+  assert.ok(graph.connectors.every(c=>c.label!=='default'));
+  assert.ok(graph.connectors.every(c=>nodes.some(n=>n.id===c.from)&&nodes.some(n=>n.id===c.to)));
+ }
+ assert.match(ui,/cartItems:cart.map\(x=>\(\{Product:x.id,Quantity:x.quantity\}\)\)/);
+ assert.match(ui,/requestId:paymentRequestId.current/);
+ assert.doesNotMatch(ui,/db\.query|\/records\//);
+});
