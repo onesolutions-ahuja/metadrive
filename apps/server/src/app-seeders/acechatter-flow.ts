@@ -96,12 +96,17 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   status:'Draft',version:1,tests:[],
   resources:[
    {name:'conversationId',type:'Variable',dataType:'Text',availableForInput:true},
-   {name:'message',type:'Variable',dataType:'Text',availableForInput:true}
+   {name:'message',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'recipientPhone',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'phoneNumberId',type:'Variable',dataType:'Text',availableForInput:true}
   ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
-     onError:'FAULT_PATH',deliveryMode:'DURABLE_ASYNC'}},
+     method:'POST',path:'{!phoneNumberId}/messages',
+     body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
+       to:'{!recipientPhone}',type:'text',text:{preview_url:false,body:'{!message}'}}),
+     onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
    {id:3,type:'End',label:'End',config:{}}
   ],connectors:links(1,2,3)
  };
