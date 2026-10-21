@@ -1612,28 +1612,29 @@ function ObjectManager({
         </div>}
       </div>
       <div className="object-manager-layout">
-        <PlatformPageSlot slotKey="object-list"><aside className="object-list-panel">
-          <div className="object-list-header"><h2>Object Manager</h2><button className="icon-button subtle" aria-label="Filter objects" aria-expanded={showObjectFilterMenu} onClick={() => setShowObjectFilterMenu((current) => !current)}><ListFilter size={15} /></button>
-            {showObjectFilterMenu && <div className="object-manager-menu">
-              {(['All Objects', 'Standard Objects', 'Custom Objects'] as const).map((mode) => <button type="button" key={mode} className={viewMode === mode ? 'selected' : ''} onClick={() => { setViewMode(mode); setShowObjectFilterMenu(false); }}>{mode}</button>)}
-            </div>}
-          </div>
-          <div className="object-search"><Search size={14} /><input aria-label="Search objects" placeholder="Search..." value={search} onChange={(event) => onSearch(event.target.value)} /></div>
-          <div className="object-toggle"><button className={viewMode === 'All Objects' ? 'selected' : ''} onClick={() => setViewMode('All Objects')}>All</button><button className={viewMode === 'Standard Objects' ? 'selected' : ''} onClick={() => setViewMode('Standard Objects')}>Standard</button><button className={viewMode === 'Custom Objects' ? 'selected' : ''} onClick={() => setViewMode('Custom Objects')}>Custom</button></div>
-          <div className="object-list">
-            {visibleObjects.map((item) => (
-              <button key={item.apiName} className={object.apiName === item.apiName ? 'object-list-item active' : 'object-list-item'} onClick={() => onObjectSelect(item)}>
-                <span className={`object-initial ${item.kind === 'Custom Object' ? 'custom' : ''}`}>{item.label.charAt(0)}</span><span><strong>{item.label}</strong><small>{item.kind}</small></span><ChevronRight size={14} />
-              </button>
-            ))}
-            {visibleObjects.length === 0 && <p className="empty-list">No objects found.</p>}
-          </div>
-          <button className="create-object" onClick={onCreateObject}><Plus size={15} />Create</button>
-        </aside></PlatformPageSlot>
         <div className="object-details">
-          <PlatformPageSlot slotKey="object-heading"><div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div></PlatformPageSlot>
+          <PlatformPageSlot slotKey="object-heading"><div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div>
+            <div className="object-manager-picker">
+              <label htmlFor="object-manager-quick-search">Switch object</label>
+              <div className="object-manager-picker-search"><Search size={14}/><input id="object-manager-quick-search" aria-label="Search objects" placeholder="Search objects…" value={search} onChange={(event) => onSearch(event.target.value)} /></div>
+              <select aria-label="Object type filter" value={viewMode} onChange={(event) => setViewMode(event.target.value as typeof viewMode)}>
+                <option>All Objects</option><option>Standard Objects</option><option>Custom Objects</option>
+              </select>
+              <select aria-label="Select object" value={visibleObjects.some((item) => item.apiName === object.apiName) ? object.apiName : ''} onChange={(event) => {
+                const next = visibleObjects.find((item) => item.apiName === event.target.value);
+                if (next) { onObjectSelect(next); onSearch(''); setViewMode('All Objects'); }
+              }}>
+                {!visibleObjects.some((item) => item.apiName === object.apiName) && <option value="">Select object…</option>}
+                {visibleObjects.map((item) => <option key={item.apiName} value={item.apiName}>{item.label} ({item.kind === 'Custom Object' ? 'Custom' : 'Standard'})</option>)}
+              </select>
+              <button type="button" className="btn" onClick={onCreateObject}><Plus size={14}/>New Object</button>
+            </div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div></PlatformPageSlot>
           <PlatformPageSlot slotKey="object-subnav"><div className="object-subnav">
-            {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
+            {objectSettings.slice(0, 6).map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
+            <select className="object-subnav-more" aria-label="More object settings" value={objectSettings.slice(0,6).includes(selectedSetting) ? '' : selectedSetting} onChange={(event) => { if (event.target.value) onSettingSelect(event.target.value); }}>
+              <option value="">More settings…</option>
+              {objectSettings.slice(6).map((setting) => <option key={setting} value={setting}>{setting}</option>)}
+            </select>
           </div></PlatformPageSlot>
           <PlatformPageSlot slotKey="object-setting">{renderSetting()}</PlatformPageSlot>
         </div>
