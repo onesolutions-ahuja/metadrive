@@ -55,3 +55,18 @@ test('old app links and metadata navigation enter the app-only frontend',()=>{
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
   assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'OneKiosk'}),'/une/apps/OneKiosk/home');
 });
+
+test('user landing preference opens the assigned app without granting access',()=>{
+  const app=readFileSync(new URL('../../src/core/workspace/App/App.tsx',import.meta.url),'utf8');
+  const server=readFileSync(new URL('../../../server/src/system-files/session-metadata.ts',import.meta.url),'utf8');
+  const schema=readFileSync(new URL('../../../server/src/system-support/migrations/20261021-user-landing-app.sql',import.meta.url),'utf8');
+  assert.match(app,/landingAppApi\?:string/);
+  assert.match(app,/\/auth\/me/);
+  assert.match(app,/preferredApp==='Setup'/);
+  assert.match(app,/standaloneEntryForAppId\(appId\)/);
+  assert.match(app,/window\.location\.assign\(destination\)/);
+  assert.equal(appRoutePathWithoutBase({kind:'app-home',appId:'Acetill'}),'/acetill');
+  assert.match(server,/landingAppApi:landing\.rows\[0\]\?\.landing_app_api\?\?'Setup'/);
+  assert.match(schema,/landing_app_api text NOT NULL DEFAULT 'Setup'/);
+  assert.match(app,/still enforces installation, entitlement and RBAC independently/);
+});

@@ -5,7 +5,7 @@ import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, i
 
 
 import { parseAppRoute, appRoutePath } from '../Navigation/appRouting';
-import {resolveStandaloneEntry,standaloneCanonicalPath} from '../Standalone/standaloneEntries';
+import {resolveStandaloneEntry,standaloneCanonicalPath,standaloneEntryForAppId} from '../Standalone/standaloneEntries';
 
 
 
@@ -183,33 +183,33 @@ function App() {
     void restoreSession();
   }, []);
 
-  // Generic metadata-directed landing: when a profile has an active Home Page
-  // for its app, honour that assignment after login or session restoration.
-  // Never override explicit record, app page or Setup navigation.
+  // The user's app landing preference is navigation only; the destination
+  // still enforces installation, entitlement and RBAC independently.
   useEffect(() => {
     if (authState !== 'authenticated'||window.location.pathname==='/oauth/authorize') return;
     const currentRoute = parseAppRoute(window.location.pathname, window.location.search);
     if (currentRoute.kind !== 'setup' || currentRoute.workspace !== 'home') return;
-    const preferredApp = new URLSearchParams(window.location.search).get('appId') || 'Records';
-    const formFactor = window.matchMedia('(max-width: 600px)').matches ? 'Phone' : 'Desktop';
+    const requestedApp = new URLSearchParams(window.location.search).get('appId');
     let cancelled = false;
     void (async () => {
-      // Select only an app authorised by the server for this login.
-      // The same application shell resolves any authorised landing page.
-      // without hardcoded role-to-application routes.
-      const allowed = entryTiming?.landing?.apps?.length
-        ? entryTiming.landing.apps
-        : (await apiRequest<{apps: LightningAppMetadata[]}>('/metadata/apps')).apps;
-      const appId = allowed.some(app => app.apiName === preferredApp)
-        ? preferredApp : allowed[0]?.apiName;
-      if (!appId) return;
-      const {page} = await apiRequest<{page:{apiName:string}|null}>(
-        '/apps/' + encodeURIComponent(appId) + '/home-page?formFactor=' + formFactor
-      );
-      if (cancelled || !page || parseAppRoute(window.location.pathname, window.location.search).kind !== 'setup') return;
-      window.history.replaceState({}, '', appRoutePath({kind:'app-home',appId}));
+      const [session,allowed] = await Promise.all([
+        apiRequest<{user:{landingAppApi?:string}}>('/auth/me'),
+        entryTiming?.landing?.apps?.length
+          ? Promise.resolve({apps:entryTiming.landing.apps})
+          : apiRequest<{apps:LightningAppMetadata[]}>('/metadata/apps')
+      ]);
+      const preferredApp = requestedApp || session.user.landingAppApi || 'Setup';
+      const appId=allowed.apps.find(app=>app.apiName.toLowerCase()===preferredApp.toLowerCase())?.apiName;
+      if (cancelled || preferredApp==='Setup' || !appId
+        || parseAppRoute(window.location.pathname, window.location.search).kind!=='setup') return;
+      const destination=appRoutePath({kind:'app-home',appId});
+      if(standaloneEntryForAppId(appId)){
+        window.location.assign(destination);
+        return;
+      }
+      window.history.replaceState({}, '', destination);
       window.dispatchEvent(new PopStateEvent('popstate'));
-    })().catch(() => { /* No authorised Home Page: keep existing workspace. */ });
+    })().catch(() => { /* Keep Setup Home if landing preferences cannot be loaded. */ });
     return () => { cancelled = true; };
   }, [authState,entryTiming]);
 

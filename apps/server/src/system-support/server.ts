@@ -1501,32 +1501,38 @@ export function createSystemServer(db:SqlPersistence) {
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.
-  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean},actor:Actor)=>{
-    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,IsActive:row.enabled,Tenant:actor.tenant_id};
+  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string},actor:Actor)=>{
+    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,
+      IsActive:row.enabled,Tenant:actor.tenant_id};
     const checks=Object.keys(fields).map(field=>({resource:'User.'+field,action:'read'}));
     const allowed=await rbac.allowedMany(actor.tenant_id,actor.user_id,checks);
-    return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i]))};
+    return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i])),
+      LandingApp:row.landing_app_api};
   };
   const requireUserFields=async(actor:Actor,values:Record<string,unknown>,action:string)=>{
-    for(const field of Object.keys(values))await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
+    for(const field of Object.keys(values))if(field!=='LandingApp')
+      await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
   };
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
-    const allowed=new Set(['Name','Email','Username','IsActive','Password','Tenant']);
+    const allowed=new Set(['Name','Email','Username','IsActive','Password','Tenant','LandingApp']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
     if(input.Tenant!==undefined&&(typeof input.Tenant!=='string'||!/^[0-9a-f-]{36}$/i.test(input.Tenant)))throw new Error('Invalid tenant');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
+    if(input.LandingApp!==undefined&&(typeof input.LandingApp!=='string'
+      ||(input.LandingApp!=='Setup'&&!/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(input.LandingApp))))
+      throw new Error('Invalid landing app');
     if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
-      tenant:input.Tenant as string|undefined,role:undefined};
+      tenant:input.Tenant as string|undefined,landingApp:input.LandingApp as string|undefined,role:undefined};
   };
   const readUser=async(tenantId:string,userId:string,id:string)=>{
-    const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
-      'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+    const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string}>(
+      'SELECT id,email,display_name,enabled,landing_app_api FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
     if(!result.rows[0])throw new Error('Record not found');
     return userRecord(result.rows[0],{tenant_id:tenantId,user_id:userId});
   };
@@ -1536,8 +1542,8 @@ export function createSystemServer(db:SqlPersistence) {
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0)throw new Error('Invalid pagination');
     const [users,count]=await Promise.all([
-      db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
-        'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
+      db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string}>(
+        'SELECT id,email,display_name,enabled,landing_app_api FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
         [actor.tenant_id,Math.min(limit,100),offset]),
       db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
     ]);
@@ -1556,11 +1562,14 @@ export function createSystemServer(db:SqlPersistence) {
     await requireUserFields(actor,req.body,'create');
     const values=userFields(req.body,true);
     if(values.tenant&&values.tenant!==actor.tenant_id)throw new Error('Permission denied');
+    if(values.landingApp&&values.landingApp!=='Setup'
+      &&!(await apps.listMetadata(actor.tenant_id)).some(app=>app.apiName===values.landingApp))
+      throw new Error('Landing app must be installed and licensed for this tenant');
     const passwordHash=await auth.hashPassword(values.password!,actor.tenant_id);
     const row=await db.transaction(async client=>{
       const result=await client.query<{id:string}>(
-        'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled) VALUES($1,$2,$3,$4,$5) RETURNING id',
-        [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true]);
+        'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled,landing_app_api) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
+        [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true,values.landingApp??'Setup']);
       const profile=await client.query<{id:string}>(
         "SELECT id FROM md_profiles WHERE tenant_id=$1 AND api_name='Default'",[actor.tenant_id]);
       if(profile.rows[0])await client.query(
@@ -1574,14 +1583,19 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','edit');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    if(Object.prototype.hasOwnProperty.call(req.body,'LandingApp'))
+      await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
     if(values.tenant&&values.tenant!==actor.tenant_id)throw new Error('Permission denied');
+    if(values.landingApp&&values.landingApp!=='Setup'
+      &&!(await apps.listMetadata(actor.tenant_id)).some(app=>app.apiName===values.landingApp))
+      throw new Error('Landing app must be installed and licensed for this tenant');
     if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
     await db.transaction(async client=>{
       const updated=await client.query(
-        'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled) WHERE tenant_id=$1 AND id=$2 RETURNING id',
-        [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null]);
+        'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled),landing_app_api=COALESCE($6,landing_app_api) WHERE tenant_id=$1 AND id=$2 RETURNING id',
+        [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null,values.landingApp??null]);
       if(!updated.rowCount)throw new Error('Record not found');
       if(values.enabled===false){
         await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);

@@ -227,6 +227,7 @@ export function RecordFormDialog({
   editing,
   actionAllowed,
   embedded = false,
+  extraFields,
   onChange,
   onClose,
   onSubmit
@@ -248,6 +249,7 @@ export function RecordFormDialog({
   editing: boolean;
   actionAllowed: boolean;
   embedded?: boolean;
+  extraFields?: ReactNode;
   onChange: (apiName: string, value: unknown) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -640,6 +642,7 @@ export function RecordFormDialog({
           })}
           {unplacedRequiredFields.length > 0 && <section className="record-form-section"><h3>Required Fields</h3><div className="record-form-grid">{unplacedRequiredFields.map(renderField)}</div></section>}
         </> : <div className="record-form-grid">{visibleFields.map(renderField)}</div>}
+        {extraFields}
         {object.apiName === 'User' && !editing && <label className="form-label">Initial Password (12+ characters)
           <input className="form-control" type="password" autoComplete="new-password" minLength={12} maxLength={256} required disabled={saving}
             value={String(formValues.Password ?? '')} onChange={(event) => onChange('Password',event.target.value)} />

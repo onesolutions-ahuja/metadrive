@@ -4,6 +4,8 @@ Implementation extends the existing Core authentication service and central `Sec
 
 ## Available controls
 
+User administration can set a per-user default landing destination. New users default to Setup Home; an administrator may choose an installed application such as Acetill. Login and session restoration read this preference from `/auth/me` and route to the registered app frontend. The preference is not an access grant: tenant installation, entitlement and central RBAC are checked independently, and unavailable applications leave the user in Setup.
+
 Company Settings → Security & Recovery contains personal authenticator enrollment, tenant MFA policy, backup codes, passkey registration/removal, session/login restrictions, identity providers and explicit identity links. Login supports authenticator codes, backup codes, passkeys and enabled SSO providers. Password recovery is accessible from the login page and accepts emailed reset codes/links; it does not remove MFA. The owner selected email, backup codes and passkeys; security questions were not added.
 
 - TOTP preserves the existing encrypted secret vault and replay counter. Required first-login enrollment now works in the login UI. Confirming a new authenticator invalidates old backup codes and sessions. Disabling an authenticator also revokes sessions and is prohibited when tenant MFA is required.
@@ -21,7 +23,7 @@ Core provisioning seeds relational session policy defaults. The versioned migrat
 
 ## Deploy and configure
 
-1. Run normal Core migrations, including `20261122-identity-session-controls.sql`, before serving the updated application. The migration signs out legacy sessions once because their access/refresh family relationship cannot be reconstructed safely. Replaying it does not sign out sessions already using the new family columns. Business records, credentials and tenant customisation are retained.
+1. Run normal Core migrations, including `20261021-user-landing-app.sql` and `20261122-identity-session-controls.sql`, before serving the updated application. The identity-controls migration signs out legacy sessions once because their access/refresh family relationship cannot be reconstructed safely. Replaying it does not sign out sessions already using the new family columns. Business records, credentials and tenant customisation are retained.
 2. Use HTTPS and register each login hostname through the existing tenant-domain administration. Passkeys require HTTPS. Behind a proxy, set `METADRIVE_TRUST_PROXY_CIDRS` to an explicit comma-separated list of trusted proxy IPs/CIDRs and ensure those proxies sanitize forwarded headers. Without it Express uses the socket address. Arbitrary `trust proxy=true` and untrusted `X-Forwarded-For` are not accepted as identity. IPv4-mapped socket addresses are normalized for IPv4 range checks.
 3. Preserve the existing Named Credential encryption-key configuration for TOTP, federation client secrets and PKCE verifiers. Do not enable Required MFA until encryption is ready and administrators have enrolled factors and saved backup codes.
 4. Set `METADRIVE_AUTH_PUBLIC_ORIGIN` to the canonical HTTPS API origin, without a trailing slash or path. The settings UI displays the callback URL: `<origin>/api/auth/federation/callback`. Register it exactly with the IdP. Both OIDC GET and SAML POST callbacks are supported. Cross-site secure cookies must be allowed by the deployment/browser; a same-origin host is preferable.

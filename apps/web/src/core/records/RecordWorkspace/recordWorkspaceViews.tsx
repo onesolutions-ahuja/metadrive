@@ -1067,7 +1067,7 @@ function RecordWorkspace({
   const openCreateForm = () => {
     setEditingId(null);
     setEditingTimestamp('');
-    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '', Tenant: lookupRecords.Tenant?.[0]?.Id } : { RecordTypeId: defaultRecordTypeId });
+    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '', Tenant: lookupRecords.Tenant?.[0]?.Id, LandingApp: 'Setup' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
   };
@@ -1091,7 +1091,8 @@ function RecordWorkspace({
   const openEditForm = (item: RecordData) => {
     if (!object || !canEdit) return;
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
-    const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) => editableFieldNames.has(apiName) || apiName === 'RecordTypeId'));
+    const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) =>
+      editableFieldNames.has(apiName) || apiName === 'RecordTypeId' || object.apiName === 'User' && apiName === 'LandingApp'));
     setEditingId(item.Id);
     setEditingTimestamp(typeof item.LastModifiedDate === 'string' ? item.LastModifiedDate : '');
     setFormValues(editableValues);
@@ -1115,7 +1116,7 @@ function RecordWorkspace({
           && object.fields.some((field) => field.apiName === apiName
             && field.dataType === 'Text (Encrypted)')
           && formValues[apiName] === '********') && (object.apiName === 'User'
-          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant'].includes(apiName)
+          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
@@ -1128,7 +1129,7 @@ function RecordWorkspace({
           writableValues.Password = formValues.Password;
         }
         // The identity API accepts only these explicit fields. No arbitrary metadata fields or password edits.
-        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant']);
+        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
@@ -1619,6 +1620,17 @@ function RecordWorkspace({
         formValues={formValues} recordId={editingId} lookupRecords={lookupRecords}
         searchLookupRecords={searchLookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
         actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
+        extraFields={object.apiName==='User'&&canManageUserIdentities?<label className="form-label">Default landing page
+          <select className="form-control" value={String(formValues.LandingApp??'Setup')} disabled={saving}
+            onChange={event=>setFormValues(current=>({...current,LandingApp:event.target.value}))}>
+            <option value="Setup">Setup Home</option>
+            {apps.map(app=><option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+            {typeof formValues.LandingApp==='string'&&formValues.LandingApp!=='Setup'
+              &&!apps.some(app=>app.apiName===formValues.LandingApp)
+              &&<option value={formValues.LandingApp}>{formValues.LandingApp} (unavailable)</option>}
+          </select>
+          <small>This sets where the user lands after sign-in. It does not grant app access.</small>
+        </label>:undefined}
         onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />
   </main>;

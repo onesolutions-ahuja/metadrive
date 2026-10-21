@@ -391,6 +391,7 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
+    if(sql.includes('SELECT landing_app_api FROM md_users'))return {rows:[{landing_app_api:'Setup'}]};
     if(sql.includes('INSERT INTO md_tenant_api_usage_daily'))return {rows:[],rowCount:1};
     assert.ok(sql.includes('md_rbac_decision'));
     assert.ok(sql.includes('md_rbac_decision'));
@@ -422,6 +423,7 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
+    if(sql.includes('SELECT landing_app_api FROM md_users'))return {rows:[{landing_app_api:'Acetill'}]};
     if(sql.includes('md_rbac_decision'))
       return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},
         {ordinal:2,allow_granted:true,deny_granted:false}]};
@@ -436,9 +438,10 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
     });
     const body=await response.text();
     assert.equal(response.status,200,body);
-    const json=JSON.parse(body) as {user?:{id:string;permissions:string[]}};
+    const json=JSON.parse(body) as {user?:{id:string;permissions:string[];landingAppApi:string}};
     assert.equal(json.user?.id,'developer');
     assert.ok(json.user?.permissions.includes('metadata:read'));
+    assert.equal(json.user?.landingAppApi,'Acetill');
   }finally {
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
