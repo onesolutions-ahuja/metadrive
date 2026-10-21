@@ -82,6 +82,7 @@ import {flowFormulaReferences} from '../system-files/flow-formula-runtime.js';
 import { AppRuntime } from '../system-files/app-runtime.js';
 import { TenantProvisioning } from '../system-files/tenant-provisioning.js';
 import {PlatformTenantService} from '../system-files/platform-tenant-service.js';
+import {NativeTenantRecordReader} from './native-tenant-records.js';
 import {rotateFirstLoginPassword} from './first-login-rotation.js';
 import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
@@ -160,6 +161,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use((_req,res,next)=>{res.set(browserSecurityHeaders({frame_policy:'DENY',csp_enabled:true}));next();});
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
+  const nativeTenantRecords=new NativeTenantRecordReader(db,rbac);
   const connected=new ConnectedAppService(db,auth,rbac),securityMonitor=new SecurityMonitorService(db,rbac);
   auth.setLoginGuard(async(tenant,user,context)=>{
     const event=await securityMonitor.enforce({actor:{tenant_id:tenant,user_id:user},correlationId:auditContext()!.correlationId,eventType:'login',path:'/api/auth/login',method:'POST',ip:normalizedLoginIp(context.ip)});
@@ -1485,9 +1487,22 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({app:await apps.saveMetadata(actor.tenant_id,req.params.apiName,req.body,true)});
   }));
 
+  // Tenant references resolve the real, tenant-scoped md_tenants row. They do
+  // not create shadow records or disclose other tenants.
+  app.get('/api/records/Tenant',route(async(req,res)=>{
+    const actor=req.actor!;
+    const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await nativeTenantRecords.list(actor,limit,offset,req.query.search));
+  }));
+  app.get('/api/records/Tenant/:id',route(async(req,res)=>{
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(await nativeTenantRecords.get(req.actor!,req.params.id));
+  }));
+
   // The User object is a secure view of md_users, never a second md_records copy.
   const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean},actor:Actor)=>{
-    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,IsActive:row.enabled};
+    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,IsActive:row.enabled,Tenant:actor.tenant_id};
     const checks=Object.keys(fields).map(field=>({resource:'User.'+field,action:'read'}));
     const allowed=await rbac.allowedMany(actor.tenant_id,actor.user_id,checks);
     return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i]))};
@@ -1496,17 +1511,18 @@ export function createSystemServer(db:SqlPersistence) {
     for(const field of Object.keys(values))await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
   };
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
-    const allowed=new Set(['Name','Email','Username','IsActive','Password']);
+    const allowed=new Set(['Name','Email','Username','IsActive','Password','Tenant']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
+    if(input.Tenant!==undefined&&(typeof input.Tenant!=='string'||!/^[0-9a-f-]{36}$/i.test(input.Tenant)))throw new Error('Invalid tenant');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
     if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
-      role:undefined};
+      tenant:input.Tenant as string|undefined,role:undefined};
   };
   const readUser=async(tenantId:string,userId:string,id:string)=>{
     const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
@@ -1539,6 +1555,7 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     await requireUserFields(actor,req.body,'create');
     const values=userFields(req.body,true);
+    if(values.tenant&&values.tenant!==actor.tenant_id)throw new Error('Permission denied');
     const passwordHash=await auth.hashPassword(values.password!,actor.tenant_id);
     const row=await db.transaction(async client=>{
       const result=await client.query<{id:string}>(
@@ -1559,6 +1576,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
     await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
+    if(values.tenant&&values.tenant!==actor.tenant_id)throw new Error('Permission denied');
     if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
     await db.transaction(async client=>{
       const updated=await client.query(
