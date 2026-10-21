@@ -19,6 +19,17 @@ export async function executeHttpCalloutNode(input:{
  try {
   const scalarVars=Object.fromEntries(Object.entries(vars).filter(
    (entry):entry is [string,FlowScalar]=>isFlowScalar(entry[1])));
+  // Reuse the same server-side Get Records output for HTTP mappings. Only
+  // scalar properties of records already fetched under OneEngine may be used.
+  // Never accept dotted browser input or flatten arbitrary collections.
+  for(const [resource,value] of Object.entries(vars)){
+   if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(resource)||!value
+     ||typeof value!=='object'||Array.isArray(value))continue;
+   for(const [field,fieldValue] of Object.entries(value)){
+    if(/^[A-Za-z][A-Za-z0-9_]*$/.test(field)&&isFlowScalar(fieldValue))
+     scalarVars[resource+'.'+field]=fieldValue;
+   }
+  }
   const stableKey=resolveFlowHttpCalloutKey(node.config.idempotencyKey,runId+'-'+node.id,evaluate);
   const response=await transport(tenantId,userId,node.config,scalarVars,stableKey,
    asynchronous?{client,runId,nodeId:current}:undefined);
