@@ -73,12 +73,22 @@ const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthCo
 const LazyStandaloneRuntime=React.lazy(()=>import('../Standalone/StandaloneRuntime'));
 const LazyAceKiosk=React.lazy(()=>import('../../../../../acekiosk/src/AceKiosk'));
 function AceKioskAccessGate({onLogout}:{onLogout:()=>void}){
- const [allowed,setAllowed]=React.useState<boolean|null>(null);
- React.useEffect(()=>{let mounted=true;void apiRequest<{apps:Array<{apiName:string}>}>('/metadata/apps')
- .then(r=>{if(mounted)setAllowed(r.apps?.some(a=>a.apiName.toLowerCase()==='acekiosk')??false);})
- .catch(()=>{if(mounted)setAllowed(false);});return()=>{mounted=false;};},[]);
- if(allowed===null)return <main role="status">Checking AceKiosk access…</main>;
- if(!allowed)return <main role="alert">AceKiosk is not installed, licensed or permitted for this user.</main>;
+ type AppAccess={installed:boolean;licensed:boolean;enabled:boolean;permitted:boolean};
+ const [access,setAccess]=React.useState<AppAccess|null>(null);
+ const [failure,setFailure]=React.useState('');
+ React.useEffect(()=>{
+  let mounted=true;
+  void apiRequest<AppAccess>('/metadata/apps/AceKiosk/access')
+   .then(value=>{if(mounted)setAccess(value);})
+   .catch(error=>{if(mounted)setFailure(error instanceof Error?error.message:'Unable to verify app access');});
+  return()=>{mounted=false;};
+ },[]);
+ if(!access&&!failure)return <main role="status">Checking AceKiosk access…</main>;
+ if(!access)return <main role="alert">AceKiosk access check failed: {failure}. Please sign in again or contact your tenant administrator.</main>;
+ if(!access.installed)return <main role="alert">AceKiosk is not installed for this tenant. Install AceKiosk from AppExchange.</main>;
+ if(!access.licensed)return <main role="alert">AceKiosk licence is missing, inactive or expired for this tenant. Activate its entitlement in AppExchange.</main>;
+ if(!access.enabled)return <main role="alert">AceKiosk is disabled in the app catalogue. Contact your platform administrator.</main>;
+ if(!access.permitted)return <main role="alert">AceKiosk is installed and licensed, but your user lacks App:AceKiosk → read permission. Assign that permission through OneEngine RBAC. Setting Default landing page does not grant access.</main>;
  return <React.Suspense fallback={<main role="status">Opening AceKiosk…</main>}><LazyAceKiosk onLogout={onLogout}/></React.Suspense>;
 }
 type AuthState = 'restoring' | 'anonymous' | 'authenticated' | 'error';
