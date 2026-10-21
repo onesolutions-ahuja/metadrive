@@ -1,4 +1,5 @@
 import type { WorkspaceId } from '../../metadata/Definitions/metadata';
+import {shortAppEntry} from './shortAppEntry';
 
 
 export const objectSettings = [
@@ -68,6 +69,11 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
   const pathSegments = pathname.split('/').filter(Boolean);
   const segments = pathSegments[0] === 'une' ? pathSegments.slice(1) : [];
   const appId = new URLSearchParams(search).get('appId') || 'Records';
+  // Generic single-segment application entrypoints: /acetill resolves the published
+  // Acetill app, without a second login or app-specific routing branch.
+  // The authenticated app runtime still enforces tenant licence, installation and RBAC.
+  const shortEntry=shortAppEntry(pathname);
+  if(shortEntry)return {kind:'app-home',appId:shortEntry};
   try {
     if (segments.length === 3 && segments[0] === 'apps' && segments[2] === 'home') {
       return { kind: 'app-home', appId: decodeURIComponent(segments[1]) };
