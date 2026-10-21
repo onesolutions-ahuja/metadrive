@@ -38,8 +38,7 @@ test('native Tenant lookup searches only the current tenant and returns real IDs
 });
 
 test('native Tenant lookup respects field permissions and fails closed on object access',async()=>{
-  const db={query:async()=>({rows:[{id:actor.tenant_id,name:'Secret tenant',slug:'internal'}]})}
-    as unknown as SqlPersistence;
+  const db={query:async()=>({rows:[{id:actor.tenant_id,name:'Secret tenant',slug:'internal'}]})} as unknown as SqlPersistence;
   const rbac={
     require:async()=>{},
     allowedMany:async()=>[false,true]
