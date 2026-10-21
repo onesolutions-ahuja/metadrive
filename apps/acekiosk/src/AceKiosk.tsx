@@ -4,7 +4,6 @@ import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import './acekiosk.css';
 
 type RecordRow=Record<string,unknown>;
-type ObjectInfo={apiName:string};
 type Action={apiName:string;label:string};
 type Item={id:string;name:string;description:string;price:number;image:string;category:string;active:boolean};
 type CartLine={product:Item;quantity:number};
@@ -34,24 +33,22 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
     let live=true;
     async function load(){
       try{
-        const [metadata,available]=await Promise.all([
-          apiRequest<{objects:ObjectInfo[]}>('/metadata/objects'),
-          apiRequest<{actions:Action[]}>('/flows/available-actions?product=AceKiosk')
-        ]);
+        // The custom frontend invokes an explicitly configured, authorised tenant Flow.
+        // The Flow owns Get Records, filtering, ordering and output field visibility.
+        const available=await apiRequest<{actions:Action[]}>('/flows/available-actions?product=AceKiosk');
         if(!live)return;
-        setActions(available.actions??[]);
-        const objects=metadata.objects??[];
-        const product=objects.find(o=>o.apiName.toLowerCase()==='product');
-        const menuCategories=objects.find(o=>o.apiName.toLowerCase()==='menucategory');
-        if(!product)throw Error('Product object is not accessible to this user.');
-        const [records,catRecords]=await Promise.all([
-          apiRequest<{records:RecordRow[]}>(`/records/${encodeURIComponent(product.apiName)}?limit=200`),
-          menuCategories?apiRequest<{records:RecordRow[]}>(`/records/${encodeURIComponent(menuCategories.apiName)}?limit=200`):Promise.resolve({records:[]})
-        ]);
+        const permitted=available.actions??[];
+        setActions(permitted);
+        if(!permitted.some(a=>a.apiName==='AceKioskLoadMenu'))
+          throw Error('Menu unavailable. Activate and authorise the AceKioskLoadMenu Flow in MetaDrive.');
+        const response=await apiRequest<{outputs?:{products?:RecordRow[];categories?:RecordRow[]}}>('/flows/AceKioskLoadMenu/execute',{
+          method:'POST',body:JSON.stringify({})
+        });
         if(!live)return;
-        const items=(records.records??[]).map(productFrom).filter((p):p is Item=>p!==null&&p.active);
-        setProducts(items);
-        setCategories((catRecords.records??[]).filter(r=>field(r,'Active')!==false).sort((a,b)=>Number(field(a,'DisplayOrder')??0)-Number(field(b,'DisplayOrder')??0)).map(r=>String(field(r,'Name')??'')).filter(Boolean));
+        if(!Array.isArray(response.outputs?.products)||!Array.isArray(response.outputs?.categories))
+          throw Error('AceKioskLoadMenu must return products and categories arrays.');
+        setProducts(response.outputs.products.map(productFrom).filter((p):p is Item=>p!==null&&p.active));
+        setCategories(response.outputs.categories.filter(r=>field(r,'Active')!==false).sort((a,b)=>Number(field(a,'DisplayOrder')??0)-Number(field(b,'DisplayOrder')??0)).map(r=>String(field(r,'Name')??'')).filter(Boolean));
       }catch(e){if(live)setError(e instanceof Error?e.message:String(e));}
       finally{if(live)setLoading(false);}
     }
