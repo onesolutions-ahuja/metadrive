@@ -1,4 +1,4 @@
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -17,8 +17,8 @@ export default defineConfig({
     // independent of MetaDrive admin router and GitHub Pages SPA fallback.
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        acetill: fileURLToPath(new URL('./acetill/index.html', import.meta.url))
+        main: resolve(process.cwd(), 'index.html'),
+        acetill: resolve(process.cwd(), 'acetill/index.html')
       }
     }
   },
