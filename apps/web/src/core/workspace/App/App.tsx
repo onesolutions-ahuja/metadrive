@@ -101,6 +101,7 @@ type LandingBootstrap = {
     permissions: string[];
     fieldAccess: Record<string, { read: boolean; edit: boolean }>;
     recordTypeAccess: Record<string, boolean>;
+    landingAppApi?: string;
   };
 };
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap; landingAppApi?: string };
@@ -209,7 +210,8 @@ function App() {
   const entryIsHome=window.location.pathname==='/login'
     ||(route.kind==='setup'&&route.workspace==='home');
   const landingApp=entryTiming?.landingAppApi??entryTiming?.landing?.user?.landingAppApi??'Setup';
-  const needsLandingRedirect=authState==='authenticated'&&!standaloneEntry&&entryIsHome;
+  const needsLandingRedirect=authState==='authenticated'&&!standaloneEntry&&entryIsHome
+    &&(landingApp.toLowerCase()!=='setup'||window.location.pathname==='/login');
   useEffect(()=>{
     if(!needsLandingRedirect)return;
     const preferred=landingApp.toLowerCase();
