@@ -102,13 +102,16 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+   {id:4,type:'Get Records',label:'Authorised WhatsApp recipient',config:{
+     object:'ChatConversation',recordLimit:'1',outputVariable:'conversation',
+     conditions:[{field:'Id',operator:'Equals',value:'@conversationId'}]}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
      method:'POST',path:'{!phoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
-       to:'{!recipientPhone}',type:'text',text:{preview_url:false,body:'{!message}'}}),
+       to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
      onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,2,3)
+  ],connectors:links(1,4,2,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
