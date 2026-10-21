@@ -38,7 +38,7 @@ jobs:
       - name: Save existing Kiosk_Menu through tenant-authenticated MetaDrive APIs
         run: node --import tsx apps/server/scripts/apply-onekiosk-parity.mjs
         env:
-          METADRIVE_API_BASE_URL: https://metadrive-production.up.railway.app/api
+          METADRIVE_API_BASE_URL: https://metadrive-nxd7.onrender.com/api
           METADRIVE_TENANT_SLUG: ${{ secrets.METADRIVE_TENANT_SLUG }}
           METADRIVE_LOGIN_EMAIL: ${{ secrets.METADRIVE_LOGIN_EMAIL }}
           METADRIVE_LOGIN_PASSWORD: ${{ secrets.METADRIVE_LOGIN_PASSWORD }}
