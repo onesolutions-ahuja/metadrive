@@ -12,7 +12,10 @@ const fields:Field[]=[
  {object:'ChatMessage',name:'Body',label:'Body',type:'longtext'},
  {object:'ChatMessage',name:'Direction',label:'Direction',type:'text'},
  {object:'ChatMessage',name:'SentAt',label:'Sent At',type:'datetime'},
- {object:'ChatMessage',name:'Status',label:'Status',type:'text'}
+ {object:'ChatMessage',name:'Status',label:'Status',type:'text'},
+ {object:'ChatChannelSettings',name:'Name',label:'Name',type:'text'},
+ {object:'ChatChannelSettings',name:'PhoneNumberId',label:'WhatsApp Phone Number ID',type:'text'},
+ {object:'ChatChannelSettings',name:'Active',label:'Active',type:'boolean'}
 ];
 const links=(...ids:number[])=>ids.slice(0,-1).map((from,i)=>({from,to:ids[i+1],kind:'normal',label:'Next'}));
 function graph(apiName:string,label:string,object:string,input:string,conditions:unknown[],sortField:string){
@@ -50,7 +53,8 @@ async function insertGraph(client:PoolClient,tenantId:string,graphValue:ReturnTy
 export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:string):Promise<number>{
  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':flows:AceChatter']);
  for(const item of [{name:'ChatConversation',label:'Chat Conversation'},
-   {name:'ChatMessage',label:'Chat Message'}])
+   {name:'ChatMessage',label:'Chat Message'},
+   {name:'ChatChannelSettings',label:'WhatsApp Channel Settings'}])
   await client.query(`INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system)
    VALUES($1,$2,$3,false) ON CONFLICT(tenant_id,api_name) DO NOTHING`,
    [tenantId,item.name,item.label]);
@@ -70,7 +74,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ['Flow:AceChatterLoadConversations','execute'],
   ['Flow:AceChatterLoadMessages','execute'],
   ['Flow:AceChatterSendMessage','execute'],
-  ['ChatConversation','read'],['ChatMessage','read'],
+  ['ChatConversation','read'],['ChatMessage','read'],['ChatChannelSettings','read'],
   ...fields.map(field=>[field.object+'.'+field.name,'read'])
  ];
  for(const [resource,action] of rights)await client.query(`
@@ -105,13 +109,16 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {id:4,type:'Get Records',label:'Authorised WhatsApp recipient',config:{
      object:'ChatConversation',recordLimit:'1',outputVariable:'conversation',
      conditions:[{field:'Id',operator:'Equals',value:'@conversationId'}]}},
+   {id:5,type:'Get Records',label:'Tenant WhatsApp sender settings',config:{
+     object:'ChatChannelSettings',recordLimit:'1',outputVariable:'channel',
+     conditions:[{field:'Active',operator:'Equals',value:true}]}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
-     method:'POST',path:'{!phoneNumberId}/messages',
+     method:'POST',path:'{!channel.PhoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
      onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,4,2,3)
+  ],connectors:links(1,4,5,2,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
