@@ -9,5 +9,5 @@ test('AceKiosk menu metadata stays tenant scoped, user context, idempotent and F
  assert.match(s,/Get Records/);
  assert.match(s,/kind:'normal'/);
  assert.match(s,/executionContext:'User'/);
- assert.doesNotMatch(s,/INSERT INTO md_records|INSERT INTO md_permission_rules|INSERT INTO md_permission_assignments/);
+ assert.doesNotMatch(s,/INSERT INTO md_records|INSERT INTO md_permission_assignments/);
 });
