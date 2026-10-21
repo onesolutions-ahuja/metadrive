@@ -24,7 +24,10 @@ export class RbacAdministration{
   const parsed=snapshot.safeParse(body);
   if(!parsed.success)throw Error('Invalid RBAC request: '+parsed.error.issues.slice(0,3).map(i=>i.path.join('.')+' '+i.message).join('; '));
   const next=parsed.data;
-  return this.db.transaction(tx=>this.saveWithin(tx,tenant,actor,next));
+  // Commit the RBAC mutation before rebuilding the large read-only snapshot.
+   // This avoids holding the tenant policy lock during a 27-table metadata read.
+   await this.db.transaction(tx=>this.saveWithin(tx,tenant,actor,next));
+   return snapshot.parse(await readRbac(this.db,tenant));
  }
  async saveWithin(tx:PoolClient,tenant:string,actor:string,body:unknown){
    const parsed=snapshot.safeParse(body);
@@ -169,6 +172,6 @@ export class RbacAdministration{
    await currentRbac.require(tenant,actor,'Security','read');
    await tx.query('INSERT INTO md_rbac_revisions(tenant_id,revision) VALUES($1,1) ON CONFLICT(tenant_id) DO UPDATE SET revision=md_rbac_revisions.revision+1',[tenant]);
    await tx.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'rbac.policies.update')",[tenant,actor]);
-   return readRbac(tx,tenant);
+   // The committed snapshot is returned by save() outside the transaction.
  }
 }
