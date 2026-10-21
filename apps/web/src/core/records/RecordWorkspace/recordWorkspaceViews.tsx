@@ -1,3 +1,4 @@
+import './recordsListToolbar.css';
 import { RecordFormDialog } from '../RecordFormDialog/recordFormDialogView';
 import RichTextContent from './RichTextContent';
 import FormulaImageContent from './FormulaImageContent';
@@ -202,9 +203,10 @@ type SavedRecordListView = {
 };
 
 export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined, RuntimeReportChart: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
-function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,legacyFilter,fields}:{
+function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,onColumnsChange,legacyFilter,fields}:{
   objectApi:string;defaultColumns:string[];selected:SavedRecordListView|null;
   onSelect:(view:SavedRecordListView|null)=>void;
+  onColumnsChange:(columns:string[]|null)=>void;
   legacyFilter?:ObjectMetadata['listViewFilter'];
   fields:FieldMetadata[];
 }) {
@@ -230,6 +232,7 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
   },[objectApi]);
   useEffect(()=>{
     setViewColumns(defaultColumns);
+    onColumnsChange(null);
     setFilters(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
       :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]);
     setFilterLogic('');
@@ -282,6 +285,7 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
       await apiRequest(`/records/${encodeURIComponent(objectApi)}/list-views/${encodeURIComponent(selected.id)}`,{method:'DELETE'});
       setViews(current=>current.filter(view=>view.id!==selected.id));
       setViewColumns(defaultColumns);
+      onColumnsChange(null);
       setFilters(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
         :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]);
       setFilterLogic('');
@@ -289,10 +293,11 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
     }catch(failure){setError(failure instanceof Error?failure.message:'Unable to delete list view');}
   };
   return <div className="records-list-view-picker" aria-label="Saved list views">
+    <label className="records-view-select"><span className="records-visually-hidden">Saved view</span>
     <select aria-label="Saved list view" value={selected?.id??''} onChange={event=>{
       const view=views.find(item=>item.id===event.target.value)??null;
       setScope(view?.scope??'all');setVisibility(view?.visibility??'private');
-      setGroupIds(view?.groupIds??[]);setViewColumns(view?.columns??defaultColumns);
+      setGroupIds(view?.groupIds??[]);setViewColumns(view?.columns??defaultColumns);onColumnsChange(view?.columns??null);
       setFilters(view?.filters.map(filter=>({...filter,value:Array.isArray(filter.value)?filter.value.join(', '):filter.value}))
         ??(legacyFilter?[{field:legacyFilter.fieldApiName??'',operator:legacyFilter.operator==='Includes'?'includes'
           :legacyFilter.operator==='Excludes'?'excludes':'eq',value:legacyFilter.value??''}]:[]));
@@ -301,6 +306,11 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
       <option value="">Default list</option>
       {views.map(view=><option key={view.id} value={view.id}>{view.pinned?'★ ':''}{view.label}</option>)}
     </select>
+    </label>
+    <div className="records-view-options">
+      <details className="records-view-popover">
+        <summary><Settings2 size={15}/>View settings</summary>
+        <div className="records-view-popover-panel records-view-settings-panel">
     <select aria-label="Saved view record scope" value={scope} onChange={event=>setScope(event.target.value as SavedRecordListView['scope'])}>
       <option value="all">All accessible</option><option value="my">My records</option>
       <option value="my_team">My team</option><option value="queue">Queues</option>
@@ -311,17 +321,43 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
     }}>
       <option value="private">Only me</option><option value="all">Everyone</option><option value="groups">Selected groups</option>
     </select>
-    {visibility==='groups'&&<fieldset><legend>Visible to groups</legend>
+    {visibility==='groups'&&<div className="records-view-checkbox-list" role="group" aria-label="Visible to groups">
       {groups.map(group=><label key={group.id}><input type="checkbox" checked={groupIds.includes(group.id)}
         onChange={()=>setGroupIds(current=>current.includes(group.id)
           ?current.filter(id=>id!==group.id):[...current,group.id])}/>{group.label}</label>)}
-    </fieldset>}
-    <fieldset><legend>View columns</legend>
+    </div>}
+          <div className="records-view-menu-actions">
+    <button type="button" className="btn btn-brand" onClick={()=>void save()}>Save view</button>
+    {selected&&<button type="button" className="btn" onClick={()=>void save(true)}>Update view</button>}
+    {selected&&<button type="button" className="btn" aria-label={selected.pinned?'Unpin view':'Pin view'} onClick={()=>void setPinned()}>
+      {selected.pinned?'Unpin':'Pin'}
+    </button>}
+    {selected?.visibility==='private'&&<button type="button" className="btn" onClick={()=>void remove()}>Delete view</button>}
+          </div>
+        </div>
+      </details>
+      <details className="records-view-popover">
+        <summary><SlidersHorizontal size={15}/>Columns <span className="records-tool-count">{viewColumns.length}</span></summary>
+        <div className="records-view-popover-panel records-columns-panel">
+          <div className="records-view-panel-heading"><strong>Visible columns</strong>
+            <button type="button" className="text-action" onClick={()=>{setViewColumns(defaultColumns);onColumnsChange(null);}}>Reset</button>
+          </div>
+    <div className="records-view-checkbox-list" role="group" aria-label="View columns">
       {fields.map(field=><label key={field.apiName}><input type="checkbox" checked={viewColumns.includes(field.apiName)}
-        onChange={()=>setViewColumns(current=>current.includes(field.apiName)
-          ?current.filter(name=>name!==field.apiName):[...current,field.apiName])}/>{field.label}</label>)}
-    </fieldset>
-    <fieldset><legend>Filters</legend>
+        onChange={()=>setViewColumns(current=>{
+          const next=current.includes(field.apiName)
+            ?current.filter(name=>name!==field.apiName):[...current,field.apiName];
+          onColumnsChange(next);return next;
+        })}/>{field.label}</label>)}
+    </div>
+        </div>
+      </details>
+      <details className="records-view-popover">
+        <summary><Filter size={15}/>Filters {filters.length>0&&<span className="records-tool-count">{filters.length}</span>}</summary>
+        <div className="records-view-popover-panel records-filters-panel">
+          <strong>View filters</strong>
+          <p className="records-view-hint">Save or update a view to apply filter changes.</p>
+    <div className="records-filter-editor" role="group" aria-label="Filters">
       {filters.map((filter,index)=><div key={index}>
         <select aria-label={`Filter ${index+1} field`} value={filter.field}
           onChange={event=>setFilters(current=>current.map((item,itemIndex)=>itemIndex===index
@@ -350,14 +386,16 @@ function SavedRecordListViewPicker({objectApi,defaultColumns,selected,onSelect,l
         <input aria-label="Filter logic" value={filterLogic}
           placeholder="1 AND (2 OR 3)" onChange={event=>setFilterLogic(event.target.value)}/>
       </label>}
-    </fieldset>
-    <button type="button" className="btn" onClick={()=>void save()}>Save view</button>
-    {selected&&<button type="button" className="btn" onClick={()=>void save(true)}>Update view</button>}
-    {selected&&<button type="button" className="btn" aria-label={selected.pinned?'Unpin view':'Pin view'} onClick={()=>void setPinned()}>
-      {selected.pinned?'Unpin':'Pin'}
-    </button>}
-    {selected?.visibility==='private'&&<button type="button" className="btn" onClick={()=>void remove()}>Delete view</button>}
-    {error&&<span role="alert">{error}</span>}
+    </div>
+          <div className="records-view-menu-actions">
+            <button className="btn btn-brand" type="button" onClick={()=>void save(Boolean(selected))}>
+              {selected?'Save filters':'Save as new view'}
+            </button>
+          </div>
+        </div>
+      </details>
+    </div>
+    {error&&<span className="records-list-view-error" role="alert">{error}</span>}
   </div>;
 }
 
