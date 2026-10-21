@@ -138,8 +138,8 @@ export default function FieldWizardModal({ context }: { context: any }) {
                 </select>
               </label>
               {globalValueSetError && <p className="permission-help">Global Value Sets could not be loaded. You can still define field-specific values. {globalValueSetError}</p>}
-              <PicklistValueRows key={globalValueSetApiName || 'field-specific'} values={newFieldPicklistValues.split(/\\r?\\n/).filter(Boolean)} disabled={Boolean(globalValueSetApiName)} onChange={(values, previous, replacement) => {
-                setNewFieldPicklistValues(values.join('\\n'));
+              <PicklistValueRows key={globalValueSetApiName || 'field-specific'} values={newFieldPicklistValues.split(/\r?\n/).filter(Boolean)} disabled={Boolean(globalValueSetApiName)} onChange={(values, previous, replacement) => {
+                setNewFieldPicklistValues(values.join('\n'));
                 setNewFieldValueSettings((current) => Object.fromEntries(Object.entries(current).map(([controllerValue, selectedValues]) =>
                   [controllerValue, selectedValues.map((value) => value === previous ? replacement ?? '' : value).filter((value) => values.includes(value))])));
                 if (previous && newFieldDefaultValue === previous) {
