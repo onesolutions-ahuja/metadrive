@@ -4,10 +4,11 @@ import {readFileSync} from 'node:fs';
 import {resolveStandaloneEntry,standaloneEntryForAppId,standaloneCanonicalPath} from '../../src/core/workspace/Standalone/standaloneEntries.ts';
 import {appRoutePathWithoutBase} from '../../src/core/workspace/Navigation/appRouting.ts';
 
-test('direct Acetill and Ace Assist routes have separate product identities',()=>{
+test('direct Acetill, Ace Assist and AceKiosk routes have separate product identities',()=>{
   assert.deepEqual(
     [resolveStandaloneEntry('/acetill')?.appId,resolveStandaloneEntry('/aceassist/')?.appId],
     ['Acetill','AceAssist']);
+  assert.equal(resolveStandaloneEntry('/acekiosk')?.appId,'AceKiosk');
   assert.equal(resolveStandaloneEntry('/metadrive/acetill','/metadrive/')?.appId,'Acetill');
   for(const pathname of ['/','/une/setup/home','/api/auth/login','/acetill/checkout','/notinstalled','/login']) {
     assert.equal(resolveStandaloneEntry(pathname),null,pathname);
@@ -58,6 +59,7 @@ test('old app links and metadata navigation enter the app-only frontend',()=>{
   assert.equal(standaloneCanonicalPath('/une/apps/Aceassist/home'),'/aceassist');
   assert.equal(standaloneCanonicalPath('/une/apps/AceAssist/home'),'/aceassist');
   assert.equal(standaloneCanonicalPath('/une/apps/Acetill/home'),'/acetill');
+  assert.equal(standaloneCanonicalPath('/une/apps/AceKiosk/home'),'/acekiosk');
   assert.equal(standaloneCanonicalPath('/une/apps/Aceassist/pages/Visits'),'/aceassist?page=Visits');
   assert.equal(standaloneCanonicalPath('/metadrive/une/apps/ACEASSIST/home','', '/metadrive/'),'/metadrive/aceassist');
   for (const path of ['/une/apps/Other/home','/une/setup/home','/une/apps/Aceassist/records/Contact','/une/apps/Aceassist/pages/../setup']) {
