@@ -1,4 +1,4 @@
-import { useEffect,useState, type FormEvent } from 'react';
+import { useEffect,useState, type FormEvent, type CSSProperties } from 'react';
 import { readSubmittedLogin } from './readSubmittedLogin';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from '../../metadata/Definitions/metadata';
 import { apiRequest, setAccessToken } from '../Client/authClient';
@@ -95,7 +95,7 @@ export function createLoginView(logoUrl: string) {
       }
     };
 
-    const loginStyle=branding?{'--standalone-accent':branding.accent} as React.CSSProperties:undefined;
+    const loginStyle=branding?{'--standalone-accent':branding.accent} as CSSProperties:undefined;
     if(recovering)return <main className={branding?'auth-screen auth-screen--standalone':'auth-screen'} style={loginStyle}><div className="auth-card"><LoginRecovery onClose={()=>setRecovering(false)}/></div></main>;
     return <main className={branding?'auth-screen auth-screen--standalone':'auth-screen'} style={loginStyle}>
       <form className="auth-card" onSubmit={(event) => void signIn(event)}>
