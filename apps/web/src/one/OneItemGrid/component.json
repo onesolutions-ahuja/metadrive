@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 13,
+  "version": 14,
   "scope": "platform-core",
   "jsxFile": "one/OneItemGrid/OneItemGrid.jsx",
   "cssFile": "one/OneItemGrid/OneItemGrid.css",
@@ -207,6 +207,13 @@
       "kind": "NUMBER",
       "defaultValue": 2,
       "displayOrder": 429
+    },
+    {
+      "propertyKey": "featuredRowSpan",
+      "label": "Featured tile height (rows)",
+      "kind": "NUMBER",
+      "defaultValue": 1,
+      "displayOrder": 429.5
     },
     {
       "propertyKey": "cardDensity",

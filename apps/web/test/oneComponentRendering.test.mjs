@@ -52,17 +52,18 @@ test('opt-in visual properties remain on existing reusable component definitions
   const map = new Map(components.map(c => [c.apiName, c]));
   const required = {
     OneRepeater: ['recordImageFieldApiName','recordSortFieldApiName','recordActiveFieldApiName',
-      'recordLayout','recordItemMinHeight','selectedItemBackgroundColor','showAllItem'],
+      'recordLayout','recordOrientation','recordWrap','recordItemMinHeight',
+      'selectedItemBackgroundColor','showAllItem','imageFit'],
     OneTabs: ['showPanel','tabStyle','showAllTab','relatedFilterKey','relatedFieldApiName'],
     OneItemGrid: ['showHeading','recordSortFieldApiName','recordActiveFieldApiName',
       'badgeFieldApiName','featuredFieldApiName','featuredColumnSpan','cardDensity',
+      'featuredRowSpan',
       'cardPadding','cardRadius','cardMinHeight','cardBackgroundColor','cardBorderColor',
       'cardBorderWidth','cardShadow','cardHover','imageHeight','imageFit','imageAspectRatio'],
     OneChoice: ['optionImageFieldApiName','optionLayout','optionColumns','optionMinHeight',
       'optionImageHeight','optionImageFit','selectedOptionBackgroundColor','selectedOptionTextColor'],
     OneCard: ['imageSrc','imagePosition','imageWidthPercent','imageFit','showSurface'],
     OneImage: ['imageHeight','imageFit','imageAspectRatio'],
-    OneRepeater: ['recordImageFieldApiName','imageFit'],
     OneOverlay: ['showSelectedRecord','selectedImageFieldApiName','confirmBehavior','cartTargetKey',
       'imageHeight','imageFit','imageAspectRatio'],
     OneShoppingCart: ['basketPresentation','basketTitle','checkoutLabel'],
@@ -96,14 +97,33 @@ test('reusable item grid renders product imagery, names, prices and badges', asy
   const html = renderToStaticMarkup(React.createElement(context.module.exports.default,{
     kind:'ItemGrid',showHeading:false, titleFieldApiName:'Name',imageFieldApiName:'ImageUrl',
     priceFieldApiName:'Price',currencyCode:'GBP',badgeFieldApiName:'Badge',featuredFieldApiName:'Featured',
-    featuredColumnSpan:2,records:[{Id:'x',Name:'Example burger',Price:4.5,Badge:'Popular',Featured:true,
+    featuredColumnSpan:2,featuredRowSpan:2,records:[{Id:'x',Name:'Example burger',Price:4.5,Badge:'Popular',Featured:true,
       ImageUrl:'https://example.com/test.jpg'}]
   }));
   assert.match(html,/Example burger/);
   assert.match(html,/Popular/);
   assert.match(html,/md-product-image/);
   assert.match(html,/span 2/);
+  assert.match(html,/grid-row:span 2/);
   assert.doesNotMatch(html,/<h3/);
+});
+
+test('reusable repeater supports horizontal record rows and wrapping', async () => {
+  const definition = components.find(c => c.apiName === 'OneRepeater');
+  const built = await buildBundledComponent(definition);
+  const context = {React,module:{exports:{}},Intl,Date,URL,crypto:globalThis.crypto};
+  vm.runInNewContext(built.compiledJs,context);
+  const html = renderToStaticMarkup(React.createElement(context.module.exports.default,{
+    kind:'Repeater',objectApiName:'MenuCategory',recordTitleFieldApiName:'Name',
+    recordValueFieldApiName:'Id',recordLayout:'pill',recordOrientation:'horizontal',
+    recordWrap:true,recordItemMinHeight:44,
+    records:[{Id:'burgers',Name:'Burgers'},{Id:'chicken',Name:'Chicken'}]
+  }));
+  assert.match(html,/flex-direction:row/);
+  assert.match(html,/flex-wrap:wrap/);
+  assert.match(html,/flex:0 0 auto/);
+  assert.match(html,/Burgers/);
+  assert.match(html,/Chicken/);
 });
 
 test('reusable item grid applies metadata-driven card and image presentation', async () => {

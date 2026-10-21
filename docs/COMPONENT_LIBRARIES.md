@@ -80,6 +80,11 @@ layout and record-backed option images/prices, Overlay selected-image sizing,
 and image fitting on Card, Image and Repeater. These remain generic component
 properties; they do not add kiosk-specific runtime behavior.
 
+Record-backed Repeaters can orient their items vertically or horizontally and
+optionally wrap horizontal items, supporting reusable category rails and
+subcategory chips. ItemGrid featured records can span configurable grid rows as
+well as columns; both span settings are bounded at render time.
+
 ## Packaging and validation
 
 `scripts/component-catalog.mjs` reads descriptors and bundles local One/SystemPanel

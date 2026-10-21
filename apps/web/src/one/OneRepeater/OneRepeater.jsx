@@ -64,13 +64,18 @@ export default function OneRepeater(props) {
     const selectedBg = validColour(p.selectedItemBackgroundColor) ? p.selectedItemBackgroundColor : (p.accentColor || "#E4002B");
     const selectedFg = validColour(p.selectedItemTextColor) ? p.selectedItemTextColor : "#FFFFFF";
     const layout = ["tile", "pill", "list"].includes(p.recordLayout) ? p.recordLayout : "list";
+    const horizontal = p.recordOrientation === "horizontal";
     return (
       <div {...root} className={String(root.className || "") + " one-stack"}
-        style={{...root.style, flexDirection: "column", alignItems: "stretch", gap: Number(p.gap) >= 0 ? Number(p.gap) : 10}}>
+        style={{...root.style, flexDirection: horizontal ? "row" : "column",
+          alignItems: horizontal ? "center" : "stretch",
+          ...(horizontal ? {flexWrap: p.recordWrap === false ? "nowrap" : "wrap"} : {}),
+          gap: Number(p.gap) >= 0 ? Number(p.gap) : 10}}>
         {label && <strong>{label}</strong>}
         {p.showAllItem === true && <button className="one-item one-item--interactive"
           type="button" aria-pressed={!selected} onClick={() => select("", p.allItemLabel || "All", null)}
           style={{borderRadius: layout === "pill" ? 999 : 12,
+            flex: horizontal ? "0 0 auto" : undefined,
             backgroundColor: !selected ? selectedBg : undefined,
             color: !selected ? selectedFg : undefined}}>
           {p.allItemLabel || "All"}
@@ -88,6 +93,7 @@ export default function OneRepeater(props) {
               onClick={() => select(id, name, record)}
               style={{display: "flex", flexDirection: layout === "tile" ? "column" : "row",
                 alignItems: "center", gap: 10, minHeight: itemHeight,
+                flex: horizontal ? "0 0 auto" : undefined,
                 borderRadius: layout === "pill" ? 999 : 12,
                 backgroundColor: isSelected ? selectedBg : undefined,
                 color: isSelected ? selectedFg : undefined}}>

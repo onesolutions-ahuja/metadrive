@@ -167,6 +167,7 @@ function ItemGrid({ p, rows }) {
           const description = descriptionField ? String(r?.[descriptionField] ?? "") : "";
           const isFeatured = featuredField && (r?.[featuredField] === true || r?.[featuredField] === "true");
           const span = isFeatured ? Math.max(1, Math.min(count, Number(p.featuredColumnSpan) || 2)) : 1;
+          const rowSpan = isFeatured ? Math.max(1, Math.min(6, Number(p.featuredRowSpan) || 1)) : 1;
           const imageStyle = {
             display: "block",
             width: "100%",
@@ -178,6 +179,7 @@ function ItemGrid({ p, rows }) {
           };
           const cardStyle = {
             gridColumn: span > 1 ? "span " + span : undefined,
+            gridRow: rowSpan > 1 ? "span " + rowSpan : undefined,
             padding: Number.isFinite(cardPadding) && cardPadding >= 0
               ? Math.min(64, cardPadding)
               : density === "compact" ? 8 : density === "comfortable" ? 16 : density === "image-focused" ? 10 : undefined,

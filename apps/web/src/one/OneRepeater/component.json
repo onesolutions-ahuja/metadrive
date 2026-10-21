@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 6,
+  "version": 7,
   "scope": "platform-core",
   "jsxFile": "one/OneRepeater/OneRepeater.jsx",
   "cssFile": "one/OneRepeater/OneRepeater.css",
@@ -143,6 +143,30 @@
           "label": "pill"
         }
       ]
+    },
+    {
+      "propertyKey": "recordOrientation",
+      "label": "Record orientation",
+      "kind": "SELECT",
+      "defaultValue": "vertical",
+      "displayOrder": 355.5,
+      "choices": [
+        {
+          "key": "vertical",
+          "label": "Vertical"
+        },
+        {
+          "key": "horizontal",
+          "label": "Horizontal"
+        }
+      ]
+    },
+    {
+      "propertyKey": "recordWrap",
+      "label": "Wrap records onto another row",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 355.6
     },
     {
       "propertyKey": "recordItemMinHeight",
