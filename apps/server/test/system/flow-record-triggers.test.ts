@@ -73,6 +73,15 @@ test('record-triggered Flows honor trigger conditions and trigger order transact
 });
 
 test('after-save Record-Triggered Flow schedules a durable path with its record snapshot',async()=>{
+ const dueDate=new Date();
+ dueDate.setUTCHours(0,0,0,0);
+ dueDate.setUTCDate(dueDate.getUTCDate()+10);
+ const updatedDueDate=new Date(dueDate);
+ updatedDueDate.setUTCDate(updatedDueDate.getUTCDate()+2);
+ const expectedScheduledAt=new Date(dueDate);
+ expectedScheduledAt.setUTCDate(expectedScheduledAt.getUTCDate()+1);
+ const expectedUpdatedScheduledAt=new Date(updatedDueDate);
+ expectedUpdatedScheduledAt.setUTCDate(expectedUpdatedScheduledAt.getUTCDate()+1);
  const flow={id:'00000000-0000-4000-8000-000000000031',api_name:'ScheduledPathFlow',
   version:3,app_api_name:'Orders'};
  const graph={flowType:'Record-Triggered Flow',appApiName:'Orders',elements:[
@@ -117,11 +126,11 @@ test('after-save Record-Triggered Flow schedules a durable path with its record 
   scheduled.push({runId,at,version,app});
  });
  await runtime.execute(client,tenant,user,'Account','created',
-  {Id:recordId,DueDate:'2026-10-20'},null);
+  {Id:recordId,DueDate:dueDate.toISOString().slice(0,10)},null);
  assert.equal(scheduled.length,1);
  assert.equal(scheduled[0].version,3);
  assert.equal(scheduled[0].app,'Orders');
- assert.equal(scheduled[0].at.toISOString(),'2026-10-21T00:00:00.000Z');
+ assert.equal(scheduled[0].at.toISOString(),expectedScheduledAt.toISOString());
  assert.deepEqual(permissions,['Flow:ScheduledPathFlow','Account.DueDate']);
  assert(statements.some(item=>item.sql.includes(
   "VALUES($1,$2,$3,$4,$5,'waiting','scheduled-path',$6)")
@@ -131,9 +140,10 @@ test('after-save Record-Triggered Flow schedules a durable path with its record 
  assert(statements.some(item=>item.sql.includes('INSERT INTO md_flow_interview_records')
   &&item.values[2]==='$Record'&&item.values[4]===recordId));
  await runtime.execute(client,tenant,user,'Account','updated',
-  {Id:recordId,DueDate:'2026-10-22'},{Id:recordId,DueDate:'2026-10-20'});
+  {Id:recordId,DueDate:updatedDueDate.toISOString().slice(0,10)},
+  {Id:recordId,DueDate:dueDate.toISOString().slice(0,10)});
  assert.equal(scheduled.length,2);
- assert.equal(scheduled[1].at.toISOString(),'2026-10-23T00:00:00.000Z');
+ assert.equal(scheduled[1].at.toISOString(),expectedUpdatedScheduledAt.toISOString());
  assert.equal(statements.filter(item=>item.sql.includes('WITH cancelled AS')).length,2);
 });
 
