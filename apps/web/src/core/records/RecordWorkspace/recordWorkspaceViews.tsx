@@ -958,6 +958,12 @@ function RecordWorkspace({
           : []);
         if (active) {
           setLookupRecords(Object.fromEntries(pairs));
+          // The signed-in tenant is the only available User.Tenant reference.
+          // Display its real SQL ID, while the identity API still enforces scope.
+          if(object.apiName==='User'&&formOpen){
+            const tenantId=pairs.find(([api])=>api==='Tenant')?.[1]?.[0]?.Id;
+            if(tenantId)setFormValues(current=>({...current,Tenant:current.Tenant??tenantId}));
+          }
           const message = failures.join('; ');
           setLookupError(message);
           if (formOpen) setFormError(message);
@@ -1061,7 +1067,7 @@ function RecordWorkspace({
   const openCreateForm = () => {
     setEditingId(null);
     setEditingTimestamp('');
-    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
+    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '', Tenant: lookupRecords.Tenant?.[0]?.Id } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
   };
@@ -1109,7 +1115,7 @@ function RecordWorkspace({
           && object.fields.some((field) => field.apiName === apiName
             && field.dataType === 'Text (Encrypted)')
           && formValues[apiName] === '********') && (object.apiName === 'User'
-          ? ['Name', 'Email', 'Username', 'IsActive', 'Password'].includes(apiName)
+          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
@@ -1122,7 +1128,7 @@ function RecordWorkspace({
           writableValues.Password = formValues.Password;
         }
         // The identity API accepts only these explicit fields. No arbitrary metadata fields or password edits.
-        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password']);
+        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
