@@ -37,7 +37,8 @@ test('standalone entrypoint uses the shared product-aware workspace shell',()=>{
  assert.match(main,/isMarketingHome/);
  assert.match(app,/standaloneCanonicalPath\(window\.location\.pathname/);
  assert.match(app,/resolveStandaloneEntry\(entryPath/);
- assert.match(app,/branding=\{standaloneEntry\?\?undefined\}/);
+ assert.match(app,/window\.location\.replace\('\/login'\)/);
+ assert.match(app,/if \(authState === 'anonymous'\) return <Login onStart=/);
  assert.match(app,/LazyStandaloneRuntime entry=\{standaloneEntry\}/);
 });
 
