@@ -5,7 +5,7 @@ Status: **security architecture contract** (not a claim of automatic-trigger run
 ## Principles
 
 - A Flow's **API name**, **Flow type**, **execution context**, and **activation state** are independent metadata.
-- The shared SQL Flow runtime is the only executor. App-specific code, including ONEpos, may bind or launch Flows but must not implement a separate workflow engine.
+- The shared SQL Flow runtime is the only executor. App-specific code may bind or launch Flows but must not implement a separate workflow engine.
 - All Flow definitions, installations, version history, activation and run state are SQL-backed and tenant-scoped.
 - OneEngine is the sole authorization service; no role/email shortcut grants access.
 - Flow type is selected by the author, not inferred from an API name. Screen, Autolaunched, supported Record-Triggered, Scheduled and Platform Event-Triggered Flows pass SQL activation against their supported capability sets.
