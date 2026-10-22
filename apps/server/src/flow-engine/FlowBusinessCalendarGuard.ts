@@ -36,7 +36,7 @@ export async function enforceFlowBusinessCalendar(
  catch{throw new Error('Invalid tenant business timezone');}
  const local=(value:unknown):string=>{
   if(typeof value!=='string')throw new Error('Appointment date/time is required');
-  if(/^\\d{4}-\\d{2}-\\d{2}T([01]\\d|2[0-3]):[0-5]\\d$/.test(value))return value;
+  if(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(value))return value;
   if(!/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(value)||!Number.isFinite(Date.parse(value)))
    throw new Error('Invalid appointment date/time');
   const parts=Object.fromEntries(formatter.formatToParts(new Date(value)).map(x=>[x.type,x.value]));
