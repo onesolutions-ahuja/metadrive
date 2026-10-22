@@ -65,6 +65,7 @@ jobs:
           path="/etc/metadrive/stage-test.env"
           source=open(path).read().splitlines()
           replacements={
+            "NODE_ENV":"production",
             "PORT":"10001",
             "METADRIVE_DB_NAME_OVERRIDE":"metadrive_sql_20261022_stage",
             "METADRIVE_WEB_DIST":release+"/apps/web/dist",
@@ -140,7 +141,45 @@ jobs:
           grep -q '"status":"ok"' /tmp/stage-health.json
           grep -q '"persistence":"sql"' /tmp/stage-health.json
           curl -sS -D /tmp/stage-cors.headers -o /dev/null --max-time 10 -X OPTIONS http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-metadrive-request-source'
-          grep -Eiq '^access-control-allow-origin: https://unesolutions\.co\.uk\r?$' /tmp/stage-cors.headers
+          tr -d '\\r' < /tmp/stage-cors.headers | grep -Eiq '^access-control-allow-origin: https://unesolutions\\.co\\.uk
+          tr -d '\\r' < /tmp/stage-cors.headers | grep -Eiq '^access-control-allow-credentials: true
+          login_status="$(curl -sS -o /tmp/stage-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          echo "INVALID_LOGIN_PROBE_HTTP=$login_status"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/stage-login.json
+            exit 1
+          fi
+          echo "STAGE_API_HEALTH=PASS"
+          echo "STAGE_CREDENTIALLED_CORS_PREFLIGHT=PASS"
+          echo "STAGE_LOGIN_ENDPOINT=PASS"
+          echo "STAGE_CURRENT_MAIN_BUILD_AND_SYSTEM_TESTS=PASS"
+          REMOTE
+
+          grep -Eiq '^access-control-allow-credentials: true\r?$' /tmp/stage-cors.headers
+          login_status="$(curl -sS -o /tmp/stage-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          echo "INVALID_LOGIN_PROBE_HTTP=$login_status"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/stage-login.json
+            exit 1
+          fi
+          echo "STAGE_API_HEALTH=PASS"
+          echo "STAGE_CREDENTIALLED_CORS_PREFLIGHT=PASS"
+          echo "STAGE_LOGIN_ENDPOINT=PASS"
+          echo "STAGE_CURRENT_MAIN_BUILD_AND_SYSTEM_TESTS=PASS"
+          REMOTE
+
+          login_status="$(curl -sS -o /tmp/stage-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          echo "INVALID_LOGIN_PROBE_HTTP=$login_status"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/stage-login.json
+            exit 1
+          fi
+          echo "STAGE_API_HEALTH=PASS"
+          echo "STAGE_CREDENTIALLED_CORS_PREFLIGHT=PASS"
+          echo "STAGE_LOGIN_ENDPOINT=PASS"
+          echo "STAGE_CURRENT_MAIN_BUILD_AND_SYSTEM_TESTS=PASS"
+          REMOTE
+
           grep -Eiq '^access-control-allow-credentials: true\r?$' /tmp/stage-cors.headers
           login_status="$(curl -sS -o /tmp/stage-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
           echo "INVALID_LOGIN_PROBE_HTTP=$login_status"
