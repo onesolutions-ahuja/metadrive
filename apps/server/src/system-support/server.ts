@@ -79,7 +79,7 @@ import {registerVersionedApiRoutes} from './versioned-api-routes.js';
 import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
 import {registerInboundWebhookPublicRoutes,registerInboundWebhookAdminRoutes} from './inbound-webhook-service.js';
-import {registerIntegrationApiLogRoutes} from './integration-api-log.js';
+import {createIntegrationCommunicationWriter} from './integration-api-log.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import {registerSeederManagerRoutes} from './seeder-manager-routes.js';
@@ -204,6 +204,10 @@ export function createSystemServer(db:SqlPersistence) {
   const recordRetention=new RecordRetentionService(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac,namedCredentials);
+  // Use a dedicated RecordEngine without record-trigger callbacks for system-generated API logs.
+  const integrationLogRecords=new RecordEngine(db,rbac,namedCredentials);
+  const integrationActivityWriter=createIntegrationCommunicationWriter(db,integrationLogRecords);
+  namedCredentials.setIntegrationActivityWriter(integrationActivityWriter);
   const externalIdUpsert=new ExternalIdUpsert(db,rbac,records);
   const recordListViews=new RecordListViewService(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -476,7 +480,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     }});
   registerConnectedPublicRoutes(app,connected);
-  registerInboundWebhookPublicRoutes(app,db,namedCredentials,flows,rbac,records);
+  registerInboundWebhookPublicRoutes(app,db,namedCredentials,flows,rbac,records,integrationActivityWriter);
   app.use('/api',authorize);
   registerGovernanceRoutes(app,db,rbac,auth,connected,securityMonitor);
   registerIdentityAdminRoutes(app,{sessions:sessionPolicies,federation,passkeys,backups});
@@ -2169,7 +2173,6 @@ export function createSystemServer(db:SqlPersistence) {
   registerPlatformEventStreamRoutes(app,db,rbac);
   registerOutboundWebhookRoutes(app,db,rbac);
   registerInboundWebhookAdminRoutes(app,db,namedCredentials,rbac);
-  registerIntegrationApiLogRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
@@ -2284,7 +2287,10 @@ export async function startSystemServer() {
     });
   },60*60*1000);
   purgeTimer.unref();
-  const calloutDispatcher=new NamedCredentialService(db,new RbacEngine(db));
+  const dispatcherRbac=new RbacEngine(db);
+  const calloutDispatcher=new NamedCredentialService(db,dispatcherRbac);
+  const dispatcherLogRecords=new RecordEngine(db,dispatcherRbac,calloutDispatcher);
+  calloutDispatcher.setIntegrationActivityWriter(createIntegrationCommunicationWriter(db,dispatcherLogRecords));
   const calloutTimer=setInterval(()=>{
     void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),calloutDispatcher.dispatchOneQuickActionEmail()])
       .catch(error=>console.error('Durable outbound dispatch failed:',error));

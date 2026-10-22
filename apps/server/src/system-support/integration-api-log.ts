@@ -1,8 +1,19 @@
-import type {Express,NextFunction,Request,Response} from 'express';
-import type {RbacEngine} from '../system-files/rbac-engine.js';
+import {randomUUID} from 'node:crypto';
+import type {RecordEngine} from '../system-files/record-engine.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
-export type IntegrationApiLogInput={
+export type IntegrationCommunicationDetails={
+ channel?:string;
+ name?:string;
+ sender?:string;
+ recipient?:string;
+ subject?:string;
+ body?:string;
+ externalMessageId?:string;
+ provider?:string;
+};
+
+export type IntegrationActivityInput={
  tenantId:string;
  direction:'Inbound'|'Outbound';
  transport?:'HTTP'|'Webhook';
@@ -17,68 +28,97 @@ export type IntegrationApiLogInput={
  requestBytes?:number;
  responseBytes?:number;
  errorCode?:string|null;
+ /** Optional metadata-driven mapping for an actual message sent by this callout. */
+ communication?:IntegrationCommunicationDetails;
 };
 
-/** Store integration request metadata only. Never persist payloads, headers, tokens or query strings. */
-export async function writeIntegrationApiLog(db:SqlPersistence,input:IntegrationApiLogInput):Promise<void>{
+export type IntegrationActivityWriter=(input:IntegrationActivityInput)=>Promise<void>;
+
+const clean=(value:unknown,max=500):string=>
+ String(value??'').replace(/[\r\n\0]/g,' ').trim().slice(0,max);
+const cleanBody=(value:unknown):string=>String(value??'').replace(/\0/g,'').slice(0,10000);
+const allowedChannels=new Set(['Email','SMS','WhatsApp','Phone','WebChat','Push','Other']);
+
+function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
  const method=/^(GET|POST|PUT|PATCH|DELETE)$/.test(input.method.toUpperCase())
   ?input.method.toUpperCase():'OTHER';
- const endpoint=input.endpoint.split('?')[0].slice(0,2048);
- const provider=(input.provider||'Unknown').replace(/[\r\n\0]/g,' ').slice(0,120);
+ const endpoint=clean(input.endpoint.split(/[?#]/,1)[0],2048);
+ const provider=clean(input.provider||'Unknown',120)||'Unknown';
  const errorCode=input.errorCode&&/^[A-Z0-9_:-]{1,100}$/i.test(input.errorCode)
   ?input.errorCode:null;
- try{
-  await db.query(`INSERT INTO md_integration_api_logs
-   (tenant_id,direction,transport,provider,credential_id,actor_user_id,endpoint,method,
-    status_code,outcome,duration_ms,request_bytes,response_bytes,error_code)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-   [input.tenantId,input.direction,input.transport??'HTTP',provider,
-    input.credentialId??null,input.actorUserId??null,endpoint,method,
-    input.statusCode??null,input.outcome,Math.max(0,Math.floor(input.durationMs??0)),
-    Math.max(0,Math.floor(input.requestBytes??0)),Math.max(0,Math.floor(input.responseBytes??0)),
-    errorCode]);
- }catch(error){
-  // Audit storage must not leak request details or replace the provider's real result.
-  console.error('Integration API audit write failed',JSON.stringify({
+ return {...input,method,endpoint,provider,errorCode,
+  durationMs:Math.max(0,Math.floor(input.durationMs??0)),
+  requestBytes:Math.max(0,Math.floor(input.requestBytes??0)),
+  responseBytes:Math.max(0,Math.floor(input.responseBytes??0))};
+}
+
+/** Every integration attempt becomes a tenant-scoped Communication record.
+ * Payloads, headers, tokens, signatures and query strings are never logged by default.
+ * Message-specific fields are populated only by an explicit metadata mapping on the
+ * shared HTTP Callout node; no app-specific behavior lives in this logger.
+ */
+export function createIntegrationCommunicationWriter(
+ db:SqlPersistence,records:RecordEngine
+):IntegrationActivityWriter{
+ return async(raw)=>{
+  const input=normalized(raw);
+  // This tenant-scoped service identity has explicit OneEngine grants. Never use
+  // email-based bypasses or a cross-tenant/platform identity for system logging.
+  const {rows}=await db.query<{user_id:string}>(
+   'SELECT user_id FROM md_tenant_developer_accounts WHERE tenant_id=$1',[input.tenantId]);
+  const systemUserId=rows[0]?.user_id;
+  if(!systemUserId)throw new Error('Tenant integration logger identity unavailable');
+
+  const details=input.communication??{};
+  const now=new Date().toISOString();
+  const status=input.outcome==='success'
+   ?input.direction==='Inbound'?'Received':'Sent':'Failed';
+  const endpoint=clean(input.endpoint,2048);
+  const metadata={
+   type:'IntegrationApiCall',transport:input.transport??'HTTP',endpoint,
+   method:input.method,statusCode:input.statusCode??null,outcome:input.outcome,
+   durationMs:input.durationMs??0,requestBytes:input.requestBytes??0,
+   responseBytes:input.responseBytes??0,errorCode:input.errorCode??null,
+   credentialId:input.credentialId??null,actorUserId:input.actorUserId??null,
+   occurredAt:now
+  };
+  const body=details.body===undefined
+   ?JSON.stringify(metadata).slice(0,10000):cleanBody(details.body);
+  const subjectPrefix=details.subject?clean(details.subject,100)+' · ':'';
+  const statusLabel=input.statusCode===undefined||input.statusCode===null
+   ?'NO_RESPONSE':String(input.statusCode);
+  const subject=clean(subjectPrefix+input.method+' '+statusLabel+' · '+input.outcome+
+   ' · '+(input.durationMs??0)+'ms · req '+(input.requestBytes??0)+'B/resp '+
+   (input.responseBytes??0)+'B · '+endpoint,500);
+
+  await records.create(input.tenantId,systemUserId,'Communication',{
+   OwnerId:input.actorUserId||systemUserId,
+   Name:clean(details.name||input.direction+' API - '+input.provider,500),
+   Channel:allowedChannels.has(String(details.channel))?details.channel:'Other',
+   Direction:input.direction,Status:status,
+   Sender:clean(details.sender||(input.direction==='Outbound'?'MetaDrive':input.provider),500),
+   Recipient:clean(details.recipient||endpoint,500),Subject:subject,Body:body,
+   ExternalMessageId:clean(details.externalMessageId||randomUUID(),500),
+   Provider:clean(details.provider||input.provider,500),
+   RelatedObject:'IntegrationApiCall',
+   RelatedRecordId:input.credentialId??undefined,
+   SentAt:input.direction==='Outbound'&&input.outcome==='success'?now:undefined,
+   ReceivedAt:input.direction==='Inbound'&&input.outcome==='success'?now:undefined,
+   ErrorMessage:input.outcome==='success'?undefined:clean(input.errorCode||input.outcome,2000)
+  });
+ };
+}
+
+/** Best-effort shared entrypoint. It never changes the remote provider's actual result. */
+export async function writeIntegrationActivity(
+ _db:SqlPersistence,input:IntegrationActivityInput,writer?:IntegrationActivityWriter
+):Promise<void>{
+ if(!writer)return;
+ try{await writer(normalized(input));}
+ catch(error){
+  console.error('Integration Communication write failed',JSON.stringify({
    direction:input.direction,transport:input.transport??'HTTP',
    error:error instanceof Error?error.name:'UnknownError'
   }));
  }
-}
-
-type LogActor={tenant_id:string;user_id:string};
-type LogRequest=Request&{actor?:LogActor};
-
-/** Tenant-scoped, RBAC-protected metadata view; never returns request or response bodies. */
-export function registerIntegrationApiLogRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
- app.get('/api/metadata/integration-api-logs',(req:Request,res:Response,next:NextFunction)=>{
-  void (async()=>{
-   const actor=(req as LogRequest).actor;
-   if(!actor)throw new Error('Authenticated tenant required');
-   await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','read');
-   const rawLimit=req.query.limit;
-   const limit=rawLimit===undefined?100:Number(rawLimit);
-   if(!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid integration log limit');
-   const rawDirection=req.query.direction;
-   const direction=rawDirection===undefined?null:
-    rawDirection==='Inbound'||rawDirection==='Outbound'?rawDirection:null;
-   if(rawDirection!==undefined&&direction===null)throw new Error('Invalid integration log direction');
-   const {rows}=await db.query<{
-    id:string;direction:string;transport:string;provider:string;credential_id:string|null;
-    endpoint:string;method:string;status_code:number|null;outcome:string;duration_ms:number;
-    request_bytes:number;response_bytes:number;error_code:string|null;created_at:Date
-   }>(`SELECT id::text,direction,transport,provider,credential_id::text,endpoint,method,
-      status_code,outcome,duration_ms,request_bytes,response_bytes,error_code,created_at
-     FROM md_integration_api_logs WHERE tenant_id=$1 AND ($2::text IS NULL OR direction=$2)
-     ORDER BY created_at DESC,id DESC LIMIT $3`,[actor.tenant_id,direction,limit]);
-   res.setHeader('Cache-Control','no-store');
-   res.json({logs:rows.map(row=>({
-    id:row.id,direction:row.direction,transport:row.transport,provider:row.provider,
-    credentialId:row.credential_id,endpoint:row.endpoint,method:row.method,
-    statusCode:row.status_code,outcome:row.outcome,durationMs:row.duration_ms,
-    requestBytes:row.request_bytes,responseBytes:row.response_bytes,
-    errorCode:row.error_code,createdAt:row.created_at
-   }))});
-  })().catch(next);
- });
 }

@@ -5,7 +5,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
-import {writeIntegrationApiLog} from './integration-api-log.js';
+import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
 
 type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
@@ -98,7 +98,8 @@ function publicUrl(req:Request,id:string){
  return 'https://'+req.get('host')+'/api/inbound-webhooks/'+encodeURIComponent(id);
 }
 export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence,
- vault:NamedCredentialService,flows:FlowRuntime,rbac:RbacEngine,records?:RecordEngine){
+ vault:NamedCredentialService,flows:FlowRuntime,rbac:RbacEngine,records?:RecordEngine,
+ activityWriter?:IntegrationActivityWriter){
  const load=async(id:string):Promise<Endpoint|undefined>=>{
   if(!uuid.test(id))return undefined;
   const {rows}=await db.query<Endpoint>(`
@@ -118,16 +119,25 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   return rows[0];
  };
  app.get('/api/inbound-webhooks/:id',handler(async(req,res)=>{
+  const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
   const mode=req.query['hub.mode'],token=req.query['hub.verify_token'];
   const challenge=req.query['hub.challenge'];
-  if(!endpoint||!['Meta','HmacSha256'].includes(endpoint.provider)||mode!=='subscribe'||typeof token!=='string'||token.length>512
-     ||typeof challenge!=='string'||challenge.length>1024
-     ||!matches(endpoint.verify_token_digest,digest(token))){
-   res.status(403).type('text/plain').send('Forbidden');return;
-  }
-  res.status(200).type('text/plain').send(challenge);
+  const valid=Boolean(endpoint&&['Meta','HmacSha256'].includes(endpoint.provider)
+   &&mode==='subscribe'&&typeof token==='string'&&token.length<=512
+   &&typeof challenge==='string'&&challenge.length<=1024
+   &&matches(endpoint.verify_token_digest,digest(token)));
+  if(endpoint)await writeIntegrationActivity(db,{
+   tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
+   provider:endpoint.credential_name??endpoint.provider,
+   actorUserId:endpoint.execution_user_id??endpoint.created_by,
+   endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
+   durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
+   errorCode:valid?null:'VERIFY_TOKEN_REJECTED'
+  },activityWriter);
+  if(!valid){res.status(403).type('text/plain').send('Forbidden');return;}
+  res.status(200).type('text/plain').send(challenge as string);
  }));
  app.post('/api/inbound-webhooks/:id',handler(async(req,res)=>{
   const requestStartedAt=Date.now();
@@ -138,12 +148,13 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
    errorCode?:string)=>{
    if(!endpoint)return;
-   await writeIntegrationApiLog(db,{
+   await writeIntegrationActivity(db,{
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-    provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
-    method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
+    provider:endpoint.credential_name??endpoint.provider,
+    actorUserId:endpoint.execution_user_id??endpoint.created_by,
+    endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
     requestBytes:raw?.length??0,errorCode:errorCode??null
-   });
+   },activityWriter);
   };
   const reject=async(reason:string,rawBodyBytes?:number)=>{
    // Log only a bounded reason code and body length; never log signature, body, or secret.
@@ -199,6 +210,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   // The event payload is retained in tenant SQL. A compact scalar copy is sent
   // only when the Flow input contract can accept it (max 4096 characters).
   const json=raw.toString('utf8');
+  let requestCommunicationRecorded=false;
   try{
    // Save the provider message before any optional legacy Flow work. A credential
    // webhook never executes AceChatterReceiveWebhook or any other app Flow.
@@ -209,6 +221,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
       'Communication',values);
     }
+    requestCommunicationRecorded=messages.length>0;
     // Non-message callbacks (for example delivery-status notifications) are retained
     // in the webhook event archive, but do not masquerade as customer messages.
    }else if(flowAvailable&&endpoint.flow_api&&endpoint.execution_user_id){
@@ -226,11 +239,12 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
       Provider:endpoint.provider,Body:sanitized,ReceivedAt:new Date().toISOString(),
       ExternalMessageId:event.id,RelatedObject:'InboundWebhookEvent',RelatedRecordId:event.id
      });
+    requestCommunicationRecorded=true;
    }
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
      processed_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2`,
     [endpoint.tenant_id,event.id]);
-   await logInbound(200,'success');
+   if(!requestCommunicationRecorded)await logInbound(200,'success');
   res.status(200).json({received:true});
   }catch(error){
    await db.query(`UPDATE md_inbound_webhook_events SET status='failed',

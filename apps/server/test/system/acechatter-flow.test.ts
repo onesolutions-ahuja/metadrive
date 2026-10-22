@@ -78,15 +78,16 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   graphValues.get('flow-AceChatterSendMessage')??[]).builder as {
    elements:Array<{id:number;type:string;config:Record<string,unknown>}>;
   };
- const outboundCommunication=sendGraph.elements.find(node=>node.id===7);
- assert.equal(outboundCommunication?.type,'Create Records');
- assert.equal(outboundCommunication?.config.object,'Communication');
- assert.deepEqual((outboundCommunication?.config.fieldValues as Array<{field:string;value:string}>)
-  .filter(field=>['Channel','Direction','Recipient','Body','ExternalMessageId'].includes(field.field)),[
-   {field:'Channel',value:'WhatsApp'},{field:'Direction',value:'Outbound'},
-   {field:'Recipient',value:'@conversation.PhoneNumber'},{field:'Body',value:'@message'},
-   {field:'ExternalMessageId',value:'@providerMessageId'}
-  ]);
+ const outboundCallout=sendGraph.elements.find(node=>node.id===2);
+ assert.equal(outboundCallout?.type,'HTTP Callout');
+ assert.deepEqual(outboundCallout?.config.communicationLog,{
+  channel:'WhatsApp',name:'WhatsApp outbound',sender:'WhatsApp Business',
+  recipient:'{!conversation.PhoneNumber}',body:'{!message}',provider:'WhatsApp',
+  externalMessageIdResponsePath:'messages[0].id'
+ });
+ assert.equal(sendGraph.elements.some(node=>node.type==='Create Records'
+  &&node.config.object==='Communication'),false,
+  'the Flow must not create a duplicate Communication record');
  const resolverGraph=decodeMetadataValues(
   graphValues.get('flow-AceChatterFindConversationByPhone')??[]).builder as {
    elements:Array<{type:string;config:Record<string,unknown>}>;
@@ -109,7 +110,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(created.filter(call=>call.params[3]===true).length,7);
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='create'),true,
-  'the send Flow must have explicit OneEngine create permission for Communication records');
+  'inbound WhatsApp message ingestion needs explicit OneEngine Communication create permission');
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
   'AceChatter users need explicit OneEngine read permission for Communication records');
@@ -118,7 +119,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   'the Flow needs field-level read permission for sender-number filtering');
 });
 
-test('reconcile known AceChatter send Flow to write outbound Communication without changing its callout',async()=>{
+test('reconcile known AceChatter send Flow to central Communication logging without changing its callout',async()=>{
  const credential='caaefd14-fe71-4d4c-81de-14b3d1704897';
  const old={
   apiName:'AceChatterSendMessage',status:'Active',resources:[],
@@ -130,10 +131,17 @@ test('reconcile known AceChatter send Flow to write outbound Communication witho
     path:'v26.0/{!public_phoneNumberId}/messages',method:'POST'}},
    {id:6,type:'Create Records',config:{object:'ChatMessage',fieldValues:[
     {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
+   {id:7,type:'Create Records',label:'Record outbound Communication',config:{object:'Communication',fieldValues:[
+    {field:'Name',value:'WhatsApp outbound'},{field:'Channel',value:'WhatsApp'},
+    {field:'Direction',value:'Outbound'},{field:'Status',value:'Sent'},
+    {field:'Sender',value:'WhatsApp Business'},{field:'Recipient',value:'@conversation.PhoneNumber'},
+    {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
+    {field:'Provider',value:'WhatsApp'}]}},
    {id:3,type:'End',config:{}}
   ],connectors:[
    {from:1,to:4,kind:'normal'},{from:4,to:2,kind:'normal'},
-   {from:2,to:6,kind:'normal'},{from:6,to:3,kind:'normal'}
+   {from:2,to:6,kind:'normal'},{from:6,to:7,kind:'normal'},
+   {from:7,to:3,kind:'normal'}
   ]
  };
  const initial:Array<{path:string;kind:string;text:string|null}>=[];
@@ -163,10 +171,17 @@ test('reconcile known AceChatter send Flow to write outbound Communication witho
  const callout=current.elements.find(element=>element.id===2);
  assert.equal(callout?.config.namedCredentialId,credential);
  assert.equal(callout?.config.path,'v26.0/{!public_phoneNumberId}/messages');
- const communication=current.elements.find(element=>element.id===7);
- assert.equal(communication?.config.object,'Communication');
- assert.equal(current.connectors.some(edge=>edge.from===6&&edge.to===7),true);
- assert.equal(current.connectors.some(edge=>edge.from===7&&edge.to===3),true);
+ const communication=current.elements.find(element=>element.type==='Create Records'
+  &&element.config.object==='Communication');
+ assert.equal(communication,undefined,'central callout logging must replace the Flow Communication node');
+ assert.deepEqual(callout?.config.communicationLog,{
+  channel:'WhatsApp',name:'WhatsApp outbound',sender:'WhatsApp Business',
+  recipient:'{!conversation.PhoneNumber}',body:'{!message}',provider:'WhatsApp',
+  externalMessageIdResponsePath:'messages[0].id'
+ });
+ assert.equal(current.connectors.some(edge=>edge.from===6&&edge.to===3),true);
+ assert.equal(current.connectors.some(edge=>edge.from===6&&edge.to===7),false);
+ assert.equal(current.connectors.some(edge=>edge.from===7&&edge.to===3),false);
  assert.equal(await reconcileAceChatterCommunicationFlow(client,'tenant-a'),false);
  assert.equal(deletions,1);
  assert.equal(audits,1);

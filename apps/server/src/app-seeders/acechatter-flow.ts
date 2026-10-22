@@ -103,8 +103,8 @@ export async function reconcileAceChatterCredentialFlow(client:PoolClient,tenant
 }
 
 /** Add contact provenance only to the unchanged seeded create-conversation Flow. */
-/** Add outbound Communication logging only to the known seeded send Flow shape.
- * Preserve the tenant's HTTP Callout and refuse custom/nonstandard graphs. */
+/** Move outbound Communication creation from the seeded Flow into the shared HTTP Callout runtime.
+ * Only the known seeded graph is reconciled; customer-authored graph structure is preserved. */
 export async function reconcileAceChatterCommunicationFlow(client:PoolClient,tenantId:string):Promise<boolean>{
  const {rows:flows}=await client.query<{id:string}>(`
   SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name='AceChatterSendMessage'
@@ -119,35 +119,72 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
  if(!source||typeof source!=='object'||Array.isArray(source))return false;
  const graph=source as Record<string,unknown>;
  if(!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
- const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const elements=graph.elements as Array<{id:number;type:string;label?:string;config?:Record<string,unknown>}>;
  const connectors=graph.connectors as Array<{from:number;to:number;kind:string;label?:string}>;
- if(elements.some(item=>item.id===7&&item.type==='Create Records'
-   &&item.config?.object==='Communication'))return false;
  const recipient=elements.find(item=>item.id===4);
  const outbound=elements.find(item=>item.id===2);
  const saveMessage=elements.find(item=>item.id===6);
- const hasEdge=(from:number,to:number)=>connectors.some(edge=>edge.from===from&&edge.to===to);
- if(elements.length!==5||connectors.length!==4
-  ||elements.some(item=>![1,2,3,4,6].includes(item.id))
-  ||elements.find(item=>item.id===1)?.type!=='Start'
-  ||elements.find(item=>item.id===3)?.type!=='End'
-  ||recipient?.type!=='Get Records'||recipient.config?.object!=='ChatConversation'
-  ||recipient.config?.outputVariable!=='conversation'
-  ||outbound?.type!=='HTTP Callout'
-  ||outbound.config?.path!=='v26.0/{!public_phoneNumberId}/messages'
-  ||saveMessage?.type!=='Create Records'||saveMessage.config?.object!=='ChatMessage'
-  ||!hasEdge(1,4)||!hasEdge(4,2)||!hasEdge(2,6)||!hasEdge(6,3))
-  return false;
- graph.elements=[...elements,{id:7,type:'Create Records',label:'Record outbound Communication',config:{
-  object:'Communication',fieldValues:[
-   {field:'Name',value:'WhatsApp outbound'},{field:'Channel',value:'WhatsApp'},
-   {field:'Direction',value:'Outbound'},{field:'Status',value:'Sent'},
-   {field:'Sender',value:'WhatsApp Business'},{field:'Recipient',value:'@conversation.PhoneNumber'},
-   {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
-   {field:'Provider',value:'WhatsApp'}
-  ]}}];
- const nextConnectors=connectors.map(edge=>edge.from===6&&edge.to===3?{...edge,to:7}:edge);
- nextConnectors.push({from:7,to:3,kind:'normal',label:'Next'});
+ const communication=elements.find(item=>item.id===7&&item.type==='Create Records'
+  &&item.config?.object==='Communication');
+ const expectedCommunicationFields=[
+  {field:'Name',value:'WhatsApp outbound'},{field:'Channel',value:'WhatsApp'},
+  {field:'Direction',value:'Outbound'},{field:'Status',value:'Sent'},
+  {field:'Sender',value:'WhatsApp Business'},{field:'Recipient',value:'@conversation.PhoneNumber'},
+  {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
+  {field:'Provider',value:'WhatsApp'}
+ ];
+ const actualCommunicationFields=communication?.config?.fieldValues;
+ const knownCommunicationNode=Boolean(communication
+  &&communication.label==='Record outbound Communication'
+  &&Object.keys(communication.config??{}).sort().join(',')==='fieldValues,object'
+  &&Array.isArray(actualCommunicationFields)
+  &&actualCommunicationFields.length===expectedCommunicationFields.length
+  &&expectedCommunicationFields.every((field,index)=>{
+   const actual=actualCommunicationFields[index] as Record<string,unknown>;
+   return actual?.field===field.field&&actual?.value===field.value;
+  }));
+ const hasEdge=(edges:typeof connectors,from:number,to:number)=>
+  edges.some(edge=>edge.from===from&&edge.to===to);
+ const commonShape=recipient?.type==='Get Records'
+  &&recipient.config?.object==='ChatConversation'
+  &&recipient.config?.outputVariable==='conversation'
+  &&outbound?.type==='HTTP Callout'
+  &&outbound.config?.path==='v26.0/{!public_phoneNumberId}/messages'
+  &&saveMessage?.type==='Create Records'&&saveMessage.config?.object==='ChatMessage'
+  &&elements.find(item=>item.id===1)?.type==='Start'
+  &&elements.find(item=>item.id===3)?.type==='End';
+ if(!commonShape||!outbound)return false;
+ const oldSeededShape=knownCommunicationNode&&elements.length===6&&connectors.length===5
+  &&elements.every(item=>[1,2,3,4,6,7].includes(item.id))
+  &&hasEdge(connectors,1,4)&&hasEdge(connectors,4,2)&&hasEdge(connectors,2,6)
+  &&hasEdge(connectors,6,7)&&hasEdge(connectors,7,3);
+ const newSeededShape=!communication&&elements.length===5&&connectors.length===4
+  &&elements.every(item=>[1,2,3,4,6].includes(item.id))
+  &&hasEdge(connectors,1,4)&&hasEdge(connectors,4,2)&&hasEdge(connectors,2,6)
+  &&hasEdge(connectors,6,3);
+ if(!oldSeededShape&&!newSeededShape)return false;
+
+ let changed=false;
+ let nextElements=elements;
+ let nextConnectors=connectors;
+ if(oldSeededShape){
+  nextElements=elements.filter(item=>item.id!==7);
+  nextConnectors=connectors.filter(edge=>edge.from!==7&&edge.to!==7);
+  if(!hasEdge(nextConnectors,6,3))
+   nextConnectors=[...nextConnectors,{from:6,to:3,kind:'normal',label:'Next'}];
+  changed=true;
+ }
+ const existingMapping=outbound.config?.communicationLog;
+ if(!existingMapping){
+  outbound.config={...outbound.config,communicationLog:{
+   channel:'WhatsApp',name:'WhatsApp outbound',sender:'WhatsApp Business',
+   recipient:'{!conversation.PhoneNumber}',body:'{!message}',provider:'WhatsApp',
+   externalMessageIdResponsePath:'messages[0].id'
+  }};
+  changed=true;
+ }
+ if(!changed)return false;
+ graph.elements=nextElements;
  graph.connectors=nextConnectors;
  const encoded:Array<{path:string;kind:string;text:string|null}>=[];
  encodeMetadataValue(graph,'/builder',encoded);
@@ -158,8 +195,8 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
  await client.query(`
   INSERT INTO md_security_events(tenant_id,action,details)
   VALUES($1,'AceChatterCommunicationFlowReconciled',
-   jsonb_build_object('flowId',$2::text,'addedNode',7,'writesOutboundCommunication',true))`,
-  [tenantId,flowId]);
+   jsonb_build_object('flowId',$2::text,'removedFlowCommunicationNode',true,
+    'writesCentralCommunication',true))`,[tenantId,flowId]);
  return true;
 }
 
@@ -431,6 +468,9 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
      method:'POST',path:'v26.0/{!public_phoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
+     communicationLog:{channel:'WhatsApp',name:'WhatsApp outbound',sender:'WhatsApp Business',
+       recipient:'{!conversation.PhoneNumber}',body:'{!message}',provider:'WhatsApp',
+       externalMessageIdResponsePath:'messages[0].id'},
      onError:'FAIL',responseMapping:JSON.stringify({providerMessageId:'messages[0].id'})}},
    {id:6,type:'Create Records',label:'Record accepted WhatsApp message',config:{
      object:'ChatMessage',fieldValues:[
@@ -438,16 +478,8 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
       {field:'ConversationId',value:'@conversation.Id'},
       {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
       {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
-   {id:7,type:'Create Records',label:'Record outbound Communication',config:{
-     object:'Communication',fieldValues:[
-      {field:'Name',value:'WhatsApp outbound'},
-      {field:'Channel',value:'WhatsApp'},{field:'Direction',value:'Outbound'},
-      {field:'Status',value:'Sent'},{field:'Sender',value:'WhatsApp Business'},
-      {field:'Recipient',value:'@conversation.PhoneNumber'},
-      {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
-      {field:'Provider',value:'WhatsApp'}]}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,4,2,6,7,3)
+  ],connectors:links(1,4,2,6,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
