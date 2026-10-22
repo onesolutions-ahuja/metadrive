@@ -145,7 +145,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   // Both incoming and outgoing messages are sourced from Communication records via an authorised Flow.
   useEffect(()=>{
     if(!loadCommunications){setCommunications([]);return;}
-    let live=true;setBusy(true);setError('');
+    let live=true;setError('');
     const numberSearch=normalizeChatNumber(submittedSearch);
     const searchTerm=numberSearch.length>=3?numberSearch:submittedSearch.trim();
     void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
@@ -176,7 +176,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     if(!selected||!selectedRow||(!loadMessages&&!loadCommunications)){
       setMessages([]);return;
     }
-    let live=true;setBusy(true);setError('');
+    let live=true;setError('');
     const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
       ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
@@ -196,7 +196,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     void Promise.all([chatRequest,communicationRequest]).then(([chatRows,communicationRows])=>{
       if(live)setMessages(mergeCommunicationMessages(communicationRows,chatRows,selectedPhone));
     }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadMessages?.apiName,loadCommunications?.apiName,selected,selectedPhone,
     selectedRow?.__syntheticConversation,refresh]);
