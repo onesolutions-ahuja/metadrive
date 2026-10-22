@@ -55,7 +55,7 @@ export class PageRuntime {
       FROM md_page_definitions p JOIN md_lightning_page_details d
         ON d.tenant_id=p.tenant_id AND d.page_id=p.id
       WHERE p.tenant_id=$1 AND p.api_name=$2 AND p.enabled=true`,[tenantId,pageApi]);
-    const page=rows[0];if(!page)return null;
+    const page=rows[0];if(!page)throw new Error('Page not found');
     const [nodes,properties,assignments]=await Promise.all([
       this.db.query<NodeRow>(
         'SELECT component_key,component_type,label,region,visible FROM md_lightning_page_nodes WHERE tenant_id=$1 AND page_id=$2 ORDER BY sort_order',[tenantId,page.id]),
@@ -81,7 +81,10 @@ export class PageRuntime {
   async load(tenantId:string,pageApi:string){
     // metadata() already checks the tenant-scoped Lightning page row. Reuse
     // that result instead of issuing a separate EXISTS query before loading it.
-    const page=await this.metadata(tenantId,pageApi);
+    const page=await this.metadata(tenantId,pageApi).catch(error=>{
+      if(error instanceof Error&&error.message==='Page not found')return null;
+      throw error;
+    });
     return page?{page}:this.loadLegacy(tenantId,pageApi);
   }
 
