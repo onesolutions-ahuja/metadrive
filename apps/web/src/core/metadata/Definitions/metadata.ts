@@ -223,6 +223,9 @@ export type NamedCredentialMetadata = {
   authType: 'None' | 'Bearer' | 'Basic' | 'API Key' | 'OAuth Client Credentials' | 'OAuth Authorization Code';
   headerName: string;
   hasSecret: boolean;
+  webhookId?: string | null;
+  webhookEnabled?: boolean;
+  webhookCallbackUrl?: string | null;
   enabled?: boolean;
   configuration?: Record<string, string>;
   keyId: string;
