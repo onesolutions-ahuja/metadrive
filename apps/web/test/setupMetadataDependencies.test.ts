@@ -97,15 +97,20 @@ test('Lightning page loading uses its metadata query instead of a redundant exis
 });
 
 
-test('login, MFA and session restore return the requested tenant landing bootstrap in the session response', () => {
+test('login and MFA include landing bootstrap; session restore uses one authenticated bootstrap request', () => {
   const server = readFileSync(new URL('../../server/src/system-support/server.ts', import.meta.url), 'utf8');
   const login = readFileSync(new URL('../src/core/authentication/Login/loginView.tsx', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../src/core/workspace/App/App.tsx', import.meta.url), 'utf8');
+  const loader = readFileSync(new URL('../src/core/workspace/SetupShell/useSetupMetadata.ts', import.meta.url), 'utf8');
   assert.match(server, /const landingBootstrap=async\(tenantId:string,userId:string\)=>\{/);
   assert.match(server, /rbac\.require\(tenantId,userId,'ObjectDefinition','read'\)/);
   assert.match(server, /rbac\.require\(tenantId,userId,'PageDefinition','read'\)/);
+  assert.match(server, /app\.get\('\/api\/metadata\/landing-bootstrap'/);
   assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(tenantId,userId\)/);
-  assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(session\.tenant_id,session\.user_id\)/);
   assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(actor\.tenant_id,actor\.user_id\)/);
   assert.match(login, /challenge\?'\/auth\/mfa\/verify\?landing=1'/);
   assert.match(login, /'\/auth\/login\?landing=1'/);
+  assert.match(app, /fetch\(\$\{apiBase\}\/auth\/refresh/);
+  assert.doesNotMatch(app, /fetch\(\$\{apiBase\}\/auth\/refresh\?landing=1/);
+  assert.match(loader, /apiRequest<\{ landing\?: NonNullable<typeof landing> \}>\('\/metadata\/landing-bootstrap'\)/);
 });
