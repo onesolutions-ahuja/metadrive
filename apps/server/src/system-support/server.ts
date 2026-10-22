@@ -353,7 +353,7 @@ export function createSystemServer(db:SqlPersistence) {
   };
   // Prefetch the first ordinary record page as part of the already-authorised
   // page response. RecordEngine remains the sole data/permission path; dynamic
-  // filters and live presenters stay on their normal context-aware requests.
+  // filters stay context-aware and live presenters continue polling after hydration.
   const pageInitialRecords=async(tenantId:string,userId:string,page:{components?:Array<{properties?:unknown}>})=>{
     try{
       const components=Array.isArray(page.components)?page.components:[];
