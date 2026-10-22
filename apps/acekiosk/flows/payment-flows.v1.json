@@ -91,7 +91,7 @@
         "id": "13",
         "kind": "normal",
         "label": "Next",
-        "to": 20
+        "to": 24
       },
       {
         "from": 13,
@@ -119,7 +119,7 @@
         "id": "17",
         "kind": "normal",
         "label": "Next",
-        "to": 21
+        "to": 25
       },
       {
         "from": 16,
@@ -159,7 +159,7 @@
       {
         "id": "21",
         "from": 22,
-        "to": 16,
+        "to": 26,
         "kind": "normal",
         "label": "Match"
       },
@@ -188,6 +188,24 @@
         "id": "27",
         "from": 23,
         "to": 19,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 24,
+        "to": 20,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 25,
+        "to": 21,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 26,
+        "to": 16,
         "kind": "normal",
         "label": "Next"
       }
@@ -545,6 +563,82 @@
           "errorLocation": "Page",
           "errorMessage": "Product price changed during checkout; no sale was recorded. Please try again."
         }
+      },
+      {
+        "id": 24,
+        "label": "Create settled financial Invoice",
+        "type": "Create Records",
+        "config": {
+          "object": "Invoice",
+          "recordSource": "fields",
+          "fieldValues": [
+            {
+              "field": "Name",
+              "value": "AceKiosk Invoice"
+            },
+            {
+              "field": "Subtotal",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Total",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Status",
+              "value": "Paid"
+            },
+            {
+              "field": "Checkout_Request_ID__c",
+              "value": "{!requestId}"
+            },
+            {
+              "field": "Payment_Method__c",
+              "value": "Cash"
+            }
+          ]
+        }
+      },
+      {
+        "id": 25,
+        "label": "Create financial InvoiceLine using trusted price",
+        "type": "Create Records",
+        "config": {
+          "object": "InvoiceLine",
+          "recordSource": "fields",
+          "fieldValues": [
+            {
+              "field": "Invoice",
+              "value": "{!record24.Id}"
+            },
+            {
+              "field": "Product",
+              "value": "{!saveLine.Product}"
+            },
+            {
+              "field": "Quantity",
+              "value": "{!saveLine.Quantity}"
+            },
+            {
+              "field": "UnitPrice",
+              "value": "{!currentProduct.Price}"
+            },
+            {
+              "field": "LineTotal",
+              "value": "{!saveLineAmount}"
+            }
+          ]
+        }
+      },
+      {
+        "id": 26,
+        "label": "Return financial Invoice ID",
+        "type": "Assignment",
+        "config": {
+          "variable": "invoiceId",
+          "operator": "Assign",
+          "value": "{!record24.Id}"
+        }
       }
     ],
     "flowType": "Autolaunched Flow",
@@ -630,6 +724,12 @@
         "type": "Formula",
         "dataType": "Number",
         "value": "currentProduct.Price * saveLine.Quantity"
+      },
+      {
+        "name": "invoiceId",
+        "type": "Variable",
+        "dataType": "Text",
+        "availableForOutput": true
       }
     ],
     "startConfig": {
@@ -732,7 +832,7 @@
         "id": "13",
         "kind": "normal",
         "label": "Next",
-        "to": 20
+        "to": 24
       },
       {
         "from": 13,
@@ -760,7 +860,7 @@
         "id": "17",
         "kind": "normal",
         "label": "Next",
-        "to": 21
+        "to": 25
       },
       {
         "from": 16,
@@ -800,7 +900,7 @@
       {
         "id": "21",
         "from": 22,
-        "to": 16,
+        "to": 26,
         "kind": "normal",
         "label": "Match"
       },
@@ -829,6 +929,24 @@
         "id": "27",
         "from": 23,
         "to": 19,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 24,
+        "to": 20,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 25,
+        "to": 21,
+        "kind": "normal",
+        "label": "Next"
+      },
+      {
+        "from": 26,
+        "to": 16,
         "kind": "normal",
         "label": "Next"
       }
@@ -1178,6 +1296,82 @@
           "errorLocation": "Page",
           "errorMessage": "Product price changed during checkout; no sale was recorded. Please try again."
         }
+      },
+      {
+        "id": 24,
+        "label": "Create settled financial Invoice",
+        "type": "Create Records",
+        "config": {
+          "object": "Invoice",
+          "recordSource": "fields",
+          "fieldValues": [
+            {
+              "field": "Name",
+              "value": "AceKiosk Invoice"
+            },
+            {
+              "field": "Subtotal",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Total",
+              "value": "{!validatedTotal}"
+            },
+            {
+              "field": "Status",
+              "value": "Paid"
+            },
+            {
+              "field": "Checkout_Request_ID__c",
+              "value": "{!requestId}"
+            },
+            {
+              "field": "Payment_Method__c",
+              "value": "Card"
+            }
+          ]
+        }
+      },
+      {
+        "id": 25,
+        "label": "Create financial InvoiceLine using trusted price",
+        "type": "Create Records",
+        "config": {
+          "object": "InvoiceLine",
+          "recordSource": "fields",
+          "fieldValues": [
+            {
+              "field": "Invoice",
+              "value": "{!record24.Id}"
+            },
+            {
+              "field": "Product",
+              "value": "{!saveLine.Product}"
+            },
+            {
+              "field": "Quantity",
+              "value": "{!saveLine.Quantity}"
+            },
+            {
+              "field": "UnitPrice",
+              "value": "{!currentProduct.Price}"
+            },
+            {
+              "field": "LineTotal",
+              "value": "{!saveLineAmount}"
+            }
+          ]
+        }
+      },
+      {
+        "id": 26,
+        "label": "Return financial Invoice ID",
+        "type": "Assignment",
+        "config": {
+          "variable": "invoiceId",
+          "operator": "Assign",
+          "value": "{!record24.Id}"
+        }
       }
     ],
     "flowType": "Autolaunched Flow",
@@ -1257,6 +1451,12 @@
         "type": "Formula",
         "dataType": "Number",
         "value": "currentProduct.Price * saveLine.Quantity"
+      },
+      {
+        "name": "invoiceId",
+        "type": "Variable",
+        "dataType": "Text",
+        "availableForOutput": true
       }
     ],
     "startConfig": {
