@@ -204,6 +204,8 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(search, /role="combobox"/);
   assert.match(search, /role="listbox"/);
   assert.match(search, /event\.key==="ArrowDown"/);
+  assert.match(search, /event\\.key===\"Escape\"/);
+  assert.match(search, /event\\.key===\"Home\"/);
   assert.match(form, /aria-invalid=\{error\?"true":undefined\}/);
   assert.match(form, /aria-describedby=\{error\?errorId:undefined\}/);
   assert.match(grid, /className="one-empty" role="status"/);
