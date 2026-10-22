@@ -61,6 +61,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
  const [returnToAppointment,setReturnToAppointment]=useState(false);
+ const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
@@ -163,7 +164,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    if(returnToAppointment&&editingObject==='Customer'){
     const addedId=String(response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
     setSelected(0);setEditing('Create');setEditingObject('Appointment');
-    setForm(previous=>({...previous,Customer:addedId}));setReturnToAppointment(false);
+    setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
    }else setEditing(null);
    setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
@@ -261,13 +262,15 @@ export default function AceAssistRuntime({entry,onLogout}:{
        .map(field=><React.Fragment key={field.apiName}>
         {editingObject==='Appointment'&&field.apiName==='AssignedTo'?
          <SearchRecord label="Assigned to" value={form.AssignedTo??''}
-          options={lookupRows.User??[]} emptyMessage="No authorised tenant users found"
+          options={selfId&&!lookupRows.User?.some(x=>String(x.Id??x.id)===selfId)
+           ?[{Id:selfId,Name:'Me (current user)'},...(lookupRows.User??[])]:lookupRows.User??[]}
+          emptyMessage="No authorised tenant users found"
           onChange={id=>setForm(x=>({...x,AssignedTo:id}))}/>:
         editingObject==='Appointment'&&field.apiName==='Customer'?
          <SearchRecord label="Customer" value={form.Customer??''}
           options={lookupRows.Customer??[]}
           onChange={id=>setForm(x=>({...x,Customer:id}))}
-          addNew={()=>{setReturnToAppointment(true);setEditingObject('Customer');
+          addNew={()=>{setAppointmentDraft(form);setReturnToAppointment(true);setEditingObject('Customer');
             setForm({});setChosen(null);}}/>:
         editingObject==='Appointment'&&field.apiName==='Service'?
          <SearchRecord label="Service" value={form.Service??''}
