@@ -2,6 +2,7 @@ import * as React from 'react';
 import {useEffect,useMemo,useState} from 'react';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
+import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
 
@@ -58,12 +59,15 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [selected,setSelected]=useState(0);
  const [rows,setRows]=useState<Row[]>([]);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
+ const [selfId,setSelfId]=useState('');
+ const [returnToAppointment,setReturnToAppointment]=useState(false);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
  const [weekOf,setWeekOf]=useState(()=>dateKey(new Date()));
  const [chosen,setChosen]=useState<Row|null>(null);
  const [editing,setEditing]=useState<Operation|null>(null);
+ const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
  const [reload,setReload]=useState(0);
  const [hours,setHours]=useState<BusinessCalendar|null>(null);
@@ -83,6 +87,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
    apiRequest<{actions:Array<{apiName:string}>}>('/flows/available-actions?product='+encodeURIComponent(entry.appId))
   ]).then(([o,f])=>{if(alive){setObjects(o.objects??[]);setActions(new Set((f.actions??[]).map(x=>x.apiName)));}})
     .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  void apiRequest<{user:{id:string}}>('/auth/me')
+   .then(r=>{if(alive)setSelfId(r.user?.id??'');})
+   .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
   void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar')
    .then(r=>{if(alive)setHours(r.calendar??null);})
    .catch(e=>{if(alive)setHoursError(e instanceof Error?e.message:String(e));});
@@ -110,8 +117,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[current.object,loaded,actions,reload]);
  useEffect(()=>{
   let alive=true;
-  const relations=[...new Set(fields
-    .map(field=>field.relatedObject??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:''))
+  const relations=[...new Set([...fields
+    .map(field=>field.relatedObject??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
+    ...(current.object==='Appointment'?['User','Product','Customer']:[])])
     .filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
@@ -126,28 +134,38 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
   for(const field of fields)values[field.apiName]=formatInput(row?.[field.apiName],field);
-  setForm(values);setChosen(row??null);setEditing(operation);setError('');setNotice('');
+  if(current.object==='Appointment'&&operation==='Create')values.AssignedTo=selfId;
+  setForm(values);setChosen(row??null);setEditingObject(current.object);
+  setEditing(operation);setError('');setNotice('');
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
-  if(!can(editing)){setError('The '+editing+' Flow is not available to this user.');return;}
+  const mutationFlow='AceAssist'+editing+editingObject;
+ if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
   if(editing==='Delete'&&!chosen?.Id)return;
-  if(editing!=='Delete'&&current.object==='Appointment'){
+  if(editing!=='Delete'&&editingObject==='Appointment'){
    const violation=checkBusinessHours(hours,form.StartDateTime??'',form.EndDateTime??'');
    if(violation){setError(violation);return;}
   }
   const payload:Record<string,unknown>={};
   if(editing!=='Create')payload.recordId=chosen?.Id;
   if(editing!=='Delete'){
-   for(const field of fields)payload[field.apiName]=scalar(form[field.apiName]??'',field);
+   const sourceFields=objects.find(x=>x.apiName===editingObject)?.fields??[];
+   for(const field of sourceFields.filter(f=>inputFields[editingObject]?.includes(f.apiName)))
+    payload[field.apiName]=scalar(form[field.apiName]??'',field);
   }
   setBusy(true);setError('');
   try{
-   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(flowName(editing))+'/execute',
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(mutationFlow)+'/execute',
     {method:'POST',body:JSON.stringify(payload)});
    if(response.interviewId)throw Error('Workflow requires further input; no record change confirmed.');
-   setNotice(editing+' '+current.label.toLowerCase()+' completed through OneEngine.');
-   setEditing(null);setReload(v=>v+1);
+   setNotice(editing+' '+editingObject.toLowerCase()+' completed.');
+   if(returnToAppointment&&editingObject==='Customer'){
+    const addedId=String(response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
+    setSelected(0);setEditing('Create');setEditingObject('Appointment');
+    setForm(previous=>({...previous,Customer:addedId}));setReturnToAppointment(false);
+   }else setEditing(null);
+   setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
   finally{setBusy(false);}
  };
@@ -177,7 +195,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    {notice&&<p role="status" className="standalone-product-message">{notice}</p>}
    <nav className="custom-tabs" aria-label="Booking sections">{tabs.map((tab,i)=>
     <button key={tab.object} type="button" aria-current={i===selected?'page':undefined}
-     onClick={()=>{setSelected(i);setEditing(null);setNotice('');}}>{tab.label}</button>)}</nav>
+     onClick={()=>{setSelected(i);setEditing(null);setReturnToAppointment(false);setNotice('');}}>{tab.label}</button>)}</nav>
    <div className="custom-assist-layout"><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
      <div style={{display:'flex',gap:8}}>
@@ -220,33 +238,73 @@ export default function AceAssistRuntime({entry,onLogout}:{
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
       </div>
      </>:<p className="custom-empty">Select a record to edit or view details.</p>}
-    {editing&&<form className="custom-crud-form" onSubmit={e=>void submit(e)}>
-     <h3>{editing} {current.object}</h3>
-     {editing==='Delete'?<p>Delete this record through the authorised OneEngine Flow? This cannot be undone.</p>:
-      fields.map(field=><label key={field.apiName}>{field.label??field.apiName}
-       {(field.relatedObject||['Customer','Quotation','Invoice'].includes(field.apiName))
-        && lookupRows[field.relatedObject??field.apiName]?.length?
-        <select value={form[field.apiName]??''}
-         onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
-         <option value="">Select {field.label??field.apiName}</option>
-         {lookupRows[field.relatedObject??field.apiName].map(row=>
-          <option key={String(row.Id)} value={String(row.Id)}>{title(row)}</option>)}
-        </select>:
-       String(field.dataType??field.type??'').toLowerCase()==='boolean'?
-        <select value={form[field.apiName]??''} onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
-         <option value="">Unset</option><option value="true">Yes</option><option value="false">No</option>
-        </select>:
-        <input type={fieldType(field)} value={form[field.apiName]??''}
-         step={fieldType(field)==='number'?'any':undefined}
-         required={field.apiName==='Name'||field.required}
-         onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}/>}
-      </label>)}
-     <div className="custom-action-buttons">
-      <button type="submit" disabled={busy}>{editing==='Delete'?'Confirm Delete':'Save through Flow'}</button>
-      <button type="button" onClick={()=>setEditing(null)} disabled={busy}>Cancel</button>
-     </div>
-    </form>}
+
    </aside></div>
   </main>
+
+  {editing&&<div className="assist-modal-backdrop" role="presentation"
+   onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>
+   <section className="assist-modal" role="dialog" aria-modal="true"
+    aria-label={editing+' '+editingObject}>
+    <header className="assist-modal-heading"><h2>{editing==='Create'?'New':editing} {editingObject}</h2>
+     <button type="button" aria-label="Close" disabled={busy}
+      onClick={()=>{setEditing(null);setReturnToAppointment(false);}}>✕</button></header>
+    <form className="custom-crud-form" onSubmit={e=>void submit(e)}>
+     {editing==='Delete'?<p>Delete this record? This action cannot be undone.</p>:
+      (objects.find(x=>x.apiName===editingObject)?.fields??[])
+       .filter(field=>inputFields[editingObject]?.includes(field.apiName))
+       .sort((a,b)=>editingObject==='Appointment'
+        ?['Name','Customer','AssignedTo','Service','StartDateTime','EndDateTime',
+          'Status','Location','Description','Notes'].indexOf(a.apiName)
+          -['Name','Customer','AssignedTo','Service','StartDateTime','EndDateTime',
+            'Status','Location','Description','Notes'].indexOf(b.apiName):0)
+       .map(field=><React.Fragment key={field.apiName}>
+        {editingObject==='Appointment'&&field.apiName==='AssignedTo'?
+         <SearchRecord label="Assigned to" value={form.AssignedTo??''}
+          options={lookupRows.User??[]} emptyMessage="No authorised tenant users found"
+          onChange={id=>setForm(x=>({...x,AssignedTo:id}))}/>:
+        editingObject==='Appointment'&&field.apiName==='Customer'?
+         <SearchRecord label="Customer" value={form.Customer??''}
+          options={lookupRows.Customer??[]}
+          onChange={id=>setForm(x=>({...x,Customer:id}))}
+          addNew={()=>{setReturnToAppointment(true);setEditingObject('Customer');
+            setForm({});setChosen(null);}}/>:
+        editingObject==='Appointment'&&field.apiName==='Service'?
+         <SearchRecord label="Service" value={form.Service??''}
+          options={lookupRows.Product??[]} emptyMessage="No available products/services"
+          onChange={id=>setForm(x=>({...x,Service:id}))}/>:
+        editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
+         <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
+          value={form[field.apiName]??''} calendar={hours}
+          startDate={form.StartDateTime?.slice(0,10)}
+          minTime={field.apiName==='EndDateTime'?form.StartDateTime?.slice(11,16):undefined}
+          onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>:
+        <label>{field.label??field.apiName}
+         {(field.relatedObject||['Quotation','Invoice'].includes(field.apiName))
+          && lookupRows[field.relatedObject??field.apiName]?.length?
+          <select value={form[field.apiName]??''}
+           onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
+           <option value="">Select {field.label??field.apiName}</option>
+           {lookupRows[field.relatedObject??field.apiName].map(row=>
+            <option key={String(row.Id)} value={String(row.Id)}>{title(row)}</option>)}
+          </select>:
+          String(field.dataType??field.type??'').toLowerCase()==='boolean'?
+          <select value={form[field.apiName]??''} onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
+           <option value="">Unset</option><option value="true">Yes</option><option value="false">No</option>
+          </select>:
+          <input type={fieldType(field)} value={form[field.apiName]??''}
+           step={fieldType(field)==='number'?'any':undefined}
+           required={field.apiName==='Name'||field.required}
+           onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}/>}
+        </label>}
+       </React.Fragment>)}
+     {error&&<p role="alert">{error}</p>}
+     <footer className="assist-modal-footer">
+      <button type="button" onClick={()=>{setEditing(null);setReturnToAppointment(false);}} disabled={busy}>Cancel</button>
+      <button type="submit" disabled={busy}>{busy?'Saving…':editing==='Delete'?'Delete':'Save'}</button>
+     </footer>
+    </form>
+   </section>
+  </div>}
  </div>;
 }
