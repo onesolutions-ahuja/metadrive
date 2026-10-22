@@ -9,7 +9,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
-import {prepareFlowHttpRequest} from '../system-files/flow-http-mapping.js';
+import {prepareFlowHttpRequest,publicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
 
 type CalloutJob={
@@ -859,11 +859,6 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   config=await resolveFlowIntegrationCallout(this.db,this.rbac,tenantId,userId,config);
-  // Durable jobs hold an encrypted, already-expanded snapshot. Never expand it twice.
-  const prepared=previouslyPrepared?{
-   path:String(config.path??''),body:typeof config.body==='string'&&config.body
-    ?config.body:undefined
-  }:prepareFlowHttpRequest(config,variables);
   if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
@@ -873,6 +868,20 @@ export class NamedCredentialService {
     [tenantId,config.namedCredentialId]);
   const item=rows[0];
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
+  // Only flows that explicitly reference a public_ setting read the encrypted
+  // provider configuration. Sensitive settings are never exposed to a Flow.
+  const flowVariables={...variables};
+  const needsPublicSetting=/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(
+    [config.path,config.body,config.headers].map(v=>typeof v==='string'?v:'').join(' '));
+  if(!previouslyPrepared&&needsPublicSetting&&item.configuration_ciphertext){
+   const decoded=JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as unknown;
+   Object.assign(flowVariables,publicHttpCredentialVariables(decoded));
+  }
+  // Durable jobs hold an encrypted, already-expanded snapshot. Never expand it twice.
+  const prepared=previouslyPrepared?{
+   path:String(config.path??''),body:typeof config.body==='string'&&config.body
+    ?config.body:undefined
+  }:prepareFlowHttpRequest(config,flowVariables);
   const method=String(config.method??'GET').toUpperCase();
   if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))throw new Error('Unsupported HTTP method');
   if(config.deliveryMode==='DURABLE_ASYNC')
@@ -880,8 +889,8 @@ export class NamedCredentialService {
   if(typeof config.path!=='string'||config.path.startsWith('/')||config.path.includes('\\')||config.path.length>2048)
     throw new Error('Invalid relative callout path');
   const substitute=(source:string)=>source.replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_,key:string)=>{
-   if(!Object.hasOwn(variables,key))throw new Error('Unknown HTTP Callout resource');
-   return String(variables[key]??'');
+   if(!Object.hasOwn(flowVariables,key))throw new Error('Unknown HTTP Callout resource');
+   return String(flowVariables[key]??'');
   });
   const base=new URL(item.base_url);
   if(base.protocol!=='https:'||base.username||base.password||base.hash||base.port&&base.port!=='443')

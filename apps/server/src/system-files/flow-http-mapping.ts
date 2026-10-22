@@ -120,3 +120,15 @@ export function resolveFlowHttpCalloutKey(
     throw new Error('HTTP Callout idempotency key must be a short token');
   return key;
 }
+
+/** Expose only explicitly public, bounded connector settings to reusable HTTP Flow templates. */
+export function publicHttpCredentialVariables(configuration:unknown):Record<string,string> {
+ if(!configuration||typeof configuration!=='object'||Array.isArray(configuration))return {};
+ const output:Record<string,string>=Object.create(null);
+ for(const [name,value] of Object.entries(configuration)) {
+  if(/^public_[A-Za-z][A-Za-z0-9_]*$/.test(name)
+      &&!/(secret|token|password|passphrase|private|pin|credential|authorization|api_?key)/i.test(name)
+      &&typeof value==='string'&&value.length>0&&value.length<=4096)output[name]=value;
+ }
+ return output;
+}
