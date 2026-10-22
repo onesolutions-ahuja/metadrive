@@ -49,6 +49,14 @@ const formatInput=(v:unknown,field:Field,timeZone?:string)=>{
 const readOnlyField=(f:Field)=>fieldKind(f)==='readonly'||f.readOnly===true;
 const targetObject=(f:Field)=>f.relationship?.targetObject??f.relatedObject;
 const idOf=(v:Row)=>String(v.Id??v.id??'');
+/** Presentation-only duration preview. Authoritative booking validation is server-side. */
+function withServiceEnd(form:Record<string,string>,product?:Row):Record<string,string>{
+ const duration=Number(product?.DurationMinutes);
+ if(!form.StartDateTime||!Number.isSafeInteger(duration)||duration<1||duration>1440)return form;
+ const start=new Date(form.StartDateTime+':00Z');
+ if(!Number.isFinite(start.getTime()))return form;
+ return {...form,EndDateTime:new Date(start.getTime()+duration*60000).toISOString().slice(0,16)};
+}
 
 export default function AceAssistRuntime({entry,onLogout}:{
  entry:typeof ACEASSIST_STANDALONE_ENTRY;onLogout:()=>void
@@ -311,13 +319,19 @@ export default function AceAssistRuntime({entry,onLogout}:{
            &&r.IsService!==false&&r.IsService!=='false')} emptyMessage="No available services"
           onChange={id=>{const product=(lookupRows.Product??[]).find(row=>idOf(row)===id);
            const value=field.apiName==='Service'?String(product?.Name??id):id;
-           setForm(x=>({...x,[field.apiName]:value}));}}/>:
+           setForm(x=>withServiceEnd({...x,[field.apiName]:value},product));}}/>:
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
          <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
           startDate={form.StartDateTime?.slice(0,10)}
           minTime={field.apiName==='EndDateTime'?form.StartDateTime?.slice(11,16):undefined}
-          onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>:
+          onChange={v=>setForm(x=>{
+           const next={...x,[field.apiName]:v};
+           if(field.apiName!=='StartDateTime')return next;
+           const selectedProduct=(lookupRows.Product??[]).find(r=>idOf(r)===next.ServiceProduct
+            ||String(r.Name??'')===next.Service);
+           return withServiceEnd(next,selectedProduct);
+          })}/>:
         fieldKind(field)==='reference'?
          <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
           options={lookupRows[targetObject(field)??'']??[]}

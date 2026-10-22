@@ -50,8 +50,7 @@ const bookingFields=[
  {object:'Product',api:'OnlineBookable',type:'boolean'},
  {object:'Product',api:'DurationMinutes',type:'number'},
  {object:'Product',api:'BookingBufferMinutes',type:'number'},
- {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'},
- {object:'Appointment',api:'AssignedUser',type:'reference',related:'User'}
+ {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'}
 ] as const;
 
 function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGraph {
