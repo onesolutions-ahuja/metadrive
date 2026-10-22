@@ -66,6 +66,18 @@ class WorkspaceFailureBoundary extends React.Component<
   }
 }
 
+// GitHub Pages /login fallback sends users to /?__spa=%2Flogin. Restore the
+// same-origin SPA route before deciding between marketing and workspace.
+if (window.location.pathname === '/' && new URLSearchParams(window.location.search).has('__spa')) {
+  const route = new URLSearchParams(window.location.search).get('__spa');
+  if (route && route.startsWith('/') && !route.startsWith('//') && !route.includes('\\')) {
+    const target = new URL(route, window.location.origin);
+    if (target.origin === window.location.origin) {
+      window.history.replaceState(window.history.state, '', target.pathname + target.search + target.hash);
+    }
+  }
+}
+
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const pathname = basePath && window.location.pathname.startsWith(basePath + '/')
   ? window.location.pathname.slice(basePath.length)
