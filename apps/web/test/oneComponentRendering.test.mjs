@@ -194,9 +194,9 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(menu, /event\.key === "Home"/);
   assert.match(menu, /useDismissOnOutside\(React,rootRef,open,dismiss\)/);
   assert.match(shared, /document\.addEventListener\('pointerdown'/);
-  assert.match(tabs, /aria-controls=\{panelId\}/);
+  assert.match(tabs, /aria-controls=\{p\.showPanel!==false\?panelId:undefined\}/);
   assert.match(tabs, /aria-labelledby=\{activeTabId\}/);
-  assert.match(button, /aria-busy=\{p\.loading === true \? "true" : undefined\}/);
+  assert.match(button, /aria-busy=\{p\.loading===true\?"true":undefined\}/);
   assert.match(input, /"aria-invalid":p\.validationMessage\?"true":undefined/);
   assert.match(input, /className="one-error" role="alert"/);
   assert.match(search, /role="combobox"/);
