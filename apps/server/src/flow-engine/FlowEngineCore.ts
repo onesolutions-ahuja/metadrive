@@ -1,5 +1,5 @@
 import {TillPinService} from '../system-support/till-pin-service.js';
-import {enforceFlowBusinessCalendar} from '../system-files/flow-business-calendar-guard.js';
+import {enforceFlowBusinessCalendar} from './FlowBusinessCalendarGuard.js';
 import {failedFlowLogs,pendingFlowInterviews} from './FlowExecutionHistory.js';
 import {executeActionButtonNode} from '../system-files/nodes/ActionButtonNode.js';
 import {executeWaitPauseNode} from '../system-files/nodes/WaitPauseNode.js';
