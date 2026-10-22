@@ -36,8 +36,21 @@ console.log('Checked public JS modules:',visited.size);
 console.log('Public frontend Render API binding:',renderFound);
 console.log('Public frontend legacy Railway API binding:',railwayFound);
 if(!renderFound||railwayFound)throw new Error('Live frontend is not exclusively bound to the Render API');
-const health=await fetch(api+'/health',{cache:'no-store',signal:AbortSignal.timeout(20000)});
-const payload=await health.json();
+// Render may be waking from idle; retry transient network timeouts without masking bad health responses.
+let health;
+let healthError;
+for(let attempt=0;attempt<3;attempt++){
+  try{
+    health=await fetch(api+'/health',{cache:'no-store',signal:AbortSignal.timeout(30000)});
+    break;
+  }catch(error){
+    healthError=error;
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+}
+if(!health)throw new Error('Render SQL health request failed after 3 attempts: '+String(healthError));
+let payload;
+try{payload=await health.json();}catch{throw new Error('Render SQL health returned invalid JSON: HTTP '+health.status);}
 if(!health.ok||payload?.status!=='ok'||payload?.persistence!=='sql')
   throw new Error('Render SQL health failed: HTTP '+health.status);
 // Browser login uses credentials:include and application-specific request headers.
