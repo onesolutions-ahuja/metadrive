@@ -125,6 +125,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ['Flow:AceChatterLoadConversations','execute'],
   ['Flow:AceChatterLoadMessages','execute'],
   ['Flow:AceChatterLoadCommunications','execute'],
+  ['Flow:AceChatterFindConversationByPhone','execute'],
   ['Communication','read'],
   ...['Name','Channel','Direction','Status','Sender','Recipient','Body','ExternalMessageId','ReceivedAt','SentAt','Provider'].map(field=>['Communication.'+field,'read']),
   ['Flow:AceChatterSendMessage','execute'],
@@ -152,7 +153,11 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'Channel',operator:'Equals',value:'WhatsApp'},
     {field:'Direction',operator:'Equals',value:'Inbound'},
     {field:'Sender',operator:'Contains',value:'@searchTerm'}
-   ],'ReceivedAt','Descending','200')
+   ],'ReceivedAt','Descending','200'),
+  graph('AceChatterFindConversationByPhone','AceChatter - Find Conversation by Phone',
+   'ChatConversation','phoneNumber',[
+    {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
+   ],'Name','Ascending','200')
  ];
  let seeded=0;
  for(const value of definitions)if(await insertGraph(client,tenantId,value,true))seeded++;
