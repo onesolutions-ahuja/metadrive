@@ -138,7 +138,7 @@ export class FlowRecordQuery {
     let sort='r.created_at ASC,r.id ASC';
     if(options.sortField!==undefined){
       if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(options.sortField))throw new Error('Invalid Flow sort field');
-      const systemSort=options.sortField==='Id'||options.sortField==='OwnerId';
+      const systemSort=['Id','OwnerId','CreatedAt','LastModifiedDate'].includes(options.sortField);
       const sortField=systemSort?undefined:definitions.get(options.sortField);
       if(!systemSort&&!sortField)throw new Error('Unknown Flow sort field');
       if(sortField&&!await this.rbac.allowed(tenantId,userId,objectApi+'.'+sortField.api_name,'read'))
@@ -146,8 +146,10 @@ export class FlowRecordQuery {
       if(options.sortOrder!==undefined&&!['Ascending','Descending','asc','desc'].includes(options.sortOrder))
         throw new Error('Invalid Flow sort order');
       const direction=['Descending','desc'].includes(options.sortOrder??'')?'DESC':'ASC';
-      sort=options.sortField==='Id'?`r.id ${direction}`
-        :options.sortField==='OwnerId'?`COALESCE(r.owner_id,r.owner_queue_id) ${direction} NULLS LAST,r.id ASC`:`(
+      sort=options.sortField==='Id'?`r.id ${direction}`:
+        options.sortField==='OwnerId'?`COALESCE(r.owner_id,r.owner_queue_id) ${direction} NULLS LAST,r.id ASC`:
+        options.sortField==='CreatedAt'?`r.created_at ${direction},r.id ASC`:
+        options.sortField==='LastModifiedDate'?`r.updated_at ${direction},r.id ASC`:`(
         SELECT COALESCE(sv.value_text,sv.reference_record_id::text,sv.value_boolean::text,sv.value_number::text,sv.value_date::text,sv.value_datetime::text)
         FROM md_record_values sv
         WHERE sv.tenant_id=$1 AND sv.record_id=r.id AND sv.object_api=$2

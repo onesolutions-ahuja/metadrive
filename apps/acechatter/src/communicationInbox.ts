@@ -9,23 +9,40 @@ const stringValue = (value: unknown): string =>
 export const normalizeChatNumber = (value: unknown): string =>
   stringValue(value).replace(/\D/g, '');
 
+const directionOf = (row: InboxRecord): string =>
+  stringValue(pick(row, 'Direction', 'MessageDirection')).toLowerCase();
+
+/** Communication records describe the business as Sender on outbound rows, so the
+ * customer thread key must come from Recipient for outbound and Sender for inbound. */
 export function communicationSenderPhone(row: InboxRecord): string {
-  const sender = stringValue(pick(row, 'Sender'));
-  const wrapped = sender.match(/\(([^()]*)\)\s*$/);
-  const digits = normalizeChatNumber(wrapped?.[1] ?? sender);
+  const direction = directionOf(row);
+  const participant = direction.includes('out')
+    ? pick(row, 'Recipient')
+    : direction.includes('in')
+      ? pick(row, 'Sender')
+      : pick(row, 'Sender') ?? pick(row, 'Recipient');
+  const digits = normalizeChatNumber(participant);
   return /^\d{7,15}$/.test(digits) ? digits : '';
 }
 
 export function communicationSenderName(row: InboxRecord): string {
-  const sender = stringValue(pick(row, 'Sender'));
-  const wrapped = sender.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
-  const name = wrapped?.[1]?.trim() ?? sender;
+  const direction = directionOf(row);
+  const participant = stringValue(direction.includes('out')
+    ? pick(row, 'Recipient')
+    : pick(row, 'Sender') ?? pick(row, 'Recipient'));
+  const wrapped = participant.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  const name = wrapped?.[1]?.trim() ?? participant;
   const phone = communicationSenderPhone(row);
   return !name || normalizeChatNumber(name) === phone ? phone : name;
 }
 
-const occurredAt = (row: InboxRecord): string =>
-  stringValue(pick(row, '__lastMessageAt', 'ReceivedAt', 'SentAt', 'CreatedAt', 'CreatedDate', 'LastModifiedDate'));
+const occurredAt = (row: InboxRecord): string => {
+  const direction = directionOf(row);
+  const value = direction.includes('out')
+    ? pick(row, '__lastMessageAt', 'SentAt', 'ReceivedAt', 'CreatedAt', 'CreatedDate', 'LastModifiedDate')
+    : pick(row, '__lastMessageAt', 'ReceivedAt', 'SentAt', 'CreatedAt', 'CreatedDate', 'LastModifiedDate');
+  return stringValue(value);
+};
 
 const timeValue = (row: InboxRecord): number => {
   const value = Date.parse(occurredAt(row));
@@ -54,17 +71,17 @@ export function buildCommunicationInbox(
     const timestamp = occurredAt(row);
     const senderName = communicationSenderName(row);
     const previous = byPhone.get(phone);
+    const isLatest = !previous || Date.parse(timestamp) >= timeValue(previous);
 
     if (previous) {
-      const priorTime = stringValue(previous.__lastMessageAt);
       byPhone.set(phone, {
         ...previous,
         Name: stringValue(pick(previous, 'Name')) || senderName,
         PhoneNumber: phone,
         __isCommunicationBacked: true,
         __communicationName: senderName,
-        __lastMessageAt: timestamp >= priorTime ? timestamp : priorTime,
-        __lastMessageBody: timestamp >= priorTime
+        __lastMessageAt: isLatest ? timestamp : stringValue(previous.__lastMessageAt),
+        __lastMessageBody: isLatest
           ? stringValue(pick(row, 'Body'))
           : stringValue(previous.__lastMessageBody)
       });
@@ -97,19 +114,19 @@ export function buildCommunicationInbox(
       stringValue(pick(a, 'Name')).localeCompare(stringValue(pick(b, 'Name'))));
 }
 
-/** Prefer the durable Communication record when the same provider message was also
- * copied into a legacy ChatMessage record; preserve the Flow-created outbound rows. */
+/** Communication is authoritative for both directions. Keep legacy Flow-created
+ * ChatMessage rows only when they aren't already represented by a provider message ID. */
 export function mergeCommunicationMessages(
   communications: readonly InboxRecord[],
   chatMessages: readonly InboxRecord[],
   phoneNumber: unknown
 ): InboxRecord[] {
   const phone = normalizeChatNumber(phoneNumber);
-  const incoming = communications.filter(row => communicationSenderPhone(row) === phone);
+  const matching = communications.filter(row => communicationSenderPhone(row) === phone);
   const seen = new Set<string>();
   const unique: InboxRecord[] = [];
 
-  for (const row of [...incoming, ...chatMessages]) {
+  for (const row of [...matching, ...chatMessages]) {
     const externalId = stringValue(pick(row, 'ExternalMessageId'));
     if (externalId && seen.has(externalId)) continue;
     if (externalId) seen.add(externalId);

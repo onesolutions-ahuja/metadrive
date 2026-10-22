@@ -114,3 +114,24 @@ test('Flow Get Records supports current-user OwnerId filters without granting wi
   ['tenant-1','Contact','user-1','user-1','Name','assigned']);
  assert.ok(statements[1].sql.includes("md_record_access($1,$3,r.id,'read')"));
 });
+
+
+test('Flow record query sorts by shared CreatedAt and LastModifiedDate fields without custom field metadata',async()=>{
+ const statements:string[]=[];
+ const db={query:async(sql:string)=>{
+  statements.push(sql);
+  if(sql.includes('FROM md_field_definitions'))return {rows:[]};
+  return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>undefined,allowed:async()=>true,
+  allowedMany:async(_tenant:string,_user:string,resources:unknown[])=>resources.map(()=>true)} as unknown as RbacEngine;
+ const query=new FlowRecordQuery(db,rbac);
+ await query.find('tenant','user','Communication',[],undefined,
+  {sortField:'CreatedAt',sortOrder:'Descending',limit:200});
+ await query.find('tenant','user','Communication',[],undefined,
+  {sortField:'LastModifiedDate',sortOrder:'Descending',limit:200});
+ const dataQueries=statements.filter(sql=>sql.includes('WITH matching AS'));
+ assert.equal(dataQueries.length,2);
+ assert.match(dataQueries[0],/ORDER BY r\.created_at DESC,r\.id ASC LIMIT/);
+ assert.match(dataQueries[1],/ORDER BY r\.updated_at DESC,r\.id ASC LIMIT/);
+});

@@ -110,12 +110,26 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       }).catch(e=>{if(live){setContacts([]);setContactError(errorText(e));}})
       .finally(()=>{if(live)setContactsLoading(false);});
     return()=>{live=false;};
-  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch,refresh]);
+  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch]);
+
+  // Refresh inbox and active threads like a messaging app. Pause while hidden and
+  // refresh immediately when the user returns to the tab.
+  useEffect(()=>{
+    const refreshWhenVisible=()=>{
+      if(document.visibilityState==='visible')setRefresh(value=>value+1);
+    };
+    const timer=window.setInterval(refreshWhenVisible,5000);
+    document.addEventListener('visibilitychange',refreshWhenVisible);
+    return()=>{
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange',refreshWhenVisible);
+    };
+  },[]);
 
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
     if(!loadConversations){setConversations([]);return;}
-    let live=true;setBusy(true);setError('');
+    let live=true;setError('');
     void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
       '/flows/'+encodeURIComponent(loadConversations.apiName)+'/execute',{
         method:'POST',body:JSON.stringify({searchTerm:'',limit:100})
@@ -124,14 +138,14 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         if(result.interviewId)throw new Error('Loading conversations requires a synchronous Autolaunched Flow.');
         setConversations(readRows(result.outputs,'conversationsJson'));
       }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadConversations?.apiName,refresh]);
 
-  // Incoming messages are sourced from Communication records via an authorised Flow.
+  // Both incoming and outgoing messages are sourced from Communication records via an authorised Flow.
   useEffect(()=>{
     if(!loadCommunications){setCommunications([]);return;}
-    let live=true;setBusy(true);setError('');
+    let live=true;setError('');
     const numberSearch=normalizeChatNumber(submittedSearch);
     const searchTerm=numberSearch.length>=3?numberSearch:submittedSearch.trim();
     void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
@@ -139,10 +153,10 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         method:'POST',body:JSON.stringify({searchTerm,limit:200})
       }).then(result=>{
         if(!live)return;
-        if(result.interviewId)throw new Error('Loading received messages requires a synchronous Autolaunched Flow.');
+        if(result.interviewId)throw new Error('Loading WhatsApp Communications requires a synchronous Autolaunched Flow.');
         setCommunications(readRows(result.outputs,'communicationsJson'));
       }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadCommunications?.apiName,submittedSearch,refresh]);
 
@@ -162,7 +176,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     if(!selected||!selectedRow||(!loadMessages&&!loadCommunications)){
       setMessages([]);return;
     }
-    let live=true;setBusy(true);setError('');setMessages([]);
+    let live=true;setError('');
     const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
       ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
@@ -182,7 +196,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     void Promise.all([chatRequest,communicationRequest]).then(([chatRows,communicationRows])=>{
       if(live)setMessages(mergeCommunicationMessages(communicationRows,chatRows,selectedPhone));
     }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadMessages?.apiName,loadCommunications?.apiName,selected,selectedPhone,
     selectedRow?.__syntheticConversation,refresh]);
