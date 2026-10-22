@@ -80,8 +80,9 @@ export default function NamedCredentials({
   const activeWebhookCredential=draft?.id ? credentials.find(item=>item.id===draft.id) : undefined;
   // A saved endpoint ID is enough to reconstruct the public callback from the
   // current HTTPS application origin when older API deployments omit its URL.
-  const callbackFor=(credential:NamedCredentialMetadata)=>credential.webhookCallbackUrl ||
-    (credential.webhookId ? `${window.location.origin}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}` : '');
+  const callbackFor=(credential:NamedCredentialMetadata)=>credential.webhookId
+    ? `${window.location.origin}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}`
+    : credential.webhookCallbackUrl || '';
   const activeWebhookUrl=savedWebhook?.callbackUrl || (activeWebhookCredential ? callbackFor(activeWebhookCredential) : '');
   const activeWebhookExists=Boolean(activeWebhookCredential?.webhookId);
   const copyWebhookUrl=async(credential:NamedCredentialMetadata)=>{
