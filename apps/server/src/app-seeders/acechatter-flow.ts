@@ -68,7 +68,7 @@ export async function reconcileAceChatterCredentialFlow(client:PoolClient,tenant
  if(!source||typeof source!=='object'||Array.isArray(source))return false;
  const graph=source as Record<string,unknown>;
  if(!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
- const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const elements=graph.elements as Array<{id:number;type:string;label?:string;config?:Record<string,unknown>}>;
  const connectors=graph.connectors as Array<{from:number;to:number;kind:string;label?:string}>;
  const stale=elements.find(item=>item.id===5);
  const outbound=elements.find(item=>item.id===2);
@@ -126,6 +126,23 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
  const saveMessage=elements.find(item=>item.id===6);
  const communication=elements.find(item=>item.id===7&&item.type==='Create Records'
   &&item.config?.object==='Communication');
+ const expectedCommunicationFields=[
+  {field:'Name',value:'WhatsApp outbound'},{field:'Channel',value:'WhatsApp'},
+  {field:'Direction',value:'Outbound'},{field:'Status',value:'Sent'},
+  {field:'Sender',value:'WhatsApp Business'},{field:'Recipient',value:'@conversation.PhoneNumber'},
+  {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
+  {field:'Provider',value:'WhatsApp'}
+ ];
+ const actualCommunicationFields=communication?.config?.fieldValues;
+ const knownCommunicationNode=Boolean(communication
+  &&communication.label==='Record outbound Communication'
+  &&Object.keys(communication.config??{}).sort().join(',')==='fieldValues,object'
+  &&Array.isArray(actualCommunicationFields)
+  &&actualCommunicationFields.length===expectedCommunicationFields.length
+  &&expectedCommunicationFields.every((field,index)=>{
+   const actual=actualCommunicationFields[index] as Record<string,unknown>;
+   return actual?.field===field.field&&actual?.value===field.value;
+  }));
  const hasEdge=(edges:typeof connectors,from:number,to:number)=>
   edges.some(edge=>edge.from===from&&edge.to===to);
  const commonShape=recipient?.type==='Get Records'
@@ -137,7 +154,7 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
   &&elements.find(item=>item.id===1)?.type==='Start'
   &&elements.find(item=>item.id===3)?.type==='End';
  if(!commonShape||!outbound)return false;
- const oldSeededShape=Boolean(communication)&&elements.length===6&&connectors.length===5
+ const oldSeededShape=knownCommunicationNode&&elements.length===6&&connectors.length===5
   &&elements.every(item=>[1,2,3,4,6,7].includes(item.id))
   &&hasEdge(connectors,1,4)&&hasEdge(connectors,4,2)&&hasEdge(connectors,2,6)
   &&hasEdge(connectors,6,7)&&hasEdge(connectors,7,3);
