@@ -69,7 +69,7 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
  const config:Record<string,unknown>={object:objectApi,recordSource:'collection',collection:input,
   ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
   ...(objectApi==='Appointment'?{overlapGuard:{
-    startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo'],
+    startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo','Resource'],
     statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed']
    },availabilityGuard:{
     startField:'StartDateTime',endField:'EndDateTime',
@@ -175,7 +175,8 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
     ...(['read','create','edit','delete'] as const).map(action=>[objectApi,action]),
     ...fields.flatMap(field=>(['read','create','edit'] as const).map(action=>[objectApi+'.'+field,action])),
     ...(['Load','Create','Update','Delete'] as const).map(operation=>
-      ['Flow:AceAssist'+operation+objectApi,'execute']),
+      ...(objectApi==='Appointment'&&['Create','Update'].includes(operation)?[]:
+       [['Flow:AceAssist'+operation+objectApi,'execute']]),
     ...(['Create','Update'] as const).map(operation=>
       ['Flow:AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi,'execute'])
    ];
