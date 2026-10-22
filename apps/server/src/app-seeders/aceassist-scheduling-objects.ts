@@ -1,0 +1,47 @@
+import type {PoolClient} from 'pg';
+
+/** Generic, reusable scheduling Objects. Definitions only: no tenant business data. */
+export const ACEASSIST_SCHEDULING_OBJECTS=[
+ {api:'BookableResource',label:'Bookable Resource',fields:[
+  ['Name','Name','text',null],['ResourceType','Resource Type','text',null],
+  ['Location','Location','text',null],['Capacity','Capacity','number',null],
+  ['Active','Active','boolean',null]]},
+ {api:'StaffAvailability',label:'Staff Availability',fields:[
+  ['Name','Name','text',null],['Staff','Staff','reference','User'],
+  ['Weekday','Weekday','picklist',null],['StartTime','Start Time','time',null],
+  ['EndTime','End Time','time',null],['Active','Active','boolean',null]]},
+ {api:'AvailabilityException',label:'Availability Exception',fields:[
+  ['Name','Name','text',null],['Staff','Staff','reference','User'],
+  ['Resource','Resource','reference','BookableResource'],
+  ['StartDateTime','Start Date and Time','datetime',null],
+  ['EndDateTime','End Date and Time','datetime',null],
+  ['Reason','Reason','text',null],['Active','Active','boolean',null]]}
+] as const;
+export const ACEASSIST_SCHEDULING_FIELD_NAMES:Record<string,string[]>=
+ Object.fromEntries(ACEASSIST_SCHEDULING_OBJECTS.map(item=>[item.api,item.fields.map(field=>field[0])]));
+/** Rerunnable only for installed, licensed AceAssist tenants; never overwrites metadata. */
+export async function seedAceAssistSchedulingObjects(client:PoolClient,tenantId:string):Promise<void>{
+ for(const object of ACEASSIST_SCHEDULING_OBJECTS)
+  await client.query(`INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system)
+   VALUES($1,$2,$3,false) ON CONFLICT(tenant_id,api_name) DO NOTHING`,
+   [tenantId,object.api,object.label]);
+ // Referenced objects are registered before any reference field.
+ for(const object of ACEASSIST_SCHEDULING_OBJECTS)
+  for(const [api,label,type,related] of object.fields){
+   if(related){
+    const existing=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
+     [tenantId,related]);
+    if(!existing.rowCount)continue;
+   }
+   await client.query(`INSERT INTO md_field_definitions
+    (tenant_id,object_api,api_name,label,data_type,related_object,required)
+    VALUES($1,$2,$3,$4,$5,$6,false) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
+    [tenantId,object.api,api,label,type,related]);
+  }
+ const weekdays=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+ for(const [index,value] of weekdays.entries())
+  await client.query(`INSERT INTO md_field_picklist_values
+   (tenant_id,object_api,field_api,value,sort_order)
+   VALUES($1,'StaffAvailability','Weekday',$2,$3) ON CONFLICT DO NOTHING`,
+   [tenantId,value,(index+1)*10]);
+}
