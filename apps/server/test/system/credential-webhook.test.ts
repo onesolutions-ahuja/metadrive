@@ -45,7 +45,10 @@ test('credential-linked webhook accepts verified request, creates Communication,
   assert.equal(challenge.status,200);
   assert.equal(await challenge.text(),'verified');
   const raw=JSON.stringify({object:'whatsapp_business_account',entry:[{
-   changes:[{value:{messages:[{text:{body:'hello'}}],access_token:'private'}}]
+   changes:[{value:{metadata:{display_phone_number:'15551234567',phone_number_id:'phone-id'},
+    contacts:[{wa_id:'447700900123',profile:{name:'Test Sender'}}],
+    messages:[{id:'wamid.test-message',from:'447700900123',timestamp:'1792690000',
+     type:'text',text:{body:'hello'}}],access_token:'private'}}]
   }]});
   const signature='sha256='+createHmac('sha256',secret).update(raw).digest('hex');
   const invalid=await fetch(base,{method:'POST',headers:{'content-type':'application/json',
@@ -59,8 +62,13 @@ test('credential-linked webhook accepts verified request, creates Communication,
   }
   assert.equal(communications.length,1);
   assert.equal(communications[0].Direction,'Inbound');
+  assert.equal(communications[0].Channel,'WhatsApp');
   assert.equal(communications[0].Provider,'WhatsApp');
-  assert.doesNotMatch(String(communications[0].Body),/private/);
+  assert.equal(communications[0].Body,'hello');
+  assert.equal(communications[0].Sender,'Test Sender (447700900123)');
+  assert.equal(communications[0].Recipient,'15551234567');
+  assert.equal(communications[0].ExternalMessageId,'wamid.test-message');
+  assert.doesNotMatch(JSON.stringify(communications[0]),/private/);
   assert.equal(flowsCalled,0);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
@@ -114,7 +122,7 @@ test('credential webhook Flow routing preserves the Communication archive',async
     headers:{'content-type':'application/json','x-hub-signature-256':signature},body:raw});
    assert.equal(response.status,200);
   }
-  assert.equal(executed,1);
+  assert.equal(executed,0);
   assert.equal(archived,1);
   // An uninstalled/deactivated optional Flow cannot interrupt a credential
   // webhook shared by other apps: keep archiving the verified provider event.
@@ -125,7 +133,7 @@ test('credential webhook Flow routing preserves the Communication archive',async
    headers:{'content-type':'application/json','x-hub-signature-256':secondSignature},
    body:secondRaw});
   assert.equal(fallback.status,200);
-  assert.equal(executed,1);
+  assert.equal(executed,0);
   assert.equal(archived,2);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
