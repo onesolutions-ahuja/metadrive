@@ -8,32 +8,7 @@ export default Object.freeze({
   "url": "https://api.uber.com/",
   "auth": "Bearer",
   "header": "",
-  "fields": [
-    {
-      "apiName": "public_clientId",
-      "label": "Uber Client ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_storeId",
-      "label": "Uber Store ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_authTokenUrl",
-      "label": "OAuth token URL",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_scope",
-      "label": "Approved OAuth scopes",
-      "required": false,
-      "defaultValue": ""
-    }
-  ],
+  "fields": [],
   "operations": {},
   "docs": "https://developer.uber.com/docs/eats/guides/authentication",
   "notes": "Provider approval and merchant OAuth authorisation are required for some operations. Store an issued access token in encrypted Secret; OAuth client secret and grant provisioning need authorised provider setup. No unverified endpoints are generated."

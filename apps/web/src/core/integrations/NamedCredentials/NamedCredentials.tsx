@@ -91,13 +91,6 @@ export default function NamedCredentials({
     setError('');
   };
 
-  // Meta-owned non-secret configuration fields. Access tokens remain in the
-  // encrypted Secret field, not in these editable ID/settings variables.
-  const whatsAppFields:Record<string,string>={
-    public_graphApiVersion:'',public_wabaId:'',public_phoneNumberId:'',
-    public_businessPortfolioId:'',public_metaAppId:'',public_businessPhoneE164:'',
-    public_templateLanguage:'en_US',public_webhookCallbackUrl:'',public_displayName:''
-  };
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
     setSavedWebhook(null);
@@ -111,7 +104,7 @@ export default function NamedCredentials({
       baseUrl: credential.baseUrl,
       authType: credential.authType,
       headerName: credential.headerName,
-      configuration: { ...(credential.name==='WhatsApp_Cloud_API'?whatsAppFields:{}), ...preset?.configuration, ...credential.configuration },
+      configuration: { ...preset?.configuration, ...credential.configuration },
       username: '',
       secret: '',
       webhookRequired: credential.webhookEnabled===true,
@@ -302,8 +295,19 @@ export default function NamedCredentials({
             </label>
           ))}
           {!viewing && <button type="button" className="btn btn-small" onClick={() => {
-            const key = window.prompt('Variable name (letters, numbers, underscore)');
-            if (key && /^[A-Za-z][A-Za-z0-9_]*$/.test(key)) updateDraft({ configuration: { ...draft.configuration, [key]: '' } });
+            const input = window.prompt('Variable name (letters, numbers, underscore)');
+            if (input === null) return;
+            const name = input.trim();
+            const key = name.startsWith('public_') ? name : `public_${name}`;
+            // Public variables survive the credential API's safe-list. Never expose
+            // secrets through the editable and client-readable variable collection.
+            if (!/^public_[A-Za-z][A-Za-z0-9_]*$/.test(key) ||
+                /(secret|token|password|passphrase|private|pin|credential|authorization|api_?key)/i.test(key)) {
+              setError('Use a non-secret variable name containing letters, numbers or underscores.');
+              return;
+            }
+            setError('');
+            updateDraft({ configuration: { ...draft.configuration, [key]: draft.configuration?.[key] ?? '' } });
           }}>Add variable</button>}
         </fieldset>
         {['OAuth Client Credentials','OAuth Authorization Code'].includes(draft.authType) && <div className="info-callout named-credential-span-full">Configure clientId and scope. Client Credentials requires tokenPath (relative to Base URL); Authorization Code requires public HTTPS authorizationUrl and tokenUrl. Enter the client secret in the encrypted Secret field. OAuth tokens are protected and never exposed to Flows.</div>}

@@ -46,7 +46,10 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
   try {
     const parsed: unknown = JSON.parse(metadata || '[]');
     if (!Array.isArray(parsed)) return { values: {}, labels: {} };
-    const rows = parsed.filter((entry) => entry && typeof entry.apiName === 'string'
+    // Only required fields are automatically presented. Optional fields remain
+    // available through the Named Credentials "Add variable" action.
+    const rows = parsed.filter((entry) => entry && entry.required === true
+      && typeof entry.apiName === 'string'
       && /^[A-Za-z][A-Za-z0-9_]*$/.test(entry.apiName));
     return { values: Object.fromEntries(rows.map((entry) => [entry.apiName, ''])),
       labels: Object.fromEntries(rows.map((entry) => [entry.apiName, typeof entry.label === 'string' ? entry.label : entry.apiName])) };

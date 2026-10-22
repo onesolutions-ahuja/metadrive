@@ -97,9 +97,16 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
  for(const field of d.fields){
   await client.query(`INSERT INTO md_connector_app_fields
     (tenant_id,app_id,credential_name,field_api,label,required,default_value)
-    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`,
+    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO UPDATE
+    SET label=EXCLUDED.label,required=EXCLUDED.required,default_value=EXCLUDED.default_value`,
     [tenantId,appId,d.credential,field.apiName,field.label,field.required,field.defaultValue]);
  }
+ // These rows are connector-package declarations, never customer-defined Named Credential
+ // variables. Remove stale optional declarations on reinstall; do not touch ciphertext.
+ await client.query(`DELETE FROM md_connector_app_fields
+  WHERE tenant_id=$1 AND app_id=$2 AND credential_name=$3
+    AND NOT (field_api=ANY($4::text[]))`,
+  [tenantId,appId,d.credential,d.fields.map(field=>field.apiName)]);
  const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs};
  await client.query(`INSERT INTO md_system_definitions
   (tenant_id,kind,api_name,label,properties,enabled)

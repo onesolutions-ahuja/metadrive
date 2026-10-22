@@ -10,46 +10,16 @@ export default Object.freeze({
   "header": "",
   "fields": [
     {
-      "apiName": "public_graphApiVersion",
-      "label": "Graph API version",
-      "required": true,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_wabaId",
-      "label": "WhatsApp Business Account ID",
-      "required": true,
-      "defaultValue": ""
-    },
-    {
       "apiName": "public_phoneNumberId",
       "label": "Sender Phone Number ID",
       "required": true,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_metaAppId",
-      "label": "Meta App ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_businessPhoneE164",
-      "label": "Business phone E.164",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_templateLanguage",
-      "label": "Template locale",
-      "required": false,
       "defaultValue": ""
     }
   ],
   "operations": {
     "SendMessage": {
       "method": "POST",
-      "path": "{!graphApiVersion}/{!phoneNumberId}/messages"
+      "path": "v26.0/{!phoneNumberId}/messages"
     }
   },
   "docs": "https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api",

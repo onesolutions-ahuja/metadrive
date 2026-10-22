@@ -1,36 +1,34 @@
 # Meta WhatsApp Cloud API — Named Credential setup
 
-Credential API name: `WhatsApp_Cloud_API`. The existing tenant has a **disabled** HTTPS/Bearer placeholder at `https://graph.facebook.com`, with no token entered. This is safe to configure before activating it.
+Credential API name: `WhatsApp_Cloud_API`.
 
-## Editable non-secret variables
+## Required at connection setup
 
-| Variable | Enter from Meta | Notes |
-| --- | --- | --- |
-| `public_graphApiVersion` | Graph API version supported by your app | Example format `vNN.0`; choose a currently supported version |
-| `public_wabaId` | WhatsApp Business Account ID | Needed for phone-number lookup and WABA webhook subscription |
-| `public_phoneNumberId` | Registered sender Phone Number ID | Used for `POST /{version}/{phoneNumberId}/messages` |
-| `public_businessPortfolioId` | Meta Business portfolio ID | For asset discovery/administration |
-| `public_metaAppId` | Meta developer App ID | Used when linking app and webhook |
-| `public_businessPhoneE164` | Sender business phone | Display/verification reference, not Phone Number ID |
-| `public_templateLanguage` | Approved template locale | Typically `en_US` |
-| `public_webhookCallbackUrl` | HTTPS endpoint registered with Meta | For inbound message/status deliveries |
-| `public_displayName` | Business display name | Optional descriptive setting |
+- **Secret:** Meta access token with `whatsapp_business_messaging` permission; stored encrypted.
+- **`public_phoneNumberId`:** Registered sender Phone Number ID used for sending messages.
+- **Graph API version:** Managed by the connector's versioned operation path (currently `v26.0`), not a tenant input.
 
-These values use MetaDrive's reusable `public_` variable convention and are saved through the existing Named Credentials editor when you click **Save Changes**. No WhatsApp-specific SQL seeder runs. Only these non-secret settings are shown again for editing. Do not put passwords, access tokens, two-step PINs, verify tokens or App Secret into these fields.
+The default API host and Bearer authentication come from the connector package.
 
-## Confidential fields
+## Optional, user-added variables
 
-- **Secret (Bearer access token):** enter the Meta system-user token here, with `whatsapp_business_messaging` permission. The token is encrypted and never returned by the API.
-- **Webhook verification token:** a separately generated random secret; requires a server-side webhook verification handler and secure secret store. Do not put it in publicly returned configuration.
-- **Meta App Secret:** separate confidential application secret used to check `X-Hub-Signature-256` on incoming webhook POSTs. Requires secured server-side storage and signature verification. Do not reuse the Bearer token as the App Secret.
-- **Phone registration PIN:** 6-digit PIN for initial phone registration, never sent during ordinary messages. Do not store it in client-exposed variables.
+Open **Named Credentials → Edit → Add variable** when you actually need one. For
+example, `public_wabaId` for WhatsApp Business Account management or WABA
+webhook subscriptions; `public_businessPortfolioId` for asset discovery;
+`public_metaAppId` for app setup; `public_businessPhoneE164` for an
+informational sender number; `public_templateLanguage` for a preferred
+template locale; and `public_displayName` for a descriptive name.
 
-## Required Meta configuration
+None of these optional variables is provisioned, injected by the frontend, or
+required to test the basic messaging connection. For sending a template, its
+approved language code is still required **in that message request**.
 
-Meta business portfolio, WABA, registered business phone, supported Graph API version, and appropriate system-user access token/scopes. For WABA asset management, `whatsapp_business_management` is also needed. Use `https://graph.facebook.com/{version}/{phoneNumberId}/messages` to send approved message types. Configure an HTTPS webhook endpoint, GET hub challenge verification, signed POST verification and subscribe the Meta app to the WABA.
+Secrets (access tokens, webhook signing secrets, app secrets, verification tokens,
+PINs and passwords) must never be put in public configuration variables.
+Configure inbound webhooks separately with signed-request verification.
 
-Activate the Named Credential only after entering a valid Bearer token and IDs, then configure and publish the shared MetaDrive HTTP Callout Flow. **This preset does not activate sending or create a webhook listener.** Respect WhatsApp opt-in, the customer-service messaging window, and approved templates for business-initiated messaging.
+Existing tenant credentials, encrypted settings and manually entered optional
+variables are preserved when updating the connector.
 
-Official references:
+Official reference:
 - https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api
-- https://www.postman.com/meta/whatsapp-business-platform/folder/o48mro7/messages

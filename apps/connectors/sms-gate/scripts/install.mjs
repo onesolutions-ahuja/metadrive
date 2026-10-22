@@ -8,26 +8,7 @@ export default Object.freeze({
   "url": "https://api.sms-gate.app/3rdparty/v1/",
   "auth": "Basic",
   "header": "",
-  "fields": [
-    {
-      "apiName": "public_deviceId",
-      "label": "Device ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_sender",
-      "label": "Sender ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_gatewayMode",
-      "label": "Gateway mode",
-      "required": false,
-      "defaultValue": ""
-    }
-  ],
+  "fields": [],
   "operations": {
     "SendMessage": {
       "method": "POST",
