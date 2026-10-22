@@ -1,0 +1,93 @@
+name: Oracle stage production database snapshot
+
+on:
+  push:
+    branches:
+      - ops/oracle-cutover-access-check-20261022
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Install PostgreSQL 18 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -m 755 /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+          pg_dump --version
+      - name: Take source snapshot and restore into isolated Oracle staging database
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_stage"
+          chmod 600 "$HOME/.ssh/oracle_stage"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          SOURCE_DB_URL="$(python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          u = urlsplit(os.environ["METADRIVE_AIVEN_DATABASE_URL"])
+          print(urlunsplit((u.scheme, u.netloc, "/metadrive_sql_20261012", u.query, u.fragment)))
+          PY
+          )"
+          if [[ "$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc 'select current_database()')" != "metadrive_sql_20261012" ]]; then
+            echo "Source database identity check failed"
+            exit 1
+          fi
+          dump=/tmp/metadrive-source-20261022.dump
+          pg_dump "$SOURCE_DB_URL" --format=custom --no-owner --no-acl --verbose --file="$dump"
+          local_sha="$(sha256sum "$dump" | awk '{print $1}')"
+          echo "SOURCE_SNAPSHOT_DATABASE=metadrive_sql_20261012"
+          echo "SOURCE_SNAPSHOT_SHA256=$local_sha"
+          echo "SOURCE_SNAPSHOT_BYTES=$(stat -c %s "$dump")"
+          scp -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$dump" "ubuntu@$host:/tmp/metadrive-source-20261022.dump"
+          remote_sha="$(ssh -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" "sha256sum /tmp/metadrive-source-20261022.dump | awk '{print \\$1}'")"
+          if [[ "$local_sha" != "$remote_sha" ]]; then
+            echo "Snapshot transfer checksum mismatch"
+            exit 1
+          fi
+          echo "SNAPSHOT_TRANSFER_CHECKSUM=PASS"
+          ssh -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          db=metadrive_sql_20261022_stage
+          dump=/tmp/metadrive-source-20261022.dump
+          test -s "$dump"
+          test "$(sha256sum "$dump" | awk '{print $1}')" != ""
+          sudo -u postgres dropdb --if-exists "$db"
+          sudo -u postgres createdb --owner=metadrive "$db"
+          sudo -u postgres pg_restore --exit-on-error --jobs=2 --no-owner --no-acl --dbname="$db" "$dump"
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'REASSIGN OWNED BY postgres TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON TABLES TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON SEQUENCES TO metadrive'
+          tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
+          rows="$(sudo -u postgres psql -d "$db" -Atqc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'")"
+          size="$(sudo -u postgres psql -d postgres -Atqc "SELECT pg_size_pretty(pg_database_size('$db'))")"
+          echo "STAGING_DATABASE=$db"
+          echo "STAGING_PUBLIC_TABLES=$tables"
+          echo "STAGING_ESTIMATED_ROWS=$rows"
+          echo "STAGING_DATABASE_SIZE=$size"
+          if [[ "$tables" != "288" ]]; then
+            echo "Unexpected public table count"
+            exit 1
+          fi
+          sudo rm -f "$dump"
+          REMOTE
+          rm -f "$dump"
