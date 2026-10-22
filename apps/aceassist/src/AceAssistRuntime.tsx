@@ -5,6 +5,7 @@ import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
+import {asBusinessInstant,asBusinessLocal} from './businessDateTime';
 import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
 
@@ -39,9 +40,10 @@ const scalar=(value:string,field:Field):unknown=>{
  if(kind==='boolean')return value==='true';
  return value===''?null:value;
 };
-const formatInput=(v:unknown,field:Field)=>{
+const formatInput=(v:unknown,field:Field,timeZone?:string)=>{
  if(v==null)return '';
- if(fieldKind(field)==='datetime')return String(v).slice(0,16);
+ if(fieldKind(field)==='datetime')return timeZone?
+  asBusinessLocal(String(v),timeZone):String(v).slice(0,16);
  return String(v);
 };
 const readOnlyField=(f:Field)=>fieldKind(f)==='readonly'||f.readOnly===true;
@@ -143,13 +145,13 @@ export default function AceAssistRuntime({entry,onLogout}:{
   const values:Record<string,string>={};
   for(const field of fields){
    const existing=row?.[field.apiName]??(operation==='Create'?field.defaultValue:undefined);
-   values[field.apiName]=formatInput(existing,field);
+   values[field.apiName]=formatInput(existing,field,hours?.timezone);
   }
   if(current.object==='Appointment'&&operation==='Create'){
    if(fields.some(f=>f.apiName==='AssignedUser'))values.AssignedUser=selfId;
    else values.AssignedTo=selfId;
   }
-  if(current.object==='Customer'&&operation==='Create'&&values.Active===undefined)values.Active='true';
+  if(current.object==='Customer'&&operation==='Create'&&!values.Active)values.Active='true';
   setForm(values);setChosen(row??null);setEditingObject(current.object);
   setEditing(operation);setError('');setNotice('');
  };
@@ -169,7 +171,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
   if(editing!=='Delete'){
    for(const field of visibleFields(editingObject)){
     if(fieldKind(field)==='readonly')continue;
-    payload[field.apiName]=scalar(form[field.apiName]??'',field);
+    const raw=form[field.apiName]??'';
+    payload[field.apiName]=fieldKind(field)==='datetime'&&raw
+      ?asBusinessInstant(raw,hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone)
+      :scalar(raw,field);
    }
   }
   const input=dynamic?{

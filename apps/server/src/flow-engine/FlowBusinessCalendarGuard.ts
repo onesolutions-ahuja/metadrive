@@ -23,15 +23,6 @@ export async function enforceFlowBusinessCalendar(
   source=collection[0] as Record<string,unknown>;
  }
  const start=source[startInput],end=source[endInput];
- const pattern=/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/;
- if(typeof start!=='string'||typeof end!=='string'
-  ||!pattern.test(start)||!pattern.test(end)||start>=end)
-  throw new Error('Appointment requires a valid local start and end time');
- const date=start.slice(0,10);
- if(date!==end.slice(0,10))throw new Error('Appointment must be within one business day');
- const parts=date.split('-').map(Number);
- const parsed=new Date(Date.UTC(parts[0],parts[1]-1,parts[2]));
- if(parsed.toISOString().slice(0,10)!==date)throw new Error('Invalid appointment calendar date');
  const {rows}=await db.query<{properties:unknown}>(`
   SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key='business-calendar'`,[tenantId]);
  const setting=rows[0]?.properties;
@@ -39,8 +30,26 @@ export async function enforceFlowBusinessCalendar(
   throw new Error('Tenant business calendar must be configured before booking');
  const calendar=setting as Record<string,unknown>;
  if(typeof calendar.timezone!=='string')throw new Error('Tenant business timezone unavailable');
- try{new Intl.DateTimeFormat('en-GB',{timeZone:calendar.timezone});}
+ let formatter:Intl.DateTimeFormat;
+ try{formatter=new Intl.DateTimeFormat('en-GB',{timeZone:calendar.timezone,
+  year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});}
  catch{throw new Error('Invalid tenant business timezone');}
+ const local=(value:unknown):string=>{
+  if(typeof value!=='string')throw new Error('Appointment date/time is required');
+  if(/^\\d{4}-\\d{2}-\\d{2}T([01]\\d|2[0-3]):[0-5]\\d$/.test(value))return value;
+  if(!/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(value)||!Number.isFinite(Date.parse(value)))
+   throw new Error('Invalid appointment date/time');
+  const parts=Object.fromEntries(formatter.formatToParts(new Date(value)).map(x=>[x.type,x.value]));
+  return parts.year+'-'+parts.month+'-'+parts.day+'T'+parts.hour+':'+parts.minute;
+ };
+ const startLocal=local(start),endLocal=local(end);
+ if(startLocal>=endLocal)throw new Error('Appointment end must be after start');
+ const date=startLocal.slice(0,10);
+ if(date!==endLocal.slice(0,10))throw new Error('Appointment must be within one business day');
+ const parts=date.split('-').map(Number);
+ const parsed=new Date(Date.UTC(parts[0],parts[1]-1,parts[2]));
+ if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==date)
+  throw new Error('Invalid appointment calendar date');
  const holidays=Array.isArray(calendar.holidays)?calendar.holidays:[];
  if(holidays.some(x=>x&&typeof x==='object'&&(x as {date?:unknown}).date===date))
   throw new Error('Appointment date is a tenant holiday');
@@ -54,6 +63,6 @@ export async function enforceFlowBusinessCalendar(
  const value=hours as Record<string,unknown>;
  if(value.closed===true)throw new Error('The tenant is closed on '+day);
  if(typeof value.open!=='string'||typeof value.close!=='string'
-  ||start.slice(11,16)<value.open||end.slice(11,16)>value.close)
+  ||startLocal.slice(11,16)<value.open||endLocal.slice(11,16)>value.close)
   throw new Error('Appointment is outside tenant business hours');
 }
