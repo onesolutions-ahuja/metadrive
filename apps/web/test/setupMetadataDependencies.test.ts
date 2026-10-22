@@ -84,28 +84,28 @@ test('shared API coalesces only identical default GETs and preserves explicit re
 
 test('home-page authorization and profile reads run concurrently before assignment resolution', () => {
   const server = readFileSync(new URL('../../server/src/system-support/server.ts', import.meta.url), 'utf8');
-  assert.match(server, /const \\[\\,session\\]=await Promise\\.all\\(\\[\\s*rbac\\.require\\(actor\\.tenant_id,actor\\.user_id,'App:'\\+req\\.params\\.appId,'read'\\),\\s*sessionMetadata\\(db,actor\\.tenant_id,actor\\.user_id\\)\\s*\\]\\);/);
-  assert.match(server, /const assigned=await apps\\.homePage\\(actor\\.tenant_id,req\\.params\\.appId,factor\\.toLowerCase\\(\\),session\\.user\\.profileId\\);/);
+  assert.match(server, /const \[\,session\]=await Promise\.all\(\[\s*rbac\.require\(actor\.tenant_id,actor\.user_id,'App:'\+req\.params\.appId,'read'\),\s*sessionMetadata\(db,actor\.tenant_id,actor\.user_id\)\s*\]\);/);
+  assert.match(server, /const assigned=await apps\.homePage\(actor\.tenant_id,req\.params\.appId,factor\.toLowerCase\(\),session\.user\.profileId\);/);
 });
 
 
 test('Lightning page loading uses its metadata query instead of a redundant existence round trip', () => {
   const runtime = readFileSync(new URL('../../server/src/system-files/page-runtime.ts', import.meta.url), 'utf8');
-  assert.match(runtime, /const page=rows\\[0\\];if\\(!page\\)throw new Error\\('Page not found'\\);/);
-  assert.match(runtime, /const page=await this\\.metadata\\(tenantId,pageApi\\)\\.catch\\(error=>\\{\\s*if\\(error instanceof Error&&error\\.message==='Page not found'\\)return null;\\s*throw error;\\s*\\}\\);\\s*return page\\?\\{page\\}:this\\.loadLegacy\\(tenantId,pageApi\\);/);
-  assert.doesNotMatch(runtime, /SELECT EXISTS\\(\\s*SELECT 1 FROM md_page_definitions p JOIN md_lightning_page_details/);
+  assert.match(runtime, /const page=rows\[0\];if\(!page\)throw new Error\('Page not found'\);/);
+  assert.match(runtime, /const page=await this\.metadata\(tenantId,pageApi\)\.catch\(error=>\{\s*if\(error instanceof Error&&error\.message==='Page not found'\)return null;\s*throw error;\s*\}\);\s*return page\?\{page\}:this\.loadLegacy\(tenantId,pageApi\);/);
+  assert.doesNotMatch(runtime, /SELECT EXISTS\(\s*SELECT 1 FROM md_page_definitions p JOIN md_lightning_page_details/);
 });
 
 
 test('login, MFA and session restore return the requested tenant landing bootstrap in the session response', () => {
   const server = readFileSync(new URL('../../server/src/system-support/server.ts', import.meta.url), 'utf8');
   const login = readFileSync(new URL('../src/core/authentication/Login/loginView.tsx', import.meta.url), 'utf8');
-  assert.match(server, /const landingBootstrap=async\\(tenantId:string,userId:string\\)=>\\{/);
-  assert.match(server, /rbac\\.require\\(tenantId,userId,'ObjectDefinition','read'\\)/);
-  assert.match(server, /rbac\\.require\\(tenantId,userId,'PageDefinition','read'\\)/);
-  assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(tenantId,userId\\)/);
-  assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(session\\.tenant_id,session\\.user_id\\)/);
-  assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(actor\\.tenant_id,actor\\.user_id\\)/);
-  assert.match(login, /challenge\\?'\/auth\/mfa\/verify\\?landing=1'/);
-  assert.match(login, /'\/auth\/login\\?landing=1'/);
+  assert.match(server, /const landingBootstrap=async\(tenantId:string,userId:string\)=>\{/);
+  assert.match(server, /rbac\.require\(tenantId,userId,'ObjectDefinition','read'\)/);
+  assert.match(server, /rbac\.require\(tenantId,userId,'PageDefinition','read'\)/);
+  assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(tenantId,userId\)/);
+  assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(session\.tenant_id,session\.user_id\)/);
+  assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(actor\.tenant_id,actor\.user_id\)/);
+  assert.match(login, /challenge\?'\/auth\/mfa\/verify\?landing=1'/);
+  assert.match(login, /'\/auth\/login\?landing=1'/);
 });
