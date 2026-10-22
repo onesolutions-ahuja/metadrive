@@ -18,11 +18,13 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   return {rows:[],rowCount:1};
  }} as never;
  const first=await seedAceChatterFlowsForTenant(client,'tenant-a');
- assert.equal(first,3);
+ assert.equal(first,5);
  assert.equal(graphRows>0,true);
  assert.equal(flows.has('AceChatterLoadConversations'),true);
  assert.equal(flows.has('AceChatterLoadMessages'),true);
  assert.equal(flows.has('AceChatterSendMessage'),true);
+ assert.equal(flows.has('AceChatterReceiveWebhook'),true);
+ assert.equal(flows.has('AceChatterCreateConversation'),true);
  const before=graphRows;
  const second=await seedAceChatterFlowsForTenant(client,'tenant-a');
  assert.equal(second,0);
@@ -32,5 +34,5 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  const created=seen.filter(call=>call.sql.includes('INSERT INTO md_flow_definitions'));
  assert.equal(created.find(call=>call.params[1]==='AceChatterSendMessage')?.params[3],false,
   'WhatsApp delivery must remain disabled until provider credentials are configured');
- assert.equal(created.filter(call=>call.params[3]===true).length,2);
+ assert.equal(created.filter(call=>call.params[3]===true).length,4);
 });
