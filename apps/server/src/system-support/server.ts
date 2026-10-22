@@ -1274,7 +1274,7 @@ export function createSystemServer(db:SqlPersistence) {
     // bypass tenant credential activation, licence checks or OneEngine RBAC.
     const path=req.body?.path===undefined?'':req.body.path;
     if(typeof path!=='string'||path.length>512||path.startsWith('/')
-      ||path.includes('\\')||path.includes('..')||/[?#\\r\\n]/.test(path)
+      ||path.includes('\\')||path.includes('..')
       ||(path!==''&&!/^[A-Za-z0-9_./-]+$/.test(path)))
       throw new Error('Invalid Named Credential test path');
     const result=await namedCredentials.callout(
