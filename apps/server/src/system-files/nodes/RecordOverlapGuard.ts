@@ -29,14 +29,20 @@ export async function enforceRecordOverlap(client:PoolClient,tenantId:string,obj
   ||Date.parse(start)>=Date.parse(end))
   throw Error('Booking overlap guard needs ordered timezone-qualified start/end');
  if(excludedStatuses.includes(record[statusField]))return;
- const group=groupFields.map(field=>record[field])
-  .find(value=>typeof value==='string'&&value.trim());
- if(typeof group!=='string'||!group.trim())
+ const groups=[...new Set(groupFields
+  .map(field=>record[field])
+  .filter((value):value is string=>typeof value==='string'&&!!value.trim())
+  .map(value=>value.trim()))].sort();
+ if(!groups.length)
   throw Error('Booking requires an assigned staff member or resource');
- await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
-  [tenantId+':flow-overlap:'+objectApi+':'+group]);
+ // Lock every occupied staff/resource key, always in stable order to avoid deadlocks.
+ // Checking only the first key would allow double-booking a room with another staff member.
+ for(const group of groups)
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+   [tenantId+':flow-overlap:'+objectApi+':'+group]);
  const id=typeof record.Id==='string'?record.Id:null;
- const {rowCount}=await client.query(`
+ for(const group of groups){
+  const {rowCount}=await client.query(`
   SELECT 1 FROM md_records r
   JOIN md_record_values starts
    ON starts.tenant_id=r.tenant_id AND starts.record_id=r.id AND starts.field_api=$3
@@ -58,5 +64,6 @@ export async function enforceRecordOverlap(client:PoolClient,tenantId:string,obj
   LIMIT 1
  `,[tenantId,objectApi,startField,endField,groupFields,group,statusField,excludedStatuses,
   start,end,id]);
- if(rowCount)throw Error('This staff member or resource is already booked for the selected time');
+  if(rowCount)throw Error('This staff member or resource is already booked for the selected time');
+ }
 }
