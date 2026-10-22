@@ -61,13 +61,14 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
  catch{throw Error('Invalid tenant time zone');}
  if(g.schedule){
   const m=g.schedule;
+  const staffByOwner=m.staff==='OwnerId';
   const {rows}=await client.query<{configured:boolean;covered:boolean}>(`
    SELECT COUNT(*)>0 AS configured,
     COALESCE(BOOL_OR(weekday.value_text=$4 AND from_time.value_text<=$5
       AND to_time.value_text>=$6),false) AS covered
    FROM md_records r
-   JOIN md_record_values person ON person.tenant_id=r.tenant_id AND person.record_id=r.id
-    AND person.field_api=$7
+   ${staffByOwner?'':`JOIN md_record_values person ON person.tenant_id=r.tenant_id AND person.record_id=r.id
+    AND person.field_api=$7`}
    LEFT JOIN md_record_values enabled ON enabled.tenant_id=r.tenant_id
     AND enabled.record_id=r.id AND enabled.field_api=$8
    JOIN md_record_values weekday ON weekday.tenant_id=r.tenant_id AND weekday.record_id=r.id
@@ -77,15 +78,17 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
    JOIN md_record_values to_time ON to_time.tenant_id=r.tenant_id
     AND to_time.record_id=r.id AND to_time.field_api=$11
    WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
-    AND COALESCE(person.reference_record_id::text,person.value_text)=$3
+    AND ${staffByOwner?'r.owner_id::text':'COALESCE(person.reference_record_id::text,person.value_text)'}=$3
     AND COALESCE(enabled.value_boolean,true)=true`,
    [tenantId,m.object,staff,from.weekday,from.time,to.time,m.staff,m.active,m.weekday,m.start,m.end]);
   if(rows[0]?.configured&&!rows[0].covered)throw Error('Appointment is outside assigned staff availability');
  }
  if(g.exception){
   const m=g.exception;
-  const keys=[staff,...(typeof resource==='string'&&resource.trim()?[resource]:[])];
-  const fields=[m.staff,...(m.resource?[m.resource]:[])];
+  const staffByOwner=m.staff==='OwnerId';
+  const keys=[...(staffByOwner?[]:[staff]),
+   ...(typeof resource==='string'&&resource.trim()?[resource]:[])];
+  const fields=[...(staffByOwner?[]:[m.staff]),...(m.resource?[m.resource]:[])];
   const {rowCount}=await client.query(`
    SELECT 1 FROM md_records r
    JOIN md_record_values begins ON begins.tenant_id=r.tenant_id
@@ -97,11 +100,12 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
    WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
     AND begins.value_datetime<$8::timestamptz AND ends.value_datetime>$7::timestamptz
     AND COALESCE(enabled.value_boolean,true)=true
-    AND EXISTS(SELECT 1 FROM md_record_values target
+    AND (${staffByOwner?'r.owner_id::text=$10 OR ':''}EXISTS(
+      SELECT 1 FROM md_record_values target
       WHERE target.tenant_id=r.tenant_id AND target.record_id=r.id
         AND target.field_api=ANY($3::text[])
-        AND COALESCE(target.reference_record_id::text,target.value_text)=ANY($9::text[]))
-   LIMIT 1`,[tenantId,m.object,fields,m.start,m.end,m.active,start,end,keys]);
+        AND COALESCE(target.reference_record_id::text,target.value_text)=ANY($9::text[])))
+   LIMIT 1`,[tenantId,m.object,fields,m.start,m.end,m.active,start,end,keys,staff]);
   if(rowCount)throw Error('Assigned staff or resource is unavailable at the selected time');
  }
 }
