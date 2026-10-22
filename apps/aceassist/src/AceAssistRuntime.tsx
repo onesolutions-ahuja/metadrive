@@ -120,8 +120,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
   let alive=true;
   const relations=[...new Set([...fields
     .map(field=>field.relatedObject??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
-    ...(current.object==='Appointment'?['User','Product','Customer']:[])])
-    .filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
+    ...(current.object==='Appointment'?['User','Product','Customer']:[])].filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
   void Promise.all(relations.map(async target=>{
