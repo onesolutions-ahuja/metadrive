@@ -1,0 +1,17 @@
+.acetill-visual-editor{padding:14px;min-width:0}
+.acetill-visual-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.acetill-visual-toolbar p{margin:4px 0 0;font-size:13px}
+.acetill-visual-actions{display:flex;gap:8px;flex-wrap:wrap}
+.acetill-visual-layout{display:grid;grid-template-columns:minmax(0,1fr) 270px;align-items:start;gap:14px}
+.acetill-visual-stage{min-width:0;overflow:auto;border:1px solid var(--md-border,#d1d5db);border-radius:10px;background:#fff;cursor:crosshair}
+.acetill-visual-stage [data-acetill-element]{cursor:grab}
+.acetill-visual-stage [data-acetill-element]:active{cursor:grabbing}
+.acetill-visual-inspector{padding:14px;border:1px solid var(--md-border,#d1d5db);border-radius:8px;display:grid;gap:12px}
+.acetill-visual-inspector h2{font-size:16px;margin:0}
+.acetill-visual-inspector label{display:grid;gap:4px;font-size:13px;min-width:0}
+.acetill-visual-inspector input,.acetill-visual-inspector select{width:100%;min-width:0;box-sizing:border-box;padding:8px;border:1px solid var(--md-border,#d1d5db);border-radius:5px;background:transparent;color:inherit}
+.acetill-visual-inspector [aria-invalid=true]{border-color:#be3131}
+.acetill-visual-field-list{display:grid;gap:12px}
+.acetill-visual-help{font-size:12px;line-height:1.5;margin:0}
+.acetill-visual-notice{padding:8px;border:1px solid var(--md-border,#d1d5db);border-radius:6px}
+@media(max-width:900px){.acetill-visual-layout{grid-template-columns:1fr}.acetill-visual-inspector{grid-row:1}.acetill-visual-field-list{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}}
