@@ -5,6 +5,7 @@ import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
+import {DocumentPrint} from '../../web/src/core/components/DocumentPrint/DocumentPrint';
 import {asBusinessInstant,asBusinessLocal} from './businessDateTime';
 import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
@@ -22,7 +23,8 @@ const tabs:Tab[]=[
  {object:'Quotation',label:'Quotations'},
  {object:'QuotationLine',label:'Quotation lines'},
  {object:'Invoice',label:'Billing / Invoices'},
- {object:'InvoiceLine',label:'Invoice lines'}
+ {object:'InvoiceLine',label:'Invoice lines'},
+ {object:'Payment',label:'Payments'}
 ];
 const inputFields:Record<string,string[]>={
  Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','Location','AssignedTo','Description','Notes'],
@@ -71,6 +73,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [returnToAppointment,setReturnToAppointment]=useState(false);
  const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
+ const [cashInvoice,setCashInvoice]=useState<Row|null>(null);
+ const [printingDocument,setPrintingDocument]=useState<Row|null>(null);
+ const [printingObject,setPrintingObject]=useState<'Quotation'|'Invoice'>('Invoice');
+ const [cashAmount,setCashAmount]=useState('');
+ const [cashRequestId,setCashRequestId]=useState('');
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
  const [weekOf,setWeekOf]=useState(()=>dateKey(new Date()));
@@ -85,7 +92,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
  const dynamicFlow=(operation:'Create'|'Update',object:string)=>
-  'AceAssist'+operation+'V2'+object;
+  'AceAssist'+operation+(object==='Appointment'?'V3':'V2')+object;
  const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
  const visibleFields=(object:string)=>{
   const definition=objects.find(x=>x.apiName===object);
@@ -168,8 +175,46 @@ export default function AceAssistRuntime({entry,onLogout}:{
    const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(apiName)+'/execute',
     {method:'POST',body:JSON.stringify({recordId:record.Id})});
    if(response.interviewId)throw Error('The Flow requires additional input');
-   setNotice('Workflow completed: '+apiName);setReload(x=>x+1);
+   setNotice('Workflow completed: '+apiName);
+   if(apiName==='AceAssistInvoiceFromAppointment'||apiName==='AceAssistConvertQuoteToInvoice'){
+    setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setChosen(null);
+   }
+   setReload(x=>x+1);
   }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
+ // Staff shifts and time-off are read through the same authorised Get Records Flow API.
+ useEffect(()=>{
+  let alive=true;
+  const targets=['StaffAvailability','AvailabilityException']
+   .filter(object=>actions.has('AceAssistLoad'+object));
+  if(!targets.length)return;
+  void Promise.all(targets.map(async object=>({object,data:await fetchRows('Load',object)})))
+   .then(results=>{if(alive)setLookupRows(previous=>({
+    ...previous,...Object.fromEntries(results.map(item=>[item.object,item.data]))
+   }));})
+   .catch(cause=>{if(alive)setError(cause instanceof Error?cause.message:String(cause));});
+  return()=>{alive=false;};
+ },[actions,reload]);
+ const openCashPayment=(invoice:Row)=>{
+  const outstanding=Math.round((Number(invoice.Total??0)-Number(invoice.AmountPaid??0))*100)/100;
+  setCashInvoice(invoice);setCashAmount(outstanding>0?String(outstanding):'');
+  setCashRequestId(window.crypto.randomUUID());setError('');setNotice('');
+ };
+ const submitCashPayment=async(event:React.FormEvent)=>{
+  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashPayment'))return;
+  const amount=Number(cashAmount);
+  if(!Number.isFinite(amount)||amount<=0||Math.abs(amount*100-Math.round(amount*100))>0.00001){
+   setError('Enter a positive amount with at most two decimal places.');return;
+  }
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashPayment/execute',{
+    method:'POST',body:JSON.stringify({recordId:cashInvoice.Id,amount,requestId:cashRequestId})});
+   if(response.interviewId)throw Error('Cash settlement has not completed');
+   setCashInvoice(null);setNotice('Cash settlement recorded by authorised Flow.');
+   setReload(x=>x+1);
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
   finally{setBusy(false);}
  };
  const startEdit=(operation:Operation,row?:Row)=>{
@@ -189,6 +234,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
   const dynamic=editing!=='Delete'&&canDynamic(editing,editingObject);
+  if(editingObject==='Appointment'&&!dynamic&&editing!=='Delete'){
+   setError('Safe booking Flow V3 is unavailable. Ask your administrator to run the AceAssist app seeder.');
+   return;
+  }
   const mutationFlow=dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
    'AceAssist'+editing+editingObject;
  if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
@@ -319,10 +368,33 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
+        &&actions.has('AceAssistInvoiceFromAppointment')&&
+        <button type="button" disabled={busy}
+         onClick={()=>void runRecordAction('AceAssistInvoiceFromAppointment',chosen)}>Create invoice</button>}
+       {['Quotation','Invoice'].includes(current.object)
+        &&actions.has('AceAssistLoad'+current.object+'Line')&&
+        <button type="button" disabled={busy}
+         onClick={()=>{setPrintingDocument(chosen);
+          setPrintingObject(current.object as 'Quotation'|'Invoice');}}>
+         Print / Save PDF</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
+       {current.object==='Quotation'&&actions.has('AceAssistSendQuotationWhatsApp')&&
+        <button type="button" disabled={busy}
+         onClick={()=>void runRecordAction('AceAssistSendQuotationWhatsApp',chosen)}>Send quotation via WhatsApp</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistSendInvoiceWhatsApp')&&
+        <button type="button" disabled={busy}
+         onClick={()=>void runRecordAction('AceAssistSendInvoiceWhatsApp',chosen)}>Send invoice via WhatsApp</button>}
        {current.object==='Quotation'&&actions.has('AceAssistConvertQuoteToInvoice')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistConvertQuoteToInvoice',chosen)}>Convert to invoice</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
+        <button type="button" disabled={busy}
+         onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistRecordCashPayment')
+        &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
+        <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
+         Record cash payment</button>}
        {current.object==='Invoice'&&actions.has('AceAssistSendInvoice')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendInvoice',chosen)}>Send invoice</button>}
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
@@ -332,6 +404,30 @@ export default function AceAssistRuntime({entry,onLogout}:{
    </aside></div>
   </main>
 
+  {printingDocument&&<DocumentPrint objectLabel={printingObject}
+   document={printingDocument} lines={relatedRows}
+   onClose={()=>setPrintingDocument(null)}/>}
+  {cashInvoice&&<div className="assist-modal-backdrop" role="presentation">
+   <section className="assist-modal" role="dialog" aria-modal="true"
+    aria-label="Record cash settlement">
+    <header className="assist-modal-heading"><h2>Record cash payment</h2>
+     <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Close</button></header>
+    <form className="custom-crud-form" onSubmit={e=>void submitCashPayment(e)}>
+     <p>Invoice: {String(cashInvoice.InvoiceNumber??cashInvoice.Name??'')}</p>
+     <p>Outstanding: {Math.max(0,Number(cashInvoice.Total??0)-Number(cashInvoice.AmountPaid??0)).toFixed(2)}</p>
+     <label>Cash received
+      <input type="number" min="0.01" step="0.01" required
+       value={cashAmount} onChange={event=>setCashAmount(event.target.value)}/>
+     </label>
+     <p>Only record cash actually received. Card payments require a verified provider callback.</p>
+     {error&&<p role="alert">{error}</p>}
+     <footer className="assist-modal-footer">
+      <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Cancel</button>
+      <button type="submit" disabled={busy}>{busy?'Recording…':'Record payment'}</button>
+     </footer>
+    </form>
+   </section>
+  </div>}
   {editing&&<div className="assist-modal-backdrop" role="presentation"
    onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>
    <section className="assist-modal" role="dialog" aria-modal="true"
@@ -365,6 +461,16 @@ export default function AceAssistRuntime({entry,onLogout}:{
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
          <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
+          preview={field.apiName==='StartDateTime'?{
+           appointments:rows,shifts:lookupRows.StaffAvailability??[],
+           exceptions:lookupRows.AvailabilityException??[],
+           staffId:form.AssignedUser??form.AssignedTo??selfId,
+           resourceId:form.Resource??'',
+           durationMinutes:Number((lookupRows.Product??[]).find(product=>
+            idOf(product)===(form.ServiceProduct??'')
+            ||String(product.Name??'')===(form.Service??''))?.DurationMinutes??30),
+           timeZone:hours?.timezone??'UTC',excludeId:chosen?.Id?String(chosen.Id):undefined
+          }:undefined}
           startDate={form.StartDateTime?.slice(0,10)}
           minTime={field.apiName==='EndDateTime'?form.StartDateTime?.slice(11,16):undefined}
           onChange={v=>setForm(x=>{
@@ -376,7 +482,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
           })}/>:
         fieldKind(field)==='reference'?
          <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
-          options={lookupRows[targetObject(field)??'']??[]}
+          options={(lookupRows[targetObject(field)??'']??[]).filter(row=>
+           targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
           onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
          <RecordFieldInput field={field} value={form[field.apiName]??''}

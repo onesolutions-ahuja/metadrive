@@ -29,14 +29,20 @@ export async function enforceRecordOverlap(client:PoolClient,tenantId:string,obj
   ||Date.parse(start)>=Date.parse(end))
   throw Error('Booking overlap guard needs ordered timezone-qualified start/end');
  if(excludedStatuses.includes(record[statusField]))return;
- const group=groupFields.map(field=>record[field])
-  .find(value=>typeof value==='string'&&value.trim());
- if(typeof group!=='string'||!group.trim())
+ const groups=[...new Set(groupFields
+  .map(field=>record[field])
+  .filter((value):value is string=>typeof value==='string'&&!!value.trim())
+  .map(value=>value.trim()))].sort();
+ if(!groups.length)
   throw Error('Booking requires an assigned staff member or resource');
- await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
-  [tenantId+':flow-overlap:'+objectApi+':'+group]);
+ // Lock every occupied staff/resource key, always in stable order to avoid deadlocks.
+ // Checking only the first key would allow double-booking a room with another staff member.
+ for(const group of groups)
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+   [tenantId+':flow-overlap:'+objectApi+':'+group]);
  const id=typeof record.Id==='string'?record.Id:null;
- const {rowCount}=await client.query(`
+ for(const group of groups){
+  const {rowCount}=await client.query(`
   SELECT 1 FROM md_records r
   JOIN md_record_values starts
    ON starts.tenant_id=r.tenant_id AND starts.record_id=r.id AND starts.field_api=$3
@@ -58,5 +64,30 @@ export async function enforceRecordOverlap(client:PoolClient,tenantId:string,obj
   LIMIT 1
  `,[tenantId,objectApi,startField,endField,groupFields,group,statusField,excludedStatuses,
   start,end,id]);
- if(rowCount)throw Error('This staff member or resource is already booked for the selected time');
+  if(rowCount)throw Error('This staff member or resource is already booked for the selected time');
+ }
+}
+
+/** Idempotent provider-input identity. Tenant-scoped transaction lock plus the
+ * same shared Record persistence; enabled only by explicit Flow metadata.
+ */
+export async function enforceUniqueRecordInput(client:PoolClient,tenantId:string,
+ objectApi:string,raw:unknown,record:Record<string,unknown>):Promise<void>{
+ if(raw===null||raw===undefined)return;
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid unique input guard');
+ const key=(raw as Record<string,unknown>).field;
+ if(typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
+  throw Error('Invalid unique input Field');
+ const value=record[key];
+ if(typeof value!=='string'||value.length<1||value.length>255)
+  throw Error('External input idempotency reference required');
+ await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+  [tenantId+':flow-unique:'+objectApi+':'+key+':'+value]);
+ const {rowCount}=await client.query(`
+  SELECT 1 FROM md_records r
+  JOIN md_record_values v ON v.tenant_id=r.tenant_id
+   AND v.record_id=r.id AND v.object_api=r.object_api AND v.field_api=$3
+  WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
+   AND v.value_text=$4 LIMIT 1`,[tenantId,objectApi,key,value]);
+ if(rowCount)throw Error('External request was already processed');
 }

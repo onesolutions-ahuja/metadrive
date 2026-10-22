@@ -25,3 +25,17 @@ test('conflicts reject, cancelled records skip, and no assignee fails closed',as
  await assert.rejects(enforceRecordOverlap(client,'tenant','Appointment',config,{
   ...record,AssignedTo:''}),/requires an assigned/);
 });
+
+test('simultaneous bookings lock and check every occupied staff and room',async()=>{
+ const requests:Array<{sql:string;values:unknown[]}>= [];
+ const client={query:async(sql:string,values:unknown[])=>{
+  requests.push({sql,values});return {rows:[],rowCount:0};
+ }} as never;
+ await enforceRecordOverlap(client,'tenant','Appointment',
+  {...config,groupFields:['AssignedTo','Resource']},{...record,Resource:'room-2'});
+ const locks=requests.filter(q=>q.sql.includes('pg_advisory_xact_lock'));
+ const lookups=requests.filter(q=>q.sql.includes('SELECT 1 FROM md_records'));
+ assert.equal(locks.length,2);
+ assert.equal(lookups.length,2);
+ assert.deepEqual(lookups.map(q=>q.values[5]).sort(),['room-2','staff-1']);
+});

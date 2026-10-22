@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {useMemo,useState} from 'react';
 import {scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
+import {previewStartSlots,type BookingSlotPreview} from './bookingSlotPreview';
 type Row=Record<string,unknown>;
 const display=(r:Row)=>String(r.Name??r.DisplayName??r.Email??r.email??r.Title??r.Id??'');
 export function SearchRecord({label,value,options,onChange,addNew,emptyMessage}:{
@@ -29,9 +30,9 @@ export function SearchRecord({label,value,options,onChange,addNew,emptyMessage}:
   </div>}
  </div>;
 }
-export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime}:{
+export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime,preview}:{
  label:string;value:string;onChange:(v:string)=>void;calendar:BusinessCalendar|null;
- startDate?:string;minTime?:string
+ startDate?:string;minTime?:string;preview?:BookingSlotPreview
 }){
  const date=value.slice(0,10),time=value.slice(11,16);
  const hours=calendar&&date?scheduleForDay(calendar,date):null;
@@ -41,8 +42,11 @@ export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime}
   const out:string[]=[];
   for(let v=minutes(hours.open);v<minutes(hours.close);v+=30)
    out.push(String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0'));
-  return out.filter(x=>!minTime||date!==startDate||x>minTime);
- },[hours?.open,hours?.close,date,startDate,minTime]);
+  const safeTimes=preview&&date
+   ?previewStartSlots({date,open:hours.open,close:hours.close,preview}):null;
+  return out.filter(x=>(!minTime||date!==startDate||x>minTime)
+   &&(!safeTimes||safeTimes.includes(x)));
+ },[hours?.open,hours?.close,date,startDate,minTime,preview]);
  return <div className="assist-date-slot"><label>{label}
   <input type="date" value={date} onChange={e=>onChange(e.target.value?e.target.value+'T':'')}
    required min={label.startsWith('End')?startDate:undefined}/></label>
@@ -52,5 +56,6 @@ export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime}
    {slots.map(x=><option key={x} value={x}>{x}</option>)}
   </select></label>
   {date&&!hours&&<small>No bookable hours on this date</small>}
+  {date&&hours&&preview&&<small>Preliminary slot choices; availability is verified again when saving.</small>}
  </div>;
 }
