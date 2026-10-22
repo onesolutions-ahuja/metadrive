@@ -1,6 +1,7 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js';
+import {seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
  'Appointment','Customer','Quotation','QuotationLine','Invoice','InvoiceLine'
@@ -51,7 +52,9 @@ const bookingFields=[
  {object:'Product',api:'OnlineBookable',type:'boolean'},
  {object:'Product',api:'DurationMinutes',type:'number'},
  {object:'Product',api:'BookingBufferMinutes',type:'number'},
- {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'}
+ {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'},
+ {object:'Appointment',api:'AssignedUser',type:'reference',related:'User'},
+ {object:'Appointment',api:'Resource',type:'reference',related:'BookableResource'}
 ] as const;
 
 function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGraph {
@@ -90,6 +93,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
  let created=0;
  for(const {tenant_id} of tenants)await db.transaction(async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenant_id+':aceassist:crud']);
+  await seedAceAssistSchedulingObjects(client,tenant_id);
   // Install optional shared booking Fields only for an entitled AceAssist tenant.
   for(const field of bookingFields){
    const object=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
