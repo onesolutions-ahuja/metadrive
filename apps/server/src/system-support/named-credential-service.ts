@@ -11,6 +11,7 @@ import {decodeMetadataValues,type MetadataValueRow} from '../system-files/compon
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
 import {prepareFlowHttpRequest,bindPublicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
+import {writeIntegrationApiLog} from './integration-api-log.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -904,9 +905,9 @@ export class NamedCredentialService {
   if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
     throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
   const {rows}=await this.db.query<{
-   protocol:string;base_url:string;auth_type:string;header_name:string;
+   name:string;protocol:string;base_url:string;auth_type:string;header_name:string;
    secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
-  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+  }>('SELECT name,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
     [tenantId,config.namedCredentialId]);
   const item=rows[0];
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
@@ -1050,26 +1051,50 @@ export class NamedCredentialService {
   if(body)header['Content-Type']='application/json';
   const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
   const address=resolved[0];
-  const result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
-   const call=secureRequest(destination,{method,headers:header,timeout,
-    agent:false,lookup:(_host,options,cb)=>options.all
-     ?cb(null,[{address:address.address,family:address.family}])
-     :cb(null,address.address,address.family)},res=>{
-      const status=res.statusCode??0;
-      const chunks:Buffer[]=[];let length=0;
-      res.on('data',(chunk:Buffer)=>{
-       length+=chunk.length;
-       if(length>65536){call.destroy(new Error('HTTP response exceeded limit'));return;}
-       chunks.push(chunk);
-      });
-      res.on('end',()=>resolve({status,body:Buffer.concat(chunks).toString('utf8')}));
+  const requestStartedAt=Date.now();
+  const requestBytes=body?Buffer.byteLength(body):0;
+  const auditEndpoint=destination.origin+destination.pathname;
+  let result:{status:number;body:string};
+  try{
+   result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
+    const call=secureRequest(destination,{method,headers:header,timeout,
+     agent:false,lookup:(_host,options,cb)=>options.all
+      ?cb(null,[{address:address.address,family:address.family}])
+      :cb(null,address.address,address.family)},res=>{
+       const status=res.statusCode??0;
+       const chunks:Buffer[]=[];let length=0;
+       res.on('data',(chunk:Buffer)=>{
+        length+=chunk.length;
+        if(length>65536){call.destroy(new Error('HTTP response exceeded limit'));return;}
+        chunks.push(chunk);
+       });
+       res.on('end',()=>resolve({status,body:Buffer.concat(chunks).toString('utf8')}));
+    });
+    call.on('timeout',()=>call.destroy(new Error('HTTP Callout timeout')));
+    call.on('error',reject);
+    if(body)call.write(body);
+    call.end();
    });
-   call.on('timeout',()=>call.destroy(new Error('HTTP Callout timeout')));
-   call.on('error',reject);
-   if(body)call.write(body);
-   call.end();
+  }catch(error){
+   await writeIntegrationApiLog(this.db,{
+    tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
+    credentialId:String(config.namedCredentialId),actorUserId:userId,
+    endpoint:auditEndpoint,method,outcome:'network_error',
+    durationMs:Date.now()-requestStartedAt,requestBytes,
+    errorCode:error instanceof Error?error.name:'NETWORK_ERROR'
+   });
+   throw error;
+  }
+  const successful=result.status>=200&&result.status<300;
+  await writeIntegrationApiLog(this.db,{
+   tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
+   credentialId:String(config.namedCredentialId),actorUserId:userId,
+   endpoint:auditEndpoint,method,statusCode:result.status,
+   outcome:successful?'success':'http_error',durationMs:Date.now()-requestStartedAt,
+   requestBytes,responseBytes:Buffer.byteLength(result.body),
+   errorCode:successful?null:'HTTP_STATUS_'+result.status
   });
-  if(result.status<200||result.status>=300)throw new Error('HTTP Callout failed with status '+result.status);
+  if(!successful)throw new Error('HTTP Callout failed with status '+result.status);
   return {status:result.status,body:result.body.slice(0,4096)};
  }
 
