@@ -116,8 +116,8 @@ export class NamedCredentialService {
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
    header_name:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
-   encryption_key_id:string;enabled:boolean;updated_at:Date
-    webhook_id:string|null;webhook_enabled:boolean|null
+   encryption_key_id:string;enabled:boolean;updated_at:Date;
+   webhook_id:string|null;webhook_enabled:boolean|null;
   }>(`SELECT c.id,c.name,c.label,c.protocol,c.base_url,c.auth_type,c.header_name,
      c.secret_ciphertext,c.configuration_ciphertext,c.encryption_key_id,
      c.enabled,c.updated_at,w.id AS webhook_id,w.enabled AS webhook_enabled
