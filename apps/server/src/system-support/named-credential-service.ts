@@ -11,7 +11,7 @@ import {decodeMetadataValues,type MetadataValueRow} from '../system-files/compon
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
 import {prepareFlowHttpRequest,bindPublicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
-import {writeIntegrationApiLog,type IntegrationActivityWriter,type IntegrationCommunicationDetails} from './integration-api-log.js';
+import {writeIntegrationActivity,type IntegrationActivityWriter,type IntegrationCommunicationDetails} from './integration-api-log.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -1111,7 +1111,7 @@ export class NamedCredentialService {
     call.end();
    });
   }catch(error){
-   await writeIntegrationApiLog(this.db,{
+   await writeIntegrationActivity(this.db,{
     tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
     credentialId:String(config.namedCredentialId),actorUserId:userId,
     endpoint:auditEndpoint,method,outcome:'network_error',
@@ -1122,7 +1122,7 @@ export class NamedCredentialService {
    throw error;
   }
   const successful=result.status>=200&&result.status<300;
-  await writeIntegrationApiLog(this.db,{
+  await writeIntegrationActivity(this.db,{
    tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
    credentialId:String(config.namedCredentialId),actorUserId:userId,
    endpoint:auditEndpoint,method,statusCode:result.status,
