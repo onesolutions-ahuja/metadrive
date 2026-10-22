@@ -1,5 +1,5 @@
 import {PlatformPageSlot} from '../../platform/Workspace/PlatformPageSlot';
-import {apiRequest} from '../../authentication/Client/authClient';
+import {apiBase,apiRequest} from '../../authentication/Client/authClient';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalAccessibility } from '../../accessibility/Modal/useModalAccessibility';
 import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
@@ -87,7 +87,7 @@ export default function NamedCredentials({
   // A saved endpoint ID is enough to reconstruct the public callback from the
   // current HTTPS application origin when older API deployments omit its URL.
   const callbackFor=(credential:NamedCredentialMetadata)=>credential.webhookId
-    ? `${window.location.origin.replace(/^http:/,'https:')}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}`
+    ? `${apiBase.replace(/\/$/,'').replace(/^http:/,'https:')}/inbound-webhooks/${encodeURIComponent(credential.webhookId)}`
     : (credential.webhookCallbackUrl?.replace(/^http:/,'https:') || '');
   const activeWebhookUrl=savedWebhook?.callbackUrl || (activeWebhookCredential ? callbackFor(activeWebhookCredential) : '');
   const activeWebhookExists=Boolean(activeWebhookCredential?.webhookId);
