@@ -23,6 +23,7 @@ test('central integration writer records every attempt as tenant-scoped Communic
  assert.equal(actor,'tenant-system-user');
  assert.equal(object,'Communication');
  assert.equal(values?.Direction,'Outbound');
+ assert.equal(values?.OwnerId,'user-a');
  assert.equal(values?.Channel,'Other');
  assert.equal(values?.Status,'Sent');
  assert.equal(values?.Recipient,'https://provider.example/messages');
