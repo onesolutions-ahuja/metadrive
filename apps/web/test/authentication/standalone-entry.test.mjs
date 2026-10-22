@@ -28,8 +28,9 @@ test('product login keeps shared MetaDrive session, MFA and password recovery',(
   assert.match(app,/return <SetupApp entryTiming=/);
 });
 
-test('standalone app UI uses direct OneEngine records and flows without app installation or Page Builder',()=>{
-  const runtime=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
+test('Ace Assist owns its own UI and uses authorised OneEngine Records and Flows',()=>{
+  const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+  const shell=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
   assert.match(runtime,/\/metadata\/objects/);
   assert.match(runtime,/\/records\//);
   assert.match(runtime,/\/flows\//);
@@ -39,17 +40,25 @@ test('standalone app UI uses direct OneEngine records and flows without app inst
   assert.doesNotMatch(runtime,/method:'POST'.*\/records\//);
   assert.match(runtime,/\/auth\/logout/);
   assert.doesNotMatch(runtime,/\/metadata\/apps|LazyPublishedRuntime|PageBuilder|component-library/);
+  assert.match(shell,/LazyAceAssist/);
 });
 
-test('custom POS and appointment UIs never fall back to published home pages',()=>{
-  const runtime=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
-  assert.match(runtime,/custom-pos/);
-  assert.match(runtime,/custom-product-grid/);
-  assert.match(runtime,/custom-basket/);
-  assert.match(runtime,/custom-assist/);
-  assert.match(runtime,/custom-week/);
-  assert.match(runtime,/runAction\(action\.apiName\)/);
-  assert.doesNotMatch(runtime,/Home page is not configured|LazyPublishedRuntime|LightningAppRuntime/);
+test('standalone web router lazy-loads app-owned UIs, not business-specific JSX',()=>{
+  const shell=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
+  const assist=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+  const chatter=readFileSync(new URL('../../../acechatter/src/AceChatterRuntime.tsx',import.meta.url),'utf8');
+  const till=readFileSync(new URL('../../../acetill/src/AcetillTerminal.tsx',import.meta.url),'utf8');
+  assert.match(shell,/LazyAceAssist/);
+  assert.match(shell,/LazyAceChatter/);
+  assert.match(shell,/LazyAcetill/);
+  assert.doesNotMatch(shell,/custom-pos|custom-assist|custom-week|custom-basket|\/metadata\/objects/);
+  assert.match(assist,/custom-assist/);
+  assert.match(assist,/custom-week/);
+  assert.match(assist,/runAction\(action\.apiName\)/);
+  assert.match(chatter,/ace-chat-thread/);
+  assert.match(till,/AcetillGetProducts/);
+  for(const source of [shell,assist,chatter,till])
+    assert.doesNotMatch(source,/Home page is not configured|LazyPublishedRuntime|LightningAppRuntime/);
 });
 
 test('old app links and metadata navigation enter the app-only frontend',()=>{

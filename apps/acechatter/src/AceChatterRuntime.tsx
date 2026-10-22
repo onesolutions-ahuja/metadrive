@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {useEffect,useState} from 'react';
-import {apiRequest} from '../../authentication/Client/authClient';
+import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import './aceChatter.css';
 
 type Row=Record<string,unknown>;
