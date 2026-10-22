@@ -916,7 +916,19 @@ export class NamedCredentialService {
    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
    const secret=Buffer.concat([decipher.update(encrypted.subarray(12,encrypted.length-16)),decipher.final()]).toString('utf8');
    if(item.auth_type==='Bearer')header.Authorization='Bearer '+secret;
-   else if(item.auth_type==='Basic')header.Authorization='Basic '+Buffer.from(secret).toString('base64');
+   else if(item.auth_type==='Basic'){
+    // Existing credentials may store an entire user:password string.
+    // The Named Credentials editor also supports a separate encrypted username.
+    let basicValue=secret;
+    if(item.configuration_ciphertext){
+     let settings:Record<string,unknown>;
+     try{settings=JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as Record<string,unknown>;}
+     catch{throw new Error('Invalid Basic credential configuration');}
+     if(typeof settings.username==='string'&&settings.username&&!secret.startsWith(settings.username+':'))
+      basicValue=settings.username+':'+secret;
+    }
+    header.Authorization='Basic '+Buffer.from(basicValue).toString('base64');
+   }
    else if(item.auth_type==='API Key'){
     if(!/^(?:X-[a-z0-9-]+|api-key)$/i.test(item.header_name))throw new Error('Credential header must be an X- header or Brevo api-key');
     header[item.header_name]=secret;
