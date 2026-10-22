@@ -364,6 +364,7 @@ export function createSystemServer(db:SqlPersistence) {
       if(challenge){res.json(challenge);return;}
       const session=await auth.issuePasswordSession(tenantId,userId,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+      if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
       res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId),...(req.query.landing==='1'?await landingBootstrap(tenantId,userId):{})});
     } catch(error) {
       // Distinguish rejected credentials from SQL/session failures. A successful
@@ -379,6 +380,7 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const session=await auth.refresh(token,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
+      if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
       res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id),...(req.query.landing==='1'?await landingBootstrap(session.tenant_id,session.user_id):{})});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
@@ -396,6 +398,7 @@ export function createSystemServer(db:SqlPersistence) {
     const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code,{ip:req.ip});
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
     const actor=await auth.authenticate(session.accessToken);
+    if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
     res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id),...(req.query.landing==='1'?await landingBootstrap(actor.tenant_id,actor.user_id):{})});
   }));
   // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
