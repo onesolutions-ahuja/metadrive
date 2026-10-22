@@ -308,9 +308,9 @@ export function renderSetupShell(ctx: any) {
             onNotify={notify}
           />)}
           {route.kind === 'setup' && workspace === 'named-credentials' && (
-            namedCredentialsError ? <section className="setup-card" role="alert">Unable to load credentials: {namedCredentialsError}</section> :
             !namedCredentialsLoaded ? <section className="setup-card" role="status">Loading live named credentials…</section> :
-            namedCredentialsError ? <section className="setup-card" role="alert">Unable to load Named Credentials: {namedCredentialsError}. Check OneEngine NamedCredential read access and retry.</section> :
+            namedCredentialsError && namedCredentials.length===0
+              ? <section className="setup-card" role="alert">Named Credentials could not be verified: {namedCredentialsError}</section> :
             <PlatformWorkspaceSurface workspace="named-credentials" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
@@ -322,7 +322,7 @@ export function renderSetupShell(ctx: any) {
             canTest={canManageNamedCredentials}
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
-          />{namedCredentialsReadinessError && <p role="alert" className="setup-card">{namedCredentialsReadinessError}</p>}</PlatformPageSlot></PlatformWorkspaceSurface>)}
+          />{namedCredentialsError && <p role="alert" className="setup-card">{namedCredentialsError}</p>}{namedCredentialsReadinessError && <p role="alert" className="setup-card">{namedCredentialsReadinessError}</p>}</PlatformPageSlot></PlatformWorkspaceSurface>)}
           {route.kind === 'setup' && workspace === 'app-exchange' && (
             connectorRightsError ? <section className="setup-card" role="alert">Unable to verify AppExchange access: {connectorRightsError}</section> :
             !namedCredentialsLoaded || !connectorRightsLoaded || !advancedMetadataLoaded ? <section className="setup-card" role="status">Loading live AppExchange configuration…</section> :

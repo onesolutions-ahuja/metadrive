@@ -338,25 +338,45 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     void apiRequest<{ view: boolean; edit: boolean; secrets: boolean; test: boolean; install: boolean; licence: boolean }>('/connector-apps/capabilities')
       .then((rights) => { if (active) {setConnectorRights(rights);setConnectorRightsLoaded(true);} })
       .catch((error:unknown) => { if (active) {setConnectorRightsError(error instanceof Error?error.message:String(error));setConnectorRightsLoaded(true);} });
-    void apiRequest<{ credentials: NamedCredentialMetadata[];canManage:boolean;encryptionReady:boolean }>('/named-credentials',{
-      cache:'no-store',signal:credentialsRequest.signal
-    })
-      .then(({ credentials,canManage,encryptionReady }) => {
+    type CredentialSnapshot={credentials:NamedCredentialMetadata[];canManage:boolean;encryptionReady:boolean};
+    const loadCredentials=async()=>{
+      try{
+        const getSnapshot=()=>apiRequest<CredentialSnapshot>('/named-credentials',{
+          cache:'no-store',signal:credentialsRequest.signal
+        });
+        let snapshot=await getSnapshot();
         if(!active)return;
-        if(!Array.isArray(credentials)||typeof canManage!=='boolean'||typeof encryptionReady!=='boolean')
+        if(!Array.isArray(snapshot.credentials)||typeof snapshot.canManage!=='boolean'
+            ||typeof snapshot.encryptionReady!=='boolean')
           throw new Error('Invalid Named Credentials API snapshot');
-        setNamedCredentials(credentials);
-        setCanManageNamedCredentials(canManage);
-        setNamedCredentialsEncryptionReady(encryptionReady);
-        setNamedCredentialsError('');
+        // A transient empty result must never silently replace valid credentials.
+        // Recheck immediately rather than falsely claiming the tenant has none.
+        if(snapshot.credentials.length===0){
+          const confirmation=await getSnapshot();
+          if(!active)return;
+          if(!Array.isArray(confirmation.credentials)||typeof confirmation.canManage!=='boolean'
+              ||typeof confirmation.encryptionReady!=='boolean')
+            throw new Error('Invalid Named Credentials API confirmation');
+          snapshot=confirmation;
+        }
+        setNamedCredentials(previous=>{
+          if(snapshot.credentials.length===0&&previous.length>0)return previous;
+          return snapshot.credentials;
+        });
+        setCanManageNamedCredentials(snapshot.canManage);
+        setNamedCredentialsEncryptionReady(snapshot.encryptionReady);
+        if(snapshot.credentials.length===0){
+          setNamedCredentialsError('The credential API returned an empty list twice. Existing credentials were not deleted. Please check tenant/database routing.');
+        }else setNamedCredentialsError('');
         setNamedCredentialsReadinessError('');
         setNamedCredentialsLoaded(true);
-      })
-      .catch((error:unknown) => {
-        if(!active || credentialsRequest.signal.aborted)return;
+      }catch(error){
+        if(!active||credentialsRequest.signal.aborted)return;
         setNamedCredentialsError(error instanceof Error?error.message:String(error));
         setNamedCredentialsLoaded(true);
-      });
+      }
+    };
+    void loadCredentials();
     return () => { active = false; credentialsRequest.abort(); };
   }, [route.kind, workspace]);
 
