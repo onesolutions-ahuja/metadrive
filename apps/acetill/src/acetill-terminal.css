@@ -140,3 +140,12 @@
 .acetill-lock-panel form button{padding:15px;border:0;border-radius:12px;background:#fff;color:#173869;font-weight:800;cursor:pointer}
 .acetill-lock-panel button:disabled{opacity:.55;cursor:not-allowed}
 .acetill-lock-panel .acetill-lock-logout{margin-top:25px;border:1px solid #a7b8d3;background:transparent;color:white;border-radius:10px;padding:12px 24px;cursor:pointer}
+
+.acetill-pin-setup-backdrop{position:fixed;inset:0;z-index:9000;background:#0a142ba8;display:grid;place-items:center;padding:20px}
+.acetill-pin-setup{display:grid;gap:14px;background:#fff;color:#192538;border-radius:18px;padding:28px;width:min(100%,410px);box-sizing:border-box}
+.acetill-pin-setup h2{margin:0}
+.acetill-pin-setup label{display:grid;gap:7px;font-weight:700}
+.acetill-pin-setup input{border:1px solid #b8c7d9;border-radius:9px;padding:12px;font-size:17px}
+.acetill-pin-setup div{display:flex;gap:10px;justify-content:flex-end}
+.acetill-pin-setup button{padding:12px;border:1px solid #b8c7d9;border-radius:9px;cursor:pointer}
+.acetill-pin-setup button[type=submit]{background:#1769d2;border-color:#1769d2;color:white}
