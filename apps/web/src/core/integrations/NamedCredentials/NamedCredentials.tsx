@@ -78,11 +78,16 @@ export default function NamedCredentials({
   const [savedWebhook,setSavedWebhook]=useState<{callbackUrl:string;verifyToken?:string}|null>(null);
   const [copiedWebhookId,setCopiedWebhookId]=useState<string|null>(null);
   const activeWebhookCredential=draft?.id ? credentials.find(item=>item.id===draft.id) : undefined;
-  const activeWebhookUrl=savedWebhook?.callbackUrl || activeWebhookCredential?.webhookCallbackUrl || '';
+  // A saved endpoint ID is enough to reconstruct the public callback from the
+  // current HTTPS application origin when older API deployments omit its URL.
+  const callbackFor=(credential:NamedCredentialMetadata)=>credential.webhookCallbackUrl ||
+    (credential.webhookId ? `${window.location.origin}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}` : '');
+  const activeWebhookUrl=savedWebhook?.callbackUrl || (activeWebhookCredential ? callbackFor(activeWebhookCredential) : '');
   const activeWebhookExists=Boolean(activeWebhookCredential?.webhookId);
   const copyWebhookUrl=async(credential:NamedCredentialMetadata)=>{
-    if(!credential.webhookCallbackUrl)return;
-    try{await navigator.clipboard.writeText(credential.webhookCallbackUrl);setCopiedWebhookId(credential.id);}
+    const url=callbackFor(credential);
+    if(!url)return;
+    try{await navigator.clipboard.writeText(url);setCopiedWebhookId(credential.id);}
     catch{setError('Unable to copy automatically. Open webhook details and select the URL to copy.');}
   };
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -252,7 +257,7 @@ export default function NamedCredentials({
           <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
           <td>{credential.webhookId ? <div style={{display:'grid',gap:6}}>
             <span>{credential.webhookEnabled ? 'Enabled' : 'Disabled'}</span>
-            {credential.webhookCallbackUrl ? <>
+            {callbackFor(credential) ? <>
               <button type="button" className="btn btn-small" onClick={()=>void copyWebhookUrl(credential)}>{copiedWebhookId===credential.id?'Copied URL':'Copy callback URL'}</button>
               <button type="button" className="btn btn-link" onClick={()=>editCredential(credential,true)}>View webhook details</button>
             </> : <span role="alert">Callback URL unavailable</span>}
@@ -282,7 +287,7 @@ export default function NamedCredentials({
     </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
+      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" style={{width:'min(1040px, calc(100vw - 32px))',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 32px)',overflowY:'auto'}} role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
         <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
@@ -350,12 +355,13 @@ export default function NamedCredentials({
             Webhook exists, but the callback URL is missing from the server response. Please check the Named Credentials API deployment.
           </div>}
           {draft.webhookRequired && canManageSecrets && <label className="form-label">
-            Webhook signing secret
+            Webhook signing secret (Meta App Secret)
             <input className="form-control" type="password" autoComplete="new-password"
               minLength={16} maxLength={512} value={draft.webhookSecret??''}
               placeholder={credentials.find(item=>item.id===draft.id)?.webhookId
                 ?'Stored securely · leave blank to retain':'Enter provider signing secret'}
               onChange={event=>updateDraft({webhookSecret:event.target.value})}/>
+            <small>Leave blank to keep the stored signing secret. Enter a new Meta App Secret only to rotate it; this also generates a new one-time verify token.</small>
           </label>}
         </div>}
         {draft.id && !embedded && <div className="named-credential-activation"><strong>Connection status</strong><label className="credential-switch"><input type="checkbox" role="switch" checked={credentials.find((item) => item.id === draft.id)?.enabled !== false} disabled={viewing || !canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => { const credential = credentials.find((item) => item.id === draft.id); if (credential) void toggleEnabled(credential); }} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId ? 'Updating…' : credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Disabled' : 'Enabled'}</span></label></div>}
@@ -363,7 +369,8 @@ export default function NamedCredentials({
         {error && <div className="records-message" role="alert">{error}</div>}
         </fieldset>
         {draft.webhookRequired && activeWebhookUrl && <div className="info-callout" style={{marginTop:14}}>
-            <strong>Webhook callback URL — register this address with your provider</strong>
+            <h3>Webhook callback URL</h3>
+            <p>Copy this address into the provider webhook configuration. This is separate from the editable public_webhookCallbackUrl configuration variable.</p>
             <input className="form-control" readOnly
               value={activeWebhookUrl}
               onFocus={event=>event.currentTarget.select()}/>
@@ -376,7 +383,7 @@ export default function NamedCredentials({
             <button type="button" className="btn btn-small" onClick={()=>{
               void navigator.clipboard.writeText(activeWebhookUrl).catch(()=>setError('Select the callback URL above to copy it.'));
             }}>Copy callback URL</button>
-            <small>Register the callback and verification token with your provider.
+            <small>The verification token is different from the signing secret. Register the callback and verification token with your provider.
               The signing secret is never displayed after saving.</small>
           </div>}
         <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())
