@@ -38,6 +38,13 @@ export async function seedAcetillLockFlows(db:SqlPersistence):Promise<number>{
  JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=i.tenant_id
  WHERE e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())`);
  let count=0;
- for(const row of rows)if(await db.transaction(client=>seedAcetillLockFlowForTenant(client,row.tenant_id)))count++;
+ for(const row of rows)if(await db.transaction(async client=>{
+  // Metadata signals PIN setup availability only; the secret is held exclusively in md_users.till_pin_hash.
+  await client.query(`INSERT INTO md_field_definitions
+    (tenant_id,object_api,api_name,label,data_type,required)
+    VALUES($1,'User','UserPin','Till PIN configured','boolean',false)
+    ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING`,[row.tenant_id]);
+  return seedAcetillLockFlowForTenant(client,row.tenant_id);
+ }))count++;
  return count;
 }
