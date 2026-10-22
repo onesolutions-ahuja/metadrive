@@ -279,7 +279,7 @@ function ItemGrid({ p, rows }) {
         </div>
       )}
       {!visibleRows.length && categoryFieldExists && (
-        <div className="one-empty">{p.emptyText || "No matching items"}</div>
+        <div className="one-empty" role="status">{p.emptyText || "No matching items"}</div>
       )}
       {!visibleRows.length && !categorySelected && (
         <div className="one-empty">{p.emptyText || "No matching items"}</div>
