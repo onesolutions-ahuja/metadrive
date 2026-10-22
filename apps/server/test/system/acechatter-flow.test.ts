@@ -164,7 +164,7 @@ test('AceChatter outbound accepts provider message ID before saving, and refuses
  }]);
 });
 
-test('AceChatter inbound signed payload parsing produces an inbound ChatMessage mapping',()=>{
+test('AceChatter inbound signed payload parsing produces an inbound ChatMessage mapping',async()=>{
  const payload={entry:[{changes:[{value:{
   messages:[{id:'wamid.inbound',from:'447700900123',text:{body:'Reply'}}],
   contacts:[{profile:{name:'Test Customer'}}]
@@ -181,4 +181,27 @@ test('AceChatter inbound signed payload parsing produces an inbound ChatMessage 
   direction:'Inbound',status:'Received'
  },{id:'wamid.inbound',phone:'447700900123',body:'Reply',
    direction:'Inbound',status:'Received'});
+ vars.conversation={Id:'00000000-0000-4000-8000-000000000007'};
+ const written:Array<Record<string,unknown>>=[];
+ await executeCreateRecordsNode({
+  tenantId:'tenant',userId:'actor',client:{} as never,vars,
+  node:{id:10,type:'Create Records',config:{object:'ChatMessage',fieldValues:[
+   {field:'ConversationId',value:'@conversation.Id'},
+   {field:'ExternalMessageId',value:'@providerMessageId'},
+   {field:'Body',value:'@messageBody'},{field:'Direction',value:'Inbound'},
+   {field:'Status',value:'Received'}]}},
+  evaluate:(value:unknown)=>{
+   if(value==='@conversation.Id')return (vars.conversation as {Id:string}).Id;
+   if(typeof value==='string'&&value.startsWith('@'))return vars[value.slice(1)];
+   return value;
+  },
+  set:()=>undefined,
+  records:{createInTransaction:async(_client:unknown,_tenant:string,
+   _actor:string,_object:string,fields:Record<string,unknown>)=>{
+   written.push(fields);return 'inbound-record-id';
+  }},
+  scalar:(value:unknown)=>value===null||['string','number','boolean'].includes(typeof value)
+ } as never);
+ assert.deepEqual(written,[{ConversationId:'00000000-0000-4000-8000-000000000007',
+  ExternalMessageId:'wamid.inbound',Body:'Reply',Direction:'Inbound',Status:'Received'}]);
 });
