@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {enforceFlowBusinessCalendar} from '../../src/system-files/flow-business-calendar-guard.js';
+import {enforceFlowBusinessCalendar} from '../../src/flow-engine/FlowBusinessCalendarGuard.js';
 
 const settings={timezone:'Europe/London',weeklyHours:{
  monday:{closed:false,open:'09:00',close:'17:00'},
