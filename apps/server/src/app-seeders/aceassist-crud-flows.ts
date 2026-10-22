@@ -175,8 +175,8 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
    const rights=[
     ...(['read','create','edit','delete'] as const).map(action=>[objectApi,action]),
     ...fields.flatMap(field=>(['read','create','edit'] as const).map(action=>[objectApi+'.'+field,action])),
-    ...(['Load','Create','Update','Delete'] as const).map(operation=>
-      ...(objectApi==='Appointment'&&['Create','Update'].includes(operation)?[]:
+    ...(['Load','Create','Update','Delete'] as const).flatMap(operation=>
+      objectApi==='Appointment'&&['Create','Update'].includes(operation)?[]:
        [['Flow:AceAssist'+operation+objectApi,'execute']]),
     ...(['Create','Update'] as const).map(operation=>
       ['Flow:AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi,'execute'])
