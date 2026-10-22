@@ -123,6 +123,11 @@ test('authorised page responses prefetch ordinary component records through Reco
   const runtime = readFileSync(new URL('../src/core/pages/PageRuntime/pageRuntimeViews.tsx', import.meta.url), 'utf8');
   assert.match(server, /const pageInitialRecords=async\(tenantId:string,userId:string,page:/);
   assert.match(server, /records\.list\(tenantId,userId,api,50,0\)/);
+  const appPageRoute = server.slice(server.indexOf("app.get('/api/apps/:appId/pages/:pageApiName'"), server.indexOf("app.get('/api/metadata/objects'"));
+  assert.ok(appPageRoute.indexOf("await rbac.require") < appPageRoute.indexOf("pages.resolveAppPage"));
+  assert.ok(appPageRoute.indexOf("pages.resolveAppPage") < appPageRoute.indexOf("pageInitialRecords"));
+  const homeRoute = server.slice(server.indexOf("app.get('/api/apps/:appId/home-page'"), server.indexOf("app.get('/api/apps/:appId/pages/:pageApiName'"));
+  assert.ok(homeRoute.indexOf("apps.homePage") < homeRoute.indexOf("pageInitialRecords"));
   assert.match(server, /res\.json\(\{page:page\.page,initialRecords\}\)/);
   assert.match(server, /res\.json\(\{page,initialRecords\}\)/);
   assert.match(server, /res\.setHeader\('Cache-Control','private, no-store'\);\s*res\.setHeader\('Vary','Authorization, Cookie'\);\s*res\.json\(\{page:page\.page,initialRecords\}\)/);
