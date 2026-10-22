@@ -1,17 +1,18 @@
 import { useOneActions, css, arr, label, value, fire } from "../shared/OneActions.jsx";
+import { useDismissOnOutside } from "../shared/accessibilityHooks.jsx";
 
 export default function OneMenu(props) {
   const p = { ...props, kind: props.kind || "Menu" };
   const { kind, root, query, setQuery, selected, setSelected, open, setOpen, localPage, setPage, options } = useOneActions(p);
   const rootRef = React.useRef(null), triggerRef = React.useRef(null), menuRef = React.useRef(null);
+  const dismiss = React.useCallback(() => { setOpen(false); triggerRef.current?.focus(); }, [setOpen]);
+  useDismissOnOutside(rootRef, open, dismiss);
   React.useEffect(() => {
     if (!open || typeof document === "undefined") return undefined;
     const items = () => Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]:not(:disabled)') || []);
     items()[0]?.focus();
-    const outside = event => { if (!rootRef.current?.contains(event.target)) setOpen(false); };
     const keydown = event => {
       const list = items();
-      if (event.key === "Escape") { event.preventDefault(); setOpen(false); triggerRef.current?.focus(); return; }
       if (!list.length) return;
       const current = list.indexOf(document.activeElement);
       let next = -1;
@@ -27,9 +28,8 @@ export default function OneMenu(props) {
       }
       if (next >= 0) { event.preventDefault(); list[next].focus(); }
     };
-    document.addEventListener("pointerdown",outside,true);
     document.addEventListener("keydown",keydown);
-    return () => { document.removeEventListener("pointerdown",outside,true); document.removeEventListener("keydown",keydown); };
+    return () => { document.removeEventListener("keydown",keydown); };
   },[open,setOpen,options]);
   return <div {...root} ref={rootRef}>
     <button ref={triggerRef} type="button" className="one-btn" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)}>{p.label || "Options"} ▾</button>
