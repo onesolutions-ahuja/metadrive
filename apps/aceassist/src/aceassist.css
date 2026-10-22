@@ -34,3 +34,22 @@
 .custom-visit-detail dl div{border-bottom:1px solid #ecf0f5;padding:10px 0}.custom-visit-detail dt{font-size:11px;color:#758399}.custom-visit-detail dd{margin:4px 0;overflow-wrap:anywhere}
 @media(max-width:1000px){.custom-assist-layout{grid-template-columns:1fr}.custom-week{overflow-x:auto}.custom-day{min-width:105px}}
 @media(max-width:650px){.custom-heading{flex-direction:column;align-items:stretch}.custom-week{grid-template-columns:repeat(7,105px);overflow-x:auto}.custom-connected{display:none}}
+
+/* Workflow-backed editor, using the existing Ace Assist product visual language. */
+.custom-assist .custom-crud-form{display:flex;flex-direction:column;gap:10px;margin-top:18px;
+ padding-top:18px;border-top:1px solid #d8e2ed}
+.custom-assist .custom-crud-form h3{margin:0 0 4px;font-size:16px}
+.custom-assist .custom-crud-form label{display:flex;flex-direction:column;gap:5px;
+ font-size:13px;font-weight:600;color:#30445c}
+.custom-assist .custom-crud-form input,
+.custom-assist .custom-crud-form select{width:100%;padding:9px 10px;border:1px solid #ccd9e5;
+ border-radius:8px;background:#fff;font:inherit;min-width:0;color:#22354b}
+.custom-assist .custom-crud-form input:focus-visible,
+.custom-assist .custom-crud-form select:focus-visible{outline:2px solid #0b857c;outline-offset:2px}
+.custom-assist .custom-crud-form .custom-action-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.custom-assist .custom-calendar-hours{margin:8px 0;color:#547084;font-size:13px}
+.custom-assist .custom-day{min-height:170px}
+.custom-assist .custom-day small{display:block;font-size:11px;line-height:1.5}
+.custom-assist .custom-panel-title>div{display:flex;align-items:center;gap:8px}
+@media(max-width:900px){.custom-assist .custom-panel-title>div{flex-wrap:wrap}
+ .custom-assist .custom-crud-form{max-width:100%}}
