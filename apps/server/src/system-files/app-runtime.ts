@@ -325,7 +325,8 @@ export class AppRuntime {
     return {records:rows.map(row=>({
       Id:row.id,Name:row.label,AppKey__c:row.api_name,
       Description__c:row.description??'',CredentialName__c:row.credential_name??'',
-      DefaultBaseUrl__c:row.credential_base_url??'',AuthType__c:row.credential_auth_type??'None',
+      ...(row.credential_name?{DefaultBaseUrl__c:row.credential_base_url??'',
+        AuthType__c:row.credential_auth_type??'None'}:{}),
       Installed__c:row.installed,
       LicenceStatus__c:row.licensed?'ACTIVE':'UNLICENSED',
       ...(row.package_version?{PackageVersion__c:row.package_version}:{}),
