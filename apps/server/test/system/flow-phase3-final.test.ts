@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {prepareFlowHttpRequest,mapFlowHttpResponse,parseFlowHttpMapping,publicHttpCredentialVariables} from
+import {prepareFlowHttpRequest,mapFlowHttpResponse,parseFlowHttpMapping,publicHttpCredentialVariables,bindPublicHttpCredentialVariables} from
  '../../src/system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../../src/system-files/flow-integration-connection.js';
 import {evaluateFlowFormula,validateFlowFormula} from '../../src/system-files/flow-formula-runtime.js';
@@ -98,4 +98,21 @@ test('public credential settings support reusable Flow URL mapping',()=>{
  const vars=publicHttpCredentialVariables({public_phoneNumberId:'1234567890123',username:'ignore'});
  assert.deepEqual({...vars},{public_phoneNumberId:'1234567890123'});
  assert.equal(prepareFlowHttpRequest({path:'v26.0/{!public_phoneNumberId}/messages'},vars).path,'v26.0/1234567890123/messages');
+});
+
+test('public credential settings cannot be spoofed by Flow callers or silently omitted',()=>{
+ const caller={message:'Hello',public_phoneNumberId:'untrusted-id'};
+ const saved={public_phoneNumberId:'trusted-meta-id'};
+ const template=['v26.0/{!public_phoneNumberId}/messages'];
+ const bound=bindPublicHttpCredentialVariables(caller,saved,template);
+ assert.equal(bound.public_phoneNumberId,'trusted-meta-id');
+ assert.equal(bound.message,'Hello');
+ assert.equal(prepareFlowHttpRequest({path:template[0]},bound).path,
+  'v26.0/trusted-meta-id/messages');
+ assert.throws(()=>bindPublicHttpCredentialVariables(caller,null,template),
+  /Required Named Credential public setting is unavailable/);
+ assert.throws(()=>bindPublicHttpCredentialVariables(caller,{public_phoneNumberId:''},template),
+  /Required Named Credential public setting is unavailable/);
+ assert.equal(Object.hasOwn(bindPublicHttpCredentialVariables(caller,null,['v1/messages']),
+  'public_phoneNumberId'),false);
 });
