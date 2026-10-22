@@ -101,6 +101,8 @@ export class FlowRuntime {
     return {...document,apiName:record.api_name,label:record.label??record.api_name,
       flowType:record.flow_type,versionNumber:record.version,status:record.active?'Active':'Draft',
       activeVersion:history.rows.find(item=>item.active)?.version??null,
+      startConfig:document.startConfig && typeof document.startConfig==='object' && !Array.isArray(document.startConfig)
+        ?document.startConfig:{},
       elements:Array.isArray(document.elements)?document.elements:[],
       connectors:Array.isArray(document.connectors)?document.connectors:[],
       resources:Array.isArray(document.resources)?document.resources:[],
