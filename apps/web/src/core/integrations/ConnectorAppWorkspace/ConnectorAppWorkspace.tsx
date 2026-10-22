@@ -68,7 +68,7 @@ export default function ConnectorAppWorkspace({
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
-  onSave: (value: CredentialInput) => Promise<void>;
+  onSave: (value: CredentialInput) => Promise<{credential: NamedCredentialMetadata; webhookVerifyToken?: string}>;
   onDelete: (id: string) => Promise<void>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
