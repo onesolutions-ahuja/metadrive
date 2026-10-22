@@ -5,7 +5,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
-import {writeIntegrationApiLog,type IntegrationActivityWriter} from './integration-api-log.js';
+import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
 
 type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
@@ -128,7 +128,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    &&mode==='subscribe'&&typeof token==='string'&&token.length<=512
    &&typeof challenge==='string'&&challenge.length<=1024
    &&matches(endpoint.verify_token_digest,digest(token)));
-  if(endpoint)await writeIntegrationApiLog(db,{
+  if(endpoint)await writeIntegrationActivity(db,{
    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
    provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
    method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
@@ -147,7 +147,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
    errorCode?:string)=>{
    if(!endpoint)return;
-   await writeIntegrationApiLog(db,{
+   await writeIntegrationActivity(db,{
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
     provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
     method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
