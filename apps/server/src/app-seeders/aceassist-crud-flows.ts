@@ -1,13 +1,14 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js';
+import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
  'Appointment','Customer','Quotation','QuotationLine','Invoice','InvoiceLine'
 ] as const;
 
 export const ACEASSIST_EDITABLE_FIELDS:Record<string,readonly string[]>={
- Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct','Location','AssignedTo','AssignedUser','Description','Notes'],
+ Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct','Location','Resource','AssignedTo','AssignedUser','Description','Notes'],
  Customer:['Name','Email','Phone','BillingAddress','ShippingAddress','Active'],
  Quotation:['Name','Customer','IssueDate','ExpiryDate','Status','Notes','CurrencyCode','Subtotal','DiscountAmount','TaxAmount','Total'],
  QuotationLine:['Name','Quotation','Product','Description','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal'],
@@ -51,11 +52,13 @@ const bookingFields=[
  {object:'Product',api:'OnlineBookable',type:'boolean'},
  {object:'Product',api:'DurationMinutes',type:'number'},
  {object:'Product',api:'BookingBufferMinutes',type:'number'},
- {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'}
+ {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'},
+ {object:'Appointment',api:'AssignedUser',type:'reference',related:'User'},
+ {object:'Appointment',api:'Resource',type:'reference',related:'BookableResource'}
 ] as const;
 
 function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGraph {
- const apiName='AceAssist'+operation+'V2'+objectApi;
+ const apiName='AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi;
  const input='recordsInput';
  const resources:Array<Record<string,unknown>>=[
   {name:input,type:'Record Collection',dataType:objectApi,isCollection:true,availableForInput:true}
@@ -66,7 +69,15 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
   ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
   ...(objectApi==='Appointment'?{overlapGuard:{
     startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo'],
-    statusField:'Status',excludedStatuses:['Cancelled','No Show']
+    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed']
+   },availabilityGuard:{
+    startField:'StartDateTime',endField:'EndDateTime',
+    staffFields:['AssignedUser','AssignedTo'],resourceField:'Resource',
+    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed'],
+    schedule:{object:'StaffAvailability',staff:'Staff',active:'Active',
+     weekday:'Weekday',start:'StartTime',end:'EndTime'},
+    exception:{object:'AvailabilityException',staff:'Staff',resource:'Resource',
+     active:'Active',start:'StartDateTime',end:'EndDateTime'}
    }}:{})};
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,
@@ -90,6 +101,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
  let created=0;
  for(const {tenant_id} of tenants)await db.transaction(async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenant_id+':aceassist:crud']);
+  await seedAceAssistSchedulingObjects(client,tenant_id);
   // Install optional shared booking Fields only for an entitled AceAssist tenant.
   for(const field of bookingFields){
    const object=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
@@ -162,7 +174,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
     ...(['Load','Create','Update','Delete'] as const).map(operation=>
       ['Flow:AceAssist'+operation+objectApi,'execute']),
     ...(['Create','Update'] as const).map(operation=>
-      ['Flow:AceAssist'+operation+'V2'+objectApi,'execute'])
+      ['Flow:AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi,'execute'])
    ];
    for(const [resource,action] of rights)await client.query(`
     INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
@@ -200,6 +212,34 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
       SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
       WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
       ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
+  }
+  // Scheduling catalog is read through authorised Get Records Flows.
+  // Changes to staff shifts and resource settings require Object Manager/RBAC administration.
+  for(const item of ACEASSIST_SCHEDULING_OBJECTS){
+   const graph=makeGraph(item.api,'Load',ACEASSIST_SCHEDULING_FIELD_NAMES[item.api]);
+   const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
+    [tenant_id,graph.apiName]);
+   if(!existing.rowCount){
+    const {rows:inserted}=await client.query<{id:string}>(`
+     INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+     VALUES($1,$2,$3,'Autolaunched Flow',1,true) RETURNING id`,
+     [tenant_id,graph.apiName,graph.label]);
+    const entries:Array<{path:string;kind:string;text:string|null}>=[];
+    encodeMetadataValue(graph,'/builder',entries);
+    for(const e of entries)await client.query(`
+     INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+     VALUES($1,$2,$3,$4,$5)`,[tenant_id,inserted[0].id,e.path,e.kind,e.text]);
+    created++;
+   }
+   for(const [resource,action] of [[item.api,'read'],
+     ['Flow:'+graph.apiName,'execute'],
+     ...ACEASSIST_SCHEDULING_FIELD_NAMES[item.api].map(field=>[item.api+'.'+field,'read'])]){
+    await client.query(`
+     INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+     SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+     WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser' ON CONFLICT DO NOTHING`,
+     [tenant_id,resource,action]);
+   }
   }
   // App-owned record trigger: no frontend notification business logic.
   // Recipient is the authenticated operator; delivery failure follows the fault connector
