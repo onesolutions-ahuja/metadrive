@@ -5,6 +5,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
+import {writeIntegrationApiLog} from './integration-api-log.js';
 
 type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
@@ -129,23 +130,35 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   res.status(200).type('text/plain').send(challenge);
  }));
  app.post('/api/inbound-webhooks/:id',handler(async(req,res)=>{
+  const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
   const signature=req.get('x-hub-signature-256');
   const raw=req.rawWebhookBody;
-  const reject=(reason:string,rawBodyBytes?:number)=>{
+  const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
+   errorCode?:string)=>{
+   if(!endpoint)return;
+   await writeIntegrationApiLog(db,{
+    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
+    provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
+    method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
+    requestBytes:raw?.length??0,errorCode:errorCode??null
+   });
+  };
+  const reject=async(reason:string,rawBodyBytes?:number)=>{
    // Log only a bounded reason code and body length; never log signature, body, or secret.
    console.warn('Inbound webhook rejected',JSON.stringify({
     endpointId:req.params.id,reason,...(rawBodyBytes===undefined?{}:{rawBodyBytes})
    }));
+   await logInbound(401,'rejected',reason.toUpperCase());
    res.status(401).json({error:'Webhook signature invalid'});
   };
-  if(!endpoint){reject('endpoint_unavailable');return;}
-  if(!raw){reject('raw_body_unavailable');return;}
-  if(raw.length>262144){reject('body_too_large',raw.length);return;}
-  if(!signature){reject('signature_missing',raw.length);return;}
+  if(!endpoint){await reject('endpoint_unavailable');return;}
+  if(!raw){await reject('raw_body_unavailable');return;}
+  if(raw.length>262144){await reject('body_too_large',raw.length);return;}
+  if(!signature){await reject('signature_missing',raw.length);return;}
   if(!/^sha256=[a-f0-9]{64}$/i.test(signature)){
-   reject('signature_format_invalid',raw.length);return;
+   await reject('signature_format_invalid',raw.length);return;
   }
   const secret=vault.decryptOpaque(endpoint.signature_secret_ciphertext,endpoint.encryption_key_id);
   const signatureDigest=createHmac('sha256',secret).update(raw).digest();
@@ -163,10 +176,12 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      [endpoint.tenant_id,endpoint.flow_api]);
    if(!endpoint.execution_user_id||!active[0]||!await rbac.allowed(
       endpoint.tenant_id,endpoint.execution_user_id,'Flow:'+endpoint.flow_api,'execute')){
+    await logInbound(503,'http_error','FLOW_UNAVAILABLE');
     res.status(503).json({error:'Webhook Flow not available'});return;
    }
   }
   if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)){
+   await logInbound(400,'rejected','INVALID_PAYLOAD');
    res.status(400).json({error:'Invalid webhook payload'});return;
   }
   const payloadHash=createHash('sha256').update(raw).digest('hex');
@@ -179,8 +194,8 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    RETURNING id,status`,
    [endpoint.tenant_id,endpoint.id,JSON.stringify(req.body),payloadHash]);
   const event=events[0];
-  if(!event){res.status(503).json({error:'Unable to accept webhook'});return;}
-  if(event.status==='completed'){res.status(200).json({received:true});return;}
+  if(!event){await logInbound(503,'http_error','EVENT_WRITE_FAILED');res.status(503).json({error:'Unable to accept webhook'});return;}
+  if(event.status==='completed'){await logInbound(200,'success');res.status(200).json({received:true});return;}
   // The event payload is retained in tenant SQL. A compact scalar copy is sent
   // only when the Flow input contract can accept it (max 4096 characters).
   const json=raw.toString('utf8');
@@ -215,11 +230,13 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
      processed_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2`,
     [endpoint.tenant_id,event.id]);
-   res.status(200).json({received:true});
+   await logInbound(200,'success');
+  res.status(200).json({received:true});
   }catch(error){
    await db.query(`UPDATE md_inbound_webhook_events SET status='failed',
      processed_at=now(),error_code=$3 WHERE tenant_id=$1 AND id=$2`,
     [endpoint.tenant_id,event.id,flowAvailable?'FLOW_EXECUTION_FAILED':'COMMUNICATION_WRITE_FAILED']);
+   await logInbound(503,'http_error',flowAvailable?'FLOW_EXECUTION_FAILED':'COMMUNICATION_WRITE_FAILED');
    res.status(503).json({error:'Webhook processing unavailable'});
   }
  }));
