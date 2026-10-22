@@ -10,8 +10,9 @@ type FlowTemplate={apiName:string;label:string;appApiName:string;flowType:string
  * payment validation, OneEngine assignment and terminal readiness.
  */
 export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number>{
- const templates=JSON.parse(readFileSync(new URL('../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8'))
-   as Record<string,FlowTemplate>;
+ const templates:Record<string,FlowTemplate>=JSON.parse(
+  readFileSync(new URL('../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8')
+ );
  const {rows:tenants}=await db.query<{tenant_id:string}>(`
   SELECT i.tenant_id FROM md_app_installations i
   JOIN md_apps a ON a.id=i.app_id AND a.api_name='AceKiosk' AND a.enabled
