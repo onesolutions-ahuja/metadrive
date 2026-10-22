@@ -151,7 +151,14 @@ export class NamedCredentialService {
     }catch{/* Never expose unreadable or confidential credential values. */}
    }
    const fields=fieldsByName.get(x.name)??[];
+   let removed:string[]=[];
+   if(x.configuration_ciphertext){
+    try{const raw=JSON.parse(this.decryptOpaque(x.configuration_ciphertext,x.encryption_key_id));
+      if(typeof raw?.__removedPublicFields==='string')removed=raw.__removedPublicFields.split(',').filter(safePublicKey);
+    }catch{/* Preserve secrecy on unreadable credentials. */}
+   }
    configuration={...Object.fromEntries(fields.map(f=>[f.field_api,f.default_value])),...configuration};
+   for(const key of removed)delete configuration[key];
    const configurationLabels=Object.fromEntries(fields.map(f=>[f.field_api,f.label]));
    return {id:x.id,name:x.name,label:x.label,protocol:x.protocol,
     baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
@@ -536,6 +543,7 @@ export class NamedCredentialService {
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
     throw new Error('Invalid credential configuration');
+  if(x.removedConfigurationKeys!==undefined && (!Array.isArray(x.removedConfigurationKeys)||x.removedConfigurationKeys.length>100||x.removedConfigurationKeys.some(k=>typeof k!=='string'||!/^public_[A-Za-z][A-Za-z0-9_]*$/.test(k))))throw new Error('Invalid removed variable list');
   if(x.secret!==undefined && typeof x.secret!=='string')throw new Error('Invalid credential secret');
   const encrypt=(plain:string):Buffer=>{
    const key=this.key();if(!key)throw new Error('Credential encryption is not configured');
@@ -543,17 +551,25 @@ export class NamedCredentialService {
    return Buffer.concat([iv,cipher.update(plain,'utf8'),cipher.final(),cipher.getAuthTag()]);
   };
   const encrypted=x.secret?encrypt(x.secret as string):null;
-  const configuration={...(x.configuration as Record<string,string>|undefined),...(typeof x.username==='string'&&x.username?{username:x.username}:{})};
+  let existingRemoved:string[]=[];
+  if(current.rows[0].configuration_ciphertext){
+    try{const previous=JSON.parse(this.decryptOpaque(current.rows[0].configuration_ciphertext,current.rows[0].encryption_key_id));
+      if(typeof previous?.__removedPublicFields==='string')existingRemoved=previous.__removedPublicFields.split(',').filter((k:string)=>/^public_[A-Za-z][A-Za-z0-9_]*$/.test(k));
+    }catch{/* Invalid prior metadata will be replaced on explicit edits. */}
+  }
+  const removed=Array.from(new Set([...existingRemoved,...((x.removedConfigurationKeys as string[]|undefined)??[])])).filter(k=>!Object.hasOwn((x.configuration as Record<string,string>|undefined)??{},k));
+  const configuration:Record<string,string>={...(x.configuration as Record<string,string>|undefined),...(typeof x.username==='string'&&x.username?{username:x.username}:{})};
+  if(removed.length)configuration.__removedPublicFields=removed.join(',');
   const encryptedConfig=configuration&&Object.keys(configuration).length
     ?encrypt(JSON.stringify(configuration)):null;
   const result=await this.db.query(
    `UPDATE md_named_credentials SET name=$3,label=$4,protocol=$5,base_url=$6,
      auth_type=$7,header_name=$8,
      secret_ciphertext=COALESCE($9,secret_ciphertext),
-     configuration_ciphertext=COALESCE($10,configuration_ciphertext),
+     configuration_ciphertext=CASE WHEN $12::boolean THEN $10 ELSE COALESCE($10,configuration_ciphertext) END,
      encryption_key_id=CASE WHEN $9::bytea IS NOT NULL OR $10::bytea IS NOT NULL THEN $11 ELSE encryption_key_id END,
      updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id`,
-   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig,this.activeKeyId()]);
+   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig,this.activeKeyId(),x.configuration!==undefined]);
   if(!result.rowCount)throw new Error('Credential not found');
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
