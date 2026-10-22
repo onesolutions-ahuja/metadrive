@@ -867,7 +867,7 @@ export class FlowRuntime {
         }else if(node.type==='Decision'){
           selected=executeDecisionNode({node,flowType:active.flow_type,vars,evaluate});
         }else if(['Get Records','Update Records','Delete Records','Loop','Collection Filter',
-          'Collection Sort','Transform','Create Records','CreateRecord'].includes(node.type)){
+          'Collection Sort','Transform','Parse JSON','Create Records','CreateRecord'].includes(node.type)){
           if(active.flow_type==='Record-Triggered Flow'&&start[0].config.runWhen==='before-save'
              &&!['Get Records','Loop','Collection Filter','Collection Sort','Transform'].includes(node.type))
             throw new Error('Before-save Flows allow read-only data elements only');
