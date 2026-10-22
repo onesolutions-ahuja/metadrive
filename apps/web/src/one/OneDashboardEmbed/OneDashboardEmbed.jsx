@@ -26,7 +26,7 @@ function Dashboard({ p, rows }) {
         ))}
       </div>
       {!rows.length && (
-        <div className="one-empty">Bind dashboard widgets or records</div>
+        <div className="one-empty" role="status">Bind dashboard widgets or records</div>
       )}
     </section>
   );
