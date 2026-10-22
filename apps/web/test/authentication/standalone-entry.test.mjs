@@ -28,14 +28,14 @@ test('product login keeps shared MetaDrive session, MFA and password recovery',(
   assert.match(app,/return <SetupApp entryTiming=/);
 });
 
-test('Ace Assist owns its own UI and uses authorised OneEngine Records and Flows',()=>{
+test('Ace Assist owns its own UI and uses authorised OneEngine CRUD Flows',()=>{
   const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
   const shell=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
   assert.match(runtime,/\/metadata\/objects/);
-  assert.match(runtime,/\/records\//);
+  assert.doesNotMatch(runtime,/\/records\//);
   assert.match(runtime,/\/flows\//);
   assert.match(runtime,/available-actions\?product=/);
-  assert.match(runtime,/flowActions\.map/);
+  assert.match(runtime,/checkBusinessHours/);
   assert.doesNotMatch(runtime,/AcetillCompleteSale|AcetillPrintReceipt|AceAssistCompleteVisit|AceAssistRescheduleVisit/);
   assert.doesNotMatch(runtime,/method:'POST'.*\/records\//);
   assert.match(runtime,/\/auth\/logout/);
@@ -60,7 +60,7 @@ test('standalone web router lazy-loads app-owned UIs, not business-specific JSX'
   assert.doesNotMatch(shell,/custom-pos|custom-assist|custom-week|custom-basket|\/metadata\/objects/);
   assert.match(assist,/custom-assist/);
   assert.match(assist,/custom-week/);
-  assert.match(assist,/runAction\(action\.apiName\)/);
+  assert.match(assist,/flowName\(editing\)/);
   assert.match(chatter,/ace-chat-thread/);
   assert.match(till,/AcetillGetProducts/);
   for(const source of [shell,assist,chatter,till])
