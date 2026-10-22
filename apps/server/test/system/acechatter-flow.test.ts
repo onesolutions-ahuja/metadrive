@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
+import {reconcileAceChatterCreateConversationContactFields,reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
 import {decodeMetadataValues,encodeMetadataValue} from '../../src/system-files/component-runtime.js';
 import {executeHttpCalloutNode} from '../../src/system-files/nodes/HttpCalloutNode.js';
 import {executeCreateRecordsNode} from '../../src/system-files/nodes/CreateRecordsNode.js';
@@ -13,6 +13,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  let graphRows=0;
  const client={query:async(sql:string,params:unknown[]=[])=>{
   seen.push({sql,params});
+  if(sql.includes('FROM md_object_definitions')&&sql.includes('api_name=$2'))return {rows:[{exists:true}],rowCount:1};
   if(sql.includes('SELECT 1 FROM md_flow_definitions')){
     const name=String(params[1]);return {rows:flows.has(name)?[{exists:true}]:[],rowCount:flows.has(name)?1:0};
   }
@@ -35,6 +36,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(graphRows>0,true);
  assert.equal(flows.has('AceChatterLoadConversations'),true);
  assert.equal(flows.has('AceChatterLoadMessages'),true);
+ assert.equal(flows.has('AceChatterLoadContacts'),true);
  assert.equal(flows.has('AceChatterLoadCommunications'),true);
  assert.equal(flows.has('AceChatterFindConversationByPhone'),true);
  assert.equal(flows.has('AceChatterSendMessage'),true);
@@ -243,4 +245,52 @@ test('AceChatter inbound signed payload parsing produces an inbound ChatMessage 
  } as never);
  assert.deepEqual(written,[{ConversationId:'00000000-0000-4000-8000-000000000007',
   ExternalMessageId:'wamid.inbound',Body:'Reply',Direction:'Inbound',Status:'Received'}]);
+});
+
+test('reconcile seeded New Chat Flow adds source contact link without overwriting custom Flows',async()=>{
+ const graph={
+  apiName:'AceChatterCreateConversation',status:'Active',resources:[
+   {name:'chatName',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'phoneNumber',type:'Variable',dataType:'Text',availableForInput:true}
+  ],elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Get Records',config:{object:'ChatConversation',recordLimit:'1',
+    outputVariable:'existing',conditions:[{field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}]}},
+   {id:3,type:'Decision',config:{outcomes:[
+    {name:'New',label:'New',conditions:[{field:'@existing',operator:'Is Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:4,type:'Create Records',config:{object:'ChatConversation',fieldValues:[
+    {field:'Name',value:'@chatName'},{field:'PhoneNumber',value:'@phoneNumber'},
+    {field:'Status',value:'Open'}]}},
+   {id:5,type:'End',config:{}}
+  ],connectors:[
+   {from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'},
+   {from:3,to:4,kind:'normal',label:'New'},{from:3,to:5,kind:'normal',label:'Default'},
+   {from:4,to:5,kind:'normal',label:'Next'}]
+ };
+ const initial:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',initial);
+ let stored=initial.map(item=>({property_path:item.path,value_kind:item.kind,value_text:item.text}));
+ let writes=0,audits=0;
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes("api_name='AceChatterCreateConversation'")&&sql.includes('SELECT id FROM md_flow_definitions'))
+   return {rows:[{id:'flow-contact'}],rowCount:1};
+  if(sql.includes('SELECT property_path,value_kind,value_text'))return {rows:stored,rowCount:stored.length};
+  if(sql.startsWith('DELETE FROM md_flow_editor_values')){stored=[];writes++;return {rows:[],rowCount:1};}
+  if(sql.includes('INSERT INTO md_flow_editor_values')){
+   stored.push({property_path:String(params[2]),value_kind:String(params[3]),
+    value_text:params[4]===null?null:String(params[4])});return {rows:[],rowCount:1};
+  }
+  if(sql.includes('INSERT INTO md_security_events'))audits++;
+  return {rows:[],rowCount:1};
+ }} as never;
+ assert.equal(await reconcileAceChatterCreateConversationContactFields(client,'tenant-a'),true);
+ const updated=decodeMetadataValues(stored).builder as typeof graph;
+ assert.ok(updated.resources.some(resource=>resource.name==='sourceObjectApi'&&resource.availableForInput===true));
+ assert.ok(updated.resources.some(resource=>resource.name==='sourceRecordId'&&resource.availableForInput===true));
+ const create=updated.elements.find(element=>element.id===4);
+ assert.ok(create?.config.fieldValues.some(field=>field.field==='SourceObjectApi'&&field.value==='@sourceObjectApi'));
+ assert.ok(create?.config.fieldValues.some(field=>field.field==='SourceRecordId'&&field.value==='@sourceRecordId'));
+ assert.equal(await reconcileAceChatterCreateConversationContactFields(client,'tenant-a'),false);
+ assert.equal(writes,1);assert.equal(audits,1);
 });
