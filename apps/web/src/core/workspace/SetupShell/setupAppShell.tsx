@@ -334,22 +334,23 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         }
       }
     };
-    void checkCredentialReadiness();
+    if(workspace!=='named-credentials')void checkCredentialReadiness();
     void apiRequest<{ view: boolean; edit: boolean; secrets: boolean; test: boolean; install: boolean; licence: boolean }>('/connector-apps/capabilities')
       .then((rights) => { if (active) {setConnectorRights(rights);setConnectorRightsLoaded(true);} })
       .catch((error:unknown) => { if (active) {setConnectorRightsError(error instanceof Error?error.message:String(error));setConnectorRightsLoaded(true);} });
-    void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials',{
+    void apiRequest<{ credentials: NamedCredentialMetadata[];canManage:boolean;encryptionReady:boolean }>('/named-credentials',{
       cache:'no-store',signal:credentialsRequest.signal
     })
-      .then(({ credentials }) => {
+      .then(({ credentials,canManage,encryptionReady }) => {
         if(!active)return;
-        if(!Array.isArray(credentials))throw new Error('Invalid Named Credentials API response: credentials array missing');
+        if(!Array.isArray(credentials)||typeof canManage!=='boolean'||typeof encryptionReady!=='boolean')
+          throw new Error('Invalid Named Credentials API snapshot');
         setNamedCredentials(credentials);
+        setCanManageNamedCredentials(canManage);
+        setNamedCredentialsEncryptionReady(encryptionReady);
         setNamedCredentialsError('');
+        setNamedCredentialsReadinessError('');
         setNamedCredentialsLoaded(true);
-        // Re-check after the authorised list succeeds: on initial navigation the
-        // readiness request can fail before the session refresh completes.
-        void checkCredentialReadiness();
       })
       .catch((error:unknown) => {
         if(!active || credentialsRequest.signal.aborted)return;
