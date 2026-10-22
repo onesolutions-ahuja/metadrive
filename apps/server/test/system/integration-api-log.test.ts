@@ -1,81 +1,72 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import express from 'express';
-import {registerIntegrationApiLogRoutes,writeIntegrationApiLog} from '../../src/system-support/integration-api-log.js';
+import {createIntegrationCommunicationWriter,writeIntegrationApiLog} from '../../src/system-support/integration-api-log.js';
 
-test('integration API audit stores tenant-scoped request metadata without payloads or query strings',async()=>{
- let captured:{sql:string;params:unknown[]}|undefined;
+test('central integration writer records every attempt as tenant-scoped Communication metadata',async()=>{
+ let actor:string|undefined,object:string|undefined,values:Record<string,unknown>|undefined;
  const db={query:async(sql:string,params:unknown[]=[])=>{
-  captured={sql,params};return {rows:[],rowCount:1};
+  assert.match(sql,/md_tenant_developer_accounts/);
+  assert.deepEqual(params,['tenant-a']);
+  return {rows:[{user_id:'tenant-system-user'}]};
  }} as never;
+ const records={create:async(tenant:string,user:string,api:string,record:Record<string,unknown>)=>{
+  assert.equal(tenant,'tenant-a');actor=user;object=api;values=record;return 'record-id';
+ }} as never;
+ const writer=createIntegrationCommunicationWriter(db,records);
  await writeIntegrationApiLog(db,{
   tenantId:'tenant-a',direction:'Outbound',provider:'WhatsApp Credential',
   credentialId:'credential-a',actorUserId:'user-a',
   endpoint:'https://provider.example/messages?access_token=secret',
   method:'POST',statusCode:200,outcome:'success',durationMs:15,
   requestBytes:48,responseBytes:25
- });
- assert.ok(captured);
- assert.match(captured.sql,/INSERT INTO md_integration_api_logs/);
- assert.equal(captured.params[0],'tenant-a');
- assert.equal(captured.params[1],'Outbound');
- assert.equal(captured.params[6],'https://provider.example/messages');
- assert.equal(captured.params[7],'POST');
- assert.equal(captured.params[8],200);
- assert.equal(captured.params[9],'success');
- assert.equal(captured.params[10],15);
- assert.equal(captured.params[11],48);
- assert.equal(captured.params[12],25);
- assert.doesNotMatch(captured.params.join(' '),/access_token|secret/);
+ },writer);
+ assert.equal(actor,'tenant-system-user');
+ assert.equal(object,'Communication');
+ assert.equal(values?.Direction,'Outbound');
+ assert.equal(values?.Channel,'Other');
+ assert.equal(values?.Status,'Sent');
+ assert.equal(values?.Recipient,'https://provider.example/messages');
+ assert.equal(values?.RelatedObject,'IntegrationApiCall');
+ assert.equal(values?.RelatedRecordId,'credential-a');
+ assert.match(String(values?.Subject),/POST 200/);
+ assert.match(String(values?.Body),/requestBytes/);
+ assert.doesNotMatch(JSON.stringify(values),/access_token|secret/);
 });
 
-test('integration API audit failures do not replace the provider operation result',async()=>{
+test('metadata mapping records one business Communication with the provider message ID',async()=>{
+ let values:Record<string,unknown>|undefined;
+ const db={query:async()=>({rows:[{user_id:'tenant-system-user'}]})} as never;
+ const records={create:async(_tenant:string,_user:string,_object:string,record:Record<string,unknown>)=>{
+  values=record;return 'record-id';
+ }} as never;
+ const writer=createIntegrationCommunicationWriter(db,records);
+ await writer({
+  tenantId:'tenant-a',direction:'Outbound',transport:'HTTP',provider:'WhatsApp',
+  credentialId:'credential-a',actorUserId:'user-a',endpoint:'https://graph.example/v26.0/123/messages',
+  method:'POST',statusCode:200,outcome:'success',durationMs:30,requestBytes:88,responseBytes:40,
+  communication:{channel:'WhatsApp',name:'WhatsApp outbound',sender:'WhatsApp Business',
+   recipient:'447700900123',body:'Hello',provider:'WhatsApp',externalMessageId:'wamid.123'}
+ });
+ assert.equal(values?.Channel,'WhatsApp');
+ assert.equal(values?.Body,'Hello');
+ assert.equal(values?.Recipient,'447700900123');
+ assert.equal(values?.ExternalMessageId,'wamid.123');
+ assert.match(String(values?.Subject),/POST 200/);
+});
+
+test('communication logging failures do not replace the provider result or leak secrets',async()=>{
  const original=console.error;
  let logged=false;
- console.error=(...args:unknown[])=>{logged=true;assert.doesNotMatch(args.map(String).join(' '),/secret|token|body/i);};
+ console.error=(...args:unknown[])=>{
+  logged=true;
+  assert.doesNotMatch(args.map(String).join(' '),/secret|token|body/i);
+ };
  try{
   await writeIntegrationApiLog({query:async()=>{throw new Error('database failed with secret token');}} as never,{
    tenantId:'tenant-a',direction:'Inbound',transport:'Webhook',
-   endpoint:'/api/inbound-webhooks/example',method:'POST',statusCode:503,
-   outcome:'http_error',errorCode:'FLOW_UNAVAILABLE'
-  });
+   endpoint:'/api/inbound-webhooks/example?verify_token=secret',method:'POST',
+   statusCode:503,outcome:'http_error',errorCode:'FLOW_UNAVAILABLE'
+  },async()=>{throw new Error('database failure with secret token');});
   assert.equal(logged,true);
  }finally{console.error=original;}
-});
-
-test('integration API log endpoint is tenant-scoped and requires Named Credential read access',async()=>{
- let queryParams:unknown[]=[];
- let required:string[]=[];
- const db={query:async(sql:string,params:unknown[]=[])=>{
-  queryParams=params;
-  assert.match(sql,/WHERE tenant_id=\$1/);
-  return {rows:[{id:'log-1',direction:'Outbound',transport:'HTTP',provider:'Provider',
-   credential_id:'credential-1',endpoint:'https://provider.example/messages',method:'POST',
-   status_code:200,outcome:'success',duration_ms:20,request_bytes:12,response_bytes:30,
-   error_code:null,created_at:new Date('2026-10-22T10:00:00.000Z')}]};
- }} as never;
- const rbac={require:async(_tenant:string,_user:string,resource:string)=>{
-  required.push(resource);
- }} as never;
- const app=express();
- app.use((req,_res,next)=>{
-  (req as typeof req&{actor:{tenant_id:string;user_id:string}}).actor={tenant_id:'tenant-a',user_id:'user-a'};
-  next();
- });
- registerIntegrationApiLogRoutes(app,db,rbac);
- const server=app.listen(0);
- try{
-  const address=server.address();
-  if(!address||typeof address==='string')throw Error('No server port');
-  const response=await fetch('http://127.0.0.1:'+address.port+'/api/metadata/integration-api-logs?direction=Outbound&limit=20');
-  assert.equal(response.status,200);
-  const payload=await response.json() as {logs:Array<Record<string,unknown>>};
-  assert.equal(payload.logs.length,1);
-  assert.equal(payload.logs[0].id,'log-1');
-  assert.equal('body' in payload.logs[0],false);
-  assert.deepEqual(required,['NamedCredential']);
-  assert.deepEqual(queryParams,['tenant-a','Outbound',20]);
- }finally{
-  await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
- }
 });
