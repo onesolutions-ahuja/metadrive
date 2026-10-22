@@ -317,13 +317,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     setConnectorRightsError('');
     // Readiness is independent from list access. A transient readiness failure must
     // never silently turn an authorised manager into a read-only user.
+    let readinessSequence=0;
     const checkCredentialReadiness = async () => {
+      const requestNumber=++readinessSequence;
       try {
         const {canManage,encryptionReady}=await apiRequest<{canManage:boolean;encryptionReady:boolean}>(
           '/named-credentials/readiness',{cache:'no-store',signal:credentialsRequest.signal});
-        if(active){setCanManageNamedCredentials(canManage===true);setNamedCredentialsEncryptionReady(encryptionReady===true);setNamedCredentialsError('');}
+        if(active&&requestNumber===readinessSequence){setCanManageNamedCredentials(canManage===true);setNamedCredentialsEncryptionReady(encryptionReady===true);setNamedCredentialsError('');}
       }catch(error){
-        if(active&&!credentialsRequest.signal.aborted){
+        if(active&&!credentialsRequest.signal.aborted&&requestNumber===readinessSequence){
           setCanManageNamedCredentials(false);
           setNamedCredentialsEncryptionReady(null);
           setNamedCredentialsError('Could not verify Named Credential permissions: '+(error instanceof Error?error.message:String(error)));
