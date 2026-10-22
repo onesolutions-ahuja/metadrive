@@ -6,7 +6,7 @@ test('Ace Assist CRUD uses six existing Objects without duplicate engines',()=>{
  assert.deepEqual(ACEASSIST_CRUD_OBJECTS,['Appointment','Customer','Quotation','QuotationLine','Invoice','InvoiceLine']);
  assert.ok(ACEASSIST_EDITABLE_FIELDS.Appointment.includes('StartDateTime'));
  const code=readFileSync(new URL('../../src/app-seeders/aceassist-crud-flows.ts',import.meta.url),'utf8');
- assert.match(code,/type:'Get Records'/);
+ assert.match(code,/operation==='Load'\?'Get Records'/);
  assert.match(code,/recordSource:'fields'/);
  assert.match(code,/operation\+' Records'/);
  assert.match(code,/Flow:AceAssist/);
