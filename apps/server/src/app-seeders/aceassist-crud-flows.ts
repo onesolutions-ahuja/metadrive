@@ -59,6 +59,11 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
     WHERE tenant_id=$1 AND deleted_at IS NULL
       AND object_api=ANY($2::text[])`,[tenant_id,ACEASSIST_CRUD_OBJECTS]);
   const fieldSet=new Set(defined.map(x=>x.object_api+'.'+x.api_name));
+  await client.query(`
+   INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+   SELECT $1,p.id,'BusinessCalendar','read','allow'
+   FROM md_permission_sets p WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
+   ON CONFLICT DO NOTHING`,[tenant_id]);
   for(const objectApi of ACEASSIST_CRUD_OBJECTS){
    if(!fieldSet.has(objectApi+'.Name'))continue;
    const fields=ACEASSIST_EDITABLE_FIELDS[objectApi].filter(f=>fieldSet.has(objectApi+'.'+f));
