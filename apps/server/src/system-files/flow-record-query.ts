@@ -69,12 +69,14 @@ export class FlowRecordQuery {
       if(!item||typeof item!=='object'||typeof item.field!=='string'
         ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(item.field))
         throw new Error('Invalid Flow filter field');
-      const field=item.field==='Id'?undefined:definitions.get(item.field);
-      if(item.field!=='Id'&&!field)throw new Error('Unknown Flow filter field: '+item.field);
+      const systemField=item.field==='Id'||item.field==='OwnerId';
+      const field=systemField?undefined:definitions.get(item.field);
+      if(!systemField&&!field)throw new Error('Unknown Flow filter field: '+item.field);
       if(field&&!await this.rbac.allowed(tenantId,userId,objectApi+'.'+field.api_name,'read'))
         throw new Error('Flow filter field is not readable: '+field.api_name);
       const operator=String(item.operator??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
-      const valueExpression=item.field==='Id'?'r.id::text':`(
+      const valueExpression=item.field==='Id'?'r.id::text'
+        :item.field==='OwnerId'?'COALESCE(r.owner_id,r.owner_queue_id)::text':`(
         SELECT COALESCE(v.value_text,v.reference_record_id::text,v.value_boolean::text,v.value_number::text,v.value_date::text,v.value_datetime::text)
         FROM md_record_values v
         WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
@@ -136,17 +138,19 @@ export class FlowRecordQuery {
     let sort='r.created_at ASC,r.id ASC';
     if(options.sortField!==undefined){
       if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(options.sortField))throw new Error('Invalid Flow sort field');
-      const sortField=options.sortField==='Id'?undefined:definitions.get(options.sortField);
-      if(options.sortField!=='Id'&&!sortField)throw new Error('Unknown Flow sort field');
+      const systemSort=options.sortField==='Id'||options.sortField==='OwnerId';
+      const sortField=systemSort?undefined:definitions.get(options.sortField);
+      if(!systemSort&&!sortField)throw new Error('Unknown Flow sort field');
       if(sortField&&!await this.rbac.allowed(tenantId,userId,objectApi+'.'+sortField.api_name,'read'))
         throw new Error('Flow sort field is not readable');
       if(options.sortOrder!==undefined&&!['Ascending','Descending','asc','desc'].includes(options.sortOrder))
         throw new Error('Invalid Flow sort order');
       const direction=['Descending','desc'].includes(options.sortOrder??'')?'DESC':'ASC';
-      sort=options.sortField==='Id'?`r.id ${direction}`:`(
+      sort=options.sortField==='Id'?`r.id ${direction}`
+        :options.sortField==='OwnerId'?`COALESCE(r.owner_id,r.owner_queue_id) ${direction} NULLS LAST,r.id ASC`:`(
         SELECT COALESCE(sv.value_text,sv.reference_record_id::text,sv.value_boolean::text,sv.value_number::text,sv.value_date::text,sv.value_datetime::text)
         FROM md_record_values sv
-        WHERE sv.tenant_id=r.tenant_id AND sv.record_id=r.id AND sv.object_api=r.object_api
+        WHERE sv.tenant_id=$1 AND sv.record_id=r.id AND sv.object_api=$2
           AND sv.field_api=${'$'+(params.length+1)}
       ) ${direction} NULLS LAST,r.id ASC`;
       if(sortField)params.push(sortField.api_name);

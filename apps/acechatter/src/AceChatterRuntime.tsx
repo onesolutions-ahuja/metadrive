@@ -14,9 +14,9 @@ const errorText=(e:unknown)=>e instanceof Error?e.message:String(e);
  * The Flow owns object selection, filtering, sorting, pagination and RBAC.
  * No browser-side Record API fallback or client-selected object names. */
 function readRows(outputs:Record<string,unknown>|undefined,
-  key:'conversationsJson'|'messagesJson'|'communicationsJson'):Row[]{
+  key:'conversationsJson'|'messagesJson'|'communicationsJson'|'contactsJson'):Row[]{
   const nativeKey=key==='conversationsJson'?'conversations':
-    key==='messagesJson'?'messages':'communications';
+    key==='messagesJson'?'messages':key==='communicationsJson'?'communications':'contacts';
   const value=outputs?.[nativeKey]??outputs?.[key]??outputs?.recordsJson;
   let parsed:unknown=value;
   if(typeof value==='string'){
@@ -29,6 +29,17 @@ function readRows(outputs:Record<string,unknown>|undefined,
 }
 const flowBySuffix=(actions:Action[],suffix:string)=>
   actions.find(action=>action.apiName.toLowerCase()==='acechatter'+suffix.toLowerCase());
+const contactLabel=(row:Row)=>{
+  const direct=pick(row,'Name','DisplayName','ContactName');
+  if(direct!==undefined&&String(direct).trim())return String(direct).trim();
+  const name=[pick(row,'FirstName','GivenName'),pick(row,'LastName','FamilyName')]
+    .map(value=>String(value??'').trim()).filter(Boolean).join(' ');
+  return name||String(pick(row,'PhoneNumber','Mobile','Phone','Id')??'Contact');
+};
+const contactPhone=(row:Row)=>normalizeChatNumber(
+  pick(row,'WhatsAppPhoneNumber','WhatsAppPhone','Mobile','MobilePhone','PhoneNumber','Phone')
+);
+const validChatPhone=(value:unknown)=>/^[1-9][0-9]{6,14}$/.test(normalizeChatNumber(value));
 
 export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [conversations,setConversations]=useState<Row[]>([]);
@@ -39,6 +50,13 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [submittedSearch,setSubmittedSearch]=useState('');
   const [draft,setDraft]=useState('');
   const [showNewChat,setShowNewChat]=useState(false);
+  const [newChatMode,setNewChatMode]=useState<'contacts'|'number'>('contacts');
+  const [contacts,setContacts]=useState<Row[]>([]);
+  const [contactSearch,setContactSearch]=useState('');
+  const [submittedContactSearch,setSubmittedContactSearch]=useState('');
+  const [contactsLoading,setContactsLoading]=useState(false);
+  const [contactError,setContactError]=useState('');
+  const [contactSourceObjectApi,setContactSourceObjectApi]=useState('');
   const [chatName,setChatName]=useState('');
   const [chatPhone,setChatPhone]=useState('');
   const [actions,setActions]=useState<Action[]>([]);
@@ -52,6 +70,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const resolveConversationFlow=flowBySuffix(actions,'FindConversationByPhone');
   const sendFlow=flowBySuffix(actions,'SendMessage');
   const newChatFlow=flowBySuffix(actions,'CreateConversation');
+  const loadContactsFlow=flowBySuffix(actions,'LoadContacts');
   const inboxConversations=buildCommunicationInbox(conversations,communications,submittedSearch);
   const selectedRow=inboxConversations.find(row=>identify(row)===selected);
   const selectedPhone=normalizeChatNumber(pick(selectedRow??{},'PhoneNumber'));
@@ -63,6 +82,35 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       .catch(e=>{if(live)setError(errorText(e));});
     return()=>{live=false;};
   },[]);
+
+  // Contacts are discovered only through the tenant's authorised Flow and its configured user-link filter.
+  useEffect(()=>{
+    if(!showNewChat||newChatMode!=='contacts')return;
+    if(!loadContactsFlow){
+      setContacts([]);
+      setContactSourceObjectApi('');
+      setContactError('Activate an authorised AceChatterLoadContacts Flow configured for the contact object and current-user relationship.');
+      setContactsLoading(false);
+      return;
+    }
+    let live=true;
+    setContactsLoading(true);setContactError('');
+    void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+      '/flows/'+encodeURIComponent(loadContactsFlow.apiName)+'/execute',{
+        method:'POST',body:JSON.stringify({searchTerm:submittedContactSearch,limit:200})
+      }).then(result=>{
+        if(!live)return;
+        if(result.interviewId)throw new Error('Contact selection requires a synchronous Autolaunched Flow.');
+        const outputs=result.outputs??{};
+        const source=String(outputs.sourceObjectApi??'').trim();
+        if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(source))
+          throw new Error('The Load Contacts Flow must return sourceObjectApi so selected records can be linked safely.');
+        setContactSourceObjectApi(source);
+        setContacts(readRows(outputs,'contactsJson'));
+      }).catch(e=>{if(live){setContacts([]);setContactError(errorText(e));}})
+      .finally(()=>{if(live)setContactsLoading(false);});
+    return()=>{live=false;};
+  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch,refresh]);
 
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
@@ -151,7 +199,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         if(!newChatFlow||!resolveConversationFlow)
           throw new Error('Activate the authorised Create Conversation and Find Conversation by Phone Flows before sending to a new chat.');
         await apiRequest('/flows/'+encodeURIComponent(newChatFlow.apiName)+'/execute',{
-          method:'POST',body:JSON.stringify({chatName:label(selectedRow),phoneNumber:phone})
+          method:'POST',body:JSON.stringify({chatName:label(selectedRow),phoneNumber:phone,sourceObjectApi:'',sourceRecordId:''})
         });
         const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
           '/flows/'+encodeURIComponent(resolveConversationFlow.apiName)+'/execute',{
@@ -178,62 +226,150 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     finally{setBusy(false);}
   };
 
-  const createChat=async()=>{
-    if(!newChatFlow||!chatName.trim()||!/^[1-9][0-9]{6,14}$/.test(chatPhone))return;
-    setBusy(true);setError('');
+  const startConversation=async(nameValue:string,phoneValue:unknown,sourceObjectApi='',sourceRecordId='')=>{
+    const name=nameValue.trim();
+    const phone=normalizeChatNumber(phoneValue);
+    if(!newChatFlow||!name||!validChatPhone(phone)){
+      setContactError('Enter a contact name and a valid international WhatsApp number.');
+      return;
+    }
+    setBusy(true);setError('');setContactError('');setNotice('');
     try{
       await apiRequest('/flows/'+encodeURIComponent(newChatFlow.apiName)+'/execute',{
-        method:'POST',body:JSON.stringify({chatName:chatName.trim(),phoneNumber:chatPhone})
+        method:'POST',body:JSON.stringify({chatName:name,phoneNumber:phone,sourceObjectApi,sourceRecordId})
       });
-      setShowNewChat(false);setChatName('');setChatPhone('');setRefresh(n=>n+1);
-    }catch(e){setError(errorText(e));}finally{setBusy(false);}
+      let resolved:Row|undefined;
+      if(resolveConversationFlow){
+        const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+          '/flows/'+encodeURIComponent(resolveConversationFlow.apiName)+'/execute',{
+            method:'POST',body:JSON.stringify({phoneNumber:phone,limit:200})
+          });
+        if(result.interviewId)throw new Error('Resolving the conversation requires a synchronous Autolaunched Flow.');
+        resolved=readRows(result.outputs,'conversationsJson')
+          .find(row=>normalizeChatNumber(pick(row,'PhoneNumber'))===phone);
+      }
+      setShowNewChat(false);setChatName('');setChatPhone('');
+      setFilter('');setSubmittedSearch('');
+      if(resolved&&identify(resolved)){
+        setConversations(previous=>[...previous.filter(row=>normalizeChatNumber(pick(row,'PhoneNumber'))!==phone),resolved!]);
+        setSelected(identify(resolved));
+        setNotice('Chat opened. Sending and delivery status depend on the configured WhatsApp Flow.');
+      }else{
+        setNotice('Conversation submitted through OneEngine. Refresh the inbox to open it.');
+      }
+      setRefresh(n=>n+1);
+    }catch(e){setError(errorText(e));}
+    finally{setBusy(false);}
+  };
+  const createChatFromContact=async(contact:Row)=>{
+    const phone=contactPhone(contact);
+    if(!validChatPhone(phone)){
+      setContactError('This contact has no valid WhatsApp phone number. Choose another contact or use Phone number.');
+      return;
+    }
+    if(!contactSourceObjectApi||!identify(contact)){
+      setContactError('The contact Flow must return its source object and record ID.');
+      return;
+    }
+    await startConversation(contactLabel(contact),phone,contactSourceObjectApi,identify(contact));
+  };
+  const createChatFromNumber=async(event:React.FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    await startConversation(chatName.trim()||('+'+normalizeChatNumber(chatPhone)),chatPhone,'','');
+  };
+  const openNewChat=()=>{
+    setShowNewChat(true);setNewChatMode('contacts');setContacts([]);
+    setContactSearch('');setSubmittedContactSearch('');setContactError('');
+    setContactSourceObjectApi('');setChatName('');setChatPhone('');
   };
   const logout=async()=>{
     try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* clear client regardless */}
     onLogout();window.location.assign('/login');
   };
   const filtered=inboxConversations;
-  return <div className="ace-chat">
+  return <div className={'ace-chat'+(selectedRow?' has-selected-chat':'')+(showNewChat?' new-chat-open':'')}>
     <aside className="ace-chat-sidebar">
-      <header className="ace-chat-brand"><div className="ace-chat-logo">✦</div><div><strong>AceChatter</strong><small>Customer messaging</small></div><button title="Sign out" onClick={()=>void logout()}>Sign out</button></header>
-      <div className="ace-chat-sidebar-heading"><h1>Chats</h1><button onClick={()=>setRefresh(n=>n+1)} disabled={busy}>↻ Refresh</button><button onClick={()=>setShowNewChat(true)} disabled={busy||!newChatFlow}>+ New Chat</button></div>
-      <form onSubmit={e=>{e.preventDefault();setSubmittedSearch(filter);}} className="ace-chat-search">
-        <input aria-label="Filter by chat number or contact" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter by chat number or contact…" />
-        <button type="submit" disabled={!loadCommunications||busy}>Filter</button>
+      <header className="ace-chat-brand">
+        <div className="ace-chat-logo" aria-hidden="true">✦</div>
+        <div className="ace-chat-brand-copy"><strong>AceChatter</strong><small>Customer messaging</small></div>
+        <button className="ace-chat-signout" title="Sign out" aria-label="Sign out" onClick={()=>void logout()}>Sign out</button>
+      </header>
+      <div className="ace-chat-sidebar-heading"><h1>Chats</h1><div className="ace-chat-toolbar">
+        <button className="ace-chat-icon-button" title="Refresh chats" aria-label="Refresh chats" onClick={()=>setRefresh(n=>n+1)} disabled={busy}>↻</button>
+        <button className="ace-chat-new-button" title="New chat" aria-label="New chat" onClick={openNewChat} disabled={busy||!newChatFlow}><span aria-hidden="true">＋</span><span>New chat</span></button>
+      </div></div>
+      <form onSubmit={event=>{event.preventDefault();setSubmittedSearch(filter);}} className="ace-chat-search">
+        <span aria-hidden="true">⌕</span>
+        <input aria-label="Filter by chat number or contact" value={filter} onChange={event=>setFilter(event.target.value)} placeholder="Search or start a new chat" />
+        <button type="submit" aria-label="Search chats" disabled={!loadCommunications||busy}>Search</button>
       </form>
-      {!loadConversations&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadConversations Autolaunched Flow to list saved conversations.</p>}
+      {!loadConversations&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadConversations Flow to list saved conversations.</p>}
       {!loadCommunications&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadCommunications Flow to read incoming WhatsApp messages from Communication records.</p>}
-      <nav aria-label="Conversations">{filtered.map(row=><button key={identify(row)} className={selected===identify(row)?'selected':''} onClick={()=>setSelected(identify(row))}>
-        <span className="ace-chat-avatar">{label(row).slice(0,1).toUpperCase()}</span><span><strong>{label(row)}</strong><small>{String(pick(row,'PhoneNumber','Status','Description')??'Conversation')}</small></span></button>)}</nav>
-      {loadCommunications&&!busy&&!filtered.length&&<p className="ace-chat-hint">No WhatsApp messages or conversations match this filter.</p>}
+      <nav className="ace-chat-conversation-list" aria-label="Conversations">{filtered.map(row=>{
+        const rowId=identify(row);
+        const preview=String(pick(row,'__lastMessageBody','Body','PhoneNumber','Status')??'WhatsApp chat');
+        const stamp=String(pick(row,'__lastMessageAt','SentAt','ReceivedAt')??'');
+        return <button key={rowId} className={'ace-chat-conversation'+(selected===rowId?' selected':'')} onClick={()=>{setSelected(rowId);setNotice('');setError('');}}>
+          <span className="ace-chat-avatar">{label(row).slice(0,1).toUpperCase()}</span>
+          <span className="ace-chat-conversation-copy"><strong>{label(row)}</strong><small>{preview}</small></span>
+          <span className="ace-chat-conversation-meta">{stamp&&<small>{stamp}</small>}</span>
+        </button>;
+      })}</nav>
+      {loadCommunications&&!busy&&!filtered.length&&<div className="ace-chat-list-empty"><span aria-hidden="true">☏</span><strong>No chats yet</strong><p>Start a new chat with a contact or phone number.</p><button onClick={openNewChat} disabled={!newChatFlow}>New chat</button></div>}
     </aside>
     <main className="ace-chat-main">
-      <header className="ace-chat-top"><span className="ace-chat-avatar">{selectedRow?label(selectedRow).slice(0,1).toUpperCase():'✦'}</span><div><strong>{selectedRow?label(selectedRow):'Choose a conversation'}</strong><small>{selectedRow?String(pick(selectedRow,'PhoneNumber','Status')??'WhatsApp inbox'):'Your authorised tenant inbox'}</small></div></header>
+      <header className="ace-chat-top">
+        <button className="ace-chat-back" aria-label="Back to chats" onClick={()=>setSelected('')}>‹</button>
+        <span className="ace-chat-avatar">{selectedRow?label(selectedRow).slice(0,1).toUpperCase():'✦'}</span>
+        <div className="ace-chat-thread-heading"><strong>{selectedRow?label(selectedRow):'AceChatter'}</strong><small>{selectedRow?String(pick(selectedRow,'PhoneNumber','Status')??'WhatsApp chat'):'Select a chat to start messaging'}</small></div>
+        {selectedRow&&<button className="ace-chat-icon-button ace-chat-thread-refresh" title="Refresh messages" aria-label="Refresh messages" onClick={()=>setRefresh(n=>n+1)} disabled={busy}>↻</button>}
+      </header>
       {error&&<p className="ace-chat-alert" role="alert">{error}</p>}
       {notice&&<p className="ace-chat-notice" role="status">{notice}</p>}
       <section className="ace-chat-thread" aria-label="Messages">
-        {!selectedRow?<div className="ace-chat-welcome"><span>◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read messages from Communication records, filtered by the sender's WhatsApp number.</p></div>:
+        {!selectedRow?<div className="ace-chat-welcome"><span aria-hidden="true">◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read messages from Communication records, filtered by the sender's WhatsApp number.</p><button onClick={openNewChat} disabled={!newChatFlow}>＋ New chat</button></div>:
          !loadMessages&&!loadCommunications?<p className="ace-chat-hint">Activate the authorised message-loading Flows in MetaDrive Flow Builder.</p>:
-         visibleMessages.length===0?<p className="ace-chat-hint">No messages visible for this WhatsApp number.</p>:
+         visibleMessages.length===0?<p className="ace-chat-thread-empty">No messages visible for this WhatsApp number.</p>:
          visibleMessages.map((row,index)=><div key={identify(row)||index} className={String(pick(row,'Direction','MessageDirection')??'').toLowerCase().includes('out')?'ace-chat-bubble outgoing':'ace-chat-bubble'}>
            <p>{String(pick(row,'Body','MessageBody','Text','Content','Name')??'')}</p><small>{String(pick(row,'SentAt','ReceivedAt','CreatedAt','CreatedDate','Status')??'')}</small>
          </div>)}
       </section>
-      <section className="ace-chat-compose" aria-label="Compose via workflow">
-        <label>Sending: {sendFlow?.label??'WhatsApp sending unavailable'}</label>
-        <div className="ace-chat-compose-row"><textarea aria-label="Message to send" placeholder="Type a message…" value={draft} onChange={e=>setDraft(e.target.value)} rows={2} disabled={!selectedRow||!sendFlow}/><button onClick={()=>void send()} disabled={busy||!selectedRow||!draft.trim()||!sendFlow}>Send →</button></div>
-        {!sendFlow&&<small>The sending Flow must be active and authorised. In MetaDrive Flow Builder, open AceChatterSendMessage, assign a WhatsApp HTTPS Named Credential to its HTTP Callout, validate the sender settings and recipient lookup, then activate the Flow. Until then, messages cannot be sent.</small>}
-      </section>
+      {selectedRow&&<section className="ace-chat-compose" aria-label="Compose via workflow">
+        <div className="ace-chat-compose-row"><textarea aria-label="Message to send" placeholder="Type a message" value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void send();}}} rows={1} disabled={!sendFlow}/><button className="ace-chat-send-button" aria-label="Send message" title="Send message" onClick={()=>void send()} disabled={busy||!draft.trim()||!sendFlow}>➤</button></div>
+        {!sendFlow&&<small>The WhatsApp sending Flow must be active and authorised before messages can be sent.</small>}
+      </section>}
     </main>
     {showNewChat&&<div className="ace-chat-modal-backdrop" role="presentation">
-      <div className="ace-chat-modal" role="dialog" aria-modal="true" aria-label="New WhatsApp conversation">
-        <h2>New WhatsApp conversation</h2><p>Creates a tenant conversation through OneEngine Flow. Use international digits without +.</p>
-        <form onSubmit={event=>{event.preventDefault();void createChat();}}>
-          <label>Contact name<input required value={chatName} onChange={event=>setChatName(event.target.value)} maxLength={100}/></label>
-          <label>WhatsApp number<input required inputMode="tel" pattern="[1-9][0-9]{6,14}" placeholder="447XXXXXXXXX" value={chatPhone} onChange={event=>setChatPhone(event.target.value)}/></label>
-          <div className="ace-chat-modal-actions"><button type="button" onClick={()=>setShowNewChat(false)}>Cancel</button><button type="submit" disabled={busy||!chatName.trim()||!/^[1-9][0-9]{6,14}$/.test(chatPhone)}>Create</button></div>
-        </form>
-      </div>
+      <section className="ace-chat-modal ace-chat-new-chat-modal" role="dialog" aria-modal="true" aria-label="New chat">
+        <header className="ace-chat-modal-header"><button type="button" className="ace-chat-modal-back" aria-label="Close new chat" onClick={()=>setShowNewChat(false)}>‹</button><div><h2>New chat</h2><p>Choose a contact or enter a number</p></div></header>
+        <div className="ace-chat-new-chat-tabs" role="tablist" aria-label="New chat method">
+          <button type="button" role="tab" aria-selected={newChatMode==='contacts'} className={newChatMode==='contacts'?'active':''} onClick={()=>setNewChatMode('contacts')}>Contacts</button>
+          <button type="button" role="tab" aria-selected={newChatMode==='number'} className={newChatMode==='number'?'active':''} onClick={()=>setNewChatMode('number')}>Phone number</button>
+        </div>
+        {newChatMode==='contacts'?<div className="ace-chat-contact-panel">
+          <form className="ace-chat-contact-search" onSubmit={event=>{event.preventDefault();setSubmittedContactSearch(contactSearch);}}>
+            <span aria-hidden="true">⌕</span><input aria-label="Search contacts" placeholder="Search contacts" value={contactSearch} onChange={event=>setContactSearch(event.target.value)}/><button type="submit" disabled={contactsLoading}>Search</button>
+          </form>
+          {contactError&&<p className="ace-chat-contact-error" role="alert">{contactError}</p>}
+          {contactsLoading?<p className="ace-chat-contact-state">Loading contacts…</p>:
+           !loadContactsFlow?<p className="ace-chat-contact-state">Configure and activate AceChatterLoadContacts in Flow Builder.</p>:
+           contacts.length===0?<p className="ace-chat-contact-state">No accessible contacts found. Configure the Flow's object and current-user link filter, and check your OneEngine read permissions.</p>:
+           <div className="ace-chat-contacts-list">{contacts.map((contact,index)=>{
+             const phone=contactPhone(contact);
+             const name=contactLabel(contact);
+             const usable=validChatPhone(phone);
+             return <button type="button" className="ace-chat-contact-row" key={identify(contact)||index} onClick={()=>void createChatFromContact(contact)} disabled={busy||!usable}>
+               <span className="ace-chat-avatar">{name.slice(0,1).toUpperCase()}</span><span className="ace-chat-contact-copy"><strong>{name}</strong><small>{usable?'+'+phone:'No valid phone number'}</small></span><span className="ace-chat-contact-arrow" aria-hidden="true">›</span>
+             </button>;
+           })}</div>}
+        </div>:<form className="ace-chat-number-form" onSubmit={event=>void createChatFromNumber(event)}>
+          <label>Contact name (optional)<input autoComplete="name" value={chatName} onChange={event=>setChatName(event.target.value)} maxLength={100} placeholder="Name"/></label>
+          <label>WhatsApp number<input required autoComplete="tel" inputMode="tel" value={chatPhone} onChange={event=>setChatPhone(event.target.value)} placeholder="+44 7700 900123"/></label>
+          <small>Include the country code. Spaces and a leading + are accepted.</small>
+          {contactError&&<p className="ace-chat-contact-error" role="alert">{contactError}</p>}
+          <button type="submit" className="ace-chat-start-button" disabled={busy||!validChatPhone(chatPhone)}>Start chat</button>
+        </form>}
+      </section>
     </div>}
   </div>;
 }

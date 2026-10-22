@@ -3,7 +3,7 @@
 Dedicated, lazy-loaded WhatsApp-style inbox frontend at `/AceChatter` (canonical lowercase `/acechatter`).
 
 * Authentication: shared `/login`, existing MetaDrive session and configured user landing app `AceChatter`.
-* Conversation and message data: tenant-scoped, OneEngine-authorised generic Object metadata and Record APIs. The frontend discovers supported object names; missing schema yields an honest configuration message, not fake chats.
+* Conversation, message and contact records are read through tenant-scoped, actor-authorised OneEngine Flows. The frontend does not call the Record API directly; each Flow owns object selection, filters, field projection and RBAC.
 * Sending/assignment/automations: only permitted **active** metadata Flows served by `/flows/available-actions?product=AceChatter`; execution uses the existing Flow runtime. No hardcoded WhatsApp API tokens, transport, or message sends in browser.
 * WhatsApp credentials/webhooks: existing tenant Named Credentials and integration services. Inbound provider delivery must be configured through an existing secure integration/Flow, not handled in the frontend.
 * Install and publishing, where applicable, remain governed by MetaDrive; navigation registration alone does not grant data permissions.
@@ -20,9 +20,15 @@ AppExchange now discovers AceChatter independently. For **installed, entitled te
 | --- | --- | --- | --- |
 | `AceChatterLoadConversations` | `searchTerm` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterLoadMessages` | `conversationId` (Text) | `messages` (Record Collection) | Active |
+| `AceChatterLoadContacts` | `searchTerm` (Text) | `contacts` (Record Collection), `sourceObjectApi` (Text) | Active when `Contact` exists; otherwise Draft for configuration |
+| `AceChatterCreateConversation` | `chatName`, `phoneNumber`, `sourceObjectApi`, `sourceRecordId` (Text) | Creates or reuses a conversation | Active |
 | `AceChatterLoadCommunications` | `searchTerm` (Text; blank loads recent messages, a number filters the sender) | `communications` (Record Collection) | Active |
 | `AceChatterFindConversationByPhone` | `phoneNumber` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Configure in Flow Builder | Draft |
+
+**New Chat UI:** the mobile inbox uses a full-screen chat list, a WhatsApp-style thread with a back button and bottom composer, and a New Chat picker with **Contacts** and **Phone number** tabs. Contact rows are loaded only by `AceChatterLoadContacts`; the browser never chooses an object API name or reads records directly. The default seeded Flow queries `Contact` records with `OwnerId = {!$User.Id}` and a name search, then returns `sourceObjectApi`. A tenant administrator can edit the Flow's object, user-link filter (for example an assignment/owner relationship), selected fields and `sourceObjectApi` Assignment in Flow Builder. Keep the filter aligned with the intended user-to-contact relationship and rely on OneEngine Record/Field permissions. The Flow is seeded as Draft if the tenant has no `Contact` Object definition.
+
+Selecting a contact passes its Flow-returned record ID and source Object API to the authorised Create Conversation Flow. The conversation stores that provenance in `SourceObjectApi` and `SourceRecordId`. A phone-number chat accepts international notation (including a leading `+`) and uses the same Flow, without creating a contact record.
 
 All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `AceChatterLoadCommunications` reads up to 200 newest `Communication` records filtered to `Channel = WhatsApp` and `Direction = Inbound`; its `Sender` contains-filter supports inbox searches and selected chat numbers. The UI groups records by the sender's WhatsApp number and combines them with matching `ChatConversation` records. Sending still uses the existing authorised Flow and a real `ChatConversation` record; if a received-message chat has no conversation record yet, the UI creates it through the configured Create Conversation Flow before sending. These are metadata defaults, not a browser-side CRUD or sending engine. Native record collections are preferred; legacy JSON Text outputs remain supported. Unauthorised users cannot bypass server-side OneEngine RBAC or Record/Field checks.
 
@@ -35,20 +41,15 @@ Assign the `AceChatterUser` permission set explicitly to the intended users and 
 
 `AceChatterSendMessage` includes an editable **HTTP Callout** node with:
 - Method: `POST`
-- Relative path: `{!phoneNumberId}/messages`
-- Body: WhatsApp Cloud API text message JSON, mapping `recipientPhone` and `message`
+- Relative path: `v26.0/{!public_phoneNumberId}/messages`
+- Body: WhatsApp Cloud API text message JSON, mapping the authorised conversation's `PhoneNumber` and the Flow's `message` input
 - Delivery: `DURABLE_ASYNC` through the shared MetaDrive callout dispatcher
 
-In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/vXX.X/` and the Meta WhatsApp access token. Set the callout's `namedCredentialId` to that saved credential. Replace `vXX.X` with the supported Graph API version. No access token or phone number ID is seeded.
+In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/` and the Meta WhatsApp access token plus the non-secret `public_phoneNumberId` setting. Set the callout's `namedCredentialId` to that saved credential. The Flow path carries the Graph API version (`v26.0` here); change it to a version supported by your Meta app when needed. No access token or phone number ID is seeded.
 
-The UI currently supplies `conversationId` and `message`. Before activating, update the Flow to retrieve the selected `ChatConversation`, authorise record access, and resolve `recipientPhone` and `phoneNumberId` from tenant-controlled metadata/settings rather than trusting arbitrary browser input. Configure receipt/inbound webhook Flows independently. **Do not activate until configured and tested.** The send draft is purposely inactive and will not claim a message was delivered.
+The UI supplies only `conversationId` and `message`. The seeded Flow retrieves the selected `ChatConversation` through OneEngine, resolves its `PhoneNumber`, and addresses the Graph API using `{!public_phoneNumberId}` supplied by the selected encrypted Named Credential. The shared callout runtime binds `public_` values from that credential only and fails closed if the required setting is absent. Configure the tenant Named Credential and validate/activate the Flow only after provider tests. The Flow remains Draft on a fresh install until configured; the UI never claims provider delivery from Flow execution alone.
 
 
 ### Recipient and sender lookup (secure Flow defaults)
 
-The WhatsApp send draft uses the shared **Get Records** elements before its HTTP Callout:
-1. Find the **ChatConversation** by the supplied `conversationId`, within OneEngine Record permissions. Its `PhoneNumber` becomes `{!conversation.PhoneNumber}`.
-2. Find an **active ChatChannelSettings** record, configured in MetaDrive Records UI. Its `PhoneNumberId` becomes `{!channel.PhoneNumberId}`.
-3. POST to `{!channel.PhoneNumberId}/messages` with a Graph API body addressing `{!conversation.PhoneNumber}`.
-
-`ChatChannelSettings` is app metadata with `Name`, `Active`, `PhoneNumberId` fields; no dummy sender ID, secret or business record is installed. Create one enabled record with your Meta WhatsApp Business phone-number ID. Configure and link the tenant Named Credential in Flow Builder, then validate and activate the Flow using OneEngine. The browser never chooses the recipient or sender independently.
+The WhatsApp send Flow reads the **ChatConversation** by `conversationId` through the shared, actor-authorised Get Records node and uses `{!conversation.PhoneNumber}` for the recipient. The Graph API path is `v26.0/{!public_phoneNumberId}/messages`; `public_phoneNumberId` must be configured as a non-secret public setting on the selected tenant Named Credential. No duplicate ChatChannelSettings sender record is required. The browser never chooses the recipient or sender independently.

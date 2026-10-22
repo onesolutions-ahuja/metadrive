@@ -89,3 +89,28 @@ test('Flow Get Records projects typed boolean and numeric values used by POS pay
  assert.match(statements[1],/v\.value_number/);
  assert.match(statements[1],/::text/);
 });
+
+test('Flow Get Records supports current-user OwnerId filters without granting wider record access',async()=>{
+ const statements:Array<{sql:string;params:readonly unknown[]}>=[];
+ const db={query:async(sql:string,params:readonly unknown[]=[]):Promise<{rows:unknown[]}>=>{
+  statements.push({sql,params});
+  if(sql.includes('FROM md_field_definitions'))return {rows:[{api_name:'Name',data_type:'text'}]};
+  return {rows:[{id:'contact-1',created_at:new Date(0),updated_at:new Date(0),
+   owner_id:'user-1',record_type_id:null,field_api:'Name',value_text:'Assigned Contact',
+   reference_record_id:null,value_number:null,value_boolean:null,value_date:null,
+   value_datetime:null,data_type:'text'}]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>undefined,allowed:async()=>true,
+  allowedMany:async(_tenant:string,_user:string,resources:unknown[])=>resources.map(()=>true)} as unknown as RbacEngine;
+ const rows=await new FlowRecordQuery(db,rbac).find('tenant-1','user-1','Contact',[
+  {field:'OwnerId',operator:'Equals',value:'user-1'},
+  {field:'Name',operator:'Contains',value:'assigned'}
+ ],'All',{sortField:'Name',sortOrder:'Ascending',limit:200});
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].OwnerId,'user-1');
+ assert.equal(rows[0].Name,'Assigned Contact');
+ assert.ok(statements[1].sql.includes('COALESCE(r.owner_id,r.owner_queue_id)::text'));
+ assert.deepEqual(statements[1].params.slice(0,6),
+  ['tenant-1','Contact','user-1','user-1','Name','assigned']);
+ assert.ok(statements[1].sql.includes("md_record_access($1,$3,r.id,'read')"));
+});

@@ -47,6 +47,8 @@ test('standalone web router lazy-loads app-owned UIs, not business-specific JSX'
   const shell=readFileSync(new URL('../../src/core/workspace/Standalone/StandaloneRuntime.tsx',import.meta.url),'utf8');
   const assist=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
   const chatter=readFileSync(new URL('../../../acechatter/src/AceChatterRuntime.tsx',import.meta.url),'utf8');
+  const chatterCss=readFileSync(new URL('../../../acechatter/src/aceChatter.css',import.meta.url),'utf8');
+  const flowValueEditors=readFileSync(new URL('../../src/core/builders/FlowBuilder/FlowValueEditors.tsx',import.meta.url),'utf8');
   const till=readFileSync(new URL('../../../acetill/src/AcetillTerminal.tsx',import.meta.url),'utf8');
   assert.match(shell,/LazyAceAssist/);
   assert.match(shell,/LazyAceChatter/);
@@ -62,6 +64,16 @@ test('standalone web router lazy-loads app-owned UIs, not business-specific JSX'
   assert.match(assist,/custom-week/);
   assert.match(assist,/mutationFlow/);
   assert.match(chatter,/ace-chat-thread/);
+  assert.match(chatter,/AceChatterLoadContacts/);
+  assert.match(chatter,/sourceObjectApi/);
+  assert.match(chatter,/newChatMode==='contacts'/);
+  assert.match(chatter,/newChatMode==='number'/);
+  assert.match(chatter,/has-selected-chat/);
+  assert.doesNotMatch(chatter,/\/records\//);
+  assert.match(chatterCss,/@media\(max-width:760px\)/);
+  assert.match(chatterCss,/\.ace-chat\.has-selected-chat \.ace-chat-sidebar\{display:none\}/);
+  assert.match(flowValueEditors,/value="OwnerId">Owner/);
+  assert.match(flowValueEditors,/condition\.field==='OwnerId'\?ownerField/);
   assert.match(till,/AcetillGetProducts/);
   for(const source of [shell,assist,chatter,till])
     assert.doesNotMatch(source,/Home page is not configured|LazyPublishedRuntime|LightningAppRuntime/);
