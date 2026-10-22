@@ -27,6 +27,8 @@ jobs:
         run: npm ci
       - name: Check shared UI design contract
         run: node scripts/check-ui-design-tokens.mjs
+      - name: Run component and canvas UX regression tests
+        run: npm run test:components
       - name: Build frontend
         run: npm run build --workspace apps/web
 
