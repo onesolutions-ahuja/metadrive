@@ -116,6 +116,25 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
   (tenant_id,object_api,api_name,label,data_type,related_object,required)
   VALUES($1,'Invoice','Quotation','Source Quotation','reference','Quotation',false)
   ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,[tenantId]);
+ // Ordinary Object CRUD must not silently issue incomplete documents or
+ // edit an issued amount/identity. Reuse shared declarative validation rules.
+ const rules=[
+  {api:'AceAssistIssuedHasNumber',label:'Issued invoice must have number',
+   expression:'AND($Record.Status = "Issued", ISBLANK($Record.InvoiceNumber))',
+   message:'An invoice can only be issued through the authorised numbering Flow.'},
+  {api:'AceAssistProtectIssuedInvoice',label:'Protect issued invoice financial identity',
+   expression:'AND(NOT(ISNEW()), NOT(ISBLANK(PRIORVALUE($Record.InvoiceNumber))), OR('+
+    'ISCHANGED($Record.InvoiceNumber), ISCHANGED($Record.Total), '+
+    'ISCHANGED($Record.Subtotal), ISCHANGED($Record.DiscountAmount), '+
+    'ISCHANGED($Record.TaxAmount), ISCHANGED($Record.Customer), '+
+    'ISCHANGED($Record.Quotation)))',
+   message:'Issued invoices are immutable; use an authorised correction or credit note.'}
+ ];
+ for(const rule of rules)await client.query(`INSERT INTO md_validation_rules
+  (tenant_id,object_api,api_name,label,expression,error_message,error_field_api,active,sort_order)
+  VALUES($1,'Invoice',$2,$3,$4,$5,'InvoiceNumber',true,100)
+  ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
+  [tenantId,rule.api,rule.label,rule.expression,rule.message]);
  let created=0;
  for(const flow of [conversionGraph(),issueGraph()]){
   const prior=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
@@ -152,7 +171,7 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
   ['Flow:AceAssistIssueInvoice','execute'],['Invoice','read'],['Invoice','edit'],
   ['InvoiceLine','read'],['InvoiceNumber','Subtotal','DiscountAmount','TaxAmount','Total','Status']
    .flatMap(x=>[['Invoice.'+x,'read'],['Invoice.'+x,'edit']]),
-  ...['Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal']
+  ...['Invoice','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal']
    .map(x=>['InvoiceLine.'+x,'read'])
  ];
  for(const [policy,rights] of [['AceAssistUser',standardRights],['AceAssistFinanceIssuer',issuerRights]] as const)
