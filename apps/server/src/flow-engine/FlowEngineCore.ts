@@ -1,3 +1,4 @@
+import {TillPinService} from '../system-support/till-pin-service.js';
 import {failedFlowLogs,pendingFlowInterviews} from './FlowExecutionHistory.js';
 import {executeActionButtonNode} from '../system-files/nodes/ActionButtonNode.js';
 import {executeWaitPauseNode} from '../system-files/nodes/WaitPauseNode.js';
@@ -464,6 +465,16 @@ export class FlowRuntime {
     if(rows[0]?.flow_type==='Record-Triggered Flow'||rows[0]?.flow_type==='Schedule-Triggered Flow'
       ||rows[0]?.flow_type==='Platform Event-Triggered Flow')
       throw new Error('Triggered Flows cannot be manually executed');
+    // Core identity capability invoked only through an entitled, active, metadata-declared Flow.
+    // Never allow the caller to select a target user or retrieve a stored PIN.
+    if(rows[0]?.has_editor){
+      const editor=await this.loadEditor(tenantId,flowApi);
+      const startConfig=editor.startConfig as Record<string,unknown>;
+      if(startConfig.securityOperation==='VerifyCurrentUserTillPin'){
+        const verified=await new TillPinService(this.db).verify(tenantId,userId,inputs.pin);
+        return {completed:true,status:'completed',outputs:{verified}};
+      }
+    }
     const requests=new FlowExecutionRequests(this.db);
     const requestId=FlowExecutionRequests.key(inputs);
     if(requestId){
