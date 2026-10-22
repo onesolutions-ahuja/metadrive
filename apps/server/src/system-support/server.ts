@@ -18,6 +18,7 @@ import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js'
 import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotation-objects.js';
 import {seedAppointmentObjectsForExistingTenants} from '../app-seeders/core-appointment-objects.js';
 import {seedCommunicationObjectsForExistingTenants} from '../app-seeders/core-communication-objects.js';
+import {seedAcetillLockFlows} from '../app-seeders/acetill-lock-flow.js';
 import {seedAcetillAppCatalog} from '../app-seeders/acetill-app-catalog.js';
 import {seedAceKioskAppCatalog} from '../app-seeders/acekiosk-app-catalog.js';
 import {seedAceKioskMenuFlows,seedAceKioskProductOptions} from '../app-seeders/acekiosk-menu-flow.js';
@@ -2101,6 +2102,7 @@ export async function startSystemServer() {
     await seedAceKioskProductOptions(db);
     await seedAceKioskNavigationFlows(db);
     await seedAceKioskPaymentFlows(db); // Installed tenants only, never overwrites existing Flow versions.
+    await seedAcetillLockFlows(db);
     await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
     await seedQuotationObjectsForExistingTenants(db);
     await seedAppointmentObjectsForExistingTenants(db);
