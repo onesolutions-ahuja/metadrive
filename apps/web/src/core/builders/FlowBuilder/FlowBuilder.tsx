@@ -187,9 +187,9 @@ export default function FlowBuilder({
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const isElementAvailable = (type: string) =>
-    flowElementAvailable(capabilityCatalog, type, flow.flowType, flow.startConfig.runWhen);
+    flowElementAvailable(capabilityCatalog, type, flow.flowType, flow.startConfig?.runWhen);
   const isToolboxElement = (type: string) =>
-    flowElementInToolbox(capabilityCatalog,type,flow.flowType,flow.startConfig.runWhen);
+    flowElementInToolbox(capabilityCatalog,type,flow.flowType,flow.startConfig?.runWhen);
   const [resourceLabel, setResourceLabel] = useState('');
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
@@ -275,7 +275,7 @@ export default function FlowBuilder({
   const selectedObject = objects.find((object) => object.apiName === flow.triggerObject);
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
-  const freeformLayout = flow.startConfig.canvasLayoutMode === 'Freeform';
+  const freeformLayout = flow.startConfig?.canvasLayoutMode === 'Freeform';
   const { graphNodeWidth, graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions } = layoutFlowGraph(flow, freeformLayout, dragPreview);
   const setCanvasPosition = (id: number, position: { x: number; y: number }) => {
     onFlowChange({
@@ -589,7 +589,7 @@ export default function FlowBuilder({
         onChange={(event) => setStartConfig('executionContext', event.target.value)}>
         <option value="User">User Context</option>
         <option value="System" disabled={flow.flowType === 'Screen Flow'
-          || flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save'}>
+          || flow.flowType === 'Record-Triggered Flow' && flow.startConfig?.runWhen === 'before-save'}>
           System Context
         </option>
       </select></label>
@@ -604,8 +604,8 @@ export default function FlowBuilder({
         <label className="form-label">Object<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         {flow.flowType === 'Record-Triggered Flow' && <>
           <label className="form-label">Trigger<select className="form-control" value={displayValue(flow.startConfig.trigger) || 'created-or-updated'} onChange={(event) => setStartConfig('trigger', event.target.value)}><option value="created">A record is created</option><option value="updated">A record is updated</option><option value="created-or-updated">A record is created or updated</option><option value="deleted">A record is deleted</option></select></label>
-          <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig.runWhen) || 'after-save'} onChange={(event) => { setStartConfig('runWhen', event.target.value); if (event.target.value === 'before-save' && flow.startConfig.executionContext === 'System') setStartConfig('executionContext', 'User'); }}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
-          <div className="info-callout">{flow.startConfig.runWhen === 'before-save' ? 'Before-save flows can query records, loop and transform collections, and update $Record fields. Write actions, HTTP calls and waits remain blocked.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. CRUD performed inside a Flow does not recursively dispatch record triggers; up to 50 matching Flows run for one record operation.'}</div>
+          <label className="form-label">Optimize the Flow For<select className="form-control" value={displayValue(flow.startConfig?.runWhen) || 'after-save'} onChange={(event) => { setStartConfig('runWhen', event.target.value); if (event.target.value === 'before-save' && flow.startConfig.executionContext === 'System') setStartConfig('executionContext', 'User'); }}><option value="before-save">Fast Field Updates (before-save)</option><option value="after-save">Actions and Related Records (after-save)</option></select></label>
+          <div className="info-callout">{flow.startConfig?.runWhen === 'before-save' ? 'Before-save flows can query records, loop and transform collections, and update $Record fields. Write actions, HTTP calls and waits remain blocked.' : 'After-save flows run in the same transaction as API record creates, updates, and deletes. CRUD performed inside a Flow does not recursively dispatch record triggers; up to 50 matching Flows run for one record operation.'}</div>
           <label className="form-label">Trigger Order<input className="form-control" type="number" min={1} max={2000} step={1} value={displayValue(flow.startConfig.triggerOrder)} onChange={(event) => setStartConfig('triggerOrder', event.target.value === '' ? undefined : Number(event.target.value))} /></label>
           <p className="settings-panel-copy">Optional order from 1 to 2000. Lower numbers run first among active flows on the same object and save phase.</p>
           <label className="form-label">Entry Conditions</label>
@@ -719,7 +719,7 @@ export default function FlowBuilder({
     }
     if (selected.type === 'Assignment') {
       const triggerObject = objects.find((object) => object.apiName === flow.triggerObject);
-      const beforeSave = flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save';
+      const beforeSave = flow.flowType === 'Record-Triggered Flow' && flow.startConfig?.runWhen === 'before-save';
       const selectedVariableResource = flow.resources.find((resource) => resource.name === selected.config.variable);
       const collectionOperators = ['Assign', 'Add', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'];
       const numericTypes = ['Number', 'Currency', 'Percent'];
@@ -1920,7 +1920,7 @@ export default function FlowBuilder({
               <option value="normal">Normal</option>
               <option value="fault" disabled={selected.type === 'Start'}>Fault</option>
               <option value="scheduled" disabled={selected.type !== 'Start' || flow.flowType !== 'Record-Triggered Flow'}>Scheduled Path</option>
-              <option value="async" disabled={selected.type !== 'Start' || flow.flowType !== 'Record-Triggered Flow' || flow.startConfig.runWhen === 'before-save' || flow.startConfig.trigger === 'deleted'}>Asynchronous Path</option>
+              <option value="async" disabled={selected.type !== 'Start' || flow.flowType !== 'Record-Triggered Flow' || flow.startConfig?.runWhen === 'before-save' || flow.startConfig.trigger === 'deleted'}>Asynchronous Path</option>
             </select>
             <button className="row-menu" aria-label="Remove connector" onClick={() => onFlowChange({ ...flow, connectors: flow.connectors.filter((item) => item.id !== connector.id) })}><X size={14} /></button>
           </div>
