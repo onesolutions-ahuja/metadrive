@@ -1,6 +1,6 @@
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
-import {encodeMetadataValue} from '../system-files/component-runtime.js';
+import {decodeMetadataValues,encodeMetadataValue,type MetadataValueRow} from '../system-files/component-runtime.js';
 
 type Field={object:string;name:string;label:string;type:string};
 const fields:Field[]=[
@@ -50,6 +50,56 @@ async function insertGraph(client:PoolClient,tenantId:string,graphValue:ReturnTy
   [tenantId,rows[0].id,property.path,property.kind,property.text]);
  return true;
 }
+/** Migrate only the seeded, obsolete sender-settings lookup.
+ * Do not reset published/customer-authored HTTP callouts or credential bindings. */
+export async function reconcileAceChatterCredentialFlow(client:PoolClient,tenantId:string):Promise<boolean>{
+ const {rows:flows}=await client.query<{id:string}>(`
+  SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name='AceChatterSendMessage'
+    AND archived=false ORDER BY version DESC LIMIT 1 FOR UPDATE`,[tenantId]);
+ const flowId=flows[0]?.id;
+ if(!flowId)return false;
+ const {rows}=await client.query<MetadataValueRow>(`
+  SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+   WHERE tenant_id=$1 AND flow_id=$2 ORDER BY property_path`,[tenantId,flowId]);
+ if(!rows.length)return false;
+ const source=decodeMetadataValues(rows).builder;
+ if(!source||typeof source!=='object'||Array.isArray(source))return false;
+ const graph=source as Record<string,unknown>;
+ if(!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
+ const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const connectors=graph.connectors as Array<{from:number;to:number;kind:string;label?:string}>;
+ const stale=elements.find(item=>item.id===5);
+ const outbound=elements.find(item=>item.id===2);
+ // Guard against tenant-edited or nonstandard Flows.
+ if(elements.length!==6||connectors.length!==5
+  ||stale?.type!=='Get Records'||stale.config?.object!=='ChatChannelSettings'
+  ||stale.config?.outputVariable!=='channel'||outbound?.type!=='HTTP Callout'
+  ||outbound.config?.path!=='v26.0/{!public_phoneNumberId}/messages'
+  ||!connectors.some(edge=>edge.from===4&&edge.to===5)
+  ||!connectors.some(edge=>edge.from===5&&edge.to===2)
+  ||connectors.some(edge=>edge.to===5&&edge.from!==4||edge.from===5&&edge.to!==2))
+  return false;
+ // Never change a Flow if other nodes still reference the old channel record.
+ if(elements.some(item=>item.id!==5&&JSON.stringify(item.config??{}).includes('{!channel.')))
+  return false;
+ graph.elements=elements.filter(item=>item.id!==5);
+ graph.connectors=connectors.filter(edge=>edge.from!==5).map(edge=>
+  edge.from===4&&edge.to===5?{...edge,to:2}:edge);
+ const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',encoded);
+ await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',
+  [tenantId,flowId]);
+ for(const item of encoded)await client.query(`
+  INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+  VALUES($1,$2,$3,$4,$5)`,[tenantId,flowId,item.path,item.kind,item.text]);
+ await client.query(`
+  INSERT INTO md_security_events(tenant_id,action,details)
+  VALUES($1,'AceChatterCredentialFlowReconciled',
+   jsonb_build_object('flowId',$2::text,'removedNode',5,'preservedCredential',true))`,
+  [tenantId,flowId]);
+ return true;
+}
+
 /** Idempotently seed only a licensed/installed AceChatter tenant, never user grants or business chats. */
 export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:string):Promise<number>{
  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenantId+':flows:AceChatter']);
@@ -86,6 +136,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
   WHERE p.tenant_id=$1 AND p.api_name='AceChatterUser'
   ON CONFLICT DO NOTHING`,[tenantId,resource,action]);
+ await reconcileAceChatterCredentialFlow(client,tenantId);
  const definitions=[
   graph('AceChatterLoadConversations','AceChatter - Load Conversations',
    'ChatConversation','searchTerm',[
