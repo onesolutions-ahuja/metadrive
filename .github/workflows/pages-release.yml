@@ -33,9 +33,11 @@ jobs:
       - name: Run comprehensive repository checks for pull requests
         if: github.event_name == 'pull_request'
         run: npm run check
-      - name: Verify current production frontend API and browser login
+      - name: Verify Oracle API health and credentialed browser CORS
         if: github.event_name == 'pull_request'
-        run: node scripts/verify-public-render-routing.mjs
+        env:
+          METADRIVE_API_BASE_URL: https://api.unesolutions.co.uk/api
+        run: node scripts/verify-render-api.mjs
   publish:
     if: github.event_name != 'pull_request'
     needs: verify
