@@ -64,8 +64,8 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
   const staffByOwner=m.staff==='OwnerId';
   const {rows}=await client.query<{configured:boolean;covered:boolean}>(`
    SELECT COUNT(*)>0 AS configured,
-    COALESCE(BOOL_OR(weekday.value_text=$4 AND from_time.value_text<=$5
-      AND to_time.value_text>=$6),false) AS covered
+    COALESCE(BOOL_OR(weekday.value_text=$4 AND left(from_time.value_text,5)<=$5
+      AND left(to_time.value_text,5)>=$6),false) AS covered
    FROM md_records r
    ${staffByOwner?'':`JOIN md_record_values person ON person.tenant_id=r.tenant_id AND person.record_id=r.id
     AND person.field_api=$7`}
