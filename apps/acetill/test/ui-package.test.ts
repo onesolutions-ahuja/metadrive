@@ -87,7 +87,7 @@ test('customer display mirrors cart, and payments use only permitted Cash/Card F
 });
 
 
-test('cash/card payment Flow graphs use server Product prices and create both Order and OrderLine',()=>{
+test('cash/card payment Flow graphs use server Product prices and create both Invoice and InvoiceLine',()=>{
  const graphs=JSON.parse(readFileSync(fileURLToPath(new URL('../flows/payment-flows.v1.json',import.meta.url)),'utf8'));
  const ui=readFileSync(fileURLToPath(new URL('../src/AcetillTerminal.tsx',import.meta.url)),'utf8');
  for(const name of ['AcetillPaymentCash','AcetillPaymentCard']){
@@ -95,12 +95,12 @@ test('cash/card payment Flow graphs use server Product prices and create both Or
   assert.equal(graph.flowType,'Autolaunched Flow');
   const resources=graph.resources;
   assert.ok(resources.some(r=>r.name==='cartItems'&&r.type==='Record Collection'
-   &&r.dataType==='OrderLine'&&r.isCollection&&r.availableForInput));
+   &&r.dataType==='InvoiceLine'&&r.isCollection&&r.availableForInput));
   const nodes=graph.elements;
   assert.ok(nodes.some(n=>n.type==='Get Records'&&n.config.object==='Product'
    &&n.config.conditions.some(c=>c.field==='Id'&&(c.value==='{!verifyLine.Product}'||c.value==='{!saveLine.Product}'))));
-  const order=nodes.find(n=>n.type==='Create Records'&&n.config.object==='Order');
-  const line=nodes.find(n=>n.type==='Create Records'&&n.config.object==='OrderLine');
+  const order=nodes.find(n=>n.type==='Create Records'&&n.config.object==='Invoice');
+  const line=nodes.find(n=>n.type==='Create Records'&&n.config.object==='InvoiceLine');
   assert.ok(order&&line);
   assert.equal(order.config.fieldValues.find(f=>f.field==='Total')?.value,'{!validatedTotal}');
   assert.equal(line.config.fieldValues.find(f=>f.field==='UnitPrice')?.value,'{!currentProduct.Price}');
