@@ -184,7 +184,7 @@ test('reported One UI accessibility contracts remain implemented', async () => {
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
-    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.jsx')
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(shared, /event\.key === "Escape"/);
