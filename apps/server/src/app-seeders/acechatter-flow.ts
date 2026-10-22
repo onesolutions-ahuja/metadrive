@@ -146,8 +146,9 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
    {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
    {field:'Provider',value:'WhatsApp'}
   ]}}];
- graph.connectors=connectors.map(edge=>edge.from===6&&edge.to===3?{...edge,to:7}:edge);
- graph.connectors.push({from:7,to:3,kind:'normal',label:'Next'});
+ const nextConnectors=connectors.map(edge=>edge.from===6&&edge.to===3?{...edge,to:7}:edge);
+ nextConnectors.push({from:7,to:3,kind:'normal',label:'Next'});
+ graph.connectors=nextConnectors;
  const encoded:Array<{path:string;kind:string;text:string|null}>=[];
  encodeMetadataValue(graph,'/builder',encoded);
  await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,flowId]);
