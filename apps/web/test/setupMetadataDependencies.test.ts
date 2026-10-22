@@ -110,7 +110,7 @@ test('login and MFA include landing bootstrap; session restore uses one authenti
   assert.match(server, /req\.query\.landing==='1'\?await landingBootstrap\(actor\.tenant_id,actor\.user_id\)/);
   assert.match(login, /challenge\?'\/auth\/mfa\/verify\?landing=1'/);
   assert.match(login, /'\/auth\/login\?landing=1'/);
-  assert.match(app, /fetch\(\$\{apiBase\}\/auth\/refresh/);
-  assert.doesNotMatch(app, /fetch\(\$\{apiBase\}\/auth\/refresh\?landing=1/);
+  assert.match(app, /fetch\(`\$\{apiBase\}\/auth\/refresh/);
+  assert.doesNotMatch(app, /fetch\(`\$\{apiBase\}\/auth\/refresh\?landing=1/);
   assert.match(loader, /apiRequest<\{ landing\?: NonNullable<typeof landing> \}>\('\/metadata\/landing-bootstrap'\)/);
 });
