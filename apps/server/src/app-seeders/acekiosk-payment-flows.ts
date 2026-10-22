@@ -30,7 +30,7 @@ export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number
     ('Product','read'),('Product.Price','read'),('Product.Active','read'),
     ('Order','create'),('OrderLine','create'),
     ('Invoice','create'),('InvoiceLine','create'),
-    ('Invoice.Name','create'),('Invoice.Subtotal','create'),
+    ('Invoice.Name','create'),('Invoice.Order','create'),('Invoice.Subtotal','create'),
     ('Invoice.Total','create'),('Invoice.Status','create'),
     ('Invoice.Checkout_Request_ID__c','create'),('Invoice.Payment_Method__c','create'),
     ('InvoiceLine.Invoice','create'),('InvoiceLine.Product','create'),
@@ -50,6 +50,13 @@ export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number
    SELECT api_name FROM md_object_definitions WHERE tenant_id=$1 AND api_name=ANY($2)`,
    [tenantId,needed]);
   if(found.length!==needed.length)return;
+  // Shared financial metadata: link Invoice directly to the kitchen Order.
+  // Never overwrite user-customised fields or previously issued invoices.
+  await client.query(`
+    INSERT INTO md_field_definitions
+      (tenant_id,object_api,api_name,label,data_type,related_object,required)
+    VALUES($1,'Invoice','Order','Kitchen Order','reference','Order',false)
+    ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,[tenantId]);
   for(const name of ['AceKioskPaymentCash','AceKioskPaymentCard']){
    const template=templates[name];
    if(!template||template.apiName!==name||template.appApiName!=='AceKiosk')
