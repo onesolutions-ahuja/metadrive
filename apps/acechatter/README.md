@@ -14,7 +14,7 @@ The UI is maintained here as a standalone app, never by Page Builder. No alterna
 
 ## Flow configuration and data model
 
-AppExchange now discovers AceChatter independently. For **installed, entitled tenants only**, the idempotent app seeder creates missing `ChatConversation` and `ChatMessage` Object/Field definitions, a separately assignable `AceChatterUser` permission set and editable OneEngine Flows. Existing versions are not modified. Received WhatsApp messages are read from the shared `Communication` object rather than relying on the legacy inbound `ChatMessage` Flow. The seeder does not create customer conversations or assign permissions to a user.
+AppExchange now discovers AceChatter independently. For **installed, entitled tenants only**, the idempotent app seeder creates missing `ChatConversation` and `ChatMessage` Object/Field definitions, a separately assignable `AceChatterUser` permission set and editable OneEngine Flows. Existing versions and customer-authored graphs are preserved. The known seeded send graph is reconciled conservatively to write successful outbound WhatsApp sends to the shared `Communication` object as well as the legacy `ChatMessage` object. Received WhatsApp messages are read from `Communication`. The seeder does not create customer conversations or assign permissions to a user.
 
 | Flow API | Inputs | OneEngine output | Initial state |
 | --- | --- | --- | --- |
@@ -24,11 +24,11 @@ AppExchange now discovers AceChatter independently. For **installed, entitled te
 | `AceChatterFindConversationByPhone` | `phoneNumber` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Configure in Flow Builder | Draft |
 
-All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `AceChatterLoadCommunications` reads up to 200 newest `Communication` records filtered to `Channel = WhatsApp` and `Direction = Inbound`; its `Sender` contains-filter supports inbox searches and selected chat numbers. The UI groups records by the sender's WhatsApp number and combines them with matching `ChatConversation` records. Sending still uses the existing authorised Flow and a real `ChatConversation` record; if a received-message chat has no conversation record yet, the UI creates it through the configured Create Conversation Flow before sending. These are metadata defaults, not a browser-side CRUD or sending engine. Native record collections are preferred; legacy JSON Text outputs remain supported. Unauthorised users cannot bypass server-side OneEngine RBAC or Record/Field checks.
+All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `AceChatterLoadCommunications` reads up to 200 `Communication` records filtered to `Channel = WhatsApp` and `(Sender contains searchTerm OR Recipient contains searchTerm)`, so inbound senders and outbound recipients both match. The UI groups both directions by the customer's WhatsApp number, combines them with matching `ChatConversation` records, sorts the thread chronologically and refreshes every five seconds while the page is visible. Sending still uses the existing authorised Flow and a real `ChatConversation` record; if a received-message chat has no conversation record yet, the UI creates it through the configured Create Conversation Flow before sending. These are metadata defaults, not a browser-side CRUD or sending engine. Native record collections are preferred; legacy JSON Text outputs remain supported. Unauthorised users cannot bypass server-side OneEngine RBAC or Record/Field checks.
 
 **Outbound WhatsApp sending deliberately remains a Draft until a tenant administrator configures an appropriate Named Credential, authorised WhatsApp HTTP callout, provider delivery statuses and failure handling.** Activating a no-op send Flow would falsely imply delivery. Incoming WhatsApp webhooks and provider callbacks likewise require tenant-secured integration Flows. Confirm provider consent, conversation-window/template requirements and webhook authenticity before activation.
 
-Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The policy includes OneEngine read permissions for the `Communication` object and inbox fields. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
+Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The policy includes OneEngine read permissions for inbox fields and explicit create permissions for the outbound Communication fields written after a successful authorised send Flow. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
 
 
 ## WhatsApp Cloud API send draft
@@ -52,3 +52,8 @@ The WhatsApp send draft uses the shared **Get Records** elements before its HTTP
 3. POST to `{!channel.PhoneNumberId}/messages` with a Graph API body addressing `{!conversation.PhoneNumber}`.
 
 `ChatChannelSettings` is app metadata with `Name`, `Active`, `PhoneNumberId` fields; no dummy sender ID, secret or business record is installed. Create one enabled record with your Meta WhatsApp Business phone-number ID. Configure and link the tenant Named Credential in Flow Builder, then validate and activate the Flow using OneEngine. The browser never chooses the recipient or sender independently.
+
+
+## Shared integration API audit
+
+The Core records tenant-scoped inbound webhook and outbound HTTPS Named Credential request metadata in `md_integration_api_logs`, independently of app-specific logging steps. It records direction, provider/credential reference, endpoint path without query strings, method, HTTP status, outcome, duration and byte counts. Request/response bodies, headers, credentials, signatures and query strings are not copied into this audit table. This is a general integration audit trail; message-level `Communication` records remain the shared business timeline and are created by inbound integration ingestion and the authorised WhatsApp send Flow.
