@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const read = path => readFileSync(new URL(path, 'file://' + root), 'utf8');
 const moved = {
   'MarketingSite.tsx':'core/public/MarketingSite/MarketingSite.tsx',
+  'marketing.css':'core/public/MarketingSite/marketing.css',
   'design-system.css':'core/workspace/WorkspaceTheme/design-system.css',
   'styles.css':'core/workspace/WorkspaceTheme/styles.css',
   'styles-part2.css':'core/workspace/WorkspaceTheme/styles-part2.css',
@@ -89,4 +90,33 @@ for (const file of [
   'AppManagerList.css','CompanySettingsWorkspace.css','TenantManagement.css',
 ]) assert.match(web(file), /scrollbar-width:\s*thin/, 'Missing scrollbar styling in ' + file);
 
-console.log('Shared visual design contract checks passed.');
+
+function relativeLuminance(hex) {
+  const value = hex.replace('#', '');
+  assert.match(value, /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i, 'Expected a valid hex colour: ' + hex);
+  const full = value.length === 3 ? [...value].map(part => part + part).join('') : value;
+  const channels = [0, 2, 4].map(index => parseInt(full.slice(index, index + 2), 16) / 255)
+    .map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+function contrastRatio(foreground, background) {
+  const values = [relativeLuminance(foreground), relativeLuminance(background)].sort((a, b) => b - a);
+  return (values[0] + 0.05) / (values[1] + 0.05);
+}
+const muted = tokens.match(/--md-muted:\s*(#[0-9a-f]{3,6})/i)?.[1];
+assert.ok(muted, 'Shared muted text token must have a concrete fallback colour');
+for (const background of ['#ffffff', '#f6f8ff']) {
+  assert.ok(contrastRatio(muted, background) >= 4.5,
+    'Muted text must meet WCAG AA 4.5:1 contrast on ' + background + '; got ' + contrastRatio(muted, background).toFixed(2) + ':1');
+}
+const marketingCss = web('marketing.css');
+assert.match(marketingCss, /--une-muted:var\(--md-muted,#596579\)/,
+  'Marketing muted text must retain the contrast-safe token fallback');
+for (const [foreground, background, label] of [
+  ['#596579', '#f6f8ff', 'marketing muted text'],
+  ['#5146b8', '#ffffff', 'POS accent text'],
+  ['#9a4318', '#ffffff', 'kiosk accent text'],
+]) assert.ok(contrastRatio(foreground, background) >= 4.5,
+  label + ' must meet WCAG AA 4.5:1 contrast; got ' + contrastRatio(foreground, background).toFixed(2) + ':1');
+
+console.log('Shared visual design and WCAG AA contrast contract checks passed.');

@@ -29,6 +29,9 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
+    } else if (fixture.apiName === 'OneNavigation') {
+      // Empty navigation now exposes its empty state to assistive technology.
+      assert.match(html, /class="one-empty" role="status">Add navigation items<\/div>/);
     } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard','OneTimeline','OneChart','OneDocumentViewer','OneDashboardEmbed','OneConversation','OneShoppingCart'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
@@ -180,13 +183,13 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
 
 test('reported One UI accessibility contracts remain implemented', async () => {
   const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
-  const [overlay, menu, tabs, button, input, search, form, grid, shared, board, timeline, chart, documentViewer, dashboardEmbed, conversation, cart] = await Promise.all([
+  const [overlay, menu, tabs, button, input, search, form, grid, shared, board, timeline, chart, documentViewer, dashboardEmbed, conversation, cart, navigation] = await Promise.all([
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
     read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx'),
     read('OneTimeline/OneTimeline.jsx'), read('OneChart/OneChart.jsx'), read('OneDocumentViewer/OneDocumentViewer.jsx'),
-    read('OneDashboardEmbed/OneDashboardEmbed.jsx'), read('OneConversation/OneConversation.jsx'), read('OneShoppingCart/OneShoppingCart.jsx')
+    read('OneDashboardEmbed/OneDashboardEmbed.jsx'), read('OneConversation/OneConversation.jsx'), read('OneShoppingCart/OneShoppingCart.jsx'), read('OneNavigation/OneNavigation.jsx')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(shared, /event\.key === 'Escape'/);
@@ -211,8 +214,16 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(grid, /className="one-empty" role="status"/);
   assert.match(board, /role="region"/);
   assert.match(board, /<h3 className="one-heading">/);
+  assert.match(board, /className="one-empty" role="status"/);
+  assert.match(navigation, /className="one-empty" role="status"/);
   for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
   for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.doesNotMatch(component, /className="one-empty"(?!\s+role="status")/, "every empty state must announce its status");
+  const [coreModal, coreDismiss] = await Promise.all([
+    readFile(new URL("../src/core/accessibility/Modal/useModalAccessibility.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/core/accessibility/Dismiss/useDismissOnOutside.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(coreModal, /from '\.\.\/\.\.\/\.\.\/one\/shared\/accessibilityHooks'/);
+  assert.match(coreDismiss, /from '\.\.\/\.\.\/\.\.\/one\/shared\/accessibilityHooks'/);
   const properties = await readFile(new URL("../src/core/builders/ComponentProperties/componentPropertiesView.tsx", import.meta.url), "utf8");
   for (const section of ["Content", "Layout", "Responsive", "Appearance"]) assert.match(properties, /propertySectionFor\(key, definitionsByKey\.get\(key\)\) === section/);
 });
@@ -221,9 +232,13 @@ test('reported One UI accessibility contracts remain implemented', async () => {
 test('accessibility smoke covers login and supports configured published-page/dialog scans', async () => {
   const smoke = await readFile(new URL('../../../scripts/accessibility-smoke.mjs', import.meta.url), 'utf8');
   assert.match(smoke, /new URL\('\/login', base\)\.href/);
+  assert.match(smoke, /component-fixture/);
   assert.match(smoke, /UI_SMOKE_PUBLISHED_URL/);
   assert.match(smoke, /UI_SMOKE_OVERLAY_SELECTOR/);
   assert.match(smoke, /window\.axe\.run/);
   assert.match(smoke, /showcase tab/);
   assert.match(smoke, /Critical\/serious WCAG violations/);
+  const fixture = await readFile(new URL('./accessibility-fixture.jsx', import.meta.url), 'utf8');
+  for (const component of ['OneTable', 'OneInput', 'OneButton', 'OneOverlay', 'OneMenu', 'OneTabs', 'OneSearch']) assert.match(fixture, new RegExp(component));
+  for (const contract of ['ArrowDown moves menu focus','ArrowLeft selects the previous tab','active descendant','Tab remains trapped inside the dialog','restores trigger focus']) assert.match(smoke, new RegExp(contract));
 });
