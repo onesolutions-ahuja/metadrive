@@ -104,6 +104,7 @@
     "apps/web/test/flowReferenceCatalog.test.ts",
     "apps/web/test/flowSubflowMappings.test.ts",
     "apps/web/test/metadataBindings.test.ts",
+    "apps/web/test/named-credentials-bootstrap-regression.test.ts",
     "apps/web/test/offlinePublicationClient.test.mjs",
     "apps/web/test/oneComponentRendering.test.mjs",
     "apps/web/test/openPageActionNode.test.ts",
