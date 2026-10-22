@@ -96,3 +96,34 @@ amounts or derive invoice balances inside frontend components.
   Objects, authorised published Flows and live integration testing.
 
 Do not replace customer-customised tenant landing metadata during reinstall.
+
+
+## Flow-powered operations
+
+The custom Ace Assist frontend now reads and mutates records **only via authorised
+Autolaunched Flows**. It does not invoke Object CRUD APIs directly.
+
+For each installed tenant and each existing Object (`Appointment`, `Customer`,
+`Quotation`, `QuotationLine`, `Invoice`, `InvoiceLine`), the independent app
+seeder adds missing `AceAssistLoad<Object>`, `AceAssistCreate<Object>`,
+`AceAssistUpdate<Object>`, and `AceAssistDelete<Object>` Flow metadata.
+Existing tenant-authored definitions, versions and business records are preserved.
+
+- Assign the `AceAssistUser` permission set to staff who should perform CRUD.
+  The seeder **never** assigns staff automatically.
+- **Company Settings → Business Settings:** configure the tenant's organisation
+  IANA time zone, seven-day opening/closing windows, and holidays.
+  The current tenant had no saved business calendar at implementation time;
+  appointment creation/editing therefore fails closed until configured.
+- The calendar executes `AceAssistLoadAppointment` (Get Records) and displays
+  the resulting appointments within the selected week.
+- The server's reusable declarative `businessCalendarGuard` rejects scheduling
+  requests outside business hours and on holidays; the custom frontend checks
+  the same time window for immediate guidance.
+- Lookup choices for linked Customers, Quotations and Invoices are loaded via
+  their authorised Get Records Flows. No placeholder/dummy records are inserted.
+
+**Limitations requiring real tenant validation:** Multiple-staff double-booking
+conflict handling, appointment notification/reminder Flows, quotation→invoice
+conversion, payment collection and financial posting remain separate tenant
+workflows. These are not simulated in the frontend.
