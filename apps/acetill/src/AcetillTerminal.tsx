@@ -254,11 +254,11 @@ export default function AcetillTerminal(){
   return receipt?<>{lockedOverlay}{pinSetupDialog}<main className="acetill-receipt-screen" aria-label="Sale completed">
     <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
       <h1>Payment complete</h1>{lockButton}<p>Your OneEngine checkout Flow confirmed this transaction.</p>
-      <dl><div><dt>Order reference</dt><dd>{asText(receipt.orderId??receipt.orderNumber??receipt.OrderId)||'Confirmed'}</dd></div>
+      <dl><div><dt>Invoice reference</dt><dd>{asText(receipt.invoiceId??receipt.invoiceNumber??receipt.InvoiceId)||'Confirmed'}</dd></div>
       {receipt.total!=null&&<div><dt>Final total</dt><dd>{amount(Number(receipt.total))}</dd></div>}</dl>
       <div className="acetill-receipt-actions">
-        {find('PrintReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('PrintReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt print Flow submitted.')).catch(e=>setError(String(e)))}>Print receipt</button>}
-        {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
+        {find('PrintReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('PrintReceipt')!,{invoiceId:receipt.invoiceId??receipt.InvoiceId}).then(()=>setMessage('Receipt print Flow submitted.')).catch(e=>setError(String(e)))}>Print receipt</button>}
+        {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{invoiceId:receipt.invoiceId??receipt.InvoiceId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
         <button type="button" className="acetill-charge" onClick={()=>{setReceipt(null);setMessage('');setError('');}}>New sale</button>
       </div>{error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
     </section></main>{customerDisplay}</>:<>{lockedOverlay}{pinSetupDialog}<main className="acetill-terminal">

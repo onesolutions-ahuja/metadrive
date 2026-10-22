@@ -16,7 +16,7 @@ export const ACETILL = Object.freeze({
     {apiName:'AcetillReceipt',title:'Receipt'}
   ],
   // References to shared standard tenant objects, never private duplicates.
-  requiredObjects: ['Product','Cart','CartLine','Order','OrderLine'] as const,
+  requiredObjects: ['Product','Cart','CartLine','Invoice','InvoiceLine'] as const,
   // Auth and access remain owned and enforced by MetaDrive, not Acetill.
   auth: 'metadrive-session',
   authorization: 'central-rbac',

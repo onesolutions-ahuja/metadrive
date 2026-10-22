@@ -9,7 +9,7 @@ test('Acetill keeps administration and shared platform outside its package',()=>
  assert.equal(ACETILL.version,2);
  assert.equal(ACETILL.auth,'metadrive-session');
  assert.equal(ACETILL.componentRegistry,'metadrive-one');
- assert.deepEqual([...ACETILL.requiredObjects],['Product','Cart','CartLine','Order','OrderLine']);
+ assert.deepEqual([...ACETILL.requiredObjects],['Product','Cart','CartLine','Invoice','InvoiceLine']);
  assert.equal(ACETILL.pages.some(x=>x.apiName.includes('Manage')||x.apiName.includes('Report')),false);
 });
 test('register is inaccessible until every app and permission gate succeeds',()=>{
