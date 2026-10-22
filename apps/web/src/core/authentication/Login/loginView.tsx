@@ -78,7 +78,7 @@ export function createLoginView(logoUrl: string) {
           landingAppApi?: string;
           mfa_required?: boolean;
           challenge_token?:string;setup_secret?:string;enrollment_required?:boolean;
-        }>(challenge?'/auth/mfa/verify':'/auth/login?landing=1', {
+        }>(challenge?'/auth/mfa/verify?landing=1':'/auth/login?landing=1', {
           method: 'POST',
           signal: controller.signal,
           body: JSON.stringify(challenge?{challenge_token:challenge.challenge_token,code}:{ email: submittedEmail, password: submittedPassword })
