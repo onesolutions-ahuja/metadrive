@@ -1,6 +1,6 @@
 import {existsSync} from 'node:fs';
 import {pathToFileURL,fileURLToPath} from 'node:url';
-import {resolve,join} from 'node:path';
+import {resolve} from 'node:path';
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
