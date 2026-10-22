@@ -124,10 +124,14 @@ test('authorised page responses prefetch ordinary component records through Reco
   assert.match(server, /const pageInitialRecords=async\(tenantId:string,userId:string,page:/);
   assert.match(server, /records\.list\(tenantId,userId,api,50,0\)/);
   const appPageRoute = server.slice(server.indexOf("app.get('/api/apps/:appId/pages/:pageApiName'"), server.indexOf("app.get('/api/metadata/objects'"));
-  assert.ok(appPageRoute.indexOf("await rbac.require") < appPageRoute.indexOf("pages.resolveAppPage"));
-  assert.ok(appPageRoute.indexOf("pages.resolveAppPage") < appPageRoute.indexOf("pageInitialRecords"));
+  const appRbacAt = appPageRoute.indexOf("await rbac.require");
+  const appResolutionAt = appPageRoute.indexOf("pages.resolveAppPage");
+  const appPrefetchAt = appPageRoute.indexOf("pageInitialRecords");
+  assert.ok(appRbacAt >= 0 && appRbacAt < appResolutionAt && appResolutionAt < appPrefetchAt);
   const homeRoute = server.slice(server.indexOf("app.get('/api/apps/:appId/home-page'"), server.indexOf("app.get('/api/apps/:appId/pages/:pageApiName'"));
-  assert.ok(homeRoute.indexOf("apps.homePage") < homeRoute.indexOf("pageInitialRecords"));
+  const homeResolutionAt = homeRoute.indexOf("apps.homePage");
+  const homePrefetchAt = homeRoute.indexOf("pageInitialRecords");
+  assert.ok(homeResolutionAt >= 0 && homeResolutionAt < homePrefetchAt);
   assert.match(server, /res\.json\(\{page:page\.page,initialRecords\}\)/);
   assert.match(server, /res\.json\(\{page,initialRecords\}\)/);
   assert.match(server, /res\.setHeader\('Cache-Control','private, no-store'\);\s*res\.setHeader\('Vary','Authorization, Cookie'\);\s*res\.json\(\{page:page\.page,initialRecords\}\)/);
