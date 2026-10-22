@@ -6,7 +6,8 @@ export type BookingSlotPreview={
  staffId:string;resourceId?:string;durationMinutes:number;timeZone:string;
  excludeId?:string;
 };
-const toMinutes=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3,5));
+const toMinutes=(value:string)=>/^([01]\\d|2[0-3]):[0-5]\\d/.test(value)
+ ?Number(value.slice(0,2))*60+Number(value.slice(3,5)):NaN;
 const timeLabel=(minutes:number)=>String(Math.floor(minutes/60)).padStart(2,'0')+
  ':'+String(minutes%60).padStart(2,'0');
 const enabled=(row:Row)=>row.Active!==false&&row.Active!=='false';
