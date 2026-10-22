@@ -91,6 +91,7 @@
     "apps/server/test/system/user-account-lock-contract.test.ts",
     "apps/server/test/system/whatsapp-named-credential.test.ts",
     "apps/web/test/acekiosk/contract.test.ts",
+    "apps/web/test/authentication/business-calendar-no-fabricated-defaults.test.mjs",
     "apps/web/test/authentication/login-bootstrap.test.mjs",
     "apps/web/test/authentication/named-credential-connection-wiring.test.mjs",
     "apps/web/test/authentication/readSubmittedLogin.test.mjs",
