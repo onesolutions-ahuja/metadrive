@@ -32,6 +32,8 @@ export class TillPinService {
    await client.query(`UPDATE md_users SET till_pin_failures=$3,
     till_pin_locked_until=CASE WHEN $3>=5 THEN now()+interval '15 minutes' ELSE NULL END
     WHERE tenant_id=$1 AND id=$2`,[tenantId,userId,failed]);
+   await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action) VALUES($1,$2,$2,$3)`,
+    [tenantId,userId,verified?'TillPinVerified':'TillPinRejected']);
    return verified;
   });
  }
