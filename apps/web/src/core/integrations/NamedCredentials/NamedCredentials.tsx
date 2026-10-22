@@ -92,6 +92,9 @@ export default function NamedCredentials({
     catch{setError('Unable to copy automatically. Open webhook details and select the URL to copy.');}
   };
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const webhookSecretLength=draft?.webhookSecret?.length??0;
+  const webhookNeedsSecret=Boolean(draft?.webhookRequired && !credentials.some(item=>item.id===draft?.id && item.webhookId));
+  const webhookSecretInvalid=Boolean(draft?.webhookRequired && ((webhookNeedsSecret && webhookSecretLength<16) || (webhookSecretLength>0 && (webhookSecretLength<16 || webhookSecretLength>512))));
   const fieldErrors = { name: !/^[A-Za-z][A-Za-z0-9_]*$/.test(draft?.name ?? '') ? 'Use a name starting with a letter, containing only letters, numbers and underscores.' : '', label: !(draft?.label.trim()) ? 'Label is required.' : '', baseUrl: !(draft?.baseUrl.trim()) ? 'URL is required.' : draft?.protocol === 'HTTPS' && !/^https:\/\//i.test(draft.baseUrl.trim()) ? 'Use an HTTPS URL.' : '' };
   const blurField = (field: keyof typeof fieldErrors) => setTouched(current => ({...current, [field]: true}));
   const [query, setQuery] = useState('');
@@ -356,13 +359,14 @@ export default function NamedCredentials({
             Webhook exists, but the callback URL is missing from the server response. Please check the Named Credentials API deployment.
           </div>}
           {draft.webhookRequired && canManageSecrets && <label className="form-label">
-            Webhook signing secret (Meta App Secret)
+            Webhook signing secret (16–512 characters)
             <input className="form-control" type="password" autoComplete="new-password"
               minLength={16} maxLength={512} value={draft.webhookSecret??''}
               placeholder={credentials.find(item=>item.id===draft.id)?.webhookId
                 ?'Stored securely · leave blank to retain':'Enter provider signing secret'}
               onChange={event=>updateDraft({webhookSecret:event.target.value})}/>
             <small>Leave blank to keep the stored signing secret. Enter a new Meta App Secret only to rotate it; this also generates a new one-time verify token.</small>
+            {webhookSecretInvalid && <small role="alert" className="field-error">{webhookSecretLength===0?'Enter a webhook signing secret (minimum 16 characters) to create the endpoint.':`Signing secret must be 16–512 characters (currently ${webhookSecretLength}).`}</small>}
           </label>}
         </div>}
         {draft.id && !embedded && <div className="named-credential-activation"><strong>Connection status</strong><label className="credential-switch"><input type="checkbox" role="switch" checked={credentials.find((item) => item.id === draft.id)?.enabled !== false} disabled={viewing || !canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => { const credential = credentials.find((item) => item.id === draft.id); if (credential) void toggleEnabled(credential); }} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId ? 'Updating…' : credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Disabled' : 'Enabled'}</span></label></div>}
@@ -388,9 +392,7 @@ export default function NamedCredentials({
               The signing secret is never displayed after saving.</small>
           </div>}
         <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())
-          ||(draft.webhookRequired&&!credentials.find(item=>item.id===draft.id)?.webhookId
-            &&(draft.webhookSecret?.length??0)<16)
-          ||Boolean(draft.webhookSecret&&(draft.webhookSecret.length<16||draft.webhookSecret.length>512))} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
+          ||webhookSecretInvalid} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
       </section>
     </div>}
   </section>;
