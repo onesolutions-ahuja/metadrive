@@ -39,8 +39,21 @@ console.log('Public frontend legacy Railway API binding:',railwayFound);
 if(!apiBinding||railwayFound)throw new Error('Live frontend has no recognized SQL API binding or still references legacy Railway');
 if(expectedApi&&apiBinding!==expectedApi)
   throw new Error('Published frontend API mismatch: expected '+expectedApi+' but found '+apiBinding);
-const health=await fetch(apiBinding+'/health',{cache:'no-store',signal:AbortSignal.timeout(20000)});
-const payload=await health.json();
+// Render may be waking from idle; retry transient network timeouts without masking bad health responses.
+let health;
+let healthError;
+for(let attempt=0;attempt<3;attempt++){
+  try{
+    health=await fetch(apiBinding+'/health',{cache:'no-store',signal:AbortSignal.timeout(30000)});
+    break;
+  }catch(error){
+    healthError=error;
+    if(attempt<2)await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+}
+if(!health)throw new Error('SQL API health request failed after 3 attempts: '+String(healthError));
+let payload;
+try{payload=await health.json();}catch{throw new Error('SQL API health returned invalid JSON: HTTP '+health.status);}
 if(!health.ok||payload?.status!=='ok'||payload?.persistence!=='sql')
   throw new Error('Bound SQL API health failed: HTTP '+health.status);
 const cors=await fetch(apiBinding+'/auth/login',{method:'OPTIONS',headers:{

@@ -30,7 +30,7 @@ function Timeline({ p, rows }) {
           </div>
         </div>
       ))}
-      {!rows.length && <div className="one-empty">No activity</div>}
+      {!rows.length && <div className="one-empty" role="status">No activity</div>}
     </div>
   );
 }

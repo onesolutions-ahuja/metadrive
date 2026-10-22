@@ -442,7 +442,7 @@ function ConversationInbox({ props }) {
                 </article>
               ))}
               {!thread.length && (
-                <p className="one-empty">
+                <p className="one-empty" role="status">
                   {props.emptyMessagesText || "No messages yet."}
                 </p>
               )}
@@ -473,7 +473,7 @@ function ConversationInbox({ props }) {
             )}
           </div>
         ) : (
-          <div className="one-empty">
+          <div className="one-empty" role="status">
             {props.emptyTitle || "Select a conversation"}
           </div>
         )}
@@ -506,7 +506,7 @@ function ConversationThread({ props, rows }) {
             {String(row.body ?? row.text ?? row.message ?? "")}
           </div>
         ))}
-        {!rows.length && <div className="one-empty">No messages</div>}
+        {!rows.length && <div className="one-empty" role="status">No messages</div>}
       </div>
       <form
         className="one-row"

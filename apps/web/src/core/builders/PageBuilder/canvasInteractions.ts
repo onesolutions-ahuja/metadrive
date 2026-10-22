@@ -102,3 +102,23 @@ export function ungroupCanvasComponent(
     };
   });
 }
+
+/** Align a set of unlocked canvas components to a shared canvas edge/center in one immutable update. */
+export function alignCanvasComponents(
+  components: readonly PageComponentMetadata[],
+  selectedIds: readonly string[],
+  axis: 'x' | 'y',
+  anchor: 'start' | 'center' | 'end',
+  canvas: { width: number; height: number }
+): PageComponentMetadata[] {
+  const selected = new Set(selectedIds);
+  const dimension = axis === 'x' ? 'width' : 'height';
+  const span = axis === 'x' ? canvas.width : canvas.height;
+  return components.map(component => {
+    if (!selected.has(component.id) || !component.position || isCanvasLocked(component)
+      || component.properties.canvasLocked === true) return component;
+    const freeSpace = Math.max(0, span - component.position[dimension]);
+    const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
+    return { ...component, position: { ...component.position, [axis]: value } };
+  });
+}
