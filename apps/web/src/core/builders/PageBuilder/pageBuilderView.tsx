@@ -1086,6 +1086,8 @@ function PageBuilder({
         }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
+        setSelectionUndoStack([]);
+        setSelectionRedoStack([]);
         setRedoStack([]);
         if (returnToList) onBackToPages();
       }
@@ -1129,6 +1131,8 @@ function PageBuilder({
         setPageSettingsOpen(cloned.components.length === 0);
         setPreviewMode(false);
         setUndoStack([]);
+        setSelectionUndoStack([]);
+        setSelectionRedoStack([]);
         setRedoStack([]);
       }
     } finally {
@@ -1189,6 +1193,8 @@ function PageBuilder({
       setCreatePageOpen(false);
       setNewPageLabel('');
       setUndoStack([]);
+      setSelectionUndoStack([]);
+      setSelectionRedoStack([]);
       setRedoStack([]);
       setPreviewMode(false);
     } finally {
