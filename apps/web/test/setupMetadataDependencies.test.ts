@@ -143,3 +143,10 @@ test('authorised page responses prefetch ordinary component records through Reco
   assert.match(runtime, /if \(!objectApiName \|\| recordQuery\.blocked\)/);
   assert.match(runtime, /metadrive:page-flow-mutated', invalidateInitialRecords/);
 });
+
+
+test('navigation diagnostics label the measured authentication/bootstrap request accurately', () => {
+  const timing = readFileSync(new URL('../src/core/workspace/Navigation/appNavigationView.tsx', import.meta.url), 'utf8');
+  assert.match(timing, /session request: \\$\{requestSeconds \?\? 'unknown'\}s\./);
+  assert.doesNotMatch(timing, /API authentication:/);
+});
