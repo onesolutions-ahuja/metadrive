@@ -9,7 +9,7 @@ export function SearchRecord({label,value,options,onChange,addNew,emptyMessage}:
 }){
  const [query,setQuery]=useState('');
  const [expanded,setExpanded]=useState(false);
- const selected=options.find(r=>String(r.Id??r.id)===value);
+ const selected=options.find(r=>String(r.Id??r.id)===value || String(r.Name??'')===value);
  const results=options.filter(r=>display(r).toLowerCase().includes(query.toLowerCase())
   ||String(r.Email??'').toLowerCase().includes(query.toLowerCase())).slice(0,40);
  return <div className="assist-lookup">
