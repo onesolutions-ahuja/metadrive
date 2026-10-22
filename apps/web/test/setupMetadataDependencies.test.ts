@@ -54,7 +54,9 @@ test('analytics and flow tabs do not present pending API results as empty lists'
 
 test('landing bootstrap reuses its tenant metadata instead of fetching objects, pages and apps again', () => {
   const loader = readFileSync(new URL('../src/core/workspace/SetupShell/useSetupMetadata.ts', import.meta.url), 'utf8');
-  assert.match(loader, /if \(entryTiming\?\.landing\)\s*\{\s*pending\.set\('\/metadata\/objects', Promise\.resolve\(\{ objects: entryTiming\.landing\.objects \}\)\);\s*pending\.set\('\/metadata\/pages', Promise\.resolve\(\{ pages: entryTiming\.landing\.pages \}\)\);\s*pending\.set\('\/metadata\/apps', Promise\.resolve\(\{ apps: entryTiming\.landing\.apps \}\)\);\s*\}/);
+  assert.match(loader, /let landing = entryTiming\?\.landing;/);
+  assert.match(loader, /apiRequest<\{ landing\?: NonNullable<typeof landing> \}>\('\/metadata\/landing-bootstrap'\)/);
+  assert.match(loader, /if \(landing\) \{\s*pending\.set\('\/metadata\/objects', Promise\.resolve\(\{ objects: landing\.objects \}\)\);\s*pending\.set\('\/metadata\/pages', Promise\.resolve\(\{ pages: landing\.pages \}\)\);\s*pending\.set\('\/metadata\/apps', Promise\.resolve\(\{ apps: landing\.apps \}\)\);\s*pending\.set\('\/auth\/me', Promise\.resolve\(\{ user: landing\.user \}\)\);\s*\}/);
   assert.match(loader, /const existing = pending\.get\(path\);\s*if \(existing\) return existing as Promise<T>;/);
   // The server-authorised page/home-page endpoint remains in the runtime; this
   // optimization only removes redundant bootstrap fetches, not RBAC checks.
