@@ -125,7 +125,7 @@ test('AceChatter outbound accepts provider message ID before saving, and refuses
      {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
      {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}
     ]}},
-   vars,evaluate,set:(name:string,value:unknown)=>{vars[name]=value;},
+   vars,evaluate,set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},
    records:{createInTransaction:async(_c:unknown,_t:string,_u:string,_o:string,fields:Record<string,unknown>)=>{
     rows.push(fields);return 'message-record-id';
    }},
@@ -135,14 +135,14 @@ test('AceChatter outbound accepts provider message ID before saving, and refuses
  await assert.rejects(()=>executeHttpCalloutNode({
   tenantId:'tenant',userId:'actor',client:{} as never,runId:'run',current:2,
   node:{id:2,config},vars,evaluate,
-  set:(name:string,value:unknown)=>{vars[name]=value;},resources,
+  set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},resources,
   transport:async()=>{throw new Error('Provider rejected request');}
  }),/Provider rejected request/);
  assert.equal(rows.length,0,'failed sends must not create accepted messages');
  await executeHttpCalloutNode({
   tenantId:'tenant',userId:'actor',client:{} as never,runId:'run',current:2,
   node:{id:2,config},vars,evaluate,
-  set:(name:string,value:unknown)=>{vars[name]=value;},resources,
+  set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},resources,
   transport:async(_tenant,_actor,request,values)=>{
    const safe=bindPublicHttpCredentialVariables(values,
     {public_phoneNumberId:'1234567890123'},[request.path,request.body]);
