@@ -1,6 +1,6 @@
 import { useOneLayout, options, shared, fire } from "../shared/OneLayout.jsx";
 import OneTenantImage from "../shared/OneTenantImage.jsx";
-import { useModalAccessibility } from "../shared/accessibilityHooks.ts";
+import { useModalAccessibility } from "../shared/accessibilityHooks";
 
 export default function OneOverlay(props) {
   const p = { ...props, kind: props.kind || "Overlay" };
