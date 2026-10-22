@@ -12,6 +12,8 @@ test('WhatsApp connection seeds only required sender ID without hardcoded option
  assert.doesNotMatch(ui,/whatsAppFields|public_businessPortfolioId|public_displayName/);
  assert.match(ui,/\.\.\.preset\?\.configuration, \.\.\.credential\.configuration/);
  assert.match(ui,/Add variable/);
+ assert.match(ui,/name\.startsWith\('public_'\)/);
+ assert.match(ui,/non-secret variable name/);
  assert.match(service,/this\.decryptOpaque\(x\.configuration_ciphertext,x\.encryption_key_id\)/);
  assert.match(service,/safePublicKey\(key\)/);
  assert.doesNotMatch(service.slice(service.indexOf(' async list('),service.indexOf(' async create(')),
