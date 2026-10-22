@@ -131,8 +131,12 @@ test('reconcile known AceChatter send Flow to central Communication logging with
     path:'v26.0/{!public_phoneNumberId}/messages',method:'POST'}},
    {id:6,type:'Create Records',config:{object:'ChatMessage',fieldValues:[
     {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
-   {id:7,type:'Create Records',config:{object:'Communication',fieldValues:[
-    {field:'Channel',value:'WhatsApp'},{field:'Direction',value:'Outbound'}]}},
+   {id:7,type:'Create Records',label:'Record outbound Communication',config:{object:'Communication',fieldValues:[
+    {field:'Name',value:'WhatsApp outbound'},{field:'Channel',value:'WhatsApp'},
+    {field:'Direction',value:'Outbound'},{field:'Status',value:'Sent'},
+    {field:'Sender',value:'WhatsApp Business'},{field:'Recipient',value:'@conversation.PhoneNumber'},
+    {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'},
+    {field:'Provider',value:'WhatsApp'}]}},
    {id:3,type:'End',config:{}}
   ],connectors:[
    {from:1,to:4,kind:'normal'},{from:4,to:2,kind:'normal'},
