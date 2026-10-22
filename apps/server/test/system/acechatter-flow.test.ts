@@ -82,9 +82,10 @@ test('reconcile AceChatter sender Flow from Named Credential without overwriting
  assert.equal(current.elements.some(element=>element.id===5),false);
  assert.equal(current.connectors.some(edge=>edge.from===4&&edge.to===2),true);
  assert.equal(current.connectors.some(edge=>edge.from===5||edge.to===5),false);
- assert.equal(current.elements.find(element=>element.id===2)?.config.namedCredentialId,credential);
- assert.equal(current.elements.find(element=>element.id===2)?.config.path,
-  'v26.0/{!public_phoneNumberId}/messages');
+ const sendNode=current.elements.find(element=>element.id===2) as
+   {config:Record<string,unknown>}|undefined;
+ assert.equal(sendNode?.config.namedCredentialId,credential);
+ assert.equal(sendNode?.config.path,'v26.0/{!public_phoneNumberId}/messages');
  assert.equal(await reconcileAceChatterCredentialFlow(client,'tenant-a'),false);
  assert.equal(deletions,1);
  assert.equal(audits,1);
