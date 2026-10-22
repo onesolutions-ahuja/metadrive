@@ -119,7 +119,7 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
  if(!source||typeof source!=='object'||Array.isArray(source))return false;
  const graph=source as Record<string,unknown>;
  if(!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
- const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const elements=graph.elements as Array<{id:number;type:string;label?:string;config?:Record<string,unknown>}>;
  const connectors=graph.connectors as Array<{from:number;to:number;kind:string;label?:string}>;
  const recipient=elements.find(item=>item.id===4);
  const outbound=elements.find(item=>item.id===2);
