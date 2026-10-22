@@ -34,7 +34,7 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
  const mapping=raw as Record<string,unknown>;
  const render=(value:unknown):string|undefined=>{
   if(typeof value!=='string')return undefined;
-  return value.replace(/\\{!([A-Za-z][A-Za-z0-9_.]*)\\}/g,(_match,key:string)=>
+  return value.replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_match,key:string)=>
    Object.hasOwn(variables,key)?String(variables[key]??''):'');
  };
  const details:IntegrationCommunicationDetails={};
@@ -43,10 +43,10 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
   if(value!==undefined)details[key]=value;
  }
  const path=mapping.externalMessageIdResponsePath;
- if(typeof path==='string'&&responseBody&&/^[A-Za-z][A-Za-z0-9_]*(?:\\[\\d+\\])?(?:\\.[A-Za-z][A-Za-z0-9_]*(?:\\[\\d+\\])?)*$/.test(path)){
+ if(typeof path==='string'&&responseBody&&/^[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?)*$/.test(path)){
   try{
    let value:unknown=JSON.parse(responseBody);
-   for(const part of path.match(/[A-Za-z][A-Za-z0-9_]*|\\[\\d+\\]/g)??[]){
+   for(const part of path.match(/[A-Za-z][A-Za-z0-9_]*|\[\d+\]/g)??[]){
     if(part.startsWith('[')){
      if(!Array.isArray(value)){value=undefined;break;}
      value=value[Number(part.slice(1,-1))];
