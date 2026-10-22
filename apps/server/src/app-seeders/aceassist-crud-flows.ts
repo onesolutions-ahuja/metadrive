@@ -1,5 +1,6 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
+import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
  'Appointment','Customer','Quotation','QuotationLine','Invoice','InvoiceLine'
@@ -200,6 +201,55 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
       WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
       ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
   }
+  // App-owned record trigger: no frontend notification business logic.
+  // Recipient is the authenticated operator; delivery failure follows the fault connector
+  // and never rolls back the business record. Tenant-authored definitions are preserved.
+  const notificationApi='AceAssistAppointmentChanged';
+  const priorNotification=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
+   [tenant_id,notificationApi]);
+  if(!priorNotification.rowCount){
+   const trigger={object:'Appointment',trigger:'created-or-updated',
+    runWhen:'after-save',entryConditions:[],conditionLogic:'All',triggerOrder:100};
+   const graph={
+    apiName:notificationApi,label:'Ace Assist - booking activity notification',
+    appApiName:'AceAssist',flowType:'Record-Triggered Flow',triggerObject:'Appointment',
+    status:'Active',version:1,startConfig:trigger,
+    resources:[],
+    elements:[
+     {id:1,type:'Start',label:'Appointment saved',config:trigger},
+     {id:2,type:'Action',label:'Notify operator',config:{
+      actionType:'Custom Notification',recipientIds:'{!$User.Id}',
+      title:'Appointment activity',messageBody:'An appointment was created or updated.'
+     }},
+     {id:3,type:'End',label:'End',config:{}}
+    ],
+    connectors:[
+     {from:1,to:2,kind:'normal',label:'Notify'},
+     {from:2,to:3,kind:'normal',label:'Continue'},
+     {from:2,to:3,kind:'fault',label:'Notification failure'}
+    ],tests:[]
+   };
+   const {rows:added}=await client.query<{id:string}>(`
+    INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+    VALUES($1,$2,$3,'Record-Triggered Flow',1,true) RETURNING id`,
+    [tenant_id,graph.apiName,graph.label]);
+   const entries:Array<{path:string;kind:string;text:string|null}>=[];
+   encodeMetadataValue(graph,'/builder',entries);
+   for(const e of entries)await client.query(`
+    INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+    VALUES($1,$2,$3,$4,$5)`,[tenant_id,added[0].id,e.path,e.kind,e.text]);
+   await syncFlowTriggerSubscription(client,tenant_id,notificationApi,added[0].id,{
+    active:true,flowType:graph.flowType,elements:graph.elements,appApiName:'AceAssist'});
+   created++;
+  }
+  for(const [resource,action] of [
+   ['Notification','send'],
+   ['Flow:'+notificationApi,'execute']
+  ])await client.query(`
+   INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+   WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
+   ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
 
  });
  return created;

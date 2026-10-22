@@ -45,3 +45,11 @@ test('Ace Assist field controls map standard Object Manager field types and use 
  assert.match(runtime,/recordsInput/);
  assert.match(runtime,/NotificationBell/);
 });
+
+test('AceAssist booking updates seed native record-trigger notifications',()=>{
+ const source=readFileSync(new URL('../../src/app-seeders/aceassist-crud-flows.ts',import.meta.url),'utf8');
+ assert.match(source,/AceAssistAppointmentChanged/);
+ assert.match(source,/syncFlowTriggerSubscription/);
+ assert.match(source,/\{!\$User\.Id\}/);
+ assert.match(source,/Notification failure/);
+});
