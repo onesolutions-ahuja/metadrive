@@ -110,7 +110,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       }).catch(e=>{if(live){setContacts([]);setContactError(errorText(e));}})
       .finally(()=>{if(live)setContactsLoading(false);});
     return()=>{live=false;};
-  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch,refresh]);
+  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch]);
 
   // Refresh inbox and active threads like a messaging app. Pause while hidden and
   // refresh immediately when the user returns to the tab.
@@ -129,7 +129,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
     if(!loadConversations){setConversations([]);return;}
-    let live=true;setBusy(true);setError('');
+    let live=true;setError('');
     void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
       '/flows/'+encodeURIComponent(loadConversations.apiName)+'/execute',{
         method:'POST',body:JSON.stringify({searchTerm:'',limit:100})
@@ -138,7 +138,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         if(result.interviewId)throw new Error('Loading conversations requires a synchronous Autolaunched Flow.');
         setConversations(readRows(result.outputs,'conversationsJson'));
       }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadConversations?.apiName,refresh]);
 
@@ -156,7 +156,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         if(result.interviewId)throw new Error('Loading WhatsApp Communications requires a synchronous Autolaunched Flow.');
         setCommunications(readRows(result.outputs,'communicationsJson'));
       }).catch(e=>{if(live)setError(errorText(e));})
-      .finally(()=>{if(live)setBusy(false);});
+      ;
     return()=>{live=false;};
   },[loadCommunications?.apiName,submittedSearch,refresh]);
 
