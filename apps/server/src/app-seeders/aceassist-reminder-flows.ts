@@ -73,7 +73,7 @@ export async function seedAceAssistReminderFlows(client:PoolClient,tenantId:stri
  const {rows:credentials}=await client.query<{id:string}>(`
   SELECT id FROM md_named_credentials WHERE tenant_id=$1
     AND name='WhatsApp_Cloud_API' AND protocol='HTTPS' AND enabled=true
-  ORDER BY created_at DESC LIMIT 1`,[tenantId]);
+  ORDER BY updated_at DESC, id DESC LIMIT 1`,[tenantId]);
  for(const channel of ['Internal','Email','WhatsApp'] as const){
   const flow=reminderGraph(channel,credentials[0]?.id??null);
   const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
