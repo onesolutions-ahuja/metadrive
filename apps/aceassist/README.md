@@ -150,8 +150,7 @@ still lack these guards and must not be used for production booking.
 
 `Quotation.DocumentNumber` and `Invoice.DocumentNumber` use the existing shared
 SQL Auto Number Field engine. Prefixes and formats are editable through Object Manager.
-These values are allocated at record creation, **not** at final legal invoice issuance;
-existing `QuotationNumber` and `InvoiceNumber` remain untouched.
+Draft `DocumentNumber` values are allocated at creation. An authenticated `AceAssistIssueInvoice` Flow independently allocates the final `InvoiceNumber` when it issues a verified draft, within the SQL transaction. Existing historical numbers remain untouched.
 
 The app provides four **inactive draft** send templates, supporting both quotation
 and invoice email and WhatsApp transport. A tenant developer must set the actual
@@ -159,6 +158,10 @@ SMTP/HTTPS Named Credential, permitted sender, recipient mapping, WhatsApp templ
 consent/policy constraints, attachment or document rendering requirements, publish
 and verify the Flow. Drafts never deliver messages automatically.
 
-Not yet completed: verified issuance-stage number allocation, accounting-safe line
-totals and taxes, quote conversion, invoice PDF generation, payment-provider
-reconciliation, durable automated reminders and live tenant/browser regression tests.
+`AceAssistConvertQuoteToInvoice` verifies the accepted quotation, checks source lines, and copies related lines into a linked draft Invoice. `AceAssistIssueInvoice` validates its financial lines and sets issuance-time InvoiceNumber. OneEngine's separately assignable `AceAssistFinanceIssuer` policy controls issuing.
+
+A shared `Payment` Object and cashier-only `AceAssistRecordCashPayment` Flow validate manual cash receipts against the remaining numbered invoice balance and track part/full payment. Bank/card provider settlement remains unverified until a signed provider webhook and reconciliation are configured; no UI action claims card payment without that evidence.
+
+Record-triggered scheduled reminder Flows provide a live internal 24-hour reminder and draft email/WhatsApp reminders, which require explicitly configured Named Credentials, communication consent and approved provider templates.
+
+Not yet completed: invoice PDF generation and attachments, verified outbound provider delivery and inbox booking conversations, card-provider reconciliation/refunds, and live tenant/browser regression tests.
