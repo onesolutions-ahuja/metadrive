@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
 import {decodeMetadataValues,encodeMetadataValue} from '../../src/system-files/component-runtime.js';
+import {executeHttpCalloutNode} from '../../src/system-files/nodes/HttpCalloutNode.js';
+import {executeCreateRecordsNode} from '../../src/system-files/nodes/CreateRecordsNode.js';
+import {executeParseJsonNode} from '../../src/system-files/nodes/ParseJsonNode.js';
+import {bindPublicHttpCredentialVariables,prepareFlowHttpRequest} from '../../src/system-files/flow-http-mapping.js';
 
 test('AceChatter app seeding is tenant-scoped, idempotent and preserves business data',async()=>{
  const seen:Array<{sql:string;params:unknown[]}>=[],flows=new Set<string>();
@@ -89,4 +93,115 @@ test('reconcile AceChatter sender Flow from Named Credential without overwriting
  assert.equal(await reconcileAceChatterCredentialFlow(client,'tenant-a'),false);
  assert.equal(deletions,1);
  assert.equal(audits,1);
+});
+
+test('AceChatter outbound accepts provider message ID before saving, and refuses failed sends',async()=>{
+ const rows:Array<Record<string,unknown>>=[];
+ const vars:Record<string,unknown>={
+  conversation:{Id:'00000000-0000-4000-8000-000000000007',PhoneNumber:'447700900123'},
+  message:'Test from AceChatter',providerMessageId:null,
+  public_phoneNumberId:'spoofed-from-client'
+ };
+ const evaluate=(value:unknown):unknown=>{
+  if(typeof value!=='string'||!value.startsWith('@'))return value;
+  const parts=value.slice(1).split('.');
+  let current:unknown=vars[parts.shift()!];
+  for(const part of parts)current=current&&typeof current==='object'
+   ?(current as Record<string,unknown>)[part]:null;
+  return current??null;
+ };
+ const resources=[{name:'providerMessageId',type:'Variable',dataType:'Text'}];
+ const config={
+  path:'v26.0/{!public_phoneNumberId}/messages',
+  body:'{"messaging_product":"whatsapp","to":"{!conversation.PhoneNumber}","type":"text","text":{"body":"{!message}"}}',
+  responseMapping:'{"providerMessageId":"messages[0].id"}',method:'POST',onError:'FAIL'
+ };
+ const create=async()=>{
+  await executeCreateRecordsNode({
+   tenantId:'tenant',userId:'actor',client:{} as never,
+   node:{id:6,type:'Create Records',config:{
+    object:'ChatMessage',fieldValues:[
+     {field:'ConversationId',value:'@conversation.Id'},
+     {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
+     {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}
+    ]}},
+   vars,evaluate,set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},
+   records:{createInTransaction:async(_c:unknown,_t:string,_u:string,_o:string,fields:Record<string,unknown>)=>{
+    rows.push(fields);return 'message-record-id';
+   }},
+   scalar:(value:unknown)=>value===null||['string','number','boolean'].includes(typeof value)
+  } as never);
+ };
+ await assert.rejects(()=>executeHttpCalloutNode({
+  tenantId:'tenant',userId:'actor',client:{} as never,runId:'run',current:2,
+  node:{id:2,config},vars,evaluate,
+  set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},resources,
+  transport:async()=>{throw new Error('Provider rejected request');}
+ }),/Provider rejected request/);
+ assert.equal(rows.length,0,'failed sends must not create accepted messages');
+ await executeHttpCalloutNode({
+  tenantId:'tenant',userId:'actor',client:{} as never,runId:'run',current:2,
+  node:{id:2,config},vars,evaluate,
+  set:(name:unknown,value:unknown)=>{vars[String(name)]=value;},resources,
+  transport:async(_tenant,_actor,request,values)=>{
+   const safe=bindPublicHttpCredentialVariables(values,
+    {public_phoneNumberId:'1234567890123'},[request.path,request.body]);
+   const prepared=prepareFlowHttpRequest(request,safe);
+   assert.equal(prepared.path,'v26.0/1234567890123/messages');
+   assert.deepEqual(JSON.parse(prepared.body??''),{
+    messaging_product:'whatsapp',to:'447700900123',
+    type:'text',text:{body:'Test from AceChatter'}
+   });
+   return {status:200,body:'{"messages":[{"id":"wamid.accepted"}]}'};
+  }
+ });
+ assert.equal(vars.providerMessageId,'wamid.accepted');
+ await create();
+ assert.deepEqual(rows,[{
+  ConversationId:'00000000-0000-4000-8000-000000000007',
+  Body:'Test from AceChatter',Direction:'Outbound',
+  Status:'Accepted',ExternalMessageId:'wamid.accepted'
+ }]);
+});
+
+test('AceChatter inbound signed payload parsing produces an inbound ChatMessage mapping',async()=>{
+ const payload={entry:[{changes:[{value:{
+  messages:[{id:'wamid.inbound',from:'447700900123',text:{body:'Reply'}}],
+  contacts:[{profile:{name:'Test Customer'}}]
+ }}]}]};
+ const vars:Record<string,unknown>={webhookPayloadJson:JSON.stringify(payload)};
+ executeParseJsonNode({vars,node:{id:2,type:'Parse JSON',config:{
+  source:'@webhookPayloadJson',assignments:[
+   {path:'entry[0].changes[0].value.messages[0].id',outputVariable:'providerMessageId'},
+   {path:'entry[0].changes[0].value.messages[0].from',outputVariable:'fromPhone'},
+   {path:'entry[0].changes[0].value.messages[0].text.body',outputVariable:'messageBody'}
+  ]}},evaluate:(value:unknown)=>value==='@webhookPayloadJson'?vars.webhookPayloadJson:value} as never);
+ assert.deepEqual({
+  id:vars.providerMessageId,phone:vars.fromPhone,body:vars.messageBody,
+  direction:'Inbound',status:'Received'
+ },{id:'wamid.inbound',phone:'447700900123',body:'Reply',
+   direction:'Inbound',status:'Received'});
+ vars.conversation={Id:'00000000-0000-4000-8000-000000000007'};
+ const written:Array<Record<string,unknown>>=[];
+ await executeCreateRecordsNode({
+  tenantId:'tenant',userId:'actor',client:{} as never,vars,
+  node:{id:10,type:'Create Records',config:{object:'ChatMessage',fieldValues:[
+   {field:'ConversationId',value:'@conversation.Id'},
+   {field:'ExternalMessageId',value:'@providerMessageId'},
+   {field:'Body',value:'@messageBody'},{field:'Direction',value:'Inbound'},
+   {field:'Status',value:'Received'}]}},
+  evaluate:(value:unknown)=>{
+   if(value==='@conversation.Id')return (vars.conversation as {Id:string}).Id;
+   if(typeof value==='string'&&value.startsWith('@'))return vars[value.slice(1)];
+   return value;
+  },
+  set:()=>undefined,
+  records:{createInTransaction:async(_client:unknown,_tenant:string,
+   _actor:string,_object:string,fields:Record<string,unknown>)=>{
+   written.push(fields);return 'inbound-record-id';
+  }},
+  scalar:(value:unknown)=>value===null||['string','number','boolean'].includes(typeof value)
+ } as never);
+ assert.deepEqual(written,[{ConversationId:'00000000-0000-4000-8000-000000000007',
+  ExternalMessageId:'wamid.inbound',Body:'Reply',Direction:'Inbound',Status:'Received'}]);
 });

@@ -9,7 +9,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
-import {prepareFlowHttpRequest,publicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
+import {prepareFlowHttpRequest,bindPublicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
 
 type CalloutJob={
@@ -331,8 +331,21 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   const resolvedConfig=await resolveFlowIntegrationCallout(client,this.rbac,tenantId,userId,config);
-  const prepared=prepareFlowHttpRequest(resolvedConfig,variables);
   const credentialId=resolvedConfig.namedCredentialId;
+  const templates=[resolvedConfig.path,resolvedConfig.body,resolvedConfig.headers];
+  const {rows:credentialSettings}=await client.query<{
+   id:string;configuration_ciphertext:Buffer|null;encryption_key_id:string
+  }>(`SELECT id,configuration_ciphertext,encryption_key_id FROM md_named_credentials
+    WHERE tenant_id=$1 AND id=$2 AND protocol='HTTPS' AND enabled=true`,
+    [tenantId,credentialId]);
+  if(!credentialSettings[0])throw new Error('HTTPS credential unavailable');
+  const needsPublic=templates.some(value=>typeof value==='string'
+    &&/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(value));
+  const configuration=needsPublic&&credentialSettings[0].configuration_ciphertext
+   ?JSON.parse(this.decryptOpaque(credentialSettings[0].configuration_ciphertext,
+      credentialSettings[0].encryption_key_id)) as unknown:null;
+  const mappedVariables=bindPublicHttpCredentialVariables(variables,configuration,templates);
+  const prepared=prepareFlowHttpRequest(resolvedConfig,mappedVariables);
   const method=String(resolvedConfig.method??'GET').toUpperCase();
   const path=prepared.path;
   const headers=typeof resolvedConfig.headers==='string'?resolvedConfig.headers:'';
@@ -369,7 +382,8 @@ export class NamedCredentialService {
     resolvedConfig.integrationConnectionId??null,resolvedConfig.integrationConnectionId
       ?resolvedConfig.operation:null,
     resolvedConfig.integrationConnectionId?this.encryptValue(String(resolvedConfig.path)):null]);
-   for(const [apiName,value] of Object.entries(variables)){
+   // Persist the trusted credential-derived scalar snapshot encrypted for durable headers.
+   for(const [apiName,value] of Object.entries(mappedVariables)){
     if(!/^[A-Za-z][A-Za-z0-9_.]*$/.test(apiName)||!isCalloutScalar(value))
      throw new Error('Invalid durable HTTP Callout variable');
     await client.query(`
@@ -870,13 +884,13 @@ export class NamedCredentialService {
   if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
   // Only flows that explicitly reference a public_ setting read the encrypted
   // provider configuration. Sensitive settings are never exposed to a Flow.
-  const flowVariables={...variables};
-  const needsPublicSetting=/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(
-    [config.path,config.body,config.headers].map(v=>typeof v==='string'?v:'').join(' '));
-  if(!previouslyPrepared&&needsPublicSetting&&item.configuration_ciphertext){
-   const decoded=JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as unknown;
-   Object.assign(flowVariables,publicHttpCredentialVariables(decoded));
-  }
+  const templates=[config.path,config.body,config.headers];
+  const needsPublicSetting=templates.some(value=>typeof value==='string'
+    &&/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(value));
+  const decoded=!previouslyPrepared&&needsPublicSetting&&item.configuration_ciphertext
+   ?JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as unknown:null;
+  const flowVariables=previouslyPrepared?variables:
+   bindPublicHttpCredentialVariables(variables,decoded,templates);
   // Durable jobs hold an encrypted, already-expanded snapshot. Never expand it twice.
   const prepared=previouslyPrepared?{
    path:String(config.path??''),body:typeof config.body==='string'&&config.body
