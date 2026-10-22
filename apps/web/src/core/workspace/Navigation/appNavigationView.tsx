@@ -65,7 +65,7 @@ export function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }:
   if (import.meta.env.VITE_SHOW_NAV_TIMINGS === 'false') return null;
   return <span className="navigation-load-time" role="status" aria-label="Screen load time"
     title={isEntry
-      ? `From ${kind === 'login' ? 'Sign in click' : 'session restoration'} until landing content is ready. API authentication: ${requestSeconds ?? 'unknown'}s.`
+      ? `From ${kind === 'login' ? 'Sign in click' : 'session restoration'} until landing content is ready. session request: ${requestSeconds ?? 'unknown'}s.`
       : 'From route navigation until page content is ready.'}>
     {completed ? `${label}: ${(result.milliseconds / 1000).toFixed(2)}s` : `${label}: Loading…`}
     {isEntry && requestSeconds !== null && ` · Auth: ${requestSeconds}s`}
