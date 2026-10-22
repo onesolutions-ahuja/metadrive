@@ -172,6 +172,19 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  };
+ // Staff shifts and time-off are read through the same authorised Get Records Flow API.
+ useEffect(()=>{
+  let alive=true;
+  const targets=['StaffAvailability','AvailabilityException']
+   .filter(object=>actions.has('AceAssistLoad'+object));
+  if(!targets.length)return;
+  void Promise.all(targets.map(async object=>({object,data:await fetchRows('Load',object)})))
+   .then(results=>{if(alive)setLookupRows(previous=>({
+    ...previous,...Object.fromEntries(results.map(item=>[item.object,item.data]))
+   }));})
+   .catch(cause=>{if(alive)setError(cause instanceof Error?cause.message:String(cause));});
+  return()=>{alive=false;};
+ },[actions,reload]);
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
   for(const field of fields){
@@ -375,6 +388,16 @@ export default function AceAssistRuntime({entry,onLogout}:{
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
          <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
+          preview={field.apiName==='StartDateTime'?{
+           appointments:rows,shifts:lookupRows.StaffAvailability??[],
+           exceptions:lookupRows.AvailabilityException??[],
+           staffId:form.AssignedUser??form.AssignedTo??selfId,
+           resourceId:form.Resource??'',
+           durationMinutes:Number((lookupRows.Product??[]).find(product=>
+            idOf(product)===(form.ServiceProduct??'')
+            ||String(product.Name??'')===(form.Service??''))?.DurationMinutes??30),
+           timeZone:hours?.timezone??'UTC',excludeId:chosen?.Id?String(chosen.Id):undefined
+          }:undefined}
           startDate={form.StartDateTime?.slice(0,10)}
           minTime={field.apiName==='EndDateTime'?form.StartDateTime?.slice(11,16):undefined}
           onChange={v=>setForm(x=>{
@@ -386,7 +409,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
           })}/>:
         fieldKind(field)==='reference'?
          <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
-          options={lookupRows[targetObject(field)??'']??[]}
+          options={(lookupRows[targetObject(field)??'']??[]).filter(row=>
+           targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
           onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
          <RecordFieldInput field={field} value={form[field.apiName]??''}
