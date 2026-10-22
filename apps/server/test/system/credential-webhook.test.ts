@@ -60,7 +60,7 @@ test('credential-linked webhook accepts verified request, creates Communication,
   assert.equal(communications.length,1);
   assert.equal(communications[0].Direction,'Inbound');
   assert.equal(communications[0].Provider,'WhatsApp');
-  assert.doesNotMatch(String(communications[0].Body),'private');
+  assert.doesNotMatch(String(communications[0].Body),/private/);
   assert.equal(flowsCalled,0);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
