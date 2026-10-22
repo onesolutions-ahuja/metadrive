@@ -223,9 +223,12 @@ test('reported One UI accessibility contracts remain implemented', async () => {
 test('accessibility smoke covers login and supports configured published-page/dialog scans', async () => {
   const smoke = await readFile(new URL('../../../scripts/accessibility-smoke.mjs', import.meta.url), 'utf8');
   assert.match(smoke, /new URL\('\/login', base\)\.href/);
+  assert.match(smoke, /component-fixture/);
   assert.match(smoke, /UI_SMOKE_PUBLISHED_URL/);
   assert.match(smoke, /UI_SMOKE_OVERLAY_SELECTOR/);
   assert.match(smoke, /window\.axe\.run/);
   assert.match(smoke, /showcase tab/);
   assert.match(smoke, /Critical\/serious WCAG violations/);
+  const fixture = await readFile(new URL('./accessibility-fixture.jsx', import.meta.url), 'utf8');
+  for (const component of ['OneTable', 'OneInput', 'OneButton', 'OneOverlay']) assert.match(fixture, new RegExp(component));
 });
