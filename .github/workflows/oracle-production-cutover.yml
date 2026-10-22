@@ -1,0 +1,423 @@
+name: Oracle production API cutover
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install PostgreSQL 18 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -m 755 /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --batch --yes --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18
+
+      - id: domain
+        name: Prepare api.unesolutions.co.uk DNS and TLS before freezing production
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
+          chmod 600 "$HOME/.ssh/oracle_cutover"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          verify="$(curl -fsS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          printf '%s' "$verify" | jq -e '.success == true and .result.status == "active"' >/dev/null
+          zone_json="$(curl -fsS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 'https://api.cloudflare.com/client/v4/zones?name=unesolutions.co.uk')"
+          zone_id="$(printf '%s' "$zone_json" | jq -r '.result[0].id // empty')"
+          test -n "$zone_id"
+          records="$(curl -fsS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=api.unesolutions.co.uk&per_page=100")"
+          record_count="$(printf '%s' "$records" | jq '.result | length')"
+          created=false
+          record_id=""
+          if [[ "$record_count" == "0" ]]; then
+            body="$(jq -n '{type:"A",name:"api.unesolutions.co.uk",content:"132.145.18.46",ttl:120,proxied:false}')"
+            created_record="$(curl -fsS --max-time 20 -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' --data "$body" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records")"
+            printf '%s' "$created_record" | jq -e '.success == true' >/dev/null
+            record_id="$(printf '%s' "$created_record" | jq -r '.result.id')"
+            created=true
+          else
+            record_id="$(printf '%s' "$records" | jq -r '.result[0].id')"
+            record_type="$(printf '%s' "$records" | jq -r '.result[0].type')"
+            record_content="$(printf '%s' "$records" | jq -r '.result[0].content')"
+            if [[ "$record_count" != "1" || "$record_type" != "A" || "$record_content" != "132.145.18.46" ]]; then
+              echo "An unexpected api.unesolutions.co.uk DNS record already exists; preserving it and stopping."
+              exit 1
+            fi
+          fi
+          echo "dns_created=$created" >> "$GITHUB_OUTPUT"
+          echo "dns_record_id=$record_id" >> "$GITHUB_OUTPUT"
+          echo "DNS_API_RECORD=132.145.18.46 PROXIED=false CREATED=$created"
+          ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          sudo tee /etc/nginx/sites-available/metadrive-api >/dev/null <<'NGINX'
+          server {
+            listen 80;
+            server_name api.unesolutions.co.uk;
+            location ^~ /.well-known/acme-challenge/ {
+              root /var/www/html;
+              default_type "text/plain";
+            }
+            location / { return 503; }
+          }
+          NGINX
+          sudo ln -sfn /etc/nginx/sites-available/metadrive-api /etc/nginx/sites-enabled/metadrive-api
+          sudo nginx -t
+          sudo systemctl reload nginx
+          REMOTE
+          resolved=0
+          for attempt in $(seq 1 60); do
+            if getent ahostsv4 api.unesolutions.co.uk | awk '{print $1}' | grep -qx '132.145.18.46'; then
+              resolved=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$resolved" != "1" ]]; then
+            echo "api.unesolutions.co.uk did not resolve to Oracle within 120 seconds"
+            exit 1
+          fi
+          ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo certbot certonly --webroot -w /var/www/html -d api.unesolutions.co.uk --non-interactive --agree-tos -m support@unesolutions.co.uk --keep-until-expiring'
+          echo "API_DNS_AND_TLS_CERTIFICATE=READY"
+
+      - name: Freeze Aiven writes and snapshot the final consistent production database
+        id: snapshot
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          SOURCE_DB_URL="$(python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          u=urlsplit(os.environ["METADRIVE_AIVEN_DATABASE_URL"])
+          print(urlunsplit((u.scheme,u.netloc,"/metadrive_sql_20261012",u.query,u.fragment)))
+          PY
+          )"
+          db_name="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT current_database()')"
+          db_user="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SELECT current_user')"
+          db_owner="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()")"
+          if [[ "$db_name" != "metadrive_sql_20261012" || "$db_user" != "$db_owner" ]]; then
+            echo "Source database identity/ownership check failed"
+            exit 1
+          fi
+          echo "SOURCE_DATABASE=$db_name SOURCE_OWNER_CHECK=PASS"
+          psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -c 'ALTER DATABASE metadrive_sql_20261012 SET default_transaction_read_only = on'
+          psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()"
+          read_only="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc 'SHOW default_transaction_read_only')"
+          if [[ "$read_only" != "on" ]]; then
+            echo "Source did not enter read-only mode"
+            exit 1
+          fi
+          echo "SOURCE_WRITE_FREEZE=PASS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
+          chmod 600 "$HOME/.ssh/oracle_cutover"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          dump=/tmp/metadrive-final-production-20261022.dump
+          /usr/lib/postgresql/18/bin/pg_dump "$SOURCE_DB_URL" --format=custom --no-owner --no-acl --verbose --file="$dump"
+          local_sha="$(sha256sum "$dump" | awk '{print $1}')"
+          echo "FINAL_SNAPSHOT_SHA256=$local_sha"
+          echo "FINAL_SNAPSHOT_BYTES=$(stat -c %s "$dump")"
+          scp -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$dump" "ubuntu@$host:/tmp/metadrive-final-production-20261022.dump"
+          remote_sha="$(ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" "sha256sum /tmp/metadrive-final-production-20261022.dump" | awk '{print $1}')"
+          if [[ "$local_sha" != "$remote_sha" ]]; then
+            echo "Final production snapshot transfer checksum mismatch"
+            exit 1
+          fi
+          echo "FINAL_SNAPSHOT_TRANSFER_CHECKSUM=PASS"
+          ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          db=metadrive_sql_20261022_production
+          dump=/tmp/metadrive-final-production-20261022.dump
+          release=/opt/metadrive/releases/oracle-stage-d7ebd0734610a44f5aacdb49823699e52d1077cf
+          test -s "$dump"
+          test -f "$release/apps/server/dist-system/system-support/entrypoint.js"
+          commit="$(sudo -u metadrive git -C "$release" rev-parse HEAD)"
+          if [[ "$commit" != "d7ebd0734610a44f5aacdb49823699e52d1077cf" ]]; then
+            echo "Oracle release commit mismatch"
+            exit 1
+          fi
+          sudo -u postgres dropdb --if-exists "$db"
+          sudo -u postgres createdb --owner=metadrive "$db"
+          sudo -u postgres pg_restore --exit-on-error --jobs=2 --no-owner --no-acl --dbname="$db" "$dump"
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $do$
+          DECLARE obj record;
+          BEGIN
+            FOR obj IN
+              SELECT c.relkind, c.relname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid=c.relnamespace
+              WHERE n.nspname='public'
+                AND c.relkind IN ('r','p','v','m','S')
+                AND NOT EXISTS (
+                  SELECT 1 FROM pg_depend d
+                  WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'
+                )
+                AND NOT (
+                  c.relkind='S' AND EXISTS (
+                    SELECT 1 FROM pg_depend d
+                    WHERE d.classid='pg_class'::regclass AND d.objid=c.oid
+                      AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i')
+                  )
+                )
+              ORDER BY CASE WHEN c.relkind IN ('r','p') THEN 1
+                            WHEN c.relkind IN ('v','m') THEN 2 ELSE 3 END, c.relname
+            LOOP
+              IF obj.relkind='S' THEN
+                EXECUTE format('ALTER SEQUENCE public.%I OWNER TO metadrive', obj.relname);
+              ELSIF obj.relkind='v' THEN
+                EXECUTE format('ALTER VIEW public.%I OWNER TO metadrive', obj.relname);
+              ELSIF obj.relkind='m' THEN
+                EXECUTE format('ALTER MATERIALIZED VIEW public.%I OWNER TO metadrive', obj.relname);
+              ELSE
+                EXECUTE format('ALTER TABLE public.%I OWNER TO metadrive', obj.relname);
+              END IF;
+            END LOOP;
+          END $do$;
+          GRANT USAGE, CREATE ON SCHEMA public TO metadrive;
+          SQL
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON TABLES TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON SEQUENCES TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ANALYZE' >/dev/null
+          tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
+          rows="$(sudo -u postgres psql -d "$db" -Atqc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'")"
+          size="$(sudo -u postgres psql -d postgres -Atqc "SELECT pg_size_pretty(pg_database_size('$db'))")"
+          echo "PRODUCTION_DATABASE=$db TABLES=$tables ESTIMATED_ROWS=$rows SIZE=$size"
+          if [[ "$tables" != "288" || "$rows" -lt 700000 ]]; then
+            echo "Production database restore validation failed"
+            exit 1
+          fi
+          sudo install -o root -g metadrive -m 0640 /etc/metadrive/private-test.env /etc/metadrive/production.env
+          sudo python3 - "$release" "$db" <<'PY'
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+          release,dbname=sys.argv[1:3]
+          path="/etc/metadrive/production.env"
+          source=open(path).read().splitlines()
+          replacements={
+            "NODE_ENV":"production",
+            "PORT":"3001",
+            "METADRIVE_DB_NAME_OVERRIDE":dbname,
+            "METADRIVE_WEB_DIST":release+"/apps/web/dist",
+            "METADRIVE_PRIVATE_TEST_MODE":"false",
+            "METADRIVE_TRUST_PROXY_CIDRS":"127.0.0.1/32",
+          }
+          out=[]
+          seen=set()
+          for line in source:
+            if not line or line.lstrip().startswith("#") or "=" not in line:
+              out.append(line)
+              continue
+            key,value=line.split("=",1)
+            if key=="DATABASE_URL":
+              raw=value.strip().strip('"').strip("'")
+              u=urlsplit(raw)
+              value=urlunsplit((u.scheme,u.netloc,"/"+dbname,u.query,u.fragment))
+            elif key in replacements:
+              value=replacements[key]
+              seen.add(key)
+            out.append(key+"="+value)
+          for key,value in replacements.items():
+            if key not in seen:
+              out.append(key+"="+value)
+          if not any(line.startswith("DATABASE_URL=") for line in out):
+            raise SystemExit("DATABASE_URL missing from source env")
+          open(path,"w").write("\n".join(out)+"\n")
+          PY
+          sudo chown root:metadrive /etc/metadrive/production.env
+          sudo chmod 0640 /etc/metadrive/production.env
+          sudo systemctl stop metadrive-stage-test.service || true
+          sudo systemctl disable metadrive-stage-test.service || true
+          sudo tee /etc/systemd/system/metadrive-api.service >/dev/null <<EOF
+          [Unit]
+          Description=MetaDrive production SQL API
+          After=network-online.target postgresql.service
+          Wants=network-online.target
+          Requires=postgresql.service
+          ConditionPathExists=/etc/metadrive/production.env
+
+          [Service]
+          Type=simple
+          User=metadrive
+          Group=metadrive
+          WorkingDirectory=$release
+          EnvironmentFile=/etc/metadrive/production.env
+          ExecStart=/usr/local/bin/node $release/apps/server/dist-system/system-support/entrypoint.js
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=60
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable metadrive-api.service
+          sudo systemctl restart metadrive-api.service
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 3 http://127.0.0.1:3001/api/health >/tmp/prod-health.json 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != "1" ]]; then
+            sudo journalctl -u metadrive-api.service -n 120 --no-pager
+            exit 1
+          fi
+          grep -q '"status":"ok"' /tmp/prod-health.json
+          grep -q '"persistence":"sql"' /tmp/prod-health.json
+          curl -sS -D /tmp/prod-cors.headers -o /dev/null --max-time 10 -X OPTIONS http://127.0.0.1:3001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-metadrive-request-source'
+          tr -d '\r' < /tmp/prod-cors.headers > /tmp/prod-cors.clean
+          grep -Eiq '^access-control-allow-origin: https://unesolutions[.]co[.]uk$' /tmp/prod-cors.clean
+          grep -Eiq '^access-control-allow-credentials: true$' /tmp/prod-cors.clean
+          login_status="$(curl -sS -o /tmp/prod-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:3001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/prod-login.json
+            exit 1
+          fi
+          sudo touch /etc/metadrive/oracle-api-cutover-ready
+          echo "ORACLE_PRODUCTION_API_LOCAL_SMOKE=PASS"
+          echo "ORACLE_API_SOURCE_COMMIT=$commit"
+          sudo rm -f "$dump"
+          REMOTE
+          rm -f "$dump"
+          echo "SOURCE_DATABASE_READ_ONLY=ACTIVE"
+
+      - name: Publish HTTPS API reverse proxy and verify public endpoint
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
+          chmod 600 "$HOME/.ssh/oracle_cutover"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          sudo tee /etc/nginx/sites-available/metadrive-api >/dev/null <<'NGINX'
+          server {
+            listen 80;
+            server_name api.unesolutions.co.uk;
+            location ^~ /.well-known/acme-challenge/ {
+              root /var/www/html;
+              default_type "text/plain";
+            }
+            location / { return 301 https://$host$request_uri; }
+          }
+          server {
+            listen 443 ssl;
+            server_name api.unesolutions.co.uk;
+            ssl_certificate /etc/letsencrypt/live/api.unesolutions.co.uk/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/api.unesolutions.co.uk/privkey.pem;
+            ssl_protocols TLSv1.2 TLSv1.3;
+            location / {
+              proxy_pass http://127.0.0.1:3001;
+              proxy_http_version 1.1;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+              proxy_connect_timeout 10s;
+              proxy_read_timeout 120s;
+              proxy_send_timeout 120s;
+            }
+          }
+          NGINX
+          sudo nginx -t
+          sudo systemctl reload nginx
+          REMOTE
+          health=""
+          for attempt in $(seq 1 30); do
+            health="$(curl -fsS --max-time 8 https://api.unesolutions.co.uk/api/health 2>/dev/null || true)"
+            if [[ "$health" == *'"status":"ok"'* && "$health" == *'"persistence":"sql"'* ]]; then
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$health" != *'"status":"ok"'* || "$health" != *'"persistence":"sql"'* ]]; then
+            echo "Public Oracle API health failed: $health"
+            exit 1
+          fi
+          curl -sS -D /tmp/public-api-cors.headers -o /dev/null --max-time 10 -X OPTIONS https://api.unesolutions.co.uk/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-metadrive-request-source'
+          tr -d '\r' < /tmp/public-api-cors.headers > /tmp/public-api-cors.clean
+          grep -Eiq '^access-control-allow-origin: https://unesolutions[.]co[.]uk$' /tmp/public-api-cors.clean
+          grep -Eiq '^access-control-allow-credentials: true$' /tmp/public-api-cors.clean
+          login_status="$(curl -sS -o /tmp/public-api-login.json -w '%{http_code}' --max-time 10 -X POST https://api.unesolutions.co.uk/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/public-api-login.json
+            exit 1
+          fi
+          echo "PUBLIC_ORACLE_API_HEALTH=PASS"
+          echo "PUBLIC_ORACLE_API_CREDENTIALLED_CORS=PASS"
+          echo "PUBLIC_ORACLE_API_LOGIN=PASS"
+
+      - name: Roll back source freeze and isolate Oracle endpoint if cutover preparation failed
+        if: failure()
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DNS_CREATED: ${{ steps.domain.outputs.dns_created }}
+          DNS_RECORD_ID: ${{ steps.domain.outputs.dns_record_id }}
+        run: |
+          set +e
+          SOURCE_DB_URL="$(python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          u=urlsplit(os.environ["METADRIVE_AIVEN_DATABASE_URL"])
+          print(urlunsplit((u.scheme,u.netloc,"/metadrive_sql_20261012",u.query,u.fragment)))
+          PY
+          )"
+          psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -c 'ALTER DATABASE metadrive_sql_20261012 RESET default_transaction_read_only' >/dev/null 2>&1
+          psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()" >/dev/null 2>&1
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover_rollback"
+          chmod 600 "$HOME/.ssh/oracle_cutover_rollback"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/oracle_cutover_rollback" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          sudo systemctl stop metadrive-api.service 2>/dev/null || true
+          sudo rm -f /etc/nginx/sites-enabled/metadrive-api /etc/nginx/sites-available/metadrive-api
+          sudo nginx -t && sudo systemctl reload nginx
+          REMOTE
+          if [[ "$DNS_CREATED" == "true" && -n "$DNS_RECORD_ID" ]]; then
+            zone_json="$(curl -fsS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 'https://api.cloudflare.com/client/v4/zones?name=unesolutions.co.uk' 2>/dev/null)"
+            zone_id="$(printf '%s' "$zone_json" | jq -r '.result[0].id // empty')"
+            if [[ -n "$zone_id" ]]; then
+              curl -fsS --max-time 15 -X DELETE -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$DNS_RECORD_ID" >/dev/null 2>&1
+            fi
+          fi
+          echo "Rollback attempted; inspect the run logs and verify Aiven writes are enabled before retrying."
