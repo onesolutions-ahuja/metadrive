@@ -135,13 +135,13 @@ body{background:#fff}
 .une-kiosk-sub{font-size:6px;text-align:center;color:#62544e;margin-top:5px}
 .une-kiosk-pills{display:flex;gap:4px;margin:16px 0 11px}
 .une-kiosk-pills span{border-radius:100px;padding:5px 8px;background:#fff;font-size:6px;color:#595553}
-.une-kiosk-pills .active{background:#ff9e60;color:white}
+.une-kiosk-pills .active{background:#9a4318;color:white}
 .une-kiosk-items{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .une-kiosk-items>div{background:white;border:1px solid #f7eee4;border-radius:8px;padding:5px}
 .une-food{background:#fce9d8;border-radius:6px;height:53px;display:grid;place-items:center;font-size:28px}
 .une-food-coffee{background:#f4dfc8}.une-food-croissant{background:#ffecc5}.une-food-sandwich{background:#e4f5df}.une-food-cake{background:#ffe2e7}
 .une-kiosk-items strong,.une-kiosk-items small{display:block;font-size:7px;line-height:1.4;margin-top:3px}
-.une-kiosk-items small{color:#fa9464;font-weight:700}
+.une-kiosk-items small{color:#9a4318;font-weight:700}
 .une-kiosk-bottom{margin:auto -4px 0;padding:9px 7px;display:flex;justify-content:space-between;background:#202944;color:#fff;border-radius:8px;font-size:6px}
 .une-kiosk-stand{position:absolute;z-index:-1;width:12px;height:40px;left:calc(50% - 6px);bottom:-45px;background:#363e54}
 .une-kiosk-stand:after{content:"";position:absolute;bottom:-7px;left:-40px;width:92px;height:8px;background:#363e54;border-radius:6px}
