@@ -1,17 +1,18 @@
 import type {PoolClient} from 'pg';
 
-/** Generic, reusable scheduling Objects. Definitions only: no tenant business data. */
+/** Generic scheduling Objects. OwnerId is the staff user's tenant-scoped identity.
+ * Avoid synthetic User records or duplicate staff credentials. */
 export const ACEASSIST_SCHEDULING_OBJECTS=[
  {api:'BookableResource',label:'Bookable Resource',fields:[
   ['Name','Name','text',null],['ResourceType','Resource Type','text',null],
   ['Location','Location','text',null],['Capacity','Capacity','number',null],
   ['Active','Active','boolean',null]]},
  {api:'StaffAvailability',label:'Staff Availability',fields:[
-  ['Name','Name','text',null],['Staff','Staff','reference','User'],
+  ['Name','Name','text',null],
   ['Weekday','Weekday','picklist',null],['StartTime','Start Time','time',null],
   ['EndTime','End Time','time',null],['Active','Active','boolean',null]]},
  {api:'AvailabilityException',label:'Availability Exception',fields:[
-  ['Name','Name','text',null],['Staff','Staff','reference','User'],
+  ['Name','Name','text',null],
   ['Resource','Resource','reference','BookableResource'],
   ['StartDateTime','Start Date and Time','datetime',null],
   ['EndDateTime','End Date and Time','datetime',null],
