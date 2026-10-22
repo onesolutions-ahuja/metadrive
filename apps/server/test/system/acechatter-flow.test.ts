@@ -53,6 +53,8 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   {field:'Sender',operator:'Contains',value:'@searchTerm'},
   {field:'Recipient',operator:'Contains',value:'@searchTerm'}
  ]);
+ assert.equal(getCommunications?.config.sortField,'CreatedAt',
+  'both directions must share a chronological sort field');
  assert.equal(getCommunications?.config.conditionLogic,'1 AND (2 OR 3)',
   'the authorised Flow must find both incoming senders and outgoing recipients');
  const sendGraph=decodeMetadataValues(
