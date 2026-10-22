@@ -46,6 +46,14 @@ export default function AcetillTerminal(){
   const [message,setMessage]=React.useState('');
   const [loading,setLoading]=React.useState(true);
   const [receipt,setReceipt]=React.useState<Row|null>(null);
+  const [tillLocked,setTillLocked]=React.useState(false);
+  const [unlockPin,setUnlockPin]=React.useState('');
+  const [unlockError,setUnlockError]=React.useState('');
+  const [unlockBusy,setUnlockBusy]=React.useState(false);
+  const [pinSetup,setPinSetup]=React.useState(false);
+  const [setupPassword,setSetupPassword]=React.useState('');
+  const [newPin,setNewPin]=React.useState('');
+  const [setupStatus,setSetupStatus]=React.useState('');
   const [paymentMode,setPaymentMode]=React.useState<'cash'|'card'|null>(null);
   const [cashReceived,setCashReceived]=React.useState('');
   const [customerWindow,setCustomerWindow]=React.useState<Window|null>(null);
@@ -99,6 +107,7 @@ export default function AcetillTerminal(){
   const find=(suffix:string)=>actions.find(a=>a.apiName.toLowerCase()==='acetill'+suffix.toLowerCase());
   const getProducts=find('GetProducts');
   const getCategories=find('GetCategories');
+  const unlockTill=find('VerifyUserPin');
   const paymentCash=find('PaymentCash');
   const paymentCard=find('PaymentCard');
   // Read-only catalogue flows may run simultaneously; checkout and write actions remain serialized.
@@ -177,6 +186,49 @@ export default function AcetillTerminal(){
       }
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   };
+  const unlockTillScreen=async(e:React.FormEvent)=>{
+    e.preventDefault();
+    if(!unlockTill||unlockBusy||!/^\\d{4,8}$/.test(unlockPin))return;
+    setUnlockBusy(true);setUnlockError('');
+    try {
+      // The Flow must compare a protected current-user PIN on the server.
+      // Never retrieve or expose the stored PIN to the browser.
+      const response=await apiRequest<Result>('/flows/'+encodeURIComponent(unlockTill.apiName)+'/execute',{
+        method:'POST',body:JSON.stringify({pin:unlockPin})
+      });
+      if(!response.interviewId&&response.completed===true&&response.outputs?.verified===true){
+        setTillLocked(false);setUnlockPin('');
+      }else setUnlockError('Incorrect PIN or verification unavailable.');
+    }catch{setUnlockError('PIN verification failed. Please try again.');}
+    finally{setUnlockPin('');setUnlockBusy(false);}
+  };
+  const saveTillPin=async(e:React.FormEvent)=>{
+    e.preventDefault();setSetupStatus('');
+    if(!/^\\d{4,8}$/.test(newPin))return;
+    try{
+      await apiRequest('/me/till-pin',{method:'POST',body:JSON.stringify({password:setupPassword,pin:newPin})});
+      setSetupPassword('');setNewPin('');setPinSetup(false);setSetupStatus('Till PIN saved securely.');
+    }catch{setSetupStatus('Unable to save PIN. Check your current password and try again.');}
+  };
+  const pinSetupDialog=pinSetup&&!tillLocked?<div className="acetill-pin-setup-backdrop" role="dialog" aria-modal="true" aria-label="Set till PIN">
+    <form className="acetill-pin-setup" onSubmit={e=>void saveTillPin(e)}>
+    <h2>Set your till PIN</h2><p>Your PIN protects this till screen without logging you out.</p>
+    <label>Current login password<input type="password" autoComplete="current-password" required value={setupPassword} onChange={e=>setSetupPassword(e.target.value)}/></label>
+    <label>New PIN (4–8 digits)<input type="password" inputMode="numeric" autoComplete="new-password" pattern="[0-9]{4,8}" required value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\\D/g,'').slice(0,8))}/></label>
+    {setupStatus&&<p role="alert">{setupStatus}</p>}
+    <div><button type="button" onClick={()=>{setPinSetup(false);setSetupPassword('');setNewPin('');}}>Cancel</button><button type="submit">Save PIN</button></div>
+    </form></div>:null;
+  const settingsButton=<button type="button" className="acetill-lock-button" title="Set till PIN" aria-label="Set till PIN" onClick={()=>{setPinSetup(true);setSetupStatus('');}}>⚙</button>;
+  const lockButton=<button type="button" className="acetill-lock-button" title="Lock till" aria-label="Lock till" onClick={()=>{setTillLocked(true);setUnlockPin('');setUnlockError('');}}>🔒</button>;
+  const lockedOverlay=tillLocked?<div className="acetill-lock-screen" role="dialog" aria-modal="true" aria-label="Till locked">
+    <div className="acetill-lock-panel"><div className="acetill-lock-symbol">🔒</div><h1>Till locked</h1><p>Enter your user PIN to resume this till.</p>
+    <form onSubmit={e=>void unlockTillScreen(e)}><label htmlFor="acetill-unlock-pin">User PIN</label>
+    <input id="acetill-unlock-pin" type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]{4,8}" minLength={4} maxLength={8} required value={unlockPin} onChange={e=>setUnlockPin(e.target.value.replace(/\\D/g,'').slice(0,8))} autoFocus />
+    {unlockError&&<p role="alert">{unlockError}</p>}
+    {!unlockTill&&<p role="alert">AcetillVerifyUserPin Flow is not configured or permitted.</p>}
+    <button disabled={unlockBusy||!unlockTill||unlockPin.length<4} type="submit">{unlockBusy?'Checking…':'Unlock till'}</button></form>
+    <button className="acetill-lock-logout" type="button" onClick={()=>{void apiRequest('/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>window.location.assign('/login'));}}>Log out</button>
+    </div></div>:null;
   const displayButton=<button type="button" className="acetill-display-button" onClick={openCustomerDisplay}
     aria-label="Open customer display on second screen" title="Open customer display">▣ <span>Customer display</span></button>;
   const paymentDialog=paymentMode?<div className="acetill-payment-backdrop" role="presentation">
@@ -199,9 +251,9 @@ export default function AcetillTerminal(){
       {!(paymentMode==='cash'?paymentCash:paymentCard)&&<p role="status">Configure and permit the {paymentMode==='cash'?'AcetillPaymentCash':'AcetillPaymentCard'} Flow.</p>}
     </section>
   </div>:null;
-  return receipt?<><main className="acetill-receipt-screen" aria-label="Sale completed">
+  return receipt?<>{lockedOverlay}{pinSetupDialog}<main className="acetill-receipt-screen" aria-label="Sale completed">
     <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
-      <h1>Payment complete</h1><p>Your OneEngine checkout Flow confirmed this transaction.</p>
+      <h1>Payment complete</h1>{lockButton}<p>Your OneEngine checkout Flow confirmed this transaction.</p>
       <dl><div><dt>Order reference</dt><dd>{asText(receipt.orderId??receipt.orderNumber??receipt.OrderId)||'Confirmed'}</dd></div>
       {receipt.total!=null&&<div><dt>Final total</dt><dd>{amount(Number(receipt.total))}</dd></div>}</dl>
       <div className="acetill-receipt-actions">
@@ -209,14 +261,14 @@ export default function AcetillTerminal(){
         {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{orderId:receipt.orderId??receipt.OrderId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
         <button type="button" className="acetill-charge" onClick={()=>{setReceipt(null);setMessage('');setError('');}}>New sale</button>
       </div>{error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
-    </section></main>{customerDisplay}</>:<><main className="acetill-terminal">
+    </section></main>{customerDisplay}</>:<>{lockedOverlay}{pinSetupDialog}<main className="acetill-terminal">
     <section className="acetill-shop" aria-label="Acetill product catalogue">
       <div className="acetill-topline">
         <nav aria-label="Product categories" className="acetill-category-tabs">
           <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
-        {displayButton}
+        {lockButton}{settingsButton}{displayButton}
         <label className="acetill-search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}

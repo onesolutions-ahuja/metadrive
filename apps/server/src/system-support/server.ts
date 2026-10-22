@@ -1,3 +1,4 @@
+import {TillPinService} from './till-pin-service.js';
 import {withAuditContext,auditContext,setAuditActor} from './audit-context.js';
 import {ConnectedAppService} from './connected-app-service.js';
 import {SecurityMonitorService} from './security-monitor-service.js';
@@ -17,6 +18,7 @@ import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js'
 import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotation-objects.js';
 import {seedAppointmentObjectsForExistingTenants} from '../app-seeders/core-appointment-objects.js';
 import {seedCommunicationObjectsForExistingTenants} from '../app-seeders/core-communication-objects.js';
+import {seedAcetillLockFlows} from '../app-seeders/acetill-lock-flow.js';
 import {seedAcetillAppCatalog} from '../app-seeders/acetill-app-catalog.js';
 import {seedAceKioskAppCatalog} from '../app-seeders/acekiosk-app-catalog.js';
 import {seedAceKioskMenuFlows,seedAceKioskProductOptions} from '../app-seeders/acekiosk-menu-flow.js';
@@ -1446,6 +1448,21 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json(await pages.load(actor.tenant_id,req.params.apiName));
   }));
+  // Self-service till PIN setup requires an authenticated session and current password.
+  // The PIN is never served by Object CRUD or returned in responses.
+  app.post('/api/me/till-pin',route(async(req,res)=>{
+    const actor=req.actor!;
+    const password=req.body?.password;
+    const pin=req.body?.pin;
+    if(typeof password!=='string'||typeof pin!=='string')throw new Error('Invalid PIN setup');
+    const authCheck=await db.query<{password_hash:string}>(
+      'SELECT password_hash FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
+      [actor.tenant_id,actor.user_id]);
+    if(!authCheck.rows[0]||!await new AuthenticationService(db).verifyPassword(password,authCheck.rows[0].password_hash))
+      throw new Error('Invalid current password');
+    await new TillPinService(db).set(actor.tenant_id,actor.user_id,pin);
+    res.status(204).end();
+  }));
   app.post('/api/flows/:apiName/execute',route(async(req,res)=>{
     const actor=req.actor!;
     const inputs=req.body?.inputs??req.body??{};
@@ -2085,6 +2102,7 @@ export async function startSystemServer() {
     await seedAceKioskProductOptions(db);
     await seedAceKioskNavigationFlows(db);
     await seedAceKioskPaymentFlows(db); // Installed tenants only, never overwrites existing Flow versions.
+    await seedAcetillLockFlows(db);
     await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
     await seedQuotationObjectsForExistingTenants(db);
     await seedAppointmentObjectsForExistingTenants(db);
