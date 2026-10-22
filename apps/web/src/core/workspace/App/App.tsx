@@ -148,7 +148,7 @@ function App() {
       const timeout = window.setTimeout(() => controller.abort(), 9000);
       try {
         const response = await withAuthRefreshLock(() =>
-          fetch(`${apiBase}/auth/refresh?landing=1`, {
+          fetch(`${apiBase}/auth/refresh`, {
             method: 'POST',
             credentials: 'include',
             signal: controller.signal
