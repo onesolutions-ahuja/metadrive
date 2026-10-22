@@ -27,7 +27,7 @@ export function createSetupFlowActions(ctx: any) {
   const saveNamedCredential = async (credential: {
     id?: string; name: string; label: string; protocol: NamedCredentialMetadata['protocol']; baseUrl: string;
     authType: NamedCredentialMetadata['authType']; headerName?: string; configuration?: Record<string, string>; username?: string; secret?: string;
-    webhookRequired?: boolean; webhookSecret?: string;
+    webhookRequired?: boolean; webhookSecret?: string; webhookVerifyToken?: string;
   }) => {
     const { id, ...body } = credential;
     const result = await apiRequest<{ credential: NamedCredentialMetadata; webhookVerifyToken?: string }>(
