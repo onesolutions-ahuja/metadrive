@@ -595,6 +595,10 @@
             {
               "field": "Payment_Method__c",
               "value": "Cash"
+            },
+            {
+              "field": "Order",
+              "value": "{!record12.Id}"
             }
           ]
         }
@@ -1328,6 +1332,10 @@
             {
               "field": "Payment_Method__c",
               "value": "Card"
+            },
+            {
+              "field": "Order",
+              "value": "{!record12.Id}"
             }
           ]
         }
