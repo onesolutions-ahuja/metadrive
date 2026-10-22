@@ -36,6 +36,7 @@ export type IntegrationActivityWriter=(input:IntegrationApiLogInput)=>Promise<vo
 
 const clean=(value:unknown,max=500):string=>
  String(value??'').replace(/[\r\n\0]/g,' ').trim().slice(0,max);
+const cleanBody=(value:unknown):string=>String(value??'').replace(/\0/g,'').slice(0,10000);
 const allowedChannels=new Set(['Email','SMS','WhatsApp','Phone','WebChat','Push','Other']);
 
 function normalized(input:IntegrationApiLogInput):IntegrationApiLogInput{
@@ -82,7 +83,7 @@ export function createIntegrationCommunicationWriter(
    occurredAt:now
   };
   const body=details.body===undefined
-   ?JSON.stringify(metadata).slice(0,10000):clean(details.body,10000);
+   ?JSON.stringify(metadata).slice(0,10000):cleanBody(details.body);
   const subjectPrefix=details.subject?clean(details.subject,100)+' · ':'';
   const statusLabel=input.statusCode===undefined||input.statusCode===null
    ?'NO_RESPONSE':String(input.statusCode);
