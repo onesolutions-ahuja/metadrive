@@ -122,7 +122,7 @@ body{background:#fff}
 .une-showcase-device .une-preview-body{min-height:330px}
 .une-showcase-device .une-bars{height:110px}
 .une-showcase-copy h3{font-size:35px;line-height:1.22;margin:13px 0 18px}
-.une-showcase-copy>p{font-size:15px;line-height:var(--md-leading-body,1.5)5}
+.une-showcase-copy>p{font-size:15px;line-height:var(--md-leading-body,1.5)}
 .une-showcase-copy ul{list-style:none;padding:0;margin:24px 0}
 .une-showcase-copy li{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;margin-bottom:12px}
 .une-showcase-copy li svg{color:#36af84}
@@ -175,7 +175,7 @@ body{background:#fff}
 .une-kds-ticket p{font-size:10px;color:#f6f7ff!important;margin:0 0 10px}
 .une-kds-ticket footer{margin-top:auto;background:rgba(255,255,255,.11);border-radius:7px;text-align:center;padding:7px;font-size:8px}
 .une-benefits-grid{display:grid;grid-template-columns:1fr 1fr;gap:100px;align-items:center}
-.une-benefits-grid>div:first-child>p{font-size:16px;max-width:420px;line-height:var(--md-leading-body,1.5)5}
+.une-benefits-grid>div:first-child>p{font-size:16px;max-width:420px;line-height:var(--md-leading-body,1.5)}
 .une-benefits-grid h2 span{color:#7869e4}
 .une-benefits-grid .une-button{margin-top:21px}
 .une-benefits-list{display:grid;gap:8px}
@@ -185,7 +185,7 @@ body{background:#fff}
 .une-benefits-list p{font-size:12px;line-height:1.7;margin:5px 0 0}
 .une-integrations-section{background:#f9faff}
 .une-integrations-layout{display:grid;grid-template-columns:1.08fr .92fr;gap:var(--md-space-12,48px);align-items:center}
-.une-integrations-copy>p{max-width:560px;line-height:var(--md-leading-body,1.5)5}
+.une-integrations-copy>p{max-width:560px;line-height:var(--md-leading-body,1.5)}
 .une-integration-pills{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0}
 .une-integration-pills span{display:flex;align-items:center;gap:11px;padding:13px 15px;border:1px solid #e5e9f3;background:white;border-radius:11px;font-size:12px;font-weight:700}
 .une-integration-pills svg{color:#7559e4;flex:none}
