@@ -64,6 +64,20 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     return()=>{live=false;};
   },[]);
 
+  // Keep the inbox live like a messaging app. Pause polling while the tab is hidden
+  // and refresh immediately when the user returns to it.
+  useEffect(()=>{
+    const refreshWhenVisible=()=>{
+      if(document.visibilityState==='visible')setRefresh(value=>value+1);
+    };
+    const timer=window.setInterval(refreshWhenVisible,5000);
+    document.addEventListener('visibilitychange',refreshWhenVisible);
+    return()=>{
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange',refreshWhenVisible);
+    };
+  },[]);
+
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
     if(!loadConversations){setConversations([]);return;}
@@ -80,7 +94,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     return()=>{live=false;};
   },[loadConversations?.apiName,refresh]);
 
-  // Incoming messages are sourced from Communication records via an authorised Flow.
+  // Both incoming and outgoing messages are sourced from Communication records via an authorised Flow.
   useEffect(()=>{
     if(!loadCommunications){setCommunications([]);return;}
     let live=true;setBusy(true);setError('');
@@ -114,7 +128,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     if(!selected||!selectedRow||(!loadMessages&&!loadCommunications)){
       setMessages([]);return;
     }
-    let live=true;setBusy(true);setError('');setMessages([]);
+    let live=true;setBusy(true);setError('');
     const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
       ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
@@ -212,7 +226,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       {error&&<p className="ace-chat-alert" role="alert">{error}</p>}
       {notice&&<p className="ace-chat-notice" role="status">{notice}</p>}
       <section className="ace-chat-thread" aria-label="Messages">
-        {!selectedRow?<div className="ace-chat-welcome"><span>◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read messages from Communication records, filtered by the sender's WhatsApp number.</p></div>:
+        {!selectedRow?<div className="ace-chat-welcome"><span>◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read incoming and outgoing Communication records, filtered by the customer's WhatsApp number.</p></div>:
          !loadMessages&&!loadCommunications?<p className="ace-chat-hint">Activate the authorised message-loading Flows in MetaDrive Flow Builder.</p>:
          visibleMessages.length===0?<p className="ace-chat-hint">No messages visible for this WhatsApp number.</p>:
          visibleMessages.map((row,index)=><div key={identify(row)||index} className={String(pick(row,'Direction','MessageDirection')??'').toLowerCase().includes('out')?'ace-chat-bubble outgoing':'ace-chat-bubble'}>
