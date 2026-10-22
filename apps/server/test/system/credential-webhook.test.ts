@@ -75,7 +75,7 @@ test('credential-linked webhook accepts verified request, creates Communication,
  }
 });
 
-test('credential webhook Flow routing preserves the Communication archive',async()=>{
+test('credential webhook ingests Communication without invoking the app Flow',async()=>{
  const tenant='22222222-2222-4222-8222-222222222222';
  const endpoint='11111111-1111-4111-8111-111111111111';
  const actor='33333333-3333-4333-8333-333333333333';
