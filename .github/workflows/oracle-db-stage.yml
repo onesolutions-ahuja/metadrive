@@ -49,7 +49,7 @@ jobs:
             exit 1
           fi
           dump=/tmp/metadrive-source-20261022.dump
-          pg_dump "$SOURCE_DB_URL" --format=custom --no-owner --no-acl --verbose --file="$dump"
+          /usr/lib/postgresql/18/bin/pg_dump "$SOURCE_DB_URL" --format=custom --no-owner --no-acl --verbose --file="$dump"
           local_sha="$(sha256sum "$dump" | awk '{print $1}')"
           echo "SOURCE_SNAPSHOT_DATABASE=metadrive_sql_20261012"
           echo "SOURCE_SNAPSHOT_SHA256=$local_sha"
