@@ -119,16 +119,24 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   return rows[0];
  };
  app.get('/api/inbound-webhooks/:id',handler(async(req,res)=>{
+  const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
   const mode=req.query['hub.mode'],token=req.query['hub.verify_token'];
   const challenge=req.query['hub.challenge'];
-  if(!endpoint||!['Meta','HmacSha256'].includes(endpoint.provider)||mode!=='subscribe'||typeof token!=='string'||token.length>512
-     ||typeof challenge!=='string'||challenge.length>1024
-     ||!matches(endpoint.verify_token_digest,digest(token))){
-   res.status(403).type('text/plain').send('Forbidden');return;
-  }
-  res.status(200).type('text/plain').send(challenge);
+  const valid=Boolean(endpoint&&['Meta','HmacSha256'].includes(endpoint.provider)
+   &&mode==='subscribe'&&typeof token==='string'&&token.length<=512
+   &&typeof challenge==='string'&&challenge.length<=1024
+   &&matches(endpoint.verify_token_digest,digest(token)));
+  if(endpoint)await writeIntegrationApiLog(db,{
+   tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
+   provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
+   method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
+   durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
+   errorCode:valid?null:'VERIFY_TOKEN_REJECTED'
+  },activityWriter);
+  if(!valid){res.status(403).type('text/plain').send('Forbidden');return;}
+  res.status(200).type('text/plain').send(challenge as string);
  }));
  app.post('/api/inbound-webhooks/:id',handler(async(req,res)=>{
   const requestStartedAt=Date.now();
@@ -144,7 +152,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
     provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
     method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
     requestBytes:raw?.length??0,errorCode:errorCode??null
-   });
+   },activityWriter);
   };
   const reject=async(reason:string,rawBodyBytes?:number)=>{
    // Log only a bounded reason code and body length; never log signature, body, or secret.
