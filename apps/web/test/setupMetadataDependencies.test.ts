@@ -91,7 +91,7 @@ test('home-page authorization and profile reads run concurrently before assignme
 
 test('Lightning page loading uses its metadata query instead of a redundant existence round trip', () => {
   const runtime = readFileSync(new URL('../../server/src/system-files/page-runtime.ts', import.meta.url), 'utf8');
-  assert.match(runtime, /const page=rows\\[0\\];if\\(!page\\)return null;/);
-  assert.match(runtime, /const page=await this\\.metadata\\(tenantId,pageApi\\);\\s*return page\\?\\{page\\}:this\\.loadLegacy\\(tenantId,pageApi\\);/);
+  assert.match(runtime, /const page=rows\\[0\\];if\\(!page\\)throw new Error\\('Page not found'\\);/);
+  assert.match(runtime, /const page=await this\\.metadata\\(tenantId,pageApi\\)\\.catch\\(error=>\\{\\s*if\\(error instanceof Error&&error\\.message==='Page not found'\\)return null;\\s*throw error;\\s*\\}\\);\\s*return page\\?\\{page\\}:this\\.loadLegacy\\(tenantId,pageApi\\);/);
   assert.doesNotMatch(runtime, /SELECT EXISTS\\(\\s*SELECT 1 FROM md_page_definitions p JOIN md_lightning_page_details/);
 });
