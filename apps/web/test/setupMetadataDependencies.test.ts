@@ -80,3 +80,10 @@ test('shared API coalesces only identical default GETs and preserves explicit re
   assert.match(client, /const existing = inFlightGetRequests\.get\(key\);\s*if \(existing\) return existing as Promise<T>;/);
   assert.match(client, /if \(inFlightGetRequests\.get\(key\) === request\) inFlightGetRequests\.delete\(key\);/);
 });
+
+
+test('home-page authorization and profile reads run concurrently before assignment resolution', () => {
+  const server = readFileSync(new URL('../../server/src/system-support/server.ts', import.meta.url), 'utf8');
+  assert.match(server, /const \\[\\,session\\]=await Promise\\.all\\(\\[\\s*rbac\\.require\\(actor\\.tenant_id,actor\\.user_id,'App:'\\+req\\.params\\.appId,'read'\\),\\s*sessionMetadata\\(db,actor\\.tenant_id,actor\\.user_id\\)\\s*\\]\\);/);
+  assert.match(server, /const assigned=await apps\\.homePage\\(actor\\.tenant_id,req\\.params\\.appId,factor\\.toLowerCase\\(\\),session\\.user\\.profileId\\);/);
+});
