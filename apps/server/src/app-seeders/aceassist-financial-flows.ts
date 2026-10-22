@@ -80,7 +80,7 @@ function conversionGraph(){
   {name:'recordId',type:'Variable',dataType:'Text',availableForInput:true},
   {name:'quotation',type:'Record',dataType:'Quotation'},
   {name:'existingInvoice',type:'Record',dataType:'Invoice'},
-  {name:'quotationLines',type:'Record Collection',dataType:'Quotation'},
+  {name:'quotationLines',type:'Record Collection',dataType:'QuotationLine'},
   {name:'quotationLine',type:'Record',dataType:'QuotationLine'},
   {name:'invoiceId',type:'Variable',dataType:'Text',availableForOutput:true}
  ]);
@@ -143,8 +143,10 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
   ['Flow:AceAssistConvertQuoteToInvoice','execute'],
   ['Invoice.Quotation','read'],['Invoice.Quotation','create'],
   ['Quotation','read'],['QuotationLine','read'],['Invoice','read'],['InvoiceLine','read'],
-  ...['Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal']
-   .map(x=>['QuotationLine.'+x,'read'])
+  ...['Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal','Name','Product','Description']
+   .map(x=>['QuotationLine.'+x,'read']),
+  ...['Name','Quotation','Customer','Status','Total','Subtotal','DiscountAmount','TaxAmount']
+   .map(x=>['Invoice.'+x,'create'])
  ];
  const issuerRights=[
   ['Flow:AceAssistIssueInvoice','execute'],['Invoice','read'],['Invoice','edit'],
