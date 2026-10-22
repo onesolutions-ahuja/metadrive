@@ -121,14 +121,17 @@ export async function uninstallConnectorApp(client:PoolClient,tenantId:string,na
  const {rows:apps}=await client.query<{id:string}>(`SELECT id FROM md_apps
   WHERE api_name=$1 AND tenant_owner_id IS NULL`,[name]);
  if(!apps[0])return;
- const {rows:credentials}=await client.query<{credential_id:string}>(`
-  SELECT credential_id FROM md_connector_app_credentials
+ const {rows:credentials}=await client.query<{credential_id:string;provisioned:boolean}>(`
+  SELECT credential_id,provisioned FROM md_connector_app_credentials
   WHERE tenant_id=$1 AND app_id=$2`,[tenantId,apps[0].id]);
  // Only connector-owned definitions are disabled. Never DELETE or clear tenant ciphertext.
  await client.query(`UPDATE md_system_definitions SET enabled=false,updated_at=now()
   WHERE tenant_id=$1 AND api_name=$2 AND kind IN ('connector-providers','integration-connections')`,
   [tenantId,name]);
  for(const row of credentials){
+  // A credential that existed before connector installation belongs to the tenant;
+  // an unrelated app or Flow may be using it. Disable only connector-owned credentials.
+  if(!row.provisioned)continue;
   // A shared, still-installed connector may rely on the same credential.
   const {rows:other}=await client.query<{in_use:boolean}>(`
    SELECT EXISTS(SELECT 1 FROM md_connector_app_credentials binding
