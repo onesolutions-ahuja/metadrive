@@ -83,6 +83,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   // A credential webhook may also route through an authorised tenant Flow.
   // Preserve the existing Communication archive when Flow routing is configured.
   // Legacy app/Flow-only endpoints retain their existing Flow-only behaviour.
+  let flowAvailable=Boolean(endpoint.flow_api);
   if(endpoint.flow_api){
    const {rows:active}=await db.query(`
      SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2
@@ -90,7 +91,12 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      [endpoint.tenant_id,endpoint.flow_api]);
    if(!endpoint.execution_user_id||!active[0]||!await rbac.allowed(
       endpoint.tenant_id,endpoint.execution_user_id,'Flow:'+endpoint.flow_api,'execute')){
-    res.status(503).json({error:'Webhook Flow not available'});return;
+    // Credential webhooks remain operational as generic Communication ingestion
+    // when an optional app/Flow is unavailable. Legacy Flow-only endpoints fail closed.
+    if(!endpoint.credential_name){
+     res.status(503).json({error:'Webhook Flow not available'});return;
+    }
+    flowAvailable=false;
    }
   }
   if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)){
@@ -112,7 +118,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   // only when the Flow input contract can accept it (max 4096 characters).
   const json=raw.toString('utf8');
   try{
-   if(endpoint.flow_api&&endpoint.execution_user_id){
+   if(flowAvailable&&endpoint.flow_api&&endpoint.execution_user_id){
     await flows.execute(endpoint.tenant_id,endpoint.flow_api,endpoint.execution_user_id,{
      requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
      webhookEndpoint:endpoint.api_name
@@ -120,7 +126,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    }
    // Credential-linked endpoints keep their existing generic Communication
    // record even when a tenant enables a reusable Flow consumer.
-   if(!endpoint.flow_api||endpoint.credential_name){
+   if(!flowAvailable||endpoint.credential_name){
     if(!records)throw new Error('Communication record engine unavailable');
     const sanitized=JSON.stringify(safePayload(req.body)).slice(0,10000);
     await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
@@ -139,7 +145,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   }catch(error){
    await db.query(`UPDATE md_inbound_webhook_events SET status='failed',
      processed_at=now(),error_code=$3 WHERE tenant_id=$1 AND id=$2`,
-    [endpoint.tenant_id,event.id,endpoint.flow_api?'FLOW_EXECUTION_FAILED':'COMMUNICATION_WRITE_FAILED']);
+    [endpoint.tenant_id,event.id,flowAvailable?'FLOW_EXECUTION_FAILED':'COMMUNICATION_WRITE_FAILED']);
    res.status(503).json({error:'Webhook processing unavailable'});
   }
  }));
