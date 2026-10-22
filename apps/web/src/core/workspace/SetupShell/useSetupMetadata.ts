@@ -220,7 +220,7 @@ export function useSetupMetadata(ctx: any) {
           setCurrentFieldAccess(user.fieldAccess);
           setCurrentRecordTypeAccess(user.recordTypeAccess);
         }).catch(() => {}); // The awaited bootstrap handles session-expiry errors.
-        const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
+        const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, _credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           Promise.resolve({ flows: [] as FlowDefinitionMetadata[] }), // Flow definitions belong to the Builder, not login.
           Promise.resolve({ platformEvents: [] as PlatformEventMetadata[] }),
@@ -253,7 +253,8 @@ export function useSetupMetadata(ctx: any) {
         if (!appPayload.apps.some((app) => app.apiName === currentAppId)) {
           setCurrentAppId(appPayload.apps[0]?.apiName ?? '');
         }
-        setNamedCredentials(credentialPayload.credentials);
+        // Named Credentials are owned by the dedicated authorised Setup loader.
+        // Never overwrite its live result with this bootstrap's empty placeholder.
         setEmailAlerts(emailAlertPayload.emailAlerts);
         setApprovalProcesses(approvalProcessPayload.approvalProcesses);
         setConnectorProviders(providerPayload.providers);
