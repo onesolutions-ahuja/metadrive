@@ -11,7 +11,7 @@ const fakeClient=(provisioned=true)=>{
    writes.push({sql,args});
    if(sql.includes('SELECT id FROM md_apps'))return {rows:[{id:'connector-app-1'}],rowCount:1};
    if(sql.includes('INSERT INTO md_named_credentials'))return {rows:[{id:'cred-1'}],rowCount:1};
-   if(sql.includes('SELECT credential_id FROM md_connector_app_credentials'))
+   if(sql.includes('SELECT credential_id,provisioned FROM md_connector_app_credentials'))
     return {rows:[{credential_id:'cred-1',provisioned}],rowCount:1};
    if(sql.includes('SELECT EXISTS(SELECT 1 FROM md_connector_app_credentials'))
     return {rows:[{in_use:false}],rowCount:1};
