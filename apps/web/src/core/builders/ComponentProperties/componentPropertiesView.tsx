@@ -248,8 +248,8 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const fieldsFor = (key:string) => metadataFieldObject(objects,{...properties,objectApiName},key)?.fields??[];
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const propertySectionFor = (key: string, definition?: LibraryComponentMetadata['propertyDefinitions'][number]) => {
-    const declared = String((definition as (typeof definition & { section?: string; group?: string }) | undefined)?.section
-      ?? (definition as (typeof definition & { group?: string }) | undefined)?.group ?? '').toLowerCase();
+    const metadata = definition as { section?: string; group?: string } | undefined;
+    const declared = String(metadata?.section ?? metadata?.group ?? '').toLowerCase();
     const name = (declared + ' ' + key).toLowerCase();
     if (/responsive|breakpoint|mobile|tablet|desktop|device|orientation/.test(name)) return 'Responsive';
     if (/layout|position|width|height|align|column|rowspan|grid|gap|padding|margin|flex|wrap|direction|span/.test(name)) return 'Layout';
