@@ -1,0 +1,82 @@
+name: Oracle production cutover access check
+
+on:
+  push:
+    branches:
+      - ops/oracle-cutover-access-check-20261022
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify access without exposing secrets
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set +x
+          failed=0
+
+          if [[ -n "$METADRIVE_AIVEN_DATABASE_URL" ]]; then
+            echo "AIVEN_SECRET=PRESENT"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client >/dev/null
+            if db_name="$(psql "$METADRIVE_AIVEN_DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc 'select current_database()' 2>/dev/null)"; then
+              echo "AIVEN_CONNECTION=PASS"
+              echo "AIVEN_DATABASE=$db_name"
+            else
+              echo "AIVEN_CONNECTION=FAIL (URL exists; connection/query failed)"
+              failed=1
+            fi
+          else
+            echo "AIVEN_SECRET=MISSING (expected METADRIVE_AIVEN_DATABASE_URL)"
+            failed=1
+          fi
+
+          if [[ -n "$ORACLE_SSH_PRIVATE_KEY" ]]; then
+            echo "ORACLE_SSH_KEY=PRESENT"
+            install -d -m 700 "$HOME/.ssh"
+            printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
+            chmod 600 "$HOME/.ssh/oracle_cutover"
+            if ssh-keyscan -T 8 -H 132.145.18.46 >> "$HOME/.ssh/known_hosts" 2>/dev/null && \
+               ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ubuntu@132.145.18.46 \
+               'printf "ORACLE_SSH=PASS\\n"; hostname; id -un; printf "POSTGRESQL="; systemctl is-active postgresql 2>/dev/null || true; printf "REHEARSAL_SERVICE="; systemctl is-active metadrive-private-test.service 2>/dev/null || true' ; then
+              echo "ORACLE_SSH_CHECK=PASS"
+            else
+              echo "ORACLE_SSH_CHECK=FAIL (known host IP 132.145.18.46, user ubuntu)"
+              failed=1
+            fi
+          else
+            echo "ORACLE_SSH_KEY=MISSING (add GitHub Actions secret ORACLE_SSH_PRIVATE_KEY)"
+            failed=1
+          fi
+
+          if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "CLOUDFLARE_TOKEN=PRESENT"
+            verify="$(curl -sS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify || true)"
+            if printf '%s' "$verify" | jq -e '.success == true and .result.status == "active"' >/dev/null; then
+              echo "CLOUDFLARE_TOKEN_VERIFY=PASS"
+            else
+              echo "CLOUDFLARE_TOKEN_VERIFY=FAIL (token invalid, inactive, or API unreachable)"
+              failed=1
+            fi
+            zones="$(curl -sS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 'https://api.cloudflare.com/client/v4/zones?name=unesolutions.co.uk' || true)"
+            if printf '%s' "$zones" | jq -e '.success == true and (.result | length) == 1' >/dev/null; then
+              echo "CLOUDFLARE_ZONE_ACCESS=PASS (unesolutions.co.uk)"
+            else
+              echo "CLOUDFLARE_ZONE_ACCESS=FAIL (token needs Zone:Read for unesolutions.co.uk)"
+              failed=1
+            fi
+          else
+            echo "CLOUDFLARE_TOKEN=MISSING (add GitHub Actions secret CLOUDFLARE_API_TOKEN)"
+            failed=1
+          fi
+
+          exit "$failed"
