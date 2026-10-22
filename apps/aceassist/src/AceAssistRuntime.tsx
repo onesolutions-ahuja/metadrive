@@ -6,7 +6,7 @@ import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from '.
 import './aceassist.css';
 
 type Row=Record<string,unknown>;
-type Field={apiName:string;label?:string;type?:string;dataType?:string;required?:boolean};
+type Field={apiName:string;label?:string;type?:string;dataType?:string;required?:boolean;relatedObject?:string};
 type ObjectInfo={apiName:string;label?:string;fields?:Field[]};
 type Operation='Create'|'Update'|'Delete';
 type FlowResponse={outputs?:Record<string,unknown>;variables?:Record<string,unknown>;
@@ -57,6 +57,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [actions,setActions]=useState<Set<string>>(new Set());
  const [selected,setSelected]=useState(0);
  const [rows,setRows]=useState<Row[]>([]);
+ const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
@@ -107,6 +108,21 @@ export default function AceAssistRuntime({entry,onLogout}:{
    .finally(()=>{if(alive)setBusy(false);});
   return()=>{alive=false;};
  },[current.object,loaded,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
+  const relations=[...new Set(fields
+    .map(field=>field.relatedObject??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:''))
+    .filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
+      &&actions.has('AceAssistLoad'+x)))];
+  if(!relations.length)return;
+  void Promise.all(relations.map(async target=>{
+    const data=await fetchRows('Load',target);
+    return {target,data};
+  })).then(results=>{if(alive)setLookupRows(old=>Object.fromEntries([
+    ...Object.entries(old),...results.map(x=>[x.target,x.data])]));})
+   .catch(ex=>{if(alive)setError(ex instanceof Error?ex.message:String(ex));});
+  return()=>{alive=false;};
+ },[fields,current.object,loaded,actions,reload]);
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
   for(const field of fields)values[field.apiName]=formatInput(row?.[field.apiName],field);
@@ -208,7 +224,15 @@ export default function AceAssistRuntime({entry,onLogout}:{
      <h3>{editing} {current.object}</h3>
      {editing==='Delete'?<p>Delete this record through the authorised OneEngine Flow? This cannot be undone.</p>:
       fields.map(field=><label key={field.apiName}>{field.label??field.apiName}
-       {String(field.dataType??field.type??'').toLowerCase()==='boolean'?
+       {(field.relatedObject||['Customer','Quotation','Invoice'].includes(field.apiName))
+        && lookupRows[field.relatedObject??field.apiName]?.length?
+        <select value={form[field.apiName]??''}
+         onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
+         <option value="">Select {field.label??field.apiName}</option>
+         {lookupRows[field.relatedObject??field.apiName].map(row=>
+          <option key={String(row.Id)} value={String(row.Id)}>{title(row)}</option>)}
+        </select>:
+       String(field.dataType??field.type??'').toLowerCase()==='boolean'?
         <select value={form[field.apiName]??''} onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
          <option value="">Unset</option><option value="true">Yes</option><option value="false">No</option>
         </select>:
