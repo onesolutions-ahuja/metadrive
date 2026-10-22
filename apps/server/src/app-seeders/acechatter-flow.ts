@@ -209,11 +209,8 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {id:4,type:'Get Records',label:'Authorised WhatsApp recipient',config:{
      object:'ChatConversation',recordLimit:'1',outputVariable:'conversation',
      conditions:[{field:'Id',operator:'Equals',value:'@conversationId'}]}},
-   {id:5,type:'Get Records',label:'Tenant WhatsApp sender settings',config:{
-     object:'ChatChannelSettings',recordLimit:'1',outputVariable:'channel',
-     conditions:[{field:'Active',operator:'Equals',value:true}]}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
-     method:'POST',path:'v26.0/{!channel.PhoneNumberId}/messages',
+     method:'POST',path:'v26.0/{!public_phoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
      onError:'FAIL',responseMapping:JSON.stringify({providerMessageId:'messages[0].id'})}},
@@ -224,7 +221,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
       {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
       {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,4,5,2,6,3)
+  ],connectors:links(1,4,2,6,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
