@@ -77,6 +77,9 @@ export default function NamedCredentials({
   const [error, setError] = useState('');
   const [savedWebhook,setSavedWebhook]=useState<{callbackUrl:string;verifyToken?:string}|null>(null);
   const [copiedWebhookId,setCopiedWebhookId]=useState<string|null>(null);
+  const activeWebhookCredential=draft?.id ? credentials.find(item=>item.id===draft.id) : undefined;
+  const activeWebhookUrl=savedWebhook?.callbackUrl || activeWebhookCredential?.webhookCallbackUrl || '';
+  const activeWebhookExists=Boolean(activeWebhookCredential?.webhookId);
   const copyWebhookUrl=async(credential:NamedCredentialMetadata)=>{
     if(!credential.webhookCallbackUrl)return;
     try{await navigator.clipboard.writeText(credential.webhookCallbackUrl);setCopiedWebhookId(credential.id);}
@@ -337,9 +340,15 @@ export default function NamedCredentials({
             <span>Webhook required?</span>
           </label>
           {draft.webhookRequired && <p className="modal-copy">
-            One signed callback is generated automatically for this connection. Incoming events
+            One signed callback is generated after you save this connection. Incoming events
             are stored in Communication; no Flow assignment is needed.
           </p>}
+          {draft.webhookRequired && !activeWebhookExists && !savedWebhook?.callbackUrl && <div className="info-callout" role="status">
+            No webhook endpoint exists yet. Enter your provider signing secret, then click <strong>{draft.id?'Save Changes':'Create Connection'}</strong> to generate the callback URL and one-time verification token.
+          </div>}
+          {draft.webhookRequired && activeWebhookExists && !activeWebhookUrl && <div className="records-message" role="alert">
+            Webhook exists, but the callback URL is missing from the server response. Please check the Named Credentials API deployment.
+          </div>}
           {draft.webhookRequired && canManageSecrets && <label className="form-label">
             Webhook signing secret
             <input className="form-control" type="password" autoComplete="new-password"
@@ -353,13 +362,10 @@ export default function NamedCredentials({
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
         {error && <div className="records-message" role="alert">{error}</div>}
         </fieldset>
-        {(savedWebhook?.callbackUrl ||
-          (draft.webhookRequired && credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl))
-          && <div className="info-callout" style={{marginTop:14}}>
+        {draft.webhookRequired && activeWebhookUrl && <div className="info-callout" style={{marginTop:14}}>
             <strong>Webhook callback URL — register this address with your provider</strong>
             <input className="form-control" readOnly
-              value={savedWebhook?.callbackUrl||
-                credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl||''}
+              value={activeWebhookUrl}
               onFocus={event=>event.currentTarget.select()}/>
             <p><small>Webhook status: {credentials.find(item=>item.id===draft.id)?.webhookEnabled ? 'Enabled' : 'Disabled'}. The URL remains available whenever you reopen this connection.</small></p>
             {savedWebhook?.verifyToken&&<>
@@ -367,6 +373,9 @@ export default function NamedCredentials({
               <input className="form-control" readOnly value={savedWebhook.verifyToken}
                 onFocus={event=>event.currentTarget.select()}/>
             </>}
+            <button type="button" className="btn btn-small" onClick={()=>{
+              void navigator.clipboard.writeText(activeWebhookUrl).catch(()=>setError('Select the callback URL above to copy it.'));
+            }}>Copy callback URL</button>
             <small>Register the callback and verification token with your provider.
               The signing secret is never displayed after saving.</small>
           </div>}
