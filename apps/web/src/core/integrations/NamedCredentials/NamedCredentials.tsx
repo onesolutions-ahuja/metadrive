@@ -1,4 +1,5 @@
 import {PlatformPageSlot} from '../../platform/Workspace/PlatformPageSlot';
+import {apiRequest} from '../../authentication/Client/authClient';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalAccessibility } from '../../accessibility/Modal/useModalAccessibility';
 import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
@@ -371,8 +372,7 @@ export default function NamedCredentials({
             <p>Available only to credential and webhook administrators. Existing tokens created before encrypted storage cannot be retrieved; set a new token below.</p>
             <button type="button" className="btn btn-small" disabled={loadingVerifyToken}
               onClick={()=>{if(!draft.id)return;setLoadingVerifyToken(true);setError('');
-                void fetch('/api/named-credentials/'+encodeURIComponent(draft.id)+'/webhook-verify-token',{credentials:'include'})
-                  .then(async response=>{if(!response.ok)throw Error('Token reveal not authorised or unavailable');return response.json();})
+                void apiRequest<{verifyToken:string|null}>('/named-credentials/'+encodeURIComponent(draft.id)+'/webhook-verify-token')
                   .then((result:{verifyToken:string|null})=>{setRevealedVerifyToken(result.verifyToken);if(!result.verifyToken)setError('Legacy token cannot be recovered. Enter a replacement verification token and save.');})
                   .catch(error=>setError(error instanceof Error?error.message:String(error)))
                   .finally(()=>setLoadingVerifyToken(false));
