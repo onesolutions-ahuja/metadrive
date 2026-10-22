@@ -1245,7 +1245,7 @@ export function createSystemServer(db:SqlPersistence) {
   // Provider-facing webhook URLs must use HTTPS, except explicit local development.
   const credentialWithWebhookUrl=(req:Request,credential:Record<string,unknown>)=>{
     const host=req.get('host')??'';
-    const local=/^(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/i.test(host);
+    const local=/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(host);
     const safeHost=/^[A-Za-z0-9.:-]+$/.test(host) && !host.includes('..');
     return {...credential,
       webhookCallbackUrl:credential.webhookId && safeHost
