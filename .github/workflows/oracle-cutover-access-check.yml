@@ -65,21 +65,21 @@ jobs:
             else
               echo "ORACLE_HOST_MATCHES_HISTORICAL_IP=no"
             fi
-            if getent ahostsv4 "$host" >/dev/null 2>&1; then
+            if timeout 4 getent ahostsv4 "$host" >/dev/null 2>&1; then
               echo "ORACLE_HOST_IPV4_RESOLUTION=PASS"
             else
               echo "ORACLE_HOST_IPV4_RESOLUTION=FAIL (host may be an IP without a resolver record)"
             fi
             for port in 22 80 443; do
-              if timeout 4 bash -c ":</dev/tcp/$host/$port" 2>/dev/null; then
+              if timeout 2 bash -c ":</dev/tcp/$host/$port" 2>/dev/null; then
                 echo "ORACLE_TCP_PORT_${port}=OPEN"
               else
                 echo "ORACLE_TCP_PORT_${port}=CLOSED_OR_UNREACHABLE"
               fi
             done
-            if timeout 5 bash -c "</dev/tcp/$host/22" 2>/dev/null; then
+            if timeout 3 bash -c "</dev/tcp/$host/22" 2>/dev/null; then
               echo "ORACLE_SSH_PORT_22=OPEN"
-              if ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+              if ssh-keyscan -T 3 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
                 if ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes "ubuntu@$host" \
                   'printf "ORACLE_SSH=PASS\\n"; hostname; id -un; printf "POSTGRESQL="; systemctl is-active postgresql 2>/dev/null || true; printf "REHEARSAL_SERVICE="; systemctl is-active metadrive-private-test.service 2>/dev/null || true' \
                   > /tmp/oracle-ssh.out 2> /tmp/oracle-ssh.err; then
