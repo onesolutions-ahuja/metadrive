@@ -27,6 +27,25 @@ test('AceChatter groups inbound Communication records by WhatsApp sender number 
   assert.equal(inbox[0].__lastMessageBody,'Second message');
 });
 
+test('AceChatter groups inbound and outbound Communication by the same customer number',()=>{
+  const communications=[
+    {Id:'incoming',Channel:'WhatsApp',Direction:'Inbound',Sender:'Customer Name (447700900123)',
+      Recipient:'15551234567',Body:'Hello',ExternalMessageId:'wamid.in',
+      ReceivedAt:'2026-10-22T10:00:00.000Z'},
+    {Id:'outgoing',Channel:'WhatsApp',Direction:'Outbound',Sender:'WhatsApp Business',
+      Recipient:'447700900123',Body:'Hi there',ExternalMessageId:'wamid.out',
+      SentAt:'2026-10-22T10:01:00.000Z'}
+  ];
+  assert.equal(communicationSenderPhone(communications[0]),'447700900123');
+  assert.equal(communicationSenderPhone(communications[1]),'447700900123');
+  const inbox=buildCommunicationInbox([],communications);
+  assert.equal(inbox.length,1);
+  assert.equal(inbox[0].PhoneNumber,'447700900123');
+  const thread=mergeCommunicationMessages(communications,[],'447700900123');
+  assert.deepEqual(thread.map(row=>row.Id),['incoming','outgoing']);
+  assert.deepEqual(thread.map(row=>row.Direction),['Inbound','Outbound']);
+});
+
 test('AceChatter links Communication threads to authorised ChatConversation and deduplicates legacy copies',()=>{
   const communications=[
     {Id:'comm-1',Channel:'WhatsApp',Direction:'Inbound',Status:'Received',
