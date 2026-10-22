@@ -1129,7 +1129,7 @@ export class NamedCredentialService {
    outcome:successful?'success':'http_error',durationMs:Date.now()-requestStartedAt,
    requestBytes,responseBytes:Buffer.byteLength(result.body),
    errorCode:successful?null:'HTTP_STATUS_'+result.status,
-   communication:mappedCommunicationDetails(config,flowVariables,result.body)
+   communication:mappedCommunicationDetails(config,flowVariables,successful?result.body:undefined)
   },this.integrationActivityWriter);
   if(!successful)throw new Error('HTTP Callout failed with status '+result.status);
   return {status:result.status,body:result.body.slice(0,4096)};
