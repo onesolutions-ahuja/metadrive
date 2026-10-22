@@ -232,7 +232,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = '', recordId = ''
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = '', recordId = '', initialRecordsByObject
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -249,6 +249,7 @@ function MetadataBoundPageComponent({
   disableActions?: boolean;
   defaultObjectApiName?: string;
   recordId?: string;
+  initialRecordsByObject?: Record<string, Record<string, unknown>[]>;
 }) {
   const properties = resolveMetadataProperties({...component.properties,objectApiName:component.properties.objectApiName||defaultObjectApiName},objects,availableFlows);
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
@@ -358,6 +359,17 @@ function MetadataBoundPageComponent({
       setDataLoading(false);
       return () => { active = false; };
     }
+    const initialRecords = !recordQuery.filter && !properties.liveRefreshEnabled
+      ? initialRecordsByObject?.[objectApiName]
+      : undefined;
+    if (initialRecords !== undefined) {
+      setRecords(initialRecords);
+      setRecordsForQueryKey(recordQueryKey);
+      setDataError('');
+      setDataErrorForQueryKey('');
+      setDataLoading(false);
+      return () => { active = false; };
+    }
     const refresh = async () => {
       if (pending || !active) return;
       pending = true;
@@ -400,7 +412,7 @@ function MetadataBoundPageComponent({
         document.removeEventListener('visibilitychange', onVisible);
       }
     };
-  }, [objectApiName, recordQueryKey, revision, properties.recordPresenterApiName, properties.liveRefreshEnabled, disableActions]);
+  }, [objectApiName, recordQueryKey, revision, properties.recordPresenterApiName, properties.liveRefreshEnabled, disableActions, initialRecordsByObject]);
   useEffect(() => {
     setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
     const accessPath=String(properties.channelAccessPath??'');
@@ -644,9 +656,10 @@ function LightningAppRuntime({
   const [pageLoad, setPageLoad] = useState<{
     routeKey: string;
     page: LightningPageMetadata | null;
+    initialRecordsByObject: Record<string, Record<string, unknown>[]>;
     error: string;
     loading: boolean;
-  }>({ routeKey: '', page: null, error: '', loading: true });
+  }>({ routeKey: '', page: null, initialRecordsByObject: {}, error: '', loading: true });
   // Never render a page/error produced for a different route. Effects run after
   // render, so the route-key check closes the stale-state frame before the
   // request effect has had a chance to reset state.
@@ -669,16 +682,23 @@ function LightningAppRuntime({
   },[appId,page?.apiName]);
   useEffect(() => {
     let active = true;
-    setPageLoad({ routeKey, page: null, error: '', loading: true });
+    setPageLoad({ routeKey, page: null, initialRecordsByObject: {}, error: '', loading: true });
     const endpoint = pageApiName
       ? `/apps/${encodeURIComponent(appId)}/pages/${encodeURIComponent(pageApiName)}?formFactor=${formFactor}`
       : `/apps/${encodeURIComponent(appId)}/home-page?formFactor=${formFactor}`;
-    void apiRequest<{ page: LightningPageMetadata | null }>(endpoint).then((payload) => {
-      if (active) setPageLoad({ routeKey, page: payload.page, error: '', loading: false });
+    void apiRequest<{ page: LightningPageMetadata | null; initialRecords?: Record<string, Record<string, unknown>[]> }>(endpoint).then((payload) => {
+      if (active) setPageLoad({
+        routeKey,
+        page: payload.page,
+        initialRecordsByObject: payload.initialRecords ?? {},
+        error: '',
+        loading: false
+      });
     }).catch((failure: unknown) => {
       if (active) setPageLoad({
         routeKey,
         page: null,
+        initialRecordsByObject: {},
         error: failure instanceof Error ? failure.message : 'Unable to load Lightning page',
         loading: false
       });
@@ -715,6 +735,7 @@ function LightningAppRuntime({
       const content = !isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
         ? <MetadataBoundPageComponent definition={definition} component={component} defaultObjectApiName={page.targetObject}
             objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            initialRecordsByObject={pageLoad.initialRecordsByObject}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
