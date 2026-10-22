@@ -29,6 +29,9 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
+    } else if (fixture.apiName === 'OneNavigation') {
+      // Empty navigation now exposes its empty state to assistive technology.
+      assert.match(html, /class="one-empty" role="status">Add navigation items<\/div>/);
     } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard','OneTimeline','OneChart','OneDocumentViewer','OneDashboardEmbed','OneConversation','OneShoppingCart'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
