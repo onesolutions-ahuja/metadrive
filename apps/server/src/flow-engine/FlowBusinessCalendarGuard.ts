@@ -11,7 +11,18 @@ export async function enforceFlowBusinessCalendar(
   ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(startInput)
   ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(endInput))
   throw new Error('Invalid Flow Business Calendar guard metadata');
- const start=inputs[startInput],end=inputs[endInput];
+ const collectionInput=(guard as Record<string,unknown>).collectionInput;
+ let source:Record<string,unknown>=inputs;
+ if(collectionInput!==undefined){
+  if(typeof collectionInput!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(collectionInput))
+   throw new Error('Invalid calendar guard collection input');
+  const collection=inputs[collectionInput];
+  if(!Array.isArray(collection)||collection.length!==1
+   ||!collection[0]||typeof collection[0]!=='object'||Array.isArray(collection[0]))
+   throw new Error('Booking requires exactly one appointment record');
+  source=collection[0] as Record<string,unknown>;
+ }
+ const start=source[startInput],end=source[endInput];
  const pattern=/^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/;
  if(typeof start!=='string'||typeof end!=='string'
   ||!pattern.test(start)||!pattern.test(end)||start>=end)
