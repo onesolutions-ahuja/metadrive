@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent, alignCanvasComponents } from '../src/core/builders/PageBuilder/canvasInteractions';
 
 test('canvas movement aligns with adjacent element edges and returns visible guide flags', () => {
@@ -64,4 +65,13 @@ test('multi-select alignment updates every selected unlocked component in one im
   assert.equal(aligned[3].position?.x,30);
   assert.notEqual(aligned,components);
   assert.equal(components[0].position?.x,80,'original component objects are not mutated');
+});
+
+
+test('Page Builder records and restores selection state with undo and redo', async () => {
+  const source = await readFile(new URL('../src/core/builders/PageBuilder/pageBuilderView.tsx', import.meta.url), 'utf8');
+  assert.match(source, /setSelectionUndoStack\(current => \[\.\.\.current\.slice\(-49\), \{ selectedId, selectionIds: \[\.\.\.selectionIds\] \} \]\)/);
+  assert.match(source, /const snapshot = selectionUndoStack\[selectionUndoStack\.length - 1\]/);
+  assert.match(source, /const snapshot = selectionRedoStack\[selectionRedoStack\.length - 1\]/);
+  assert.match(source, /alignCanvasComponents\(page\.components/);
 });
