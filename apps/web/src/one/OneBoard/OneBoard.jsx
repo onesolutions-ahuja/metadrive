@@ -19,7 +19,7 @@ function Board({ p, rows }) {
       className="one-grid"
       style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}
     >
-      {groups.map((g) => (
+      {groups.length === 0 ? <div className="one-empty" role="status">{p.emptyText || "No items to display"}</div> : groups.map((g) => (
         <section className="one-surface" key={String(g)} aria-label={String(view(g))}>
           <h3 className="one-heading">{view(g)}</h3>
           <div
