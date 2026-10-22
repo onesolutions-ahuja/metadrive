@@ -5,6 +5,7 @@ import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
+import {DocumentPrint} from '../../web/src/core/components/DocumentPrint/DocumentPrint';
 import {asBusinessInstant,asBusinessLocal} from './businessDateTime';
 import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
@@ -73,6 +74,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
  const [cashInvoice,setCashInvoice]=useState<Row|null>(null);
+ const [printingDocument,setPrintingDocument]=useState<Row|null>(null);
+ const [printingObject,setPrintingObject]=useState<'Quotation'|'Invoice'>('Invoice');
  const [cashAmount,setCashAmount]=useState('');
  const [cashRequestId,setCashRequestId]=useState('');
  const [error,setError]=useState('');
@@ -369,6 +372,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
         &&actions.has('AceAssistInvoiceFromAppointment')&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistInvoiceFromAppointment',chosen)}>Create invoice</button>}
+       {['Quotation','Invoice'].includes(current.object)
+        &&actions.has('AceAssistLoad'+current.object+'Line')&&
+        <button type="button" disabled={busy}
+         onClick={()=>{setPrintingDocument(chosen);
+          setPrintingObject(current.object as 'Quotation'|'Invoice');}}>
+         Print / Save PDF</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotationWhatsApp')&&
@@ -395,6 +404,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
    </aside></div>
   </main>
 
+  {printingDocument&&<DocumentPrint objectLabel={printingObject}
+   document={printingDocument} lines={relatedRows}
+   onClose={()=>setPrintingDocument(null)}/>}
   {cashInvoice&&<div className="assist-modal-backdrop" role="presentation">
    <section className="assist-modal" role="dialog" aria-modal="true"
     aria-label="Record cash settlement">
