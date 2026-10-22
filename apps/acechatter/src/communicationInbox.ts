@@ -7,7 +7,7 @@ const stringValue = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : value == null ? '' : String(value);
 
 export const normalizeChatNumber = (value: unknown): string =>
-  stringValue(value).replace(/\\D/g, '');
+  stringValue(value).replace(/\D/g, '');
 
 const directionOf = (row: InboxRecord): string =>
   stringValue(pick(row, 'Direction', 'MessageDirection')).toLowerCase();
@@ -22,7 +22,7 @@ export function communicationSenderPhone(row: InboxRecord): string {
       ? pick(row, 'Sender')
       : pick(row, 'Sender') ?? pick(row, 'Recipient');
   const digits = normalizeChatNumber(participant);
-  return /^\\d{7,15}$/.test(digits) ? digits : '';
+  return /^\d{7,15}$/.test(digits) ? digits : '';
 }
 
 export function communicationSenderName(row: InboxRecord): string {
@@ -30,7 +30,7 @@ export function communicationSenderName(row: InboxRecord): string {
   const participant = stringValue(direction.includes('out')
     ? pick(row, 'Recipient')
     : pick(row, 'Sender') ?? pick(row, 'Recipient'));
-  const wrapped = participant.match(/^(.*?)\\s*\\(([^()]*)\\)\\s*$/);
+  const wrapped = participant.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
   const name = wrapped?.[1]?.trim() ?? participant;
   const phone = communicationSenderPhone(row);
   return !name || normalizeChatNumber(name) === phone ? phone : name;
@@ -61,7 +61,7 @@ export function buildCommunicationInbox(
 
   for (const row of conversations) {
     const phone = normalizeChatNumber(pick(row, 'PhoneNumber'));
-    if (!/^\\d{7,15}$/.test(phone) || byPhone.has(phone)) continue;
+    if (!/^\d{7,15}$/.test(phone) || byPhone.has(phone)) continue;
     byPhone.set(phone, { ...row, PhoneNumber: phone, __syntheticConversation: false });
   }
 
