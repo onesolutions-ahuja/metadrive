@@ -26,13 +26,26 @@ jobs:
 
           if [[ -n "$METADRIVE_AIVEN_DATABASE_URL" ]]; then
             echo "AIVEN_SECRET=PRESENT"
+            SOURCE_DB_URL="$(python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          u = urlsplit(os.environ["METADRIVE_AIVEN_DATABASE_URL"])
+          print(urlunsplit((u.scheme, u.netloc, "/metadrive_sql_20261012", u.query, u.fragment)))
+          PY
+          )"
             sudo apt-get update -qq
             sudo apt-get install -y -qq postgresql-client >/dev/null
-            if db_name="$(psql "$METADRIVE_AIVEN_DATABASE_URL" -v ON_ERROR_STOP=1 -Atqc 'select current_database()' 2>/dev/null)"; then
+            if db_name="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc 'select current_database()' 2>/dev/null)"; then
+              tables="$(psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_tables where schemaname = 'public'" 2>/dev/null || echo query-failed)"
               echo "AIVEN_CONNECTION=PASS"
               echo "AIVEN_DATABASE=$db_name"
+              echo "AIVEN_PUBLIC_TABLES=$tables"
+              if [[ "$db_name" != "metadrive_sql_20261012" ]]; then
+                echo "AIVEN_DATABASE_CHECK=FAIL"
+                failed=1
+              fi
             else
-              echo "AIVEN_CONNECTION=FAIL (URL exists; connection/query failed)"
+              echo "AIVEN_CONNECTION=FAIL (URL exists; expected production database connection/query failed)"
               failed=1
             fi
           else
@@ -45,12 +58,25 @@ jobs:
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
             chmod 600 "$HOME/.ssh/oracle_cutover"
-            if ssh-keyscan -T 8 -H 132.145.18.46 >> "$HOME/.ssh/known_hosts" 2>/dev/null && \
-               ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ubuntu@132.145.18.46 \
-               'printf "ORACLE_SSH=PASS\\n"; hostname; id -un; printf "POSTGRESQL="; systemctl is-active postgresql 2>/dev/null || true; printf "REHEARSAL_SERVICE="; systemctl is-active metadrive-private-test.service 2>/dev/null || true' ; then
-              echo "ORACLE_SSH_CHECK=PASS"
+            if timeout 5 bash -c '</dev/tcp/132.145.18.46/22' 2>/dev/null; then
+              echo "ORACLE_SSH_PORT_22=OPEN"
+              if ssh-keyscan -T 5 -H 132.145.18.46 >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+                if ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes ubuntu@132.145.18.46 \
+                  'printf "ORACLE_SSH=PASS\\n"; hostname; id -un; printf "POSTGRESQL="; systemctl is-active postgresql 2>/dev/null || true; printf "REHEARSAL_SERVICE="; systemctl is-active metadrive-private-test.service 2>/dev/null || true' \
+                  > /tmp/oracle-ssh.out 2> /tmp/oracle-ssh.err; then
+                  cat /tmp/oracle-ssh.out
+                  echo "ORACLE_SSH_CHECK=PASS"
+                else
+                  echo "ORACLE_SSH_CHECK=FAIL"
+                  grep -E 'Connecting to|Connection established|Remote protocol version|Authentications that can continue|Offering public key|Server accepts key|Permission denied|Connection timed out|Connection refused|No route to host|Host key verification failed|kex_exchange_identification|Connection closed|Load key' /tmp/oracle-ssh.err | tail -15 || true
+                  failed=1
+                fi
+              else
+                echo "ORACLE_SSH_HOST_KEY_SCAN=FAIL (TCP port open, SSH host key not returned)"
+                failed=1
+              fi
             else
-              echo "ORACLE_SSH_CHECK=FAIL (known host IP 132.145.18.46, user ubuntu)"
+              echo "ORACLE_SSH_PORT_22=CLOSED_OR_UNREACHABLE at 132.145.18.46"
               failed=1
             fi
           else
