@@ -1,41 +1,138 @@
-.ace-chat{display:flex;height:100dvh;min-height:480px;color:#1e293b;background:#f2f5f7;font-family:Inter,system-ui,sans-serif}
+.ace-chat{display:flex;width:100%;height:100dvh;min-height:480px;overflow:hidden;background:#efeae2;color:#172b2b;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ace-chat *{box-sizing:border-box}
 .ace-chat button,.ace-chat input,.ace-chat select,.ace-chat textarea{font:inherit}
 .ace-chat button{cursor:pointer}
-.ace-chat-sidebar{width:355px;max-width:42%;display:flex;flex-direction:column;background:#fff;border-right:1px solid #e5e7eb}
-.ace-chat-brand,.ace-chat-top{display:flex;align-items:center;gap:12px;padding:22px;background:#fff;border-bottom:1px solid #eef0f2}
-.ace-chat-brand>div:nth-child(2),.ace-chat-top>div{display:flex;flex-direction:column;gap:3px;min-width:0}
-.ace-chat-brand small,.ace-chat-top small{color:#73818c;font-size:12px}
-.ace-chat-logo{display:grid;place-items:center;width:41px;height:41px;background:#128c7e;color:white;border-radius:13px;font-size:27px}
-.ace-chat-brand button{margin-left:auto;border:0;background:none;color:#5b6773;font-size:12px}
-.ace-chat-sidebar-heading{display:flex;align-items:center;justify-content:space-between;padding:18px 21px 10px}
-.ace-chat-sidebar-heading h1{font-size:23px;margin:0}.ace-chat-sidebar-heading button{background:none;border:0;color:#128c7e;font-size:13px}
-.ace-chat-sidebar>input{margin:10px 16px 16px;padding:12px 14px;border-radius:12px;border:1px solid #e1e7e9;background:#f7f9fa;outline-color:#128c7e}
-.ace-chat-sidebar nav{overflow:auto;flex:1}
-.ace-chat-sidebar nav button{display:flex;text-align:left;align-items:center;gap:12px;border:0;border-bottom:1px solid #f1f3f4;background:white;padding:15px 18px;width:100%}
-.ace-chat-sidebar nav button.selected,.ace-chat-sidebar nav button:hover{background:#eaf8f3}
-.ace-chat-sidebar nav button span:last-child{display:flex;flex-direction:column;gap:5px;min-width:0}.ace-chat-sidebar nav small{font-size:12px;color:#75828c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ace-chat-avatar{flex-shrink:0;width:43px;height:43px;border-radius:50%;background:#dcece7;color:#16675c;display:grid;place-items:center;font-weight:700}
-.ace-chat-main{display:flex;min-width:0;flex:1;flex-direction:column}.ace-chat-top{height:85px;box-sizing:border-box}
-.ace-chat-thread{display:flex;flex:1;min-height:0;overflow:auto;flex-direction:column;gap:12px;padding:25px;background-color:#f5f4ed;background-image:radial-gradient(#e8e9df 1px,transparent 1px);background-size:24px 24px}
-.ace-chat-welcome{margin:auto;text-align:center;max-width:380px;color:#5f6b71}.ace-chat-welcome span{font-size:50px;color:#128c7e}.ace-chat-welcome h2{color:#263d3a;font-size:24px}
-.ace-chat-bubble{align-self:flex-start;max-width:75%;padding:11px 15px;border-radius:13px 13px 13px 3px;background:#fff;box-shadow:0 2px 8px #0000000a}
-.ace-chat-bubble.outgoing{align-self:flex-end;background:#d9fdd3;border-radius:13px 13px 3px 13px}
-.ace-chat-bubble p{margin:0 0 5px;white-space:pre-wrap;overflow-wrap:anywhere}.ace-chat-bubble small{font-size:11px;color:#718077}
-.ace-chat-compose{background:white;border-top:1px solid #e4ebea;padding:15px 22px;display:flex;flex-direction:column;gap:9px}
-.ace-chat-compose label,.ace-chat-compose>small{font-size:12px;color:#66737c}.ace-chat-compose select{max-width:370px;padding:8px 10px;border:1px solid #d9e3e0;border-radius:9px}
-.ace-chat-compose-row{display:flex;gap:12px}.ace-chat-compose textarea{flex:1;resize:vertical;min-width:0;border-radius:12px;border:1px solid #d9e3e0;padding:12px}.ace-chat-compose-row button{background:#128c7e;color:#fff;border:0;border-radius:12px;padding:0 22px;font-weight:600}
-.ace-chat-compose-row button:disabled{opacity:.45;cursor:not-allowed}.ace-chat-hint{padding:24px;color:#718077}.ace-chat-alert{color:#a42a2a;padding:10px 20px}.ace-chat-notice{color:#116c4e;padding:10px 20px}
-@media(max-width:670px){.ace-chat-sidebar{width:38%;max-width:none;min-width:135px}.ace-chat-brand{padding:12px;flex-wrap:wrap}.ace-chat-brand button{margin:0}.ace-chat-sidebar-heading{padding:12px}.ace-chat-sidebar-heading h1{font-size:18px}.ace-chat-sidebar>input{margin:8px;font-size:12px;width:auto}.ace-chat-sidebar nav button{padding:11px 8px;gap:5px}.ace-chat-avatar{width:32px;height:32px}.ace-chat-top{padding:12px}.ace-chat-compose{padding:9px}.ace-chat-compose-row button{padding:0 10px}}
-
-.ace-chat-search{display:flex;gap:6px;margin:10px 16px 16px}.ace-chat-search input{min-width:0;flex:1;padding:12px;border:1px solid #e1e7e9;border-radius:12px;background:#f7f9fa}.ace-chat-search button{border:0;border-radius:10px;background:#128c7e;color:white;padding:0 10px}.ace-chat-search button:disabled{opacity:.5}
-
-
-/* Modal stays inside the standalone AceChatter app, not a second CRUD engine. */
-.ace-chat-modal-backdrop {position:fixed;inset:0;z-index:1000;background:rgba(10,19,26,.62);display:flex;align-items:center;justify-content:center;padding:16px}
-.ace-chat-modal {width:min(100%,420px);background:#fff;color:#1b2730;border-radius:14px;padding:22px;box-shadow:0 22px 70px rgba(0,0,0,.3)}
-.ace-chat-modal h2 {margin:0 0 12px;font-size:1.15rem}
-.ace-chat-modal form {display:grid;gap:12px}
-.ace-chat-modal label {display:grid;gap:5px;font-weight:600}
-.ace-chat-modal input {padding:10px;border:1px solid #afbac4;border-radius:8px;font:inherit}
-.ace-chat-modal-actions {display:flex;justify-content:flex-end;gap:10px;margin-top:12px}
-.ace-chat-modal button {cursor:pointer;padding:10px 14px;border-radius:8px}
+.ace-chat button:disabled{cursor:not-allowed;opacity:.5}
+.ace-chat-sidebar{display:flex;flex:0 0 390px;min-width:300px;max-width:42%;flex-direction:column;background:#fff;border-right:1px solid #d8dddf;min-height:0}
+.ace-chat-brand{display:flex;align-items:center;gap:11px;padding:16px 18px;background:#075e54;color:#fff;min-height:74px}
+.ace-chat-brand-copy,.ace-chat-thread-heading{display:flex;flex-direction:column;gap:3px;min-width:0}
+.ace-chat-brand-copy strong{font-size:17px;letter-spacing:.1px}
+.ace-chat-brand small{font-size:12px;color:#d3e9e5}
+.ace-chat-logo{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:#128c7e;color:#fff;font-size:24px}
+.ace-chat-signout{margin-left:auto;border:1px solid #ffffff45;border-radius:20px;background:transparent;color:#fff;padding:7px 12px;font-size:12px}
+.ace-chat-sidebar-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 18px 10px;background:#fff}
+.ace-chat-sidebar-heading h1{font-size:24px;line-height:1.2;font-weight:650;letter-spacing:-.4px;margin:0}
+.ace-chat-toolbar{display:flex;align-items:center;gap:8px}
+.ace-chat-icon-button{display:grid;place-items:center;width:38px;height:38px;border:0;border-radius:50%;background:#f0f2f5;color:#526568;font-size:23px}
+.ace-chat-icon-button:hover{background:#e4e9eb}
+.ace-chat-new-button{display:flex;align-items:center;gap:6px;padding:9px 12px;border:0;border-radius:22px;background:#128c7e;color:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+.ace-chat-new-button span:first-child{font-size:18px;line-height:1}
+.ace-chat-search,.ace-chat-contact-search{display:flex;align-items:center;gap:8px;margin:8px 14px 12px;padding:0 11px;background:#f0f2f5;border-radius:10px;color:#66797b}
+.ace-chat-search>span,.ace-chat-contact-search>span{font-size:23px;line-height:1}
+.ace-chat-search input,.ace-chat-contact-search input{flex:1;min-width:0;height:42px;border:0;outline:0;background:transparent;color:#172b2b;font-size:13px}
+.ace-chat-search button,.ace-chat-contact-search button{border:0;background:transparent;color:#087d70;font-size:12px;font-weight:650;padding:8px 2px}
+.ace-chat-conversation-list{flex:1;min-height:0;overflow:auto;background:#fff}
+.ace-chat-conversation{display:flex;align-items:center;gap:12px;width:100%;padding:13px 16px;border:0;border-bottom:1px solid #eef0f1;background:#fff;text-align:left;color:#172b2b}
+.ace-chat-conversation:hover,.ace-chat-conversation.selected{background:#f0f7f6}
+.ace-chat-avatar{display:grid;place-items:center;flex:0 0 48px;width:48px;height:48px;border-radius:50%;background:#d8ebe5;color:#116b61;font-size:18px;font-weight:650}
+.ace-chat-conversation-copy{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.ace-chat-conversation-copy strong{font-size:14px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ace-chat-conversation-copy small{font-size:12px;color:#687b7d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ace-chat-conversation-meta{align-self:flex-start;color:#728486;font-size:10px;white-space:nowrap}
+.ace-chat-main{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;background:#efeae2}
+.ace-chat-top{display:flex;align-items:center;gap:12px;flex:0 0 72px;min-height:72px;padding:10px 18px;background:#f0f2f5;border-bottom:1px solid #e1e5e6}
+.ace-chat-top .ace-chat-avatar{flex-basis:44px;width:44px;height:44px}
+.ace-chat-thread-heading strong{font-size:15px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ace-chat-thread-heading small{font-size:12px;color:#65787a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ace-chat-back{display:none}
+.ace-chat-thread-refresh{margin-left:auto}
+.ace-chat-thread{display:flex;flex:1;flex-direction:column;gap:8px;min-height:0;overflow-y:auto;padding:24px clamp(14px,4vw,56px);background-color:#efeae2;background-image:radial-gradient(#d8d7ce 0.7px,transparent .7px);background-size:20px 20px;overscroll-behavior:contain}
+.ace-chat-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:auto;max-width:390px;text-align:center;color:#647775}
+.ace-chat-welcome>span{display:grid;place-items:center;width:78px;height:78px;border-radius:50%;background:#d9ebe6;color:#087d70;font-size:38px}
+.ace-chat-welcome h2{margin:4px 0 0;color:#284744;font-size:23px;font-weight:650}
+.ace-chat-welcome p{margin:0;line-height:1.55;font-size:14px}
+.ace-chat-welcome button,.ace-chat-list-empty button{margin-top:8px;padding:10px 16px;border:0;border-radius:22px;background:#128c7e;color:#fff;font-weight:600}
+.ace-chat-thread-empty{align-self:center;margin:auto;padding:10px 15px;border-radius:10px;background:#fff9;color:#667776;font-size:13px}
+.ace-chat-bubble{align-self:flex-start;max-width:min(78%,680px);padding:9px 12px 7px;border-radius:9px 9px 9px 2px;background:#fff;box-shadow:0 1px 1px #172b2b12;color:#172b2b}
+.ace-chat-bubble.outgoing{align-self:flex-end;background:#d9fdd3;border-radius:9px 9px 2px 9px}
+.ace-chat-bubble p{margin:0 0 5px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45;font-size:14px}
+.ace-chat-bubble small{display:block;text-align:right;font-size:10px;color:#6b7b76}
+.ace-chat-compose{display:flex;flex-direction:column;gap:7px;padding:12px 18px calc(12px + env(safe-area-inset-bottom));background:#f0f2f5;border-top:1px solid #e2e5e6}
+.ace-chat-compose-row{display:flex;align-items:flex-end;gap:10px}
+.ace-chat-compose textarea{flex:1;min-width:0;max-height:140px;min-height:44px;resize:none;border:0;border-radius:22px;background:#fff;padding:12px 16px;outline:2px solid transparent;outline-offset:-2px;color:#172b2b;font-size:14px;line-height:1.4}
+.ace-chat-compose textarea:focus{outline-color:#b5d9d1}
+.ace-chat-send-button{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border:0;border-radius:50%;background:#128c7e;color:#fff;font-size:21px}
+.ace-chat-compose>small{padding-left:5px;color:#65787a;font-size:11px}
+.ace-chat-hint{padding:16px;color:#687b7d;font-size:13px;line-height:1.5}
+.ace-chat-alert,.ace-chat-notice{margin:0;padding:9px 16px;font-size:12px}
+.ace-chat-alert{background:#fff1f0;color:#9e2626}
+.ace-chat-notice{background:#e5f5ed;color:#116b4f}
+.ace-chat-list-empty{display:flex;flex-direction:column;align-items:center;gap:8px;margin:auto;padding:28px 20px;text-align:center;color:#718082}
+.ace-chat-list-empty>span{font-size:34px;color:#128c7e}
+.ace-chat-list-empty strong{color:#344d4a}
+.ace-chat-list-empty p{margin:0;font-size:12px;line-height:1.5}
+.ace-chat-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(8,24,25,.55)}
+.ace-chat-modal{display:flex;flex-direction:column;width:min(100%,470px);max-height:min(88dvh,760px);overflow:hidden;border-radius:18px;background:#fff;color:#172b2b;box-shadow:0 24px 80px #001a1a40}
+.ace-chat-modal-header{display:flex;align-items:center;gap:14px;padding:18px 20px 14px;background:#075e54;color:#fff}
+.ace-chat-modal-header h2{margin:0;font-size:19px;font-weight:650}
+.ace-chat-modal-header p{margin:4px 0 0;color:#d6e9e6;font-size:12px}
+.ace-chat-modal-back{display:grid;place-items:center;width:38px;height:38px;border:0;border-radius:50%;background:#ffffff1c;color:#fff;font-size:29px;line-height:1}
+.ace-chat-new-chat-tabs{display:flex;gap:5px;padding:12px 16px 0;border-bottom:1px solid #edf0f0}
+.ace-chat-new-chat-tabs button{flex:1;padding:11px 10px;border:0;border-bottom:3px solid transparent;background:#fff;color:#647678;font-size:13px;font-weight:600}
+.ace-chat-new-chat-tabs button.active{border-bottom-color:#128c7e;color:#087d70}
+.ace-chat-contact-panel{display:flex;flex:1;flex-direction:column;min-height:0}
+.ace-chat-contact-search{margin:12px 14px 8px}
+.ace-chat-contact-error{margin:6px 14px;padding:10px 12px;border-radius:8px;background:#fff1f0;color:#9e2626;font-size:12px;line-height:1.45}
+.ace-chat-contact-state{margin:auto;padding:24px;text-align:center;color:#708181;font-size:13px;line-height:1.55}
+.ace-chat-contacts-list{flex:1;min-height:0;overflow:auto;padding:0 8px 10px}
+.ace-chat-contact-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border:0;border-bottom:1px solid #edf0f0;background:#fff;text-align:left;color:#172b2b}
+.ace-chat-contact-row:not(:disabled):hover{background:#f2f8f6}
+.ace-chat-contact-row .ace-chat-avatar{flex-basis:44px;width:44px;height:44px}
+.ace-chat-contact-copy{display:flex;flex:1;flex-direction:column;gap:4px;min-width:0}
+.ace-chat-contact-copy strong{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ace-chat-contact-copy small{font-size:12px;color:#718181}
+.ace-chat-contact-arrow{color:#128c7e;font-size:24px}
+.ace-chat-number-form{display:flex;flex-direction:column;gap:14px;padding:20px}
+.ace-chat-number-form label{display:flex;flex-direction:column;gap:7px;color:#425654;font-size:13px;font-weight:600}
+.ace-chat-number-form input{width:100%;min-height:45px;padding:10px 12px;border:1px solid #d7e0df;border-radius:10px;outline-color:#128c7e;background:#fff;color:#172b2b;font-size:15px}
+.ace-chat-number-form>small{color:#718181;font-size:12px;line-height:1.5}
+.ace-chat-start-button{align-self:flex-end;padding:11px 18px;border:0;border-radius:24px;background:#128c7e;color:#fff;font-weight:650}
+@media(max-width:760px){
+ .ace-chat-sidebar{flex:1 1 100%;width:100%;min-width:0;max-width:none;border-right:0}
+ .ace-chat-main{display:none}
+ .ace-chat.has-selected-chat .ace-chat-sidebar{display:none}
+ .ace-chat.has-selected-chat .ace-chat-main{display:flex;flex:1 1 100%;width:100%}
+ .ace-chat-brand{min-height:64px;padding:calc(10px + env(safe-area-inset-top)) 15px 10px}
+ .ace-chat-logo{flex-basis:36px;width:36px;height:36px;font-size:21px}
+ .ace-chat-brand-copy strong{font-size:16px}
+ .ace-chat-sidebar-heading{padding:16px 16px 10px}
+ .ace-chat-sidebar-heading h1{font-size:25px}
+ .ace-chat-icon-button{width:39px;height:39px}
+ .ace-chat-new-button{width:40px;height:40px;justify-content:center;padding:0;border-radius:50%}
+ .ace-chat-new-button span:first-child{font-size:24px}
+ .ace-chat-new-button span:last-child{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+ .ace-chat-search{margin:4px 12px 10px}
+ .ace-chat-search input{height:42px;font-size:13px}
+ .ace-chat-search button{font-size:11px}
+ .ace-chat-conversation{gap:12px;padding:13px 14px}
+ .ace-chat-avatar{flex-basis:48px;width:48px;height:48px}
+ .ace-chat-conversation-copy strong{font-size:14px}
+ .ace-chat-conversation-copy small{font-size:12px}
+ .ace-chat-top{flex-basis:62px;min-height:62px;padding:8px 10px;gap:10px}
+ .ace-chat-back{display:grid;place-items:center;flex:0 0 32px;width:32px;height:38px;margin-left:-4px;border:0;background:transparent;color:#075e54;font-size:35px;line-height:1}
+ .ace-chat-top .ace-chat-avatar{flex-basis:40px;width:40px;height:40px;font-size:16px}
+ .ace-chat-thread-heading strong{font-size:14px}
+ .ace-chat-thread{padding:16px 10px;gap:7px;background-size:18px 18px}
+ .ace-chat-bubble{max-width:88%;padding:8px 10px 6px}
+ .ace-chat-bubble p{font-size:14px}
+ .ace-chat-compose{padding:8px 9px calc(9px + env(safe-area-inset-bottom))}
+ .ace-chat-compose-row{gap:8px}
+ .ace-chat-compose textarea{min-height:43px;padding:11px 14px;font-size:15px}
+ .ace-chat-send-button{flex-basis:43px;width:43px;height:43px}
+ .ace-chat-modal-backdrop{align-items:stretch;padding:0}
+ .ace-chat-modal{width:100%;max-width:none;max-height:100dvh;height:100dvh;border-radius:0;padding-bottom:env(safe-area-inset-bottom)}
+ .ace-chat-modal-header{padding:calc(12px + env(safe-area-inset-top)) 15px 13px}
+ .ace-chat-new-chat-tabs{padding-top:8px}
+ .ace-chat-contact-search{margin:10px 12px 7px}
+ .ace-chat-contacts-list{padding:0 5px 8px}
+ .ace-chat-contact-row{padding:12px 9px}
+ .ace-chat-number-form{padding:18px 16px}
+}
+@media(min-width:761px) and (max-width:1020px){
+ .ace-chat-sidebar{flex-basis:340px;min-width:285px}
+ .ace-chat-brand{padding:14px}
+ .ace-chat-sidebar-heading{padding:14px}
+ .ace-chat-conversation{padding:12px}
+ .ace-chat-conversation-meta{display:none}
+}
+@media(prefers-reduced-motion:reduce){.ace-chat *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
