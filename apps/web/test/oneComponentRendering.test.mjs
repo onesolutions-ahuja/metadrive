@@ -211,3 +211,13 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(board, /<h3 className="one-heading">/);
   for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
 });
+
+
+test('accessibility smoke covers login and supports configured published-page/dialog scans', async () => {
+  const smoke = await readFile(new URL('../../../scripts/accessibility-smoke.mjs', import.meta.url), 'utf8');
+  assert.match(smoke, /new URL\('\/login', base\)\.href/);
+  assert.match(smoke, /UI_SMOKE_PUBLISHED_URL/);
+  assert.match(smoke, /UI_SMOKE_OVERLAY_SELECTOR/);
+  assert.match(smoke, /window\.axe\.run/);
+  assert.match(smoke, /Critical\/serious WCAG violations/);
+});
