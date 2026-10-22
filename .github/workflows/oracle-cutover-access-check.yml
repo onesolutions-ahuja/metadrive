@@ -112,4 +112,16 @@ jobs:
             failed=1
           fi
 
+            zone_json="$(curl -sS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 'https://api.cloudflare.com/client/v4/zones?name=unesolutions.co.uk' || true)"
+            zone_id="$(printf '%s' "$zone_json" | jq -r '.result[0].id // empty')"
+            if [[ -n "$zone_id" ]]; then
+              records="$(curl -sS --max-time 15 -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?per_page=100" || true)"
+              if printf '%s' "$records" | jq -e '.success == true' >/dev/null; then
+                echo "CLOUDFLARE_DNS_RECORDS_BEGIN"
+                printf '%s' "$records" | jq -r '.result[] | select(.name == "unesolutions.co.uk" or .name == "www.unesolutions.co.uk" or (.name | startswith("api."))) | [.type,.name,.content,(.proxied|tostring)] | @tsv'
+                echo "CLOUDFLARE_DNS_RECORDS_END"
+              else
+                echo "CLOUDFLARE_DNS_RECORD_READ=FAIL (token may need DNS:Read)"
+              fi
+            fi
           exit "$failed"
