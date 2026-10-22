@@ -6,6 +6,7 @@ import {seedAceAssistDocumentSeries} from './aceassist-document-series.js';
 import {seedAceAssistFinancialFlows} from './aceassist-financial-flows.js';
 import {seedAceAssistReminderFlows} from './aceassist-reminder-flows.js';
 import {seedAceAssistPaymentFlows} from './aceassist-payment-flows.js';
+import {ACEASSIST_BOOKING_OVERLAP,ACEASSIST_BOOKING_AVAILABILITY} from './aceassist-booking-guards.js';
 import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
@@ -71,18 +72,10 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
   dataType:objectApi,isCollection:true,availableForOutput:true});
  const config:Record<string,unknown>={object:objectApi,recordSource:'collection',collection:input,
   ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
-  ...(objectApi==='Appointment'?{overlapGuard:{
-    startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo','Resource'],
-    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed']
-   },availabilityGuard:{
-    startField:'StartDateTime',endField:'EndDateTime',
-    staffFields:['AssignedUser','AssignedTo'],resourceField:'Resource',
-    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed'],
-    schedule:{object:'StaffAvailability',staff:'OwnerId',active:'Active',
-     weekday:'Weekday',start:'StartTime',end:'EndTime'},
-    exception:{object:'AvailabilityException',staff:'OwnerId',resource:'Resource',
-     active:'Active',start:'StartDateTime',end:'EndDateTime'}
-   }}:{})};
+  ...(objectApi==='Appointment'?{
+   overlapGuard:ACEASSIST_BOOKING_OVERLAP,
+   availabilityGuard:ACEASSIST_BOOKING_AVAILABILITY
+  }:{})};
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,
   ...(objectApi==='Appointment'?{startConfig:{
