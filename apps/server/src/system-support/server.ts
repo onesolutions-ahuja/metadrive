@@ -1241,12 +1241,18 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await namedCredentials.readiness(actor.tenant_id,actor.user_id));
   }));
-  const credentialWithWebhookUrl=(req:Request,credential:Record<string,unknown>)=>({
-    ...credential,
-    webhookCallbackUrl:credential.webhookId
-      ?req.protocol+'://'+req.get('host')+'/api/inbound-webhooks/'+encodeURIComponent(String(credential.webhookId))
-      :null
-  });
+  // Reverse proxies may forward HTTPS traffic to this server over plain HTTP.
+  // Provider-facing webhook URLs must use HTTPS, except explicit local development.
+  const credentialWithWebhookUrl=(req:Request,credential:Record<string,unknown>)=>{
+    const host=req.get('host')??'';
+    const local=/^(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/i.test(host);
+    const safeHost=/^[A-Za-z0-9.:-]+$/.test(host) && !host.includes('..');
+    return {...credential,
+      webhookCallbackUrl:credential.webhookId && safeHost
+        ?(local?'http':'https')+'://'+host+'/api/inbound-webhooks/'+encodeURIComponent(String(credential.webhookId))
+        :null
+    };
+  };
   app.get('/api/named-credentials',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
