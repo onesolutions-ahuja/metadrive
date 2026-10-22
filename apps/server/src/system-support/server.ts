@@ -365,9 +365,11 @@ export function createSystemServer(db:SqlPersistence) {
         .filter((value):value is string=>typeof value==='string'&&value.startsWith('metadata:'))
         .map(value=>value.slice('metadata:'.length));
       const apiById=new Map<string,string>();
-      if(refs.length){
+      const objectIds=[...new Set(refs)].filter(value=>/^[0-9a-f-]{36}$/i.test(value));
+      if(objectIds.length){
         const {rows}=await db.query<{id:string;api_name:string}>(
-          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1',[tenantId]);
+          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1 AND id=ANY($2::uuid[])',
+          [tenantId,objectIds]);
         for(const row of rows)apiById.set(row.id,row.api_name);
       }
       const objectApis=new Set<string>();
