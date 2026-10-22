@@ -302,12 +302,13 @@ test('reconcile seeded New Chat Flow adds source contact link without overwritin
   return {rows:[],rowCount:1};
  }} as never;
  assert.equal(await reconcileAceChatterCreateConversationContactFields(client,'tenant-a'),true);
- const updated=decodeMetadataValues(stored).builder as typeof graph;
+ const updated=decodeMetadataValues(stored).builder as {resources:Array<Record<string,unknown>>;elements:Array<{id:number;config:Record<string,unknown>}>};
  assert.ok(updated.resources.some(resource=>resource.name==='sourceObjectApi'&&resource.availableForInput===true));
  assert.ok(updated.resources.some(resource=>resource.name==='sourceRecordId'&&resource.availableForInput===true));
  const create=updated.elements.find(element=>element.id===4);
- assert.ok(create?.config.fieldValues.some(field=>field.field==='SourceObjectApi'&&field.value==='@sourceObjectApi'));
- assert.ok(create?.config.fieldValues.some(field=>field.field==='SourceRecordId'&&field.value==='@sourceRecordId'));
+ const fieldValues=create?.config.fieldValues as Array<Record<string,unknown>>|undefined;
+ assert.ok(fieldValues?.some(field=>field.field==='SourceObjectApi'&&field.value==='@sourceObjectApi'));
+ assert.ok(fieldValues?.some(field=>field.field==='SourceRecordId'&&field.value==='@sourceRecordId'));
  assert.equal(await reconcileAceChatterCreateConversationContactFields(client,'tenant-a'),false);
  assert.equal(writes,1);assert.equal(audits,1);
 });
