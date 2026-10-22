@@ -10,6 +10,7 @@ const base = process.env.UI_SMOKE_URL || 'http://127.0.0.1:4173/';
 const targets = [
   { name: 'marketing', url: base },
   { name: 'login', url: process.env.UI_SMOKE_AUTH_URL || new URL('/login', base).href },
+  { name: 'component-fixture', url: new URL('/test/accessibility-fixture.html', base).href },
 ];
 if (process.env.UI_SMOKE_PUBLISHED_URL) {
   targets.push({ name: 'published-page', url: process.env.UI_SMOKE_PUBLISHED_URL });
@@ -53,6 +54,11 @@ try {
         ' checks passed; ' + results.violations.length + ' non-blocking violation types.');
     };
     await scan('');
+    if (target.name === 'component-fixture') {
+      await page.getByRole('button', { name: 'Open details' }).click();
+      await page.getByRole('dialog', { name: 'Details dialog' }).waitFor({ state: 'visible' });
+      await scan(' / open dialog');
+    }
     if (target.name === 'marketing') {
       const tabs = page.locator('.une-showcase-tabs button');
       for (let index = 0; index < await tabs.count(); index++) {
