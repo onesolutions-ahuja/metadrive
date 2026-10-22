@@ -92,11 +92,11 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenant_id+':aceassist:crud']);
   // Install optional shared booking Fields only for an entitled AceAssist tenant.
   for(const field of bookingFields){
-   const object=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
+   const object=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
     [tenant_id,field.object]);
    if(!object.rowCount)continue;
    if('related' in field){
-    const target=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
+    const target=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
      [tenant_id,field.related]);
     if(!target.rowCount)continue;
    }
