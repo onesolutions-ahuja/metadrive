@@ -2,6 +2,7 @@ import type {PoolClient} from 'pg';
 
 type Mapping={object:string;staff:string;active:string;weekday?:string;start:string;end:string;resource?:string};
 type Guard={startField:string;endField:string;staffFields:string[];resourceField?:string;
+ statusField?:string;excludedStatuses?:string[];
  schedule?:Mapping;exception?:Mapping};
 const api=/^[A-Za-z][A-Za-z0-9_]*$/;
 const valid=(value:unknown):value is string=>typeof value==='string'&&api.test(value);
@@ -10,7 +11,11 @@ function validate(raw:unknown):Guard{
  const g=raw as Record<string,unknown>;
  if(!valid(g.startField)||!valid(g.endField)||!Array.isArray(g.staffFields)
   ||!g.staffFields.length||g.staffFields.length>5||g.staffFields.some(x=>!valid(x))
-  ||g.resourceField!==undefined&&!valid(g.resourceField))throw Error('Invalid availability fields');
+  ||g.resourceField!==undefined&&!valid(g.resourceField)
+  ||g.statusField!==undefined&&!valid(g.statusField)
+  ||g.excludedStatuses!==undefined&&(!Array.isArray(g.excludedStatuses)
+   ||g.excludedStatuses.length>20||g.excludedStatuses.some(x=>typeof x!=='string'||x.length>60)))
+  throw Error('Invalid availability fields');
  for(const key of ['schedule','exception']){
   const m=g[key];
   if(m===undefined)continue;
@@ -37,6 +42,7 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
  raw:unknown,record:Record<string,unknown>):Promise<void>{
  if(raw===null||raw===undefined)return;
  const g=validate(raw);
+ if(g.statusField&&g.excludedStatuses?.includes(String(record[g.statusField]??'')))return;
  const start=record[g.startField],end=record[g.endField];
  if(typeof start!=='string'||typeof end!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(start)
   ||!/(Z|[+-]\d{2}:\d{2})$/.test(end)||!Number.isFinite(Date.parse(start))
