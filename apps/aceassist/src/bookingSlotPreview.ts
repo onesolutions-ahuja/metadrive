@@ -50,7 +50,7 @@ export function previewStartSlots(input:{date:string;open:string;close:string;st
   };
   const appointmentBusy=preview.appointments.some(row=>
    enabled(row)&&!['Cancelled','No Show'].includes(String(row.Status??''))
-   &&String(row.Id??'')!==String(preview.excludeId??'')
+   &&!(preview.excludeId&&String(row.Id??'')===preview.excludeId)
    &&(String(row.AssignedTo??row.AssignedUser??'')===preview.staffId
     ||!!preview.resourceId&&String(row.Resource??'')===preview.resourceId)
    &&collides(row));
