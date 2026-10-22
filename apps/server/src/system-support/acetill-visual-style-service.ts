@@ -1,6 +1,5 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
-import {ACETILL_STYLE_TARGETS,validAcetillStyleValue,type AcetillVisualStyles} from
- '../../../acetill/src/visual-styles.js';
+import {ACETILL_STYLE_TARGETS,validAcetillStyleValue,type AcetillVisualStyles} from './acetill-visual-style-schema.js';
 
 /** Tenant-owned visual overrides; never alters installed package or customer Flows. */
 export function validateAcetillVisualStyles(raw:unknown):AcetillVisualStyles{
