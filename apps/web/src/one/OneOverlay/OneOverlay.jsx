@@ -32,7 +32,7 @@ export default function OneOverlay(props) {
     setOpen(false);
     if(p.openOnFilterKey && p.pageSessionKey && typeof window!=="undefined") window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected",{detail:{pageSessionKey:p.pageSessionKey,filterKey:p.openOnFilterKey,value:"",recordId:"",label:"",sourceObjectApiName:""}}));
   },[setOpen,p.openOnFilterKey,p.pageSessionKey]);
-  useModalAccessibility(open,dialogRef,close);
+  useModalAccessibility(React,open,dialogRef,close);
 
   return <div {...css}>
     {p.hideTrigger !== true && <button ref={triggerRef} type="button" className="one-btn" onClick={() => setOpen(true)}>{p.openLabel || "Open"}</button>}
