@@ -173,7 +173,7 @@ export function createSystemServer(db:SqlPersistence) {
   // Log webhook ingress and response status without logging query tokens, signatures,
   // request bodies, or credential material. This distinguishes delivery from processing failures.
   app.use((req,res,next)=>{
-    if(/^\\/api\\/inbound-webhooks\\/[^/]+\\/?$/.test(req.path)){
+    if(/^\/api\/inbound-webhooks\/[^/]+\/?$/.test(req.path)){
       const started=Date.now();
       res.on('finish',()=>console.info('Inbound webhook request',JSON.stringify({
         method:req.method,path:req.path,status:res.statusCode,durationMs:Date.now()-started
