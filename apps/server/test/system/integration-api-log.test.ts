@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {createIntegrationCommunicationWriter,writeIntegrationApiLog} from '../../src/system-support/integration-api-log.js';
+import {createIntegrationCommunicationWriter,writeIntegrationActivity} from '../../src/system-support/integration-api-log.js';
 
 test('central integration writer records every attempt as tenant-scoped Communication metadata',async()=>{
  let actor:string|undefined,object:string|undefined,values:Record<string,unknown>|undefined;
@@ -13,7 +13,7 @@ test('central integration writer records every attempt as tenant-scoped Communic
   assert.equal(tenant,'tenant-a');actor=user;object=api;values=record;return 'record-id';
  }} as never;
  const writer=createIntegrationCommunicationWriter(db,records);
- await writeIntegrationApiLog(db,{
+ await writeIntegrationActivity(db,{
   tenantId:'tenant-a',direction:'Outbound',provider:'WhatsApp Credential',
   credentialId:'credential-a',actorUserId:'user-a',
   endpoint:'https://provider.example/messages?access_token=secret',
@@ -62,7 +62,7 @@ test('communication logging failures do not replace the provider result or leak 
   assert.doesNotMatch(args.map(String).join(' '),/secret|token|body/i);
  };
  try{
-  await writeIntegrationApiLog({query:async()=>{throw new Error('database failed with secret token');}} as never,{
+  await writeIntegrationActivity({query:async()=>{throw new Error('database failed with secret token');}} as never,{
    tenantId:'tenant-a',direction:'Inbound',transport:'Webhook',
    endpoint:'/api/inbound-webhooks/example?verify_token=secret',method:'POST',
    statusCode:503,outcome:'http_error',errorCode:'FLOW_UNAVAILABLE'
