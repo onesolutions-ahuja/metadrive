@@ -53,7 +53,6 @@ const bookingFields=[
  {object:'Product',api:'DurationMinutes',type:'number'},
  {object:'Product',api:'BookingBufferMinutes',type:'number'},
  {object:'Appointment',api:'ServiceProduct',type:'reference',related:'Product'},
- {object:'Appointment',api:'AssignedUser',type:'reference',related:'User'},
  {object:'Appointment',api:'Resource',type:'reference',related:'BookableResource'}
 ] as const;
 
@@ -74,9 +73,9 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
     startField:'StartDateTime',endField:'EndDateTime',
     staffFields:['AssignedUser','AssignedTo'],resourceField:'Resource',
     statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed'],
-    schedule:{object:'StaffAvailability',staff:'Staff',active:'Active',
+    schedule:{object:'StaffAvailability',staff:'OwnerId',active:'Active',
      weekday:'Weekday',start:'StartTime',end:'EndTime'},
-    exception:{object:'AvailabilityException',staff:'Staff',resource:'Resource',
+    exception:{object:'AvailabilityException',staff:'OwnerId',resource:'Resource',
      active:'Active',start:'StartDateTime',end:'EndDateTime'}
    }}:{})};
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
