@@ -17,6 +17,7 @@ export function fieldsFromRecord(record:Record<string,unknown>,
 
 import {resolveMutationTargets} from './RecordMutationTargets.js';
 import {enforceRecordOverlap} from './RecordOverlapGuard.js';
+import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
 export async function executeUpdateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,records,evaluate,scalar}=context;
  const config=context.node.config;
@@ -41,6 +42,7 @@ export async function executeUpdateRecordsNode(context:FlowNodeContext):Promise<
   if(typeof record.Id!=='string')throw Error('Invalid Update Records target');
   const values=dynamic?fieldsFromRecord(record,scalar):mapped;
   await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,{...values,Id:record.Id});
+        await enforceRecordAvailability(client,tenantId,config.availabilityGuard,{...values,Id:record.Id});
   await records.update(tenantId,userId,objectApi,record.Id,values,undefined,client);
  }
  return {handled:true,clearHistory:true};
