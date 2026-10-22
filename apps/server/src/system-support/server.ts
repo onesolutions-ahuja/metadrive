@@ -380,7 +380,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     }});
   registerConnectedPublicRoutes(app,connected);
-  registerInboundWebhookPublicRoutes(app,db,namedCredentials,flows,rbac);
+  registerInboundWebhookPublicRoutes(app,db,namedCredentials,flows,rbac,records);
   app.use('/api',authorize);
   registerGovernanceRoutes(app,db,rbac,auth,connected,securityMonitor);
   registerIdentityAdminRoutes(app,{sessions:sessionPolicies,federation,passkeys,backups});
@@ -1214,20 +1214,44 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await namedCredentials.readiness(actor.tenant_id,actor.user_id));
   }));
+  const credentialWithWebhookUrl=(req:Request,credential:Record<string,unknown>)=>({
+    ...credential,
+    webhookCallbackUrl:credential.webhookId
+      ?req.protocol+'://'+req.get('host')+'/api/inbound-webhooks/'+encodeURIComponent(String(credential.webhookId))
+      :null
+  });
   app.get('/api/named-credentials',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
     res.setHeader('Vary','Authorization, Cookie');
-    res.json({credentials:await namedCredentials.list(actor.tenant_id,actor.user_id)});
+    const all=await namedCredentials.list(actor.tenant_id,actor.user_id);
+    res.json({credentials:all.map(item=>credentialWithWebhookUrl(req,item))});
   }));
   app.post('/api/named-credentials',route(async(req,res)=>{
     const actor=req.actor!;
     const credential=await namedCredentials.create(actor.tenant_id,actor.user_id,req.body);
-    res.status(201).json({credential});
+    if(!credential)throw new Error('Named Credential creation unavailable');
+    const webhook=typeof req.body?.webhookRequired==='boolean'
+      ?await namedCredentials.configureWebhook(actor.tenant_id,actor.user_id,
+         credential.id,req.body.webhookRequired,req.body.webhookSecret||undefined)
+      :null;
+    const saved=(await namedCredentials.list(actor.tenant_id,actor.user_id))
+       .find(item=>item.id===credential.id)??credential;
+    res.status(201).json({credential:credentialWithWebhookUrl(req,saved),
+      ...(webhook?.verifyToken?{webhookVerifyToken:webhook.verifyToken}:{})});
   }));
   app.put('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
+    const credential=await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body);
+    if(!credential)throw new Error('Named Credential update unavailable');
+    const webhook=typeof req.body?.webhookRequired==='boolean'
+      ?await namedCredentials.configureWebhook(actor.tenant_id,actor.user_id,
+         credential.id,req.body.webhookRequired,req.body.webhookSecret||undefined)
+      :null;
+    const saved=(await namedCredentials.list(actor.tenant_id,actor.user_id))
+       .find(item=>item.id===credential.id)??credential;
+    res.json({credential:credentialWithWebhookUrl(req,saved),
+      ...(webhook?.verifyToken?{webhookVerifyToken:webhook.verifyToken}:{})});
   }));
   app.post('/api/named-credentials/:id/oauth/start',route(async(req,res)=>{
     const actor=req.actor!;
