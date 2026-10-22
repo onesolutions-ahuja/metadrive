@@ -73,7 +73,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [hoursError,setHoursError]=useState('');
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
- const dynamicFlow=(operation:'Create'|'Update',object:string)=
+ const dynamicFlow=(operation:'Create'|'Update',object:string)=>
   'AceAssist'+operation+'V2'+object;
  const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
  const visibleFields=(object:string)=>{

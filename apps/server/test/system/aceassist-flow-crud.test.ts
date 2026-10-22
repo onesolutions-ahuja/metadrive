@@ -34,4 +34,14 @@ test('Ace Assist V2 collection mutations use shared record engine with field per
  assert.match(update,/records.update\(tenantId,userId,objectApi/);
  assert.match(validator,/Record-sourced Update Records/);
 });
-\ntest('Ace Assist field controls map standard Object Manager field types and use notifications',()=>{\n const control=readFileSync(new URL('../../../web/src/core/metadata/Fields/RecordFieldInput.tsx',import.meta.url),'utf8');\n const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');\n assert.match(control,/raw==='checkbox'/);\n assert.match(control,/type="checkbox"/);\n assert.match(control,/field.picklistValues/);\n assert.match(runtime,/canDynamic/);\n assert.match(runtime,/recordsInput/);\n assert.match(runtime,/NotificationBell/);\n});\n
+
+test('Ace Assist field controls map standard Object Manager field types and use notifications',()=>{
+ const control=readFileSync(new URL('../../../web/src/core/metadata/Fields/RecordFieldInput.tsx',import.meta.url),'utf8');
+ const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ assert.match(control,/raw==='checkbox'/);
+ assert.match(control,/type="checkbox"/);
+ assert.match(control,/field.picklistValues/);
+ assert.match(runtime,/canDynamic/);
+ assert.match(runtime,/recordsInput/);
+ assert.match(runtime,/NotificationBell/);
+});
