@@ -233,5 +233,6 @@ test('accessibility smoke covers login and supports configured published-page/di
   assert.match(smoke, /showcase tab/);
   assert.match(smoke, /Critical\/serious WCAG violations/);
   const fixture = await readFile(new URL('./accessibility-fixture.jsx', import.meta.url), 'utf8');
-  for (const component of ['OneTable', 'OneInput', 'OneButton', 'OneOverlay']) assert.match(fixture, new RegExp(component));
+  for (const component of ['OneTable', 'OneInput', 'OneButton', 'OneOverlay', 'OneMenu', 'OneTabs', 'OneSearch']) assert.match(fixture, new RegExp(component));
+  for (const contract of ['ArrowDown moves menu focus','ArrowLeft selects the previous tab','active descendant','Tab remains trapped inside the dialog','restores trigger focus']) assert.match(smoke, new RegExp(contract));
 });
