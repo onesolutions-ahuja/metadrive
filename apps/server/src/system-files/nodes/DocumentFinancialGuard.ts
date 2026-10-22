@@ -130,6 +130,14 @@ export async function enforceDocumentIssue(context:FlowNodeContext,raw:unknown,
   RETURNING (next_value-1)::text AS sequence`,
   [context.tenantId,object,config.numberField]);
  if(!counter[0])throw Error('Invoice number allocation unavailable');
- fields[config.numberField]=formatAutoNumberValue(formats[0].auto_number_format,
+ const allocated=formatAutoNumberValue(formats[0].auto_number_format,
   Number(counter[0].sequence));
+ const {rowCount:duplicate}=await context.client.query(`
+  SELECT 1 FROM md_record_values v JOIN md_records r
+   ON r.tenant_id=v.tenant_id AND r.id=v.record_id
+   WHERE v.tenant_id=$1 AND v.object_api=$2 AND v.field_api=$3
+    AND v.value_text=$4 AND r.is_deleted=false LIMIT 1`,
+  [context.tenantId,object,config.numberField,allocated]);
+ if(duplicate)throw Error('Generated document number already exists; review the Object Manager prefix');
+ fields[config.numberField]=allocated;
 }
