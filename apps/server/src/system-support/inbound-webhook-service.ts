@@ -30,6 +30,66 @@ function safePayload(value:unknown,depth=0):unknown {
     ?'[redacted]':safePayload(item,depth+1)]));
  return typeof value==='string'?value.slice(0,2000):value;
 }
+/** Convert Meta's WhatsApp envelope into one Communication record per real inbound message. */
+function whatsappMessages(payload:unknown,endpointId:string):Array<Record<string,unknown>> {
+ if(!payload||typeof payload!=='object')return [];
+ const root=payload as Record<string,unknown>;
+ if(root.object!=='whatsapp_business_account'||!Array.isArray(root.entry))return [];
+ const result:Array<Record<string,unknown>>=[];
+ const now=new Date().toISOString();
+ for(const rawEntry of root.entry){
+  if(!rawEntry||typeof rawEntry!=='object')continue;
+  const entry=rawEntry as Record<string,unknown>;
+  if(!Array.isArray(entry.changes))continue;
+  for(const rawChange of entry.changes){
+   if(!rawChange||typeof rawChange!=='object')continue;
+   const change=rawChange as Record<string,unknown>;
+   if(!change.value||typeof change.value!=='object')continue;
+   const value=change.value as Record<string,unknown>;
+   const metadata=(value.metadata&&typeof value.metadata==='object'?value.metadata:{}) as Record<string,unknown>;
+   const contacts=Array.isArray(value.contacts)?value.contacts:[];
+   const contactByWaId=new Map<string,string>();
+   for(const rawContact of contacts){
+    if(!rawContact||typeof rawContact!=='object')continue;
+    const contact=rawContact as Record<string,unknown>;
+    const profile=(contact.profile&&typeof contact.profile==='object'?contact.profile:{}) as Record<string,unknown>;
+    if(typeof contact.wa_id==='string'&&typeof profile.name==='string')contactByWaId.set(contact.wa_id,profile.name);
+   }
+   if(!Array.isArray(value.messages))continue;
+   for(const rawMessage of value.messages){
+    if(!rawMessage||typeof rawMessage!=='object')continue;
+    const message=rawMessage as Record<string,unknown>;
+    const messageId=typeof message.id==='string'?message.id:'';
+    const sender=typeof message.from==='string'?message.from:'';
+    const type=typeof message.type==='string'?message.type:'message';
+    const details=(message[type]&&typeof message[type]==='object'?message[type]:{}) as Record<string,unknown>;
+    let body:string;
+    if(type==='text'&&typeof details.body==='string')body=details.body;
+    else if(['image','video','document'].includes(type)&&typeof details.caption==='string')body=details.caption;
+    else if(type==='interactive'){
+     const button=(details.button_reply&&typeof details.button_reply==='object'?details.button_reply:{}) as Record<string,unknown>;
+     const list=(details.list_reply&&typeof details.list_reply==='object'?details.list_reply:{}) as Record<string,unknown>;
+     body=String(button.title??list.title??'WhatsApp interactive reply');
+    }else if(type==='button')body=String(details.text??'WhatsApp button reply');
+    else if(type==='location')body=[details.name,details.address,details.latitude,details.longitude].filter(x=>x!==undefined&&x!==null&&x!=='').join(', ')||'WhatsApp location';
+    else if(type==='contacts')body='WhatsApp contact card';
+    else body='WhatsApp '+type+' message';
+    const unix=typeof message.timestamp==='string'?Number(message.timestamp):NaN;
+    const receivedAt=Number.isFinite(unix)&&unix>0?new Date(unix*1000).toISOString():now;
+    result.push({
+     Name:'WhatsApp '+(messageId?messageId.slice(-24):'inbound message'),
+     Channel:'WhatsApp',Direction:'Inbound',Status:'Received',
+     Sender:sender?(contactByWaId.has(sender)?contactByWaId.get(sender)+' ('+sender+')':sender):'',
+     Recipient:String(metadata.display_phone_number??metadata.phone_number_id??''),
+     Provider:'WhatsApp',Body:body.slice(0,10000),
+     ExternalMessageId:messageId||undefined,ConversationId:sender||undefined,
+     ReceivedAt:receivedAt,RelatedObject:'InboundWebhookEndpoint',RelatedRecordId:endpointId
+    });
+   }
+  }
+ }
+ return result;
+}
 function publicUrl(req:Request,id:string){
  // Provider callbacks must be externally reachable over TLS. Render terminates TLS
  // at its edge, so Express may see the internal HTTP hop unless proxy trust is
@@ -83,23 +143,17 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   if(!matches(signatureDigest,supplied)){
    res.status(401).json({error:'Webhook signature invalid'});return;
   }
-  // A credential webhook may also route through an authorised tenant Flow.
-  // Preserve the existing Communication archive when Flow routing is configured.
-  // Legacy app/Flow-only endpoints retain their existing Flow-only behaviour.
-  let flowAvailable=Boolean(endpoint.flow_api);
-  if(endpoint.flow_api){
+  // Credential-linked webhooks are ingestion endpoints: persist Communication directly.
+  // AceChatter reads Communication through its authorised Flows; it is not a webhook consumer.
+  let flowAvailable=Boolean(endpoint.flow_api&&!endpoint.credential_name);
+  if(flowAvailable&&endpoint.flow_api){
    const {rows:active}=await db.query(`
      SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2
        AND active=true AND archived=false AND flow_type='Autolaunched Flow' LIMIT 1`,
      [endpoint.tenant_id,endpoint.flow_api]);
    if(!endpoint.execution_user_id||!active[0]||!await rbac.allowed(
       endpoint.tenant_id,endpoint.execution_user_id,'Flow:'+endpoint.flow_api,'execute')){
-    // Credential webhooks remain operational as generic Communication ingestion
-    // when an optional app/Flow is unavailable. Legacy Flow-only endpoints fail closed.
-    if(!endpoint.credential_name){
-     res.status(503).json({error:'Webhook Flow not available'});return;
-    }
-    flowAvailable=false;
+    res.status(503).json({error:'Webhook Flow not available'});return;
    }
   }
   if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)){
@@ -121,23 +175,30 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   // only when the Flow input contract can accept it (max 4096 characters).
   const json=raw.toString('utf8');
   try{
-   if(flowAvailable&&endpoint.flow_api&&endpoint.execution_user_id){
+   // Save the provider message before any optional legacy Flow work. A credential
+   // webhook never executes AceChatterReceiveWebhook or any other app Flow.
+   if(endpoint.credential_name){
+    if(!records)throw new Error('Communication record engine unavailable');
+    const messages=whatsappMessages(req.body,endpoint.id);
+    for(const values of messages){
+     await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
+      'Communication',values);
+    }
+    // Non-message callbacks (for example delivery-status notifications) are retained
+    // in the webhook event archive, but do not masquerade as customer messages.
+   }else if(flowAvailable&&endpoint.flow_api&&endpoint.execution_user_id){
+    const json=raw.toString('utf8');
     await flows.execute(endpoint.tenant_id,endpoint.flow_api,endpoint.execution_user_id,{
      requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
      webhookEndpoint:endpoint.api_name
     });
-   }
-   // Credential-linked endpoints keep their existing generic Communication
-   // record even when a tenant enables a reusable Flow consumer.
-   if(!flowAvailable||endpoint.credential_name){
+   }else{
     if(!records)throw new Error('Communication record engine unavailable');
     const sanitized=JSON.stringify(safePayload(req.body)).slice(0,10000);
     await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
      'Communication',{
-      Name:'Webhook '+endpoint.api_name,
-      Channel:'Other',Direction:'Inbound',Status:'Received',
-      Provider:endpoint.credential_name??endpoint.provider,
-      Body:sanitized,ReceivedAt:new Date().toISOString(),
+      Name:'Webhook '+endpoint.api_name,Channel:'Other',Direction:'Inbound',Status:'Received',
+      Provider:endpoint.provider,Body:sanitized,ReceivedAt:new Date().toISOString(),
       ExternalMessageId:event.id,RelatedObject:'InboundWebhookEvent',RelatedRecordId:event.id
      });
    }
