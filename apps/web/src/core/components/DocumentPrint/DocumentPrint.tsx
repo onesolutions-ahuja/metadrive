@@ -50,7 +50,7 @@ export function DocumentPrint({objectLabel,document,lines,currency,onClose}:Docu
      .map(field=><div key={field}><dt>{field.replace(/([a-z])([A-Z])/g,'$1 $2')}</dt>
       <dd>{symbol} {number(document[field])}</dd></div>)}
    </dl>
-   {document.Notes&&<section><h2>Notes</h2><p>{display(document.Notes)}</p></section>}
+   {Boolean(document.Notes)&&<section><h2>Notes</h2><p>{display(document.Notes)}</p></section>}
    <footer>Generated from authorised MetaDrive records. This preview does not change document status.</footer>
   </article>
  </div>;
