@@ -315,16 +315,24 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     setNamedCredentialsError('');
     setConnectorRightsLoaded(false);
     setConnectorRightsError('');
-    void apiRequest<{ canManage: boolean; encryptionReady: boolean }>('/named-credentials/readiness')
-      .then(({ canManage, encryptionReady }) => {
-        if (active) {
-          setCanManageNamedCredentials(canManage);
-          setNamedCredentialsEncryptionReady(encryptionReady);
+    // Readiness is independent from list access. A transient readiness failure must
+    // never silently turn an authorised manager into a read-only user.
+    let readinessSequence=0;
+    const checkCredentialReadiness = async () => {
+      const requestNumber=++readinessSequence;
+      try {
+        const {canManage,encryptionReady}=await apiRequest<{canManage:boolean;encryptionReady:boolean}>(
+          '/named-credentials/readiness',{cache:'no-store',signal:credentialsRequest.signal});
+        if(active&&requestNumber===readinessSequence){setCanManageNamedCredentials(canManage===true);setNamedCredentialsEncryptionReady(encryptionReady===true);setNamedCredentialsError('');}
+      }catch(error){
+        if(active&&!credentialsRequest.signal.aborted&&requestNumber===readinessSequence){
+          setCanManageNamedCredentials(false);
+          setNamedCredentialsEncryptionReady(null);
+          setNamedCredentialsError('Could not verify Named Credential permissions: '+(error instanceof Error?error.message:String(error)));
         }
-      })
-      .catch(() => {
-        if (active) setNamedCredentialsEncryptionReady(null);
-      });
+      }
+    };
+    void checkCredentialReadiness();
     void apiRequest<{ view: boolean; edit: boolean; secrets: boolean; test: boolean; install: boolean; licence: boolean }>('/connector-apps/capabilities')
       .then((rights) => { if (active) {setConnectorRights(rights);setConnectorRightsLoaded(true);} })
       .catch((error:unknown) => { if (active) {setConnectorRightsError(error instanceof Error?error.message:String(error));setConnectorRightsLoaded(true);} });
@@ -337,6 +345,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setNamedCredentials(credentials);
         setNamedCredentialsError('');
         setNamedCredentialsLoaded(true);
+        // Re-check after the authorised list succeeds: on initial navigation the
+        // readiness request can fail before the session refresh completes.
+        void checkCredentialReadiness();
       })
       .catch((error:unknown) => {
         if(!active || credentialsRequest.signal.aborted)return;
