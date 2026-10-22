@@ -1,5 +1,3 @@
-import {lazy,Suspense} from 'react';
-const InboundWebhooks=lazy(()=>import('./InboundWebhooks'));
 import {PlatformPageSlot} from '../../platform/Workspace/PlatformPageSlot';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalAccessibility } from '../../accessibility/Modal/useModalAccessibility';
@@ -17,6 +15,8 @@ type CredentialInput = {
   configuration?: Record<string, string>;
   username?: string;
   secret?: string;
+  webhookRequired?: boolean;
+  webhookSecret?: string;
 };
 
 type CredentialDraft = Omit<CredentialInput, 'id'> & { id?: string };
@@ -30,7 +30,9 @@ const blankCredential = (): CredentialDraft => ({
   headerName: '',
   configuration: {},
   username: '',
-  secret: ''
+  secret: '',
+  webhookRequired: false,
+  webhookSecret: ''
 });
 
 export default function NamedCredentials({
@@ -59,7 +61,7 @@ export default function NamedCredentials({
   preset?: { name: string; label: string; baseUrl: string; authType: CredentialDraft['authType']; configuration: Record<string, string> };
   embedded?: boolean;
   fieldLabels?: Record<string,string>;
-  onSave: (credential: CredentialInput) => Promise<void>;
+  onSave: (credential: CredentialInput) => Promise<{credential:NamedCredentialMetadata;webhookVerifyToken?:string}>;
   onDelete: (id: string) => Promise<void>;
   onRotate?: (id: string) => Promise<void>;
   onTest?: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
@@ -73,6 +75,7 @@ export default function NamedCredentials({
   const dismissModal = useCallback(() => { if (!saving) setDraft(null); }, [saving]);
   useModalAccessibility(Boolean(draft), modalRef, dismissModal);
   const [error, setError] = useState('');
+  const [savedWebhook,setSavedWebhook]=useState<{callbackUrl:string;verifyToken?:string}|null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const fieldErrors = { name: !/^[A-Za-z][A-Za-z0-9_]*$/.test(draft?.name ?? '') ? 'Use a name starting with a letter, containing only letters, numbers and underscores.' : '', label: !(draft?.label.trim()) ? 'Label is required.' : '', baseUrl: !(draft?.baseUrl.trim()) ? 'URL is required.' : draft?.protocol === 'HTTPS' && !/^https:\/\//i.test(draft.baseUrl.trim()) ? 'Use an HTTPS URL.' : '' };
   const blurField = (field: keyof typeof fieldErrors) => setTouched(current => ({...current, [field]: true}));
@@ -97,6 +100,7 @@ export default function NamedCredentials({
   };
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
+    setSavedWebhook(null);
     setTouched({});
     setViewing(readOnly);
     setDraft(credential ? {
@@ -109,7 +113,9 @@ export default function NamedCredentials({
       headerName: credential.headerName,
       configuration: { ...(credential.name==='WhatsApp_Cloud_API'?whatsAppFields:{}), ...preset?.configuration, ...credential.configuration },
       username: '',
-      secret: ''
+      secret: '',
+      webhookRequired: credential.webhookEnabled===true,
+      webhookSecret: ''
     } : preset ? { ...blankCredential(), ...preset, protocol: 'HTTPS' } : blankCredential());
   };
 
@@ -117,19 +123,32 @@ export default function NamedCredentials({
     if (!draft || saving) return;
     setTouched({ name: true, label: true, baseUrl: true });
     if (Object.values(fieldErrors).some(Boolean)) return;
+    const existingWebhook=Boolean(credentials.find(item=>item.id===draft.id)?.webhookId);
+    if(draft.webhookRequired&&(!existingWebhook&&!draft.webhookSecret||draft.webhookSecret&&draft.webhookSecret.length<16)){
+      setError('Enter a webhook signing secret of at least 16 characters.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      await onSave({
+      const result=await onSave({
         ...draft,
         name: draft.name.trim(),
         label: draft.label.trim(),
         baseUrl: draft.baseUrl.trim(),
         ...(draft.headerName?.trim() ? { headerName: draft.headerName.trim() } : {}),
         ...(draft.username?.trim() ? { username: draft.username.trim() } : {}),
-        ...(draft.secret ? { secret: draft.secret } : {})
+        ...(draft.secret ? { secret: draft.secret } : {}),
+        ...((draft.webhookRequired || existingWebhook)
+          ? {webhookRequired:Boolean(draft.webhookRequired)} : {}),
+        ...(draft.webhookSecret?{webhookSecret:draft.webhookSecret}:{})
       });
-      setDraft(null);
+      if(draft.webhookRequired){
+        setSavedWebhook({callbackUrl:result.credential.webhookCallbackUrl??'',
+          verifyToken:result.webhookVerifyToken});
+        setDraft({...draft,id:result.credential.id,webhookSecret:''});
+        setViewing(true);
+      }else setDraft(null);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save Named Credential');
     } finally {
@@ -284,13 +303,52 @@ export default function NamedCredentials({
         {draft.authType === 'Basic' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-07"><label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label></PlatformPageSlot>}
         {draft.authType !== 'None' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-08"><label className="form-label">{draft.authType === 'Basic' ? 'Password' : draft.authType === 'OAuth Client Credentials' ? 'Client Secret' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label></PlatformPageSlot>}
         </div>
+        {draft.protocol==='HTTPS' && <div className="named-credential-span-full" style={{marginTop:16}}>
+          <label className="credential-switch">
+            <input type="checkbox" role="switch" checked={Boolean(draft.webhookRequired)}
+              disabled={!canManageSecrets}
+              onChange={event=>updateDraft({webhookRequired:event.target.checked,webhookSecret:''})}/>
+            <span className="credential-switch-track" aria-hidden="true"/>
+            <span>Webhook required?</span>
+          </label>
+          {draft.webhookRequired && <p className="modal-copy">
+            One signed callback is generated automatically for this connection. Incoming events
+            are stored in Communication; no Flow assignment is needed.
+          </p>}
+          {draft.webhookRequired && canManageSecrets && <label className="form-label">
+            Webhook signing secret
+            <input className="form-control" type="password" autoComplete="new-password"
+              minLength={16} maxLength={512} value={draft.webhookSecret??''}
+              placeholder={credentials.find(item=>item.id===draft.id)?.webhookId
+                ?'Stored securely · leave blank to retain':'Enter provider signing secret'}
+              onChange={event=>updateDraft({webhookSecret:event.target.value})}/>
+          </label>}
+        </div>}
         {draft.id && !embedded && <div className="named-credential-activation"><strong>Connection status</strong><label className="credential-switch"><input type="checkbox" role="switch" checked={credentials.find((item) => item.id === draft.id)?.enabled !== false} disabled={viewing || !canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => { const credential = credentials.find((item) => item.id === draft.id); if (credential) void toggleEnabled(credential); }} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId ? 'Updating…' : credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Disabled' : 'Enabled'}</span></label></div>}
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
         {error && <div className="records-message" role="alert">{error}</div>}
         </fieldset>
-        <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
+        {(savedWebhook?.callbackUrl ||
+          (draft.webhookRequired && credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl))
+          && <div className="info-callout" style={{marginTop:14}}>
+            <strong>Webhook callback URL</strong>
+            <input className="form-control" readOnly
+              value={savedWebhook?.callbackUrl||
+                credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl||''}
+              onFocus={event=>event.currentTarget.select()}/>
+            {savedWebhook?.verifyToken&&<>
+              <strong>Verification token (copy now; shown only once)</strong>
+              <input className="form-control" readOnly value={savedWebhook.verifyToken}
+                onFocus={event=>event.currentTarget.select()}/>
+            </>}
+            <small>Register the callback and verification token with your provider.
+              The signing secret is never displayed after saving.</small>
+          </div>}
+        <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())
+          ||(draft.webhookRequired&&!credentials.find(item=>item.id===draft.id)?.webhookId
+            &&(draft.webhookSecret?.length??0)<16)
+          ||Boolean(draft.webhookSecret&&(draft.webhookSecret.length<16||draft.webhookSecret.length>512))} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
       </section>
     </div>}
-    {!embedded&&<Suspense fallback={<p>Loading webhook settings…</p>}><InboundWebhooks/></Suspense>}
   </section>;
 }
