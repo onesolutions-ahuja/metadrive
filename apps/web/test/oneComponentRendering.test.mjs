@@ -218,6 +218,12 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(navigation, /className="one-empty" role="status"/);
   for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
   for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.doesNotMatch(component, /className="one-empty"(?!\s+role="status")/, "every empty state must announce its status");
+  const [coreModal, coreDismiss] = await Promise.all([
+    readFile(new URL("../src/core/accessibility/Modal/useModalAccessibility.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/core/accessibility/Dismiss/useDismissOnOutside.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(coreModal, /from '\.\.\/\.\.\/\.\.\/one\/shared\/accessibilityHooks'/);
+  assert.match(coreDismiss, /from '\.\.\/\.\.\/\.\.\/one\/shared\/accessibilityHooks'/);
   const properties = await readFile(new URL("../src/core/builders/ComponentProperties/componentPropertiesView.tsx", import.meta.url), "utf8");
   for (const section of ["Content", "Layout", "Responsive", "Appearance"]) assert.match(properties, /propertySectionFor\(key, definitionsByKey\.get\(key\)\) === section/);
 });
