@@ -247,6 +247,15 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const objectBindings = Array.from(new Set(['objectApiName', ...Object.keys(properties).filter(isObjectBinding)]));
   const fieldsFor = (key:string) => metadataFieldObject(objects,{...properties,objectApiName},key)?.fields??[];
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
+  const propertySectionFor = (key: string, definition?: LibraryComponentMetadata['propertyDefinitions'][number]) => {
+    const declared = String((definition as (typeof definition & { section?: string; group?: string }) | undefined)?.section
+      ?? (definition as (typeof definition & { group?: string }) | undefined)?.group ?? '').toLowerCase();
+    const name = (declared + ' ' + key).toLowerCase();
+    if (/responsive|breakpoint|mobile|tablet|desktop|device|orientation/.test(name)) return 'Responsive';
+    if (/layout|position|width|height|align|column|rowspan|grid|gap|padding|margin|flex|wrap|direction|span/.test(name)) return 'Layout';
+    if (/content|title|label|text|description|placeholder|heading|icon|image|src|empty|badge|subtitle|price|button|message|option/.test(name)) return 'Content';
+    return 'Appearance';
+  };
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
     <select className="form-control" value={metadataSelection(fieldsFor(key),value)?.apiName??String(value??'')} onChange={(event) => {
       const field=fieldsFor(key).find(f=>f.apiName===event.target.value);
@@ -409,38 +418,44 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
           onChange={(event)=>update(key,event.target.value)} />
       </label>)}
     </>}
-    <div className="properties-section-title">Appearance and Settings</div>
-    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)).map(([key, value]) => {
-      const definition = definitionsByKey.get(key);
-      const label = definition?.label ?? labelFor(key);
-      if (definition?.kind === 'IMAGE') return <div className="form-label" key={key}>
-        <label>{label}</label><TenantMediaPicker value={String(value??'')}
-          onChange={next=>update(key,next)}/></div>;
-      if (definition?.kind === 'SELECT' && definition.choices) return <label className="form-label" key={key}>{label}
-        <select className="form-control" value={String(value ?? '')}
-          onChange={(event) => update(key, event.target.value)}>
-          <option value="">Not configured / default</option>
-          {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
-        </select>
-      </label>;
-      if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
-        <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{label}
-      </label>;
-      if (typeof value === 'number') return <label className="form-label" key={key}>{label}
-        <input className="form-control" type="number" value={value}
-          onChange={(event) => event.target.value === '' ? onChange(Object.fromEntries(Object.entries(properties).filter(([name])=>name!==key))) : update(key, Number(event.target.value))} />
-      </label>;
-      if (typeof value === 'string') return <div className="form-label" key={key}>
-        <label>{label}</label>
-        {definition?.kind === 'COLOR' || /color/i.test(key)
-          ? <input className="form-control" type="text" value={value} onChange={event => update(key, event.target.value)} />
-          : <SmartFieldInput value={value} onChange={next => update(key, next)}
-              objects={objects} primaryObjectApiName={primaryObjectApiName || objectApiName}
-              appObjectApiNames={appObjectApiNames}
-              kind={/image|src/i.test(key) ? 'image' : /url|link/i.test(key) ? 'url' : /formula|expression/i.test(key) ? 'formula' : 'text'}
-              multiline={/text|description|body|content|formula|expression/i.test(key) && value.length > 90} />}
-      </div>;
-      return null;
+    {(['Content', 'Layout', 'Responsive', 'Appearance'] as const).map(section => {
+      const entries = Object.entries(properties).filter(([key, value]) =>
+        !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)
+        && !Array.isArray(value) && propertySectionFor(key, definitionsByKey.get(key)) === section);
+      if (!entries.length) return null;
+      return <section key={section} className="metadata-property-section" aria-label={section + ' properties'}>
+        <div className="properties-section-title">{section}</div>
+        {entries.map(([key, value]) => {
+          const definition = definitionsByKey.get(key);
+          const label = definition?.label ?? labelFor(key);
+          if (definition?.kind === 'IMAGE') return <div className="form-label" key={key}>
+            <label>{label}</label><TenantMediaPicker value={String(value??'')} onChange={next=>update(key,next)}/></div>;
+          if (definition?.kind === 'SELECT' && definition.choices) return <label className="form-label" key={key}>{label}
+            <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
+              <option value="">Not configured / default</option>
+              {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+            </select>
+          </label>;
+          if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
+            <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{label}
+          </label>;
+          if (typeof value === 'number') return <label className="form-label" key={key}>{label}
+            <input className="form-control" type="number" value={value}
+              onChange={(event) => event.target.value === '' ? onChange(Object.fromEntries(Object.entries(properties).filter(([name])=>name!==key))) : update(key, Number(event.target.value))} />
+          </label>;
+          if (typeof value === 'string') return <div className="form-label" key={key}>
+            <label>{label}</label>
+            {definition?.kind === 'COLOR' || /color/i.test(key)
+              ? <input className="form-control" type="text" value={value} onChange={event => update(key, event.target.value)} />
+              : <SmartFieldInput value={value} onChange={next => update(key, next)}
+                  objects={objects} primaryObjectApiName={primaryObjectApiName || objectApiName}
+                  appObjectApiNames={appObjectApiNames}
+                  kind={/image|src/i.test(key) ? 'image' : /url|link/i.test(key) ? 'url' : /formula|expression/i.test(key) ? 'formula' : 'text'}
+                  multiline={/text|description|body|content|formula|expression/i.test(key) && value.length > 90} />}
+          </div>;
+          return null;
+        })}
+      </section>;
     })}
     {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && !isFilter(key) && Array.isArray(value)).map(([key, value]) => {
       const items = value as unknown[];
