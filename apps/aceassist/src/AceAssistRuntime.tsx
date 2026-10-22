@@ -85,7 +85,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
  const dynamicFlow=(operation:'Create'|'Update',object:string)=>
-  'AceAssist'+operation+'V2'+object;
+  'AceAssist'+operation+(object==='Appointment'?'V3':'V2')+object;
  const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
  const visibleFields=(object:string)=>{
   const definition=objects.find(x=>x.apiName===object);
@@ -189,6 +189,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
   const dynamic=editing!=='Delete'&&canDynamic(editing,editingObject);
+  if(editingObject==='Appointment'&&!dynamic&&editing!=='Delete'){
+   setError('Safe booking Flow V3 is unavailable. Ask your administrator to run the AceAssist app seeder.');
+   return;
+  }
   const mutationFlow=dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
    'AceAssist'+editing+editingObject;
  if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
