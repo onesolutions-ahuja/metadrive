@@ -14,19 +14,21 @@ The UI is maintained here as a standalone app, never by Page Builder. No alterna
 
 ## Flow configuration and data model
 
-AppExchange now discovers AceChatter independently. For **installed, entitled tenants only**, the idempotent app seeder creates missing `ChatConversation` and `ChatMessage` Object/Field definitions, a separately assignable `AceChatterUser` permission set and three editable OneEngine Flows. Existing versions are not modified. It does not create customer conversations or assign permissions to a user.
+AppExchange now discovers AceChatter independently. For **installed, entitled tenants only**, the idempotent app seeder creates missing `ChatConversation` and `ChatMessage` Object/Field definitions, a separately assignable `AceChatterUser` permission set and editable OneEngine Flows. Existing versions are not modified. Received WhatsApp messages are read from the shared `Communication` object rather than relying on the legacy inbound `ChatMessage` Flow. The seeder does not create customer conversations or assign permissions to a user.
 
 | Flow API | Inputs | OneEngine output | Initial state |
 | --- | --- | --- | --- |
 | `AceChatterLoadConversations` | `searchTerm` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterLoadMessages` | `conversationId` (Text) | `messages` (Record Collection) | Active |
+| `AceChatterLoadCommunications` | `searchTerm` (Text; blank loads recent messages, a number filters the sender) | `communications` (Record Collection) | Active |
+| `AceChatterFindConversationByPhone` | `phoneNumber` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Configure in Flow Builder | Draft |
 
-Both loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. Edit filters, sorting, selected fields and object relationships in Flow Builder. The conversation search defaults to the `Name` field, while message loading filters by `ConversationId`; these are metadata defaults, not UI business logic. The UI can also render the earlier JSON Text outputs `conversationsJson` and `messagesJson` for compatibility, but native collections need no serialization. Unauthorised users cannot bypass the server's OneEngine RBAC or Record/Field checks.
+All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `AceChatterLoadCommunications` reads up to 200 newest `Communication` records filtered to `Channel = WhatsApp` and `Direction = Inbound`; its `Sender` contains-filter supports inbox searches and selected chat numbers. The UI groups records by the sender's WhatsApp number and combines them with matching `ChatConversation` records. Sending still uses the existing authorised Flow and a real `ChatConversation` record; if a received-message chat has no conversation record yet, the UI creates it through the configured Create Conversation Flow before sending. These are metadata defaults, not a browser-side CRUD or sending engine. Native record collections are preferred; legacy JSON Text outputs remain supported. Unauthorised users cannot bypass server-side OneEngine RBAC or Record/Field checks.
 
 **Outbound WhatsApp sending deliberately remains a Draft until a tenant administrator configures an appropriate Named Credential, authorised WhatsApp HTTP callout, provider delivery statuses and failure handling.** Activating a no-op send Flow would falsely imply delivery. Incoming WhatsApp webhooks and provider callbacks likewise require tenant-secured integration Flows. Confirm provider consent, conversation-window/template requirements and webhook authenticity before activation.
 
-Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
+Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The policy includes OneEngine read permissions for the `Communication` object and inbox fields. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
 
 
 ## WhatsApp Cloud API send draft

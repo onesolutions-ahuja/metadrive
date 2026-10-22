@@ -19,8 +19,8 @@ const fields:Field[]=[
  {object:'ChatChannelSettings',name:'Active',label:'Active',type:'boolean'}
 ];
 const links=(...ids:number[])=>ids.slice(0,-1).map((from,i)=>({from,to:ids[i+1],kind:'normal',label:'Next'}));
-function graph(apiName:string,label:string,object:string,input:string,conditions:unknown[],sortField:string){
- const collection=object==='ChatConversation'?'conversations':'messages';
+function graph(apiName:string,label:string,object:string,input:string,conditions:unknown[],sortField:string,sortOrder='Ascending',recordLimit='all'){
+ const collection=object==='ChatConversation'?'conversations':object==='Communication'?'communications':'messages';
  return {apiName,label,appApiName:'AceChatter',flowType:'Autolaunched Flow',
   status:'Active',version:1,tests:[],resources:[
    {name:input,type:'Variable',dataType:'Text',availableForInput:true},
@@ -28,8 +28,8 @@ function graph(apiName:string,label:string,object:string,input:string,conditions
   ],elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
    {id:2,type:'Get Records',label:'Authorised '+object,config:{
-     object,recordLimit:'all',outputVariable:collection,conditions,
-     sortField,sortOrder:object==='ChatConversation'?'Ascending':'Ascending'}},
+     object,recordLimit,outputVariable:collection,conditions,
+     sortField,sortOrder}},
    {id:3,type:'End',label:'End',config:{}}
   ],connectors:links(1,2,3)};
 }
@@ -124,6 +124,10 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ['App:AceChatter','read'],
   ['Flow:AceChatterLoadConversations','execute'],
   ['Flow:AceChatterLoadMessages','execute'],
+  ['Flow:AceChatterLoadCommunications','execute'],
+  ['Flow:AceChatterFindConversationByPhone','execute'],
+  ['Communication','read'],
+  ...['Name','Channel','Direction','Status','Sender','Recipient','Body','ExternalMessageId','ReceivedAt','SentAt','Provider'].map(field=>['Communication.'+field,'read']),
   ['Flow:AceChatterSendMessage','execute'],
   ['Flow:AceChatterCreateConversation','execute'],
   ['Flow:AceChatterReceiveWebhook','execute'],
@@ -143,7 +147,17 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'Name',operator:'Contains',value:'@searchTerm'}],'Name'),
   graph('AceChatterLoadMessages','AceChatter - Load Messages',
    'ChatMessage','conversationId',[
-    {field:'ConversationId',operator:'Equals',value:'@conversationId'}],'SentAt')
+    {field:'ConversationId',operator:'Equals',value:'@conversationId'}],'SentAt'),
+  graph('AceChatterLoadCommunications','AceChatter - Load Received Communications',
+   'Communication','searchTerm',[
+    {field:'Channel',operator:'Equals',value:'WhatsApp'},
+    {field:'Direction',operator:'Equals',value:'Inbound'},
+    {field:'Sender',operator:'Contains',value:'@searchTerm'}
+   ],'ReceivedAt','Descending','200'),
+  graph('AceChatterFindConversationByPhone','AceChatter - Find Conversation by Phone',
+   'ChatConversation','phoneNumber',[
+    {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
+   ],'Name','Ascending','200')
  ];
  let seeded=0;
  for(const value of definitions)if(await insertGraph(client,tenantId,value,true))seeded++;
