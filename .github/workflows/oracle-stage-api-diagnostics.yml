@@ -1,4 +1,4 @@
-name: Oracle staged API CORS diagnostics
+name: Stop isolated Oracle staging API
 
 on:
   push:
@@ -10,11 +10,11 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  stop:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Inspect staged API response headers safely
+      - name: Stop stage API to prevent cloned production jobs from executing
         shell: bash
         env:
           ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
@@ -28,26 +28,12 @@ jobs:
           ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
           ssh -i "$HOME/.ssh/oracle_diag" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
           set -euo pipefail
-          echo "STAGE_SERVICE=$(systemctl is-active metadrive-stage-test.service || true)"
-          echo "STAGE_DATABASE_DOMAIN_ROWS:"
-          sudo -u postgres psql -d metadrive_sql_20261022_stage -Atqc "SELECT domain FROM md_tenant_domains ORDER BY domain"
-          echo "OPTIONS_RESPONSE_HEADERS:"
-          curl -sS -D - -o /dev/null --max-time 10 -X OPTIONS http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-metadrive-request-source' | tr -d '\r'
-          echo "LOGIN_PROBE:"
-          code="$(curl -sS -D /tmp/md-stage-login.headers -o /tmp/md-stage-login.body -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
-          echo "HTTP_STATUS=$code"
-          echo "RESPONSE_HEADERS:"
-          sed -n '1,30p' /tmp/md-stage-login.headers | tr -d '\r'
-          echo "RESPONSE_BODY:"
-          head -c 500 /tmp/md-stage-login.body
-          echo
-          echo "HEALTH:"
-          curl -sS --max-time 5 http://127.0.0.1:10001/api/health
-          echo
-          echo "RELEVANT_RUNTIME_ENV_KEYS:"
-          sudo python3 - <<'PY'
-          for line in open("/etc/metadrive/stage-test.env"):
-              if line.startswith(("NODE_ENV=","PORT=","METADRIVE_PRIVATE_TEST_MODE=","METADRIVE_DB_NAME_OVERRIDE=")):
-                  print(line.strip())
-          PY
+          sudo systemctl stop metadrive-stage-test.service || true
+          sudo systemctl disable metadrive-stage-test.service || true
+          state="$(systemctl is-active metadrive-stage-test.service || true)"
+          echo "STAGE_API_SERVICE=$state"
+          if [[ "$state" == "active" ]]; then
+            echo "Stage API did not stop"
+            exit 1
+          fi
           REMOTE
