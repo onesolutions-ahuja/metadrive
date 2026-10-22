@@ -18,6 +18,7 @@ jobs:
         shell: bash
         env:
           ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
           METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -58,25 +59,31 @@ jobs:
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_cutover"
             chmod 600 "$HOME/.ssh/oracle_cutover"
-            if timeout 5 bash -c '</dev/tcp/132.145.18.46/22' 2>/dev/null; then
-              echo "ORACLE_SSH_PORT_22=OPEN"
-              if ssh-keyscan -T 5 -H 132.145.18.46 >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
-                if ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes ubuntu@132.145.18.46 \
+            host="${ORACLE_SSH_HOST:-132.145.18.46}"
+            if [[ -n "$ORACLE_SSH_HOST" ]]; then
+              echo "ORACLE_SSH_HOST_SECRET=PRESENT"
+            else
+              echo "ORACLE_SSH_HOST_SECRET=MISSING (testing historical IP only)"
+            fi
+            if timeout 5 bash -c "</dev/tcp/$host/22" 2>/dev/null; then
+              echo "ORACLE_SSH_PORT_22=OPEN host=$host"
+              if ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+                if ssh -i "$HOME/.ssh/oracle_cutover" -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes "ubuntu@$host" \
                   'printf "ORACLE_SSH=PASS\\n"; hostname; id -un; printf "POSTGRESQL="; systemctl is-active postgresql 2>/dev/null || true; printf "REHEARSAL_SERVICE="; systemctl is-active metadrive-private-test.service 2>/dev/null || true' \
                   > /tmp/oracle-ssh.out 2> /tmp/oracle-ssh.err; then
                   cat /tmp/oracle-ssh.out
                   echo "ORACLE_SSH_CHECK=PASS"
                 else
-                  echo "ORACLE_SSH_CHECK=FAIL"
+                  echo "ORACLE_SSH_CHECK=FAIL host=$host"
                   grep -E 'Connecting to|Connection established|Remote protocol version|Authentications that can continue|Offering public key|Server accepts key|Permission denied|Connection timed out|Connection refused|No route to host|Host key verification failed|kex_exchange_identification|Connection closed|Load key' /tmp/oracle-ssh.err | tail -15 || true
                   failed=1
                 fi
               else
-                echo "ORACLE_SSH_HOST_KEY_SCAN=FAIL (TCP port open, SSH host key not returned)"
+                echo "ORACLE_SSH_HOST_KEY_SCAN=FAIL host=$host (TCP port open, SSH host key not returned)"
                 failed=1
               fi
             else
-              echo "ORACLE_SSH_PORT_22=CLOSED_OR_UNREACHABLE at 132.145.18.46"
+              echo "ORACLE_SSH_PORT_22=CLOSED_OR_UNREACHABLE host=$host"
               failed=1
             fi
           else
