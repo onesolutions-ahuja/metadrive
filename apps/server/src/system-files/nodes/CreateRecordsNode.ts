@@ -1,6 +1,7 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
 import {enforceRecordOverlap} from './RecordOverlapGuard.js';
 import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
+import {enforceDocumentConversion} from './DocumentFinancialGuard.js';
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
  const config=node.config;
@@ -22,7 +23,8 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         }
         await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
-        const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+        await enforceDocumentConversion(context,config.documentConversion,fields);
+      const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
         created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
@@ -41,6 +43,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
       }
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
+      await enforceDocumentConversion(context,config.documentConversion,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
       // The optional scalar resultVariable retains its existing Id-only contract.
