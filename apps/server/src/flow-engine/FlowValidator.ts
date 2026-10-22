@@ -272,7 +272,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
      errors.push('Record-sourced Update Records needs a record or collection target');
     if(!fromRecord&&(!Array.isArray(properties.fieldValues)||!properties.fieldValues.length))
      errors.push('Update Records requires field assignments');
-    else if(!fromRecord)for(const entry of properties.fieldValues){
+    else if(!fromRecord&&Array.isArray(properties.fieldValues))for(const entry of properties.fieldValues){
      const field=entry&&typeof entry==='object'&&!Array.isArray(entry)
       ?String((entry as Record<string,unknown>).field??(entry as Record<string,unknown>).apiName??''):'';
      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))

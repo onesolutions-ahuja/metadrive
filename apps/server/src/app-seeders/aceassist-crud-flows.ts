@@ -39,8 +39,7 @@ function makeGraph(objectApi:string,operation:'Load'|'Create'|'Update'|'Delete',
  return {apiName,label:'Ace Assist - '+name,appApiName:'AceAssist',
   flowType:'Autolaunched Flow',status:'Active',version:1,
   ...(objectApi==='Appointment'&&(operation==='Create'||operation==='Update')
-    ?{startConfig:{businessCalendarGuard:{startInput:'StartDateTime',endInput:'EndDateTime',
-    collectionInput:input}}}:{}),
+    ?{startConfig:{businessCalendarGuard:{startInput:'StartDateTime',endInput:'EndDateTime'}}}:{}),
   elements:[start,{id:2,type:operation==='Load'?'Get Records':operation+' Records',label:name,config},end],
   connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'}],
   resources,tests:[]};
@@ -68,7 +67,8 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,
   ...(objectApi==='Appointment'?{startConfig:{
-   businessCalendarGuard:{startInput:'StartDateTime',endInput:'EndDateTime'}}}:{}),
+   businessCalendarGuard:{startInput:'StartDateTime',endInput:'EndDateTime',
+    collectionInput:input}}}:{}),
   elements:[start,{id:2,type:operation+' Records',label:operation+' '+objectApi,config},end],
   connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'}],
   resources,tests:[]};
