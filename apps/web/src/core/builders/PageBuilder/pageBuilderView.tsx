@@ -233,8 +233,8 @@ function PageBuilder({
   onBackToPages: () => void;
 }) {
   const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
-  const [liveAcetillEditing,setLiveAcetillEditing]=useState(page.apiName==='AcetillRegister');
-  useEffect(()=>setLiveAcetillEditing(page.apiName==='AcetillRegister'),[page.apiName]);
+  const [liveAcetillEditing,setLiveAcetillEditing]=useState(page.apiName==='AcetillRegisterEditable');
+  useEffect(()=>setLiveAcetillEditing(page.apiName==='AcetillRegisterEditable'),[page.apiName]);
   useEffect(() => {
     if (preparedAppId) setBuilderAppApiName(preparedAppId);
   }, [preparedAppId]);
@@ -1539,7 +1539,7 @@ function PageBuilder({
     region: 'main'
   }, -1, true);
   // Display the real Acetill React interface, not a reconstructed OneComponent page.
-  if(editorMode&&page.apiName==='AcetillRegister'&&liveAcetillEditing)
+  if(editorMode&&page.apiName==='AcetillRegisterEditable'&&liveAcetillEditing)
     return <React.Suspense fallback={<div role="status">Loading live Acetill editor…</div>}>
       <AcetillVisualEditor onBack={()=>setLiveAcetillEditing(false)} onBackToPages={onBackToPages}/>
     </React.Suspense>;
@@ -1612,7 +1612,7 @@ function PageBuilder({
               const opened=window.open(url,'_blank','noopener,noreferrer');
               if(!opened)onNotify('Allow popups to test the published page in the assigned application.');
             }}><ExternalLink size={14}/> Test active app</button>
-          {page.apiName==='AcetillRegister'&&<button type="button" className="btn btn-small"
+          {page.apiName==='AcetillRegisterEditable'&&<button type="button" className="btn btn-small"
             onClick={()=>setLiveAcetillEditing(true)}>Edit live terminal styling</button>}
           <button type="button" className="icon-button subtle" aria-label="Save page" title="Save" disabled={saving} onClick={()=>void savePage()}><Save size={17}/></button>
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
