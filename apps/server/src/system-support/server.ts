@@ -1128,6 +1128,8 @@ export function createSystemServer(db:SqlPersistence) {
     const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
     const page=assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null;
     const initialRecords=page?await pageInitialRecords(actor.tenant_id,actor.user_id,page):{};
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
     res.json({page,initialRecords});
   }));
   app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
@@ -1137,6 +1139,8 @@ export function createSystemServer(db:SqlPersistence) {
     const page=await pages.resolveAppPage(actor.tenant_id,req.params.appId,req.params.pageApiName,factor);
     if(!page)throw new Error('Page not found');
     const initialRecords=await pageInitialRecords(actor.tenant_id,actor.user_id,page.page);
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
     res.json({page:page.page,initialRecords});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
