@@ -91,3 +91,29 @@
 .assist-date-slot small{grid-column:1/-1;color:#97642a}
 @media(max-width:620px){.assist-modal{padding:16px}.assist-modal .custom-crud-form{grid-template-columns:1fr}
  .assist-date-slot{grid-template-columns:1fr}}
+
+/* Reusable metadata field controls and authenticated notification inbox. */
+.assist-modal .custom-crud-form textarea{width:100%;min-height:85px;resize:vertical;padding:10px;
+ box-sizing:border-box;border:1px solid #cbd8e6;border-radius:8px;font:inherit}
+.assist-modal .record-field-toggle{grid-column:1/-1;display:flex;flex-direction:row;align-items:center;
+ gap:10px;cursor:pointer}
+.assist-modal .record-field-toggle input{width:19px;height:19px;accent-color:var(--product-accent)}
+.assist-modal .custom-crud-form small{font-size:11px;color:#8a5c38}
+.assist-view-control{font-size:12px;color:#43536a;display:flex;align-items:center;gap:6px}
+.assist-view-control select{padding:7px;border:1px solid #dbe3ec;border-radius:8px;background:#fff}
+.assist-view-day{grid-template-columns:1fr}
+.assist-view-month{grid-template-columns:repeat(7,minmax(0,1fr))}
+.assist-view-month .custom-day{min-height:110px}
+.assist-notifications{position:relative;margin-left:auto}
+.assist-bell{background:transparent;border:1px solid #dbe3ec;border-radius:10px;padding:8px;
+ cursor:pointer;position:relative}
+.assist-bell b{position:absolute;top:-7px;right:-7px;background:#b9353a;color:#fff;
+ border-radius:50%;font-size:11px;padding:2px 5px}
+.assist-notice-panel,.assist-notice-toast{position:absolute;right:0;top:calc(100% + 10px);z-index:50;
+ width:min(350px,88vw);max-height:440px;overflow:auto;padding:16px;background:#fff;
+ border:1px solid #d7e2eb;border-radius:12px;box-shadow:0 12px 40px #0002}
+.assist-notice-panel h2{font-size:17px;margin:0 0 8px}.assist-note{padding:12px 0;border-bottom:1px solid #edf1f4}
+.assist-note p,.assist-notice-toast p{font-size:13px;color:#566779;margin:6px 0}
+.assist-note-unread{background:#eaf7f3}.assist-note button,.assist-notice-toast button{cursor:pointer;
+ border:0;background:transparent;color:var(--product-accent);font-weight:650}
+@media(max-width:650px){.assist-view-month .custom-day{min-width:105px}}

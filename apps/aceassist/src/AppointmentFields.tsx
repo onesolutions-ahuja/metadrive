@@ -39,7 +39,7 @@ export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime}
   if(!hours||!/^\d{2}:\d{2}$/.test(hours.open)||!/^\d{2}:\d{2}$/.test(hours.close))return [];
   const minutes=(t:string)=>Number(t.slice(0,2))*60+Number(t.slice(3));
   const out:string[]=[];
-  for(let v=minutes(hours.open);v<=minutes(hours.close);v+=30)
+  for(let v=minutes(hours.open);v<minutes(hours.close);v+=30)
    out.push(String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0'));
   return out.filter(x=>!minTime||date!==startDate||x>minTime);
  },[hours?.open,hours?.close,date,startDate,minTime]);
