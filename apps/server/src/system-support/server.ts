@@ -688,7 +688,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/tenant/business-calendar',route(async(req,res)=>{
     const actor=req.actor!;
     res.setHeader('Cache-Control','private, no-store');
-    res.json({calendar:await platformTenants.getSetting(actor.tenant_id,actor.user_id,'business-calendar')});
+    res.json({calendar:await platformTenants.getBusinessCalendar(actor.tenant_id,actor.user_id)});
   }));
   app.put('/api/tenant/business-calendar',route(async(req,res)=>{
     const actor=req.actor!;
