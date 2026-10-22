@@ -1,4 +1,5 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
+import {enforceRecordOverlap} from './RecordOverlapGuard.js';
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
  const config=node.config;
@@ -18,6 +19,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
             throw new Error('Invalid Create Records collection field: '+field);
           fields[field]=value;
         }
+        await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
         const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
         created.push({...fields,Id:id});
       }
@@ -35,6 +37,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         if(!scalar(value))throw new Error('Create Records values must be scalar');
         fields[field]=value;
       }
+      await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
       // The optional scalar resultVariable retains its existing Id-only contract.

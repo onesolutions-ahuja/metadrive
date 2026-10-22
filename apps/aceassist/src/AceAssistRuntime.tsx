@@ -3,11 +3,14 @@ import {useEffect,useMemo,useState} from 'react';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
+import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
+import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
+import {asBusinessInstant,asBusinessLocal} from './businessDateTime';
 import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
 
 type Row=Record<string,unknown>;
-type Field={apiName:string;label?:string;type?:string;dataType?:string;required?:boolean;relatedObject?:string};
+type Field=RecordField;
 type ObjectInfo={apiName:string;label?:string;fields?:Field[]};
 type Operation='Create'|'Update'|'Delete';
 type FlowResponse={outputs?:Record<string,unknown>;variables?:Record<string,unknown>;
@@ -31,26 +34,30 @@ const inputFields:Record<string,string[]>={
 };
 const show=(v:unknown)=>v==null?'—':typeof v==='object'?JSON.stringify(v):String(v);
 const title=(r:Row)=>String(r.Name??r.Subject??r.Title??r.Id??'Record');
-function fieldType(field:Field){
- const type=String(field.dataType??field.type??'').toLowerCase();
- if(type==='datetime')return 'datetime-local';
- if(type==='date')return 'date';
- if(type==='number'||type==='currency'||type==='percent')return 'number';
- if(type==='email')return 'email';
- return 'text';
-}
 const scalar=(value:string,field:Field):unknown=>{
- const type=String(field.dataType??field.type??'').toLowerCase();
- if(type==='number'||type==='currency'||type==='percent')return value===''?null:Number(value);
- if(type==='boolean')return value==='true';
+ const kind=fieldKind(field);
+ if(['number','currency','percent'].includes(kind))return value===''?null:Number(value);
+ if(kind==='boolean')return value==='true';
  return value===''?null:value;
 };
-const formatInput=(v:unknown,field:Field)=>{
+const formatInput=(v:unknown,field:Field,timeZone?:string)=>{
  if(v==null)return '';
- const type=fieldType(field);
- if(type==='datetime-local')return String(v).slice(0,16);
+ if(fieldKind(field)==='datetime')return timeZone?
+  asBusinessLocal(String(v),timeZone):String(v).slice(0,16);
  return String(v);
 };
+const readOnlyField=(f:Field)=>fieldKind(f)==='readonly'||f.readOnly===true;
+const targetObject=(f:Field)=>f.relationship?.targetObject??f.relatedObject;
+const idOf=(v:Row)=>String(v.Id??v.id??'');
+/** Presentation-only duration preview. Authoritative booking validation is server-side. */
+function withServiceEnd(form:Record<string,string>,product?:Row):Record<string,string>{
+ const duration=Number(product?.DurationMinutes);
+ if(!form.StartDateTime||!Number.isSafeInteger(duration)||duration<1||duration>1440)return form;
+ const start=new Date(form.StartDateTime+':00Z');
+ if(!Number.isFinite(start.getTime()))return form;
+ return {...form,EndDateTime:new Date(start.getTime()+duration*60000).toISOString().slice(0,16)};
+}
+
 export default function AceAssistRuntime({entry,onLogout}:{
  entry:typeof ACEASSIST_STANDALONE_ENTRY;onLogout:()=>void
 }) {
@@ -58,6 +65,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [actions,setActions]=useState<Set<string>>(new Set());
  const [selected,setSelected]=useState(0);
  const [rows,setRows]=useState<Row[]>([]);
+ const [relatedRows,setRelatedRows]=useState<Row[]>([]);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
  const [returnToAppointment,setReturnToAppointment]=useState(false);
@@ -71,13 +79,24 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
  const [reload,setReload]=useState(0);
+ const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>('week');
  const [hours,setHours]=useState<BusinessCalendar|null>(null);
  const [hoursError,setHoursError]=useState('');
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
- const fields=useMemo(()=> (metadata?.fields??[]).filter(f=>
-  inputFields[current.object].includes(f.apiName)&&f.apiName!=='Id'
- ),[metadata,current.object]);
+ const dynamicFlow=(operation:'Create'|'Update',object:string)=>
+  'AceAssist'+operation+'V2'+object;
+ const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
+ const visibleFields=(object:string)=>{
+  const definition=objects.find(x=>x.apiName===object);
+  const dynamic=canDynamic('Create',object)&&canDynamic('Update',object);
+  return (definition?.fields??[]).filter(f=>f.apiName!=='Id'&&!readOnlyField(f)
+   &&(dynamic||inputFields[object]?.includes(f.apiName))
+   && !(object==='Appointment'&&
+    ((f.apiName==='Service'&&definition?.fields?.some(x=>x.apiName==='ServiceProduct'))||
+     (f.apiName==='AssignedTo'&&definition?.fields?.some(x=>x.apiName==='AssignedUser')))));
+ };
+ const fields=useMemo(()=>visibleFields(current.object),[objects,actions,current.object]);
  const flowName=(operation:'Load'|Operation)=>'AceAssist'+operation+current.object;
  const can=(operation:'Load'|Operation)=>actions.has(flowName(operation));
  const loaded=useMemo(()=>new Set(objects.map(x=>x.apiName.toLowerCase())),[objects]);
@@ -119,7 +138,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  useEffect(()=>{
   let alive=true;
   const relations=[...new Set([...fields
-    .map(field=>field.relatedObject??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
+    .map(field=>targetObject(field)??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
     ...(current.object==='Appointment'?['User','Product','Customer']:[])].filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
@@ -131,16 +150,47 @@ export default function AceAssistRuntime({entry,onLogout}:{
    .catch(ex=>{if(alive)setError(ex instanceof Error?ex.message:String(ex));});
   return()=>{alive=false;};
  },[fields,current.object,loaded,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
+  setRelatedRows([]);
+  if(!chosen||!['Quotation','Invoice'].includes(current.object))return;
+  const child=current.object+'Line';
+  if(!actions.has('AceAssistLoad'+child))return;
+  void fetchRows('Load',child).then(data=>{
+   if(alive)setRelatedRows(data.filter(x=>String(x[current.object]??'')===String(chosen.Id??'')));
+  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  return()=>{alive=false;};
+ },[current.object,chosen?.Id,actions,reload]);
+ const runRecordAction=async(apiName:string,record:Row)=>{
+  if(!actions.has(apiName)||busy)return;
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(apiName)+'/execute',
+    {method:'POST',body:JSON.stringify({recordId:record.Id})});
+   if(response.interviewId)throw Error('The Flow requires additional input');
+   setNotice('Workflow completed: '+apiName);setReload(x=>x+1);
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
-  for(const field of fields)values[field.apiName]=formatInput(row?.[field.apiName],field);
-  if(current.object==='Appointment'&&operation==='Create')values.AssignedTo=selfId;
+  for(const field of fields){
+   const existing=row?.[field.apiName]??(operation==='Create'?field.defaultValue:undefined);
+   values[field.apiName]=formatInput(existing,field,hours?.timezone);
+  }
+  if(current.object==='Appointment'&&operation==='Create'){
+   if(fields.some(f=>f.apiName==='AssignedUser'))values.AssignedUser=selfId;
+   else values.AssignedTo=selfId;
+  }
+  if(current.object==='Customer'&&operation==='Create'&&!values.Active)values.Active='true';
   setForm(values);setChosen(row??null);setEditingObject(current.object);
   setEditing(operation);setError('');setNotice('');
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
-  const mutationFlow='AceAssist'+editing+editingObject;
+  const dynamic=editing!=='Delete'&&canDynamic(editing,editingObject);
+  const mutationFlow=dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
+   'AceAssist'+editing+editingObject;
  if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
   if(editing==='Delete'&&!chosen?.Id)return;
   if(editing!=='Delete'&&editingObject==='Appointment'){
@@ -150,18 +200,28 @@ export default function AceAssistRuntime({entry,onLogout}:{
   const payload:Record<string,unknown>={};
   if(editing!=='Create')payload.recordId=chosen?.Id;
   if(editing!=='Delete'){
-   const sourceFields=objects.find(x=>x.apiName===editingObject)?.fields??[];
-   for(const field of sourceFields.filter(f=>inputFields[editingObject]?.includes(f.apiName)))
-    payload[field.apiName]=scalar(form[field.apiName]??'',field);
+   for(const field of visibleFields(editingObject)){
+    if(fieldKind(field)==='readonly')continue;
+    const raw=form[field.apiName]??'';
+    payload[field.apiName]=fieldKind(field)==='datetime'&&raw
+      ?asBusinessInstant(raw,hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone)
+      :scalar(raw,field);
+   }
   }
+  const input=dynamic?{
+   recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
+  }:payload;
   setBusy(true);setError('');
   try{
    const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(mutationFlow)+'/execute',
-    {method:'POST',body:JSON.stringify(payload)});
+    {method:'POST',body:JSON.stringify(input)});
    if(response.interviewId)throw Error('Workflow requires further input; no record change confirmed.');
    setNotice(editing+' '+editingObject.toLowerCase()+' completed.');
    if(returnToAppointment&&editingObject==='Customer'){
-    const addedId=String(response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
+    const returned=response.outputs?.createdRecords??response.variables?.createdRecords;
+    const first=Array.isArray(returned)?returned[0] as Row|undefined:undefined;
+    const addedId=String(first?.Id??response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
+    if(!addedId)throw Error('Customer was saved but the Flow did not return the new record ID');
     setSelected(0);setEditing('Create');setEditingObject('Appointment');
     setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
    }else setEditing(null);
@@ -171,8 +231,14 @@ export default function AceAssistRuntime({entry,onLogout}:{
  };
  const monday=new Date(weekOf+'T12:00:00');
  monday.setDate(monday.getDate()-((monday.getDay()+6)%7));
- const week=Array.from({length:7},(_,i)=>{
-  const d=new Date(monday);d.setDate(d.getDate()+i);return dateKey(d);
+ const startOfCalendar=new Date(calendarView==='day'?weekOf+'T12:00:00':monday);
+ if(calendarView==='month'){
+  startOfCalendar.setDate(1);
+  startOfCalendar.setDate(startOfCalendar.getDate()-(startOfCalendar.getDay()+6)%7);
+ }
+ const daysToShow=calendarView==='day'?1:calendarView==='month'?42:7;
+ const week=Array.from({length:daysToShow},(_,i)=>{
+  const d=new Date(startOfCalendar);d.setDate(d.getDate()+i);return dateKey(d);
  });
  const logout=async()=>{
   try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* clear local session */}
@@ -184,6 +250,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    <div className="standalone-product-brand"><span className="standalone-product-mark">A</span>
     <span><strong>{entry.label}</strong><small>{entry.tagline}</small></span></div>
    <span className="custom-connected">OneEngine connected</span>
+   <NotificationBell/>
    <button type="button" className="standalone-product-logout" onClick={()=>void logout()}>Sign out</button>
   </header>
   <main className="custom-assist">
@@ -199,6 +266,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
    <div className="custom-assist-layout"><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
      <div style={{display:'flex',gap:8}}>
+      {current.object==='Appointment'&&<label className="assist-view-control">
+       View <select value={calendarView} onChange={e=>setCalendarView(e.target.value as 'day'|'week'|'month')}>
+        <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
+       </select></label>}
       <button type="button" onClick={()=>setReload(n=>n+1)} disabled={busy}>Refresh</button>
       <button type="button" onClick={()=>startEdit('Create')} disabled={!can('Create')||busy}>New {current.object}</button>
      </div></div>
@@ -210,7 +281,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     {loaded.has(current.object.toLowerCase())&&!can('Load')&&<p className="custom-empty">
      No authorised Get Records Flow. Ask an administrator to install or activate AceAssistLoad{current.object}.
     </p>}
-    {current.object==='Appointment'&&can('Load')?<div className="custom-week">
+    {current.object==='Appointment'&&can('Load')?<div className={'custom-week assist-view-'+calendarView}>
      {week.map(date=>{const window=hours?scheduleForDay(hours,date):null;
       return <div className="custom-day" key={date} aria-label={date}>
        <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong>
@@ -233,8 +304,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
     {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
+      {['Quotation','Invoice'].includes(current.object)&&<section className="assist-related-list">
+       <h3>{current.object} lines</h3>
+       {!actions.has('AceAssistLoad'+current.object+'Line')?<p>No authorised line lookup Flow.</p>:
+        relatedRows.length?relatedRows.map(line=><div key={idOf(line)}>
+         <strong>{title(line)}</strong><span>{String(line.Quantity??'')} × {String(line.UnitPrice??'')}</span>
+        </div>):<p>No lines attached to this record.</p>}
+       {actions.has('AceAssistCreateV2'+current.object+'Line')&&
+        <button type="button" onClick={()=>{
+         const object=current.object+'Line';
+         setEditing('Create');setEditingObject(object);setForm({[current.object]:String(chosen.Id??'')});
+         setError('');
+        }}>Add line</button>}
+      </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
+       {current.object==='Quotation'&&actions.has('AceAssistConvertQuoteToInvoice')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistConvertQuoteToInvoice',chosen)}>Convert to invoice</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistSendInvoice')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendInvoice',chosen)}>Send invoice</button>}
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
       </div>
      </>:<p className="custom-empty">Select a record to edit or view details.</p>}
@@ -251,55 +341,46 @@ export default function AceAssistRuntime({entry,onLogout}:{
       onClick={()=>{setEditing(null);setReturnToAppointment(false);}}>✕</button></header>
     <form className="custom-crud-form" onSubmit={e=>void submit(e)}>
      {editing==='Delete'?<p>Delete this record? This action cannot be undone.</p>:
-      (objects.find(x=>x.apiName===editingObject)?.fields??[])
-       .filter(field=>inputFields[editingObject]?.includes(field.apiName))
-       .sort((a,b)=>editingObject==='Appointment'
-        ?['Name','Customer','AssignedTo','Service','StartDateTime','EndDateTime',
-          'Status','Location','Description','Notes'].indexOf(a.apiName)
-          -['Name','Customer','AssignedTo','Service','StartDateTime','EndDateTime',
-            'Status','Location','Description','Notes'].indexOf(b.apiName):0)
+      visibleFields(editingObject)
        .map(field=><React.Fragment key={field.apiName}>
-        {editingObject==='Appointment'&&field.apiName==='AssignedTo'?
-         <SearchRecord label="Assigned to" value={form.AssignedTo??''}
-          options={selfId&&!lookupRows.User?.some(x=>String(x.Id??x.id)===selfId)
+        {editingObject==='Appointment'&&['AssignedTo','AssignedUser'].includes(field.apiName)?
+         <SearchRecord label="Assigned to" value={form[field.apiName]??''}
+          options={selfId&&!lookupRows.User?.some(x=>idOf(x)===selfId)
            ?[{Id:selfId,Name:'Me (current user)'},...(lookupRows.User??[])]:lookupRows.User??[]}
           emptyMessage="No authorised tenant users found"
-          onChange={id=>setForm(x=>({...x,AssignedTo:id}))}/>:
+          onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
         editingObject==='Appointment'&&field.apiName==='Customer'?
          <SearchRecord label="Customer" value={form.Customer??''}
           options={lookupRows.Customer??[]}
           onChange={id=>setForm(x=>({...x,Customer:id}))}
           addNew={()=>{setAppointmentDraft(form);setReturnToAppointment(true);setEditingObject('Customer');
-            setForm({});setChosen(null);}}/>:
-        editingObject==='Appointment'&&field.apiName==='Service'?
-         <SearchRecord label="Service" value={form.Service??''}
-          options={lookupRows.Product??[]} emptyMessage="No available products/services"
-          onChange={id=>{const product=(lookupRows.Product??[]).find(row=>String(row.Id??row.id)===id);
-           setForm(x=>({...x,Service:String(product?.Name??id)}));}}/>:
+            setForm({Active:'true'});setChosen(null);}}/>:
+        editingObject==='Appointment'&&['Service','ServiceProduct'].includes(field.apiName)?
+         <SearchRecord label="Service" value={form[field.apiName]??''}
+          options={(lookupRows.Product??[]).filter(r=>r.Active!==false&&r.Active!=='false'
+           &&r.IsService!==false&&r.IsService!=='false')} emptyMessage="No available services"
+          onChange={id=>{const product=(lookupRows.Product??[]).find(row=>idOf(row)===id);
+           const value=field.apiName==='Service'?String(product?.Name??id):id;
+           setForm(x=>withServiceEnd({...x,[field.apiName]:value},product));}}/>:
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
          <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
           startDate={form.StartDateTime?.slice(0,10)}
           minTime={field.apiName==='EndDateTime'?form.StartDateTime?.slice(11,16):undefined}
-          onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>:
-        <label>{field.label??field.apiName}
-         {(field.relatedObject||['Quotation','Invoice'].includes(field.apiName))
-          && lookupRows[field.relatedObject??field.apiName]?.length?
-          <select value={form[field.apiName]??''}
-           onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
-           <option value="">Select {field.label??field.apiName}</option>
-           {lookupRows[field.relatedObject??field.apiName].map(row=>
-            <option key={String(row.Id)} value={String(row.Id)}>{title(row)}</option>)}
-          </select>:
-          String(field.dataType??field.type??'').toLowerCase()==='boolean'?
-          <select value={form[field.apiName]??''} onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
-           <option value="">Unset</option><option value="true">Yes</option><option value="false">No</option>
-          </select>:
-          <input type={fieldType(field)} value={form[field.apiName]??''}
-           step={fieldType(field)==='number'?'any':undefined}
-           required={field.apiName==='Name'||field.required}
-           onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}/>}
-        </label>}
+          onChange={v=>setForm(x=>{
+           const next={...x,[field.apiName]:v};
+           if(field.apiName!=='StartDateTime')return next;
+           const selectedProduct=(lookupRows.Product??[]).find(r=>idOf(r)===next.ServiceProduct
+            ||String(r.Name??'')===next.Service);
+           return withServiceEnd(next,selectedProduct);
+          })}/>:
+        fieldKind(field)==='reference'?
+         <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
+          options={lookupRows[targetObject(field)??'']??[]}
+          emptyMessage="No accessible records available for selection"
+          onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
+         <RecordFieldInput field={field} value={form[field.apiName]??''}
+          onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
      {error&&<p role="alert">{error}</p>}
      <footer className="assist-modal-footer">
