@@ -1225,7 +1225,16 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Cache-Control','private, no-store');
     res.setHeader('Vary','Authorization, Cookie');
     const all=await namedCredentials.list(actor.tenant_id,actor.user_id);
-    res.json({credentials:all.map(item=>credentialWithWebhookUrl(req,item))});
+    const readiness=await namedCredentials.readiness(actor.tenant_id,actor.user_id);
+    if(all.length===0){
+      const {rows:context}=await db.query<{db_name:string;tenant_exists:boolean}>(
+        'SELECT current_database() AS db_name, EXISTS(SELECT 1 FROM md_tenants WHERE id=$1) AS tenant_exists',
+        [actor.tenant_id]);
+      console.warn('[named-credentials] empty tenant-scoped list', {
+        database:context[0]?.db_name,tenantExists:context[0]?.tenant_exists,tenantId:actor.tenant_id
+      });
+    }
+    res.json({credentials:all.map(item=>credentialWithWebhookUrl(req,item)),...readiness});
   }));
   app.post('/api/named-credentials',route(async(req,res)=>{
     const actor=req.actor!;
