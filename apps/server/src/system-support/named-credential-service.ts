@@ -903,7 +903,7 @@ export class NamedCredentialService {
    if(item.auth_type==='Bearer')header.Authorization='Bearer '+secret;
    else if(item.auth_type==='Basic')header.Authorization='Basic '+Buffer.from(secret).toString('base64');
    else if(item.auth_type==='API Key'){
-    if(!/^X-[a-z0-9-]+$/i.test(item.header_name))throw new Error('Credential header must be an X- header');
+    if(!/^(?:X-[a-z0-9-]+|api-key)$/i.test(item.header_name))throw new Error('Credential header must be an X- header or Brevo api-key');
     header[item.header_name]=secret;
    }else if(item.auth_type==='OAuth Client Credentials')oauthClientSecret=secret;
    else throw new Error('OAuth Authorization Code requires an interactive authorization grant');
