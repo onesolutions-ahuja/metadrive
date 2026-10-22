@@ -1046,8 +1046,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const factor=String(req.query.formFactor??'Desktop');
     if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
-    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    const session=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    // Permission verification and profile lookup are independent SQL reads.
+    // Run them concurrently; do not serialise the home-page request on both.
+    const [,session]=await Promise.all([
+      rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read'),
+      sessionMetadata(db,actor.tenant_id,actor.user_id)
+    ]);
     const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
     res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
   }));
