@@ -1,6 +1,6 @@
 /** Shared accessibility behavior for registered One components and workspace dialogs. */
-export function useModalAccessibility(active, dialog, onEscape) {
-  React.useEffect(() => {
+export function useModalAccessibility(ReactApi, active, dialog, onEscape) {
+  ReactApi.useEffect(() => {
     if (!active || typeof document === "undefined") return undefined;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
@@ -33,8 +33,8 @@ export function useModalAccessibility(active, dialog, onEscape) {
   }, [active, dialog, onEscape]);
 }
 
-export function useDismissOnOutside(container, expanded, dismiss) {
-  React.useEffect(() => {
+export function useDismissOnOutside(ReactApi, container, expanded, dismiss) {
+  ReactApi.useEffect(() => {
     if (!expanded || typeof document === "undefined") return undefined;
     const onOutside = event => { if (!container.current?.contains(event.target)) dismiss(); };
     const onEscape = event => { if (event.key === "Escape") dismiss(); };
