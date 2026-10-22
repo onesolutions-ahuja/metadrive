@@ -5,6 +5,7 @@
   "tests": [
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
+    "apps/server/test/system/aceassist-booking-slot-preview.test.ts",
     "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
     "apps/server/test/system/acetill-editable-page.test.ts",
