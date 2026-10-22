@@ -4,6 +4,7 @@
   "command": "node scripts/run-test-suite.mjs unit",
   "tests": [
     "apps/server/test/system/aceassist-app.test.ts",
+    "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
     "apps/server/test/system/acetill-payment-flow-metadata.test.ts",
     "apps/server/test/system/builder-contracts.test.ts",
