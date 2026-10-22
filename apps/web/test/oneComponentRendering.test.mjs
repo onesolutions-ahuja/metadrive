@@ -180,11 +180,11 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
 
 test('reported One UI accessibility contracts remain implemented', async () => {
   const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
-  const [overlay, menu, tabs, button, input, search, form, grid, shared] = await Promise.all([
+  const [overlay, menu, tabs, button, input, search, form, grid, shared, board] = await Promise.all([
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
-    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts')
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(shared, /event\.key === "Escape"/);
@@ -204,5 +204,5 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(search, /event\.key==="ArrowDown"/);
   assert.match(form, /aria-invalid=\{error\?"true":undefined\}/);
   assert.match(form, /aria-describedby=\{error\?errorId:undefined\}/);
-  assert.match(grid, /className="one-empty" role="status"/);
+  assert.match(grid, /className="one-empty" role="status"/);\n  assert.match(board, /role="region"/);\n  assert.match(board, /<h3 className="one-heading">/);
 });
