@@ -31,11 +31,12 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   return {rows:[],rowCount:1};
  }} as never;
  const first=await seedAceChatterFlowsForTenant(client,'tenant-a');
- assert.equal(first,6);
+ assert.equal(first,7);
  assert.equal(graphRows>0,true);
  assert.equal(flows.has('AceChatterLoadConversations'),true);
  assert.equal(flows.has('AceChatterLoadMessages'),true);
  assert.equal(flows.has('AceChatterLoadCommunications'),true);
+ assert.equal(flows.has('AceChatterFindConversationByPhone'),true);
  assert.equal(flows.has('AceChatterSendMessage'),true);
  assert.equal(flows.has('AceChatterReceiveWebhook'),true);
  assert.equal(flows.has('AceChatterCreateConversation'),true);
@@ -52,6 +53,16 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   {field:'Direction',operator:'Equals',value:'Inbound'},
   {field:'Sender',operator:'Contains',value:'@searchTerm'}
  ]);
+ const resolverGraph=decodeMetadataValues(
+  graphValues.get('flow-AceChatterFindConversationByPhone')??[]).builder as {
+   elements:Array<{type:string;config:Record<string,unknown>}>;
+  };
+ const resolveNode=resolverGraph.elements.find(node=>node.type==='Get Records');
+ assert.equal(resolveNode?.config.object,'ChatConversation');
+ assert.equal(resolveNode?.config.recordLimit,'200');
+ assert.deepEqual(resolveNode?.config.conditions,[
+  {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
+ ]);
  const before=graphRows;
  const second=await seedAceChatterFlowsForTenant(client,'tenant-a');
  assert.equal(second,0);
@@ -61,7 +72,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  const created=seen.filter(call=>call.sql.includes('INSERT INTO md_flow_definitions'));
  assert.equal(created.find(call=>call.params[1]==='AceChatterSendMessage')?.params[3],false,
   'WhatsApp delivery must remain disabled until provider credentials are configured');
- assert.equal(created.filter(call=>call.params[3]===true).length,5);
+ assert.equal(created.filter(call=>call.params[3]===true).length,6);
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
   'AceChatter users need explicit OneEngine read permission for Communication records');
