@@ -1,4 +1,5 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
+import {grantAceAssistAppointmentAccess} from './core-appointment-objects.js';
 
 export const ACEASSIST_APP={
   apiName:'AceAssist',
@@ -110,5 +111,6 @@ export async function seedAceAssistInstalledHome(db:SqlPersistence,tenantId:stri
       CROSS JOIN (VALUES ('App:AceAssist'),('ObjectDefinition'),('PageDefinition'),('ComponentDefinition'))
         AS permission(resource)
       WHERE s.tenant_id=$1 AND s.api_name='AceAssistUser' ON CONFLICT DO NOTHING`,[tenantId]);
+    await grantAceAssistAppointmentAccess(tx,tenantId);
   });
 }
