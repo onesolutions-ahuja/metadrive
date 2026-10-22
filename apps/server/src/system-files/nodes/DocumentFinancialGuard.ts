@@ -141,3 +141,36 @@ export async function enforceDocumentIssue(context:FlowNodeContext,raw:unknown,
  if(duplicate)throw Error('Generated document number already exists; review the Object Manager prefix');
  fields[config.numberField]=allocated;
 }
+
+/** Optional metadata source uniqueness on a destination Create Records node.
+ * Accepts only a source relationship and an allowed source status, keeps all
+ * source/target lookups behind shared OneEngine Record and Query engines.
+ */
+export async function enforceDocumentSourceLink(context:FlowNodeContext,raw:unknown,
+ fields:Record<string,unknown>):Promise<void>{
+ if(raw===null||raw===undefined)return;
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))
+  throw Error('Invalid document source link');
+ const g=raw as Record<string,unknown>;
+ const sourceObject=field(g.sourceObject),sourceField=field(g.sourceField);
+ const statusField=field(g.statusField),customerField=field(g.customerField);
+ const targetCustomerField=field(g.targetCustomerField);
+ const allowed=g.allowedStatuses;
+ if(!Array.isArray(allowed)||!allowed.length||allowed.length>10||
+   allowed.some(x=>typeof x!=='string'||x.length>60))
+  throw Error('Invalid document source statuses');
+ const sourceId=fields[sourceField];
+ if(typeof sourceId!=='string'||!/^[0-9a-f-]{36}$/i.test(sourceId))
+  throw Error('Invoice source is missing');
+ await uniqueLock(context,sourceObject,sourceId);
+ const source=await context.records.get(context.tenantId,context.userId,
+  sourceObject,sourceId,context.client);
+ if(!allowed.includes(source[statusField]))
+  throw Error('Source has not reached an invoiceable status');
+ const target=String(context.node.config.object??'');
+ const prior=await readLines(context,target,sourceField,sourceId);
+ if(prior.length)throw Error('An invoice already exists for this source');
+ const customer=source[customerField];
+ if(typeof customer!=='string'||!customer)throw Error('Invoice source has no customer');
+ fields[targetCustomerField]=customer;
+}
