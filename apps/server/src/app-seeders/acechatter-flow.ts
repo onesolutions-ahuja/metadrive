@@ -201,7 +201,8 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {name:'conversationId',type:'Variable',dataType:'Text',availableForInput:true},
    {name:'message',type:'Variable',dataType:'Text',availableForInput:true},
    {name:'recipientPhone',type:'Variable',dataType:'Text',availableForInput:true},
-   {name:'phoneNumberId',type:'Variable',dataType:'Text',availableForInput:true}
+   {name:'phoneNumberId',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'providerMessageId',type:'Variable',dataType:'Text'}
   ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
@@ -212,12 +213,18 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
      object:'ChatChannelSettings',recordLimit:'1',outputVariable:'channel',
      conditions:[{field:'Active',operator:'Equals',value:true}]}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
-     method:'POST',path:'{!channel.PhoneNumberId}/messages',
+     method:'POST',path:'v26.0/{!channel.PhoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
-     onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
+     onError:'FAIL',responseMapping:JSON.stringify({providerMessageId:'messages[0].id'})}},
+   {id:6,type:'Create Records',label:'Record accepted WhatsApp message',config:{
+     object:'ChatMessage',fieldValues:[
+      {field:'Name',value:'WhatsApp outbound'},
+      {field:'ConversationId',value:'@conversation.Id'},
+      {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
+      {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,4,5,2,3)
+  ],connectors:links(1,4,5,2,6,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;
