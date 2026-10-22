@@ -61,10 +61,10 @@ function refreshAccessToken() {
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
 export function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method ?? 'GET').toUpperCase();
-  if (method !== 'GET' || init?.signal || init?.body !== undefined || init?.headers !== undefined) {
-    return performApiRequest<T>(path, init);
-  }
+  // Only default GETs are coalesced. Any explicit RequestInit may carry caller
+  // semantics (cache mode, credentials, abort signal, headers, etc.) and must
+  // remain an independent request.
+  if (init !== undefined) return performApiRequest<T>(path, init);
   const key = JSON.stringify([accessToken ?? null, path]);
   const existing = inFlightGetRequests.get(key);
   if (existing) return existing as Promise<T>;
