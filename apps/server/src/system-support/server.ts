@@ -385,7 +385,7 @@ export function createSystemServer(db:SqlPersistence) {
         const api=raw.startsWith('metadata:')?apiById.get(raw.slice('metadata:'.length)):raw;
         if(api&&/^[A-Za-z][A-Za-z0-9_]*$/.test(api))objectApis.add(api);
       }
-      const entries=await Promise.all([...objectApis].slice(0,12).map(async api=>{
+      const entries=await Promise.all([...objectApis].slice(0,3).map(async api=>{
         try{
           const result=await records.list(tenantId,userId,api,50,0);
           return [api,result.records] as const;
