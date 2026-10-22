@@ -59,12 +59,19 @@ jobs:
                       v = v.strip().strip('"').strip("'")
                       u = urlsplit(v)
                       print("DATABASE_HOST=" + str(u.hostname))
+                      print("DATABASE_USER=" + str(u.username))
                       print("DATABASE_NAME=" + u.path.lstrip("/"))
                   elif k == "PGHOST":
                       print("DATABASE_HOST=" + v.strip().strip('"').strip("'"))
                   else:
                       print("DATABASE_NAME=" + v.strip().strip('"').strip("'"))
           PY
+          echo "NODE_RUNTIME=$(node --version 2>/dev/null || echo missing) NPM_RUNTIME=$(npm --version 2>/dev/null || echo missing)"
+          echo "NGINX_SITE_LINKS:"
+          sudo find /etc/nginx/sites-enabled -maxdepth 1 -type l -printf "%f -> %l\\n" 2>/dev/null || true
+          echo "CERTBOT=$(certbot --version 2>/dev/null || echo missing)"
+          echo "LOCAL_APP_ROLES:"
+          sudo -u postgres psql -d postgres -Atc "SELECT rolname || ':login=' || rolcanlogin || ':superuser=' || rolsuper FROM pg_roles WHERE rolname NOT LIKE 'pg_%' ORDER BY rolname" | head -40
           echo "LOCAL_DATABASES_AND_TABLES:"
           sudo -u postgres psql -d postgres -Atc "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname" | while IFS= read -r db; do
             tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'" 2>/dev/null || echo unavailable)"
