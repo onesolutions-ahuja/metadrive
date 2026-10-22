@@ -259,6 +259,9 @@ export class AppRuntime {
           lease_until=NULL,updated_at=now()
         WHERE tenant_id=$1 AND app_api_name IN ($2,$3) AND status IN ('queued','leased')
       `,[tenantId,appApi,target.api_name]);
+      // Deactivate only the chosen connector's managed integration, retaining ciphertext.
+      const {uninstallConnectorApp}=await import('../app-seeders/connector-apps.js');
+      await uninstallConnectorApp(client,tenantId,target.api_name);
       await client.query('DELETE FROM md_app_home_pages WHERE tenant_id=$1 AND app_id=$2',
         [tenantId,target.id]);
       // Version receipt cascades; business records and shared component metadata survive.
