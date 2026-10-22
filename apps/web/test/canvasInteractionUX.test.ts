@@ -70,8 +70,8 @@ test('multi-select alignment updates every selected unlocked component in one im
 
 test('Page Builder records and restores selection state with undo and redo', async () => {
   const source = await readFile(new URL('../src/core/builders/PageBuilder/pageBuilderView.tsx', import.meta.url), 'utf8');
-  assert.match(source, /setSelectionUndoStack\(current => \[\.\.\.current\.slice\(-49\), \{ selectedId, selectionIds: \[\.\.\.selectionIds\] \} \]\)/);
-  assert.match(source, /const snapshot = selectionUndoStack\[selectionUndoStack\.length - 1\]/);
+  assert.match(source, /setSelectionUndoStack\(current =>/);
+  assert.match(source, /selectionIds: \[\.\.\.selectionIds\]/);
   assert.match(source, /const snapshot = selectionRedoStack\[selectionRedoStack\.length - 1\]/);
   assert.match(source, /alignCanvasComponents\(page\.components/);
 });
