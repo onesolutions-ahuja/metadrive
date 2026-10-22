@@ -70,14 +70,42 @@ jobs:
           sudo -u postgres dropdb --if-exists "$db"
           sudo -u postgres createdb --owner=metadrive "$db"
           sudo -u postgres pg_restore --exit-on-error --jobs=2 --no-owner --no-acl --dbname="$db" "$dump"
-          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'REASSIGN OWNED BY postgres TO metadrive'
-          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON SCHEMA public TO metadrive'
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $
+          DECLARE obj record;
+          BEGIN
+            FOR obj IN
+              SELECT c.relkind, c.relname
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid=c.relnamespace
+              WHERE n.nspname='public'
+                AND c.relkind IN ('r','p','v','m','S')
+                AND NOT EXISTS (
+                  SELECT 1 FROM pg_depend d
+                  WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.deptype='e'
+                )
+              ORDER BY c.relkind, c.relname
+            LOOP
+              IF obj.relkind='S' THEN
+                EXECUTE format('ALTER SEQUENCE public.%I OWNER TO metadrive', obj.relname);
+              ELSIF obj.relkind='v' THEN
+                EXECUTE format('ALTER VIEW public.%I OWNER TO metadrive', obj.relname);
+              ELSIF obj.relkind='m' THEN
+                EXECUTE format('ALTER MATERIALIZED VIEW public.%I OWNER TO metadrive', obj.relname);
+              ELSE
+                EXECUTE format('ALTER TABLE public.%I OWNER TO metadrive', obj.relname);
+              END IF;
+            END LOOP;
+          END $;
+          GRANT USAGE, CREATE ON SCHEMA public TO metadrive;
+          SQL
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO metadrive'
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO metadrive'
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO metadrive'
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON TABLES TO metadrive'
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ALTER DEFAULT PRIVILEGES FOR ROLE metadrive IN SCHEMA public GRANT ALL ON SEQUENCES TO metadrive'
           tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
+          sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'ANALYZE' >/dev/null
           rows="$(sudo -u postgres psql -d "$db" -Atqc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'")"
           size="$(sudo -u postgres psql -d postgres -Atqc "SELECT pg_size_pretty(pg_database_size('$db'))")"
           echo "STAGING_DATABASE=$db"
