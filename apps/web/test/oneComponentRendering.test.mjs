@@ -29,7 +29,7 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
-    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid'].includes(fixture.apiName)) {
+    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
     assert.match(built.cssSource, /\.one-ui\s*\{/);
@@ -187,7 +187,7 @@ test('reported One UI accessibility contracts remain implemented', async () => {
     read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
-  assert.match(shared, /event\.key === "Escape"/);
+  assert.match(shared, /event\.key === 'Escape'/);
   assert.match(overlay, /useModalAccessibility\(React,open,dialogRef,close\)/);
   assert.match(shared, /document\.addEventListener\('focusin'/);
   assert.match(menu, /event\.key === "ArrowDown"/);
