@@ -74,7 +74,7 @@ export class FlowRecordQuery {
       if(!systemField&&!field)throw new Error('Unknown Flow filter field: '+item.field);
       if(field&&!await this.rbac.allowed(tenantId,userId,objectApi+'.'+field.api_name,'read'))
         throw new Error('Flow filter field is not readable: '+field.api_name);
-      const operator=String(item.operator??'Equals').trim().toLowerCase().replace(/[\\s_-]+/g,'');
+      const operator=String(item.operator??'Equals').trim().toLowerCase().replace(/[\s_-]+/g,'');
       const valueExpression=item.field==='Id'?'r.id::text'
         :item.field==='OwnerId'?'COALESCE(r.owner_id,r.owner_queue_id)::text':`(
         SELECT COALESCE(v.value_text,v.reference_record_id::text,v.value_boolean::text,v.value_number::text,v.value_date::text,v.value_datetime::text)
