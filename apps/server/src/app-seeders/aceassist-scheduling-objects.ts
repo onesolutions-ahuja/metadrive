@@ -35,9 +35,9 @@ export async function seedAceAssistSchedulingObjects(client:PoolClient,tenantId:
     if(!existing.rowCount)continue;
    }
    await client.query(`INSERT INTO md_field_definitions
-    (tenant_id,object_api,api_name,label,data_type,related_object,required)
-    VALUES($1,$2,$3,$4,$5,$6,false) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
-    [tenantId,object.api,api,label,type,related]);
+    (tenant_id,object_api,api_name,label,data_type,related_object,required,default_value)
+    VALUES($1,$2,$3,$4,$5,$6,false,$7) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
+    [tenantId,object.api,api,label,type,related,api==='Active'?'true':null]);
   }
  const weekdays=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
  for(const [index,value] of weekdays.entries())
