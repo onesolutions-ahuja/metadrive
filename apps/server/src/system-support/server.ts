@@ -324,6 +324,33 @@ export function createSystemServer(db:SqlPersistence) {
       [tenantId,userId]);
     return rows[0]?.landing_app_api??'Setup';
   };
+  // The login and refresh clients request this bootstrap explicitly. Keep it in
+  // the same authenticated response so Setup does not repeat four metadata reads
+  // immediately after rendering. Each dataset uses the same server-side RBAC and
+  // tenant-scoped services as its standalone endpoint. If any dataset cannot be
+  // loaded, omit the bundle and let the existing per-endpoint recovery path report
+  // the precise failure instead of turning a successful login into a failure.
+  const landingBootstrap=async(tenantId:string,userId:string)=>{
+    try{
+      const [objectsPayload,pagesPayload,appsPayload,session]=await Promise.all([
+        (async()=>{
+          await rbac.require(tenantId,userId,'ObjectDefinition','read');
+          const objects=await definitions.list(tenantId);
+          const configurations=await objectManagerMetadata.loadForObjects(tenantId,objects.map(item=>item.apiName));
+          return objects.map(item=>({...item,...configurations.get(item.apiName)}));
+        })(),
+        (async()=>{
+          await rbac.require(tenantId,userId,'PageDefinition','read');
+          return pages.list(tenantId);
+        })(),
+        (async()=>permittedApps(rbac,tenantId,userId,await apps.listMetadata(tenantId)))(),
+        sessionMetadata(db,tenantId,userId)
+      ]);
+      return {landing:{objects:objectsPayload,pages:pagesPayload,apps:appsPayload,user:session.user}};
+    }catch{
+      return {};
+    }
+  };
   app.post('/api/auth/login',route(async(req,res)=>{
     const {tenantSlug,email,password}=req.body??{};
     if(typeof email!=='string'||typeof password!=='string'||!email.trim()) {
@@ -337,7 +364,7 @@ export function createSystemServer(db:SqlPersistence) {
       if(challenge){res.json(challenge);return;}
       const session=await auth.issuePasswordSession(tenantId,userId,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId)});
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId),...(req.query.landing==='1'?await landingBootstrap(tenantId,userId):{})});
     } catch(error) {
       // Distinguish rejected credentials from SQL/session failures. A successful
       // password check followed by a failed database write must not become 401.
@@ -352,7 +379,7 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const session=await auth.refresh(token,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id)});
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id),...(req.query.landing==='1'?await landingBootstrap(session.tenant_id,session.user_id):{})});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
   app.post('/api/auth/password-reset/request',route(async(req,res)=>{
@@ -369,7 +396,7 @@ export function createSystemServer(db:SqlPersistence) {
     const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code,{ip:req.ip});
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
     const actor=await auth.authenticate(session.accessToken);
-    res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id)});
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id),...(req.query.landing==='1'?await landingBootstrap(actor.tenant_id,actor.user_id):{})});
   }));
   // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
   app.get('/api/oauth/callback',route(async(req,res)=>{
