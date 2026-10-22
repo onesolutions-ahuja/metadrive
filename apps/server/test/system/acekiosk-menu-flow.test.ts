@@ -48,3 +48,33 @@ test('AceKiosk Cash/Card templates use Acetill payment contract without auto-act
  assert.match(seeder,/1,false/);
  assert.doesNotMatch(seeder,/md_permission_assignments/);
 });
+
+test('Kiosk payment Flows atomically write financial invoices and kitchen orders',()=>{
+ const graphs=JSON.parse(readFileSync(new URL('../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8'));
+ for(const method of ['Cash','Card']){
+  const flow=graphs['AceKioskPayment'+method];
+  const byId=new Map(flow.elements.map((e)=>[e.id,e]));
+  assert.equal(byId.get(12).config.object,'Order');
+  assert.equal(byId.get(15).config.object,'OrderLine');
+  assert.equal(byId.get(24).config.object,'Invoice');
+  assert.equal(byId.get(25).config.object,'InvoiceLine');
+  const invoice=byId.get(24).config.fieldValues;
+  assert.ok(invoice.some(v=>v.field==='Order'&&v.value==='{!record12.Id}'));
+  assert.ok(invoice.some(v=>v.field==='Total'&&v.value==='{!validatedTotal}'));
+  assert.ok(invoice.some(v=>v.field==='Checkout_Request_ID__c'&&v.value==='{!requestId}'));
+  const line=byId.get(25).config.fieldValues;
+  assert.ok(line.some(v=>v.field==='Invoice'&&v.value==='{!record24.Id}'));
+  assert.ok(line.some(v=>v.field==='UnitPrice'&&v.value==='{!currentProduct.Price}'));
+  assert.ok(line.some(v=>v.field==='LineTotal'&&v.value==='{!saveLineAmount}'));
+  for(const [from,to] of [[12,24],[24,20],[15,25],[25,21],[22,26],[26,16]])
+    assert.ok(flow.connectors.some(c=>c.from===from&&c.to===to),method+': missing '+from+' -> '+to);
+  assert.ok(flow.resources.some(v=>v.name==='invoiceId'&&v.availableForOutput));
+ }
+ const source=readFileSync(new URL('../../src/app-seeders/acekiosk-payment-flows.ts',import.meta.url),'utf8');
+ assert.match(source,/versions\.length!==1\|\|versions\[0\]\.version!==1/);
+ assert.match(source,/stable\(\{\.\.\.current,status:'Draft'\}\)!==stable\(baseline\)/);
+ assert.match(source,/md_flow_definitions SET active=false/);
+ assert.match(source,/VALUES\(\$1,\$2,\$3,'Autolaunched Flow',2,\$4\)/);
+ assert.match(source,/InvoiceLine\.Invoice/);
+ assert.doesNotMatch(source,/DELETE FROM md_records|TRUNCATE md_records/);
+});
