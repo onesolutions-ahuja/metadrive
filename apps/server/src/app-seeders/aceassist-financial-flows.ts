@@ -104,8 +104,55 @@ function issueGraph(){
   {name:'invoice',type:'Record',dataType:'Invoice'}
  ]);
 }
+function appointmentInvoiceGraph(){
+ return graph('AceAssistInvoiceFromAppointment','Ace Assist - Draft invoice from completed appointment',[
+  node(1,'Start','Start',{executionContext:'User'}),
+  node(2,'Get Records','Load completed appointment',{object:'Appointment',recordLimit:'1',
+   outputVariable:'appointment',conditions:[{field:'Id',operator:'Equals',value:'{!recordId}'}]}),
+  node(3,'Get Records','Read selected service price',{object:'Product',recordLimit:'1',
+   outputVariable:'service',conditions:[{field:'Id',operator:'Equals',value:'{!appointment.ServiceProduct}'}]}),
+  node(4,'Decision','Appointment invoiceable?',{outcomes:[
+   {name:'Completed',label:'Completed',conditionLogic:'All',conditions:[
+    {field:'{!appointment.Status}',operator:'Equals',value:'Completed'},
+    {field:'{!service.Active}',operator:'Equals',value:true},
+    {field:'{!service.Price}',operator:'GreaterThanOrEqualTo',value:0}]}]}),
+  node(5,'Create Records','Create draft from source',{
+   object:'Invoice',recordSource:'fields',sourceLinkGuard:{
+    sourceObject:'Appointment',sourceField:'Appointment',statusField:'Status',
+    customerField:'Customer',targetCustomerField:'Customer',
+    allowedStatuses:['Completed']},
+   fieldValues:[
+    {field:'Name',value:'Service appointment invoice'},
+    {field:'Appointment',value:'{!recordId}'},
+    {field:'Customer',value:'{!appointment.Customer}'},
+    {field:'Status',value:'Draft'},
+    {field:'Subtotal',value:'{!service.Price}'},
+    {field:'Total',value:'{!service.Price}'}]}),
+  node(6,'Create Records','Create billed service line',{object:'InvoiceLine',
+   recordSource:'fields',fieldValues:[
+    {field:'Name',value:'{!service.Name}'},
+    {field:'Invoice',value:'{!record5.Id}'},
+    {field:'Product',value:'{!service.Id}'},
+    {field:'Quantity',value:1},
+    {field:'UnitPrice',value:'{!service.Price}'},
+    {field:'LineTotal',value:'{!service.Price}'}]}),
+  node(7,'Assignment','Return draft invoice',{variable:'invoiceId',operator:'Assign',
+   value:'{!record5.Id}'}),
+  node(8,'End','End'),
+  node(9,'Custom Error','Appointment cannot be billed',{errorLocation:'Page',
+   errorMessage:'Only completed appointments with an active priced service can be billed.'})
+ ],[
+  link(1,2),link(2,3),link(3,4),link(4,5,'Completed'),link(4,9,'Default'),
+  link(5,6),link(6,7),link(7,8),link(9,8)
+ ],[
+  {name:'recordId',type:'Variable',dataType:'Text',availableForInput:true},
+  {name:'appointment',type:'Record',dataType:'Appointment'},
+  {name:'service',type:'Record',dataType:'Product'},
+  {name:'invoiceId',type:'Variable',dataType:'Text',availableForOutput:true}
+ ]);
+}
 export const ACEASSIST_FINANCIAL_FLOW_APIS=[
- 'AceAssistConvertQuoteToInvoice','AceAssistIssueInvoice'
+ 'AceAssistConvertQuoteToInvoice','AceAssistIssueInvoice','AceAssistInvoiceFromAppointment'
 ] as const;
 export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:string):Promise<number>{
  // Additive source link for duplicate-conversion protection; preserve user fields and records.
@@ -135,8 +182,12 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
   VALUES($1,'Invoice',$2,$3,$4,$5,'InvoiceNumber',true,100)
   ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
   [tenantId,rule.api,rule.label,rule.expression,rule.message]);
+ await client.query(`INSERT INTO md_field_definitions
+  (tenant_id,object_api,api_name,label,data_type,related_object,required)
+  VALUES($1,'Invoice','Appointment','Source Appointment','reference','Appointment',false)
+  ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,[tenantId]);
  let created=0;
- for(const flow of [conversionGraph(),issueGraph()]){
+ for(const flow of [conversionGraph(),issueGraph(),appointmentInvoiceGraph()]){
   const prior=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
    [tenantId,flow.apiName]);
   if(prior.rowCount)continue;
@@ -160,6 +211,11 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
   ON CONFLICT(tenant_id,api_name) DO NOTHING`,[tenantId]);
  const standardRights=[
   ['Flow:AceAssistConvertQuoteToInvoice','execute'],
+  ['Flow:AceAssistInvoiceFromAppointment','execute'],
+  ['Invoice.Appointment','read'],['Invoice.Appointment','create'],
+  ['Appointment','read'],['Appointment.Status','read'],['Appointment.Customer','read'],
+  ['Appointment.ServiceProduct','read'],['Product','read'],
+  ...['Price','Name','Active'].map(x=>['Product.'+x,'read']),
   ['Invoice.Quotation','read'],['Invoice.Quotation','create'],
   ['Invoice.InvoiceNumber','read'],
   ['Quotation','read'],['QuotationLine','read'],['Invoice','read'],['InvoiceLine','read'],
