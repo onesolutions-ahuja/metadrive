@@ -5,6 +5,7 @@ on:
       - 'apps/web/**'
       - 'scripts/check-ui-design-tokens.mjs'
       - 'scripts/marketing-visual-smoke.mjs'
+      - 'scripts/accessibility-smoke.mjs'
       - '.github/workflows/frontend-visual-contract.yml'
       - 'package-lock.json'
       - 'package.json'
