@@ -21,6 +21,7 @@ AppExchange now discovers AceChatter independently. For **installed, entitled te
 | `AceChatterLoadConversations` | `searchTerm` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterLoadMessages` | `conversationId` (Text) | `messages` (Record Collection) | Active |
 | `AceChatterLoadCommunications` | `searchTerm` (Text; blank loads recent messages, a number filters the sender) | `communications` (Record Collection) | Active |
+| `AceChatterFindConversationByPhone` | `phoneNumber` (Text) | `conversations` (Record Collection) | Active |
 | `AceChatterSendMessage` | `conversationId` (Text), `message` (Text) | Configure in Flow Builder | Draft |
 
 All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `AceChatterLoadCommunications` reads up to 200 newest `Communication` records filtered to `Channel = WhatsApp` and `Direction = Inbound`; its `Sender` contains-filter supports inbox searches and selected chat numbers. The UI groups records by the sender's WhatsApp number and combines them with matching `ChatConversation` records. Sending still uses the existing authorised Flow and a real `ChatConversation` record; if a received-message chat has no conversation record yet, the UI creates it through the configured Create Conversation Flow before sending. These are metadata defaults, not a browser-side CRUD or sending engine. Native record collections are preferred; legacy JSON Text outputs remain supported. Unauthorised users cannot bypass server-side OneEngine RBAC or Record/Field checks.
