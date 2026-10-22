@@ -349,6 +349,9 @@ function PageBuilder({
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
+  type CanvasSelectionSnapshot = { selectedId: string; selectionIds: string[] };
+  const [selectionUndoStack, setSelectionUndoStack] = useState<CanvasSelectionSnapshot[]>([]);
+  const [selectionRedoStack, setSelectionRedoStack] = useState<CanvasSelectionSnapshot[]>([]);
   type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge; element: HTMLElement; current: { x: number; y: number; width: number; height: number } } | null>(null);
   const canvasGuideXRef = useRef<HTMLDivElement | null>(null);
@@ -471,6 +474,8 @@ function PageBuilder({
     setFitCanvas(true);
     setUndoStack([]);
     setRedoStack([]);
+    setSelectionUndoStack([]);
+    setSelectionRedoStack([]);
     setPreviewMode(false);
     setPageSettingsOpen(false);
     setDynamicFormsUpgradeOpen(false);
@@ -516,6 +521,8 @@ function PageBuilder({
     if (JSON.stringify(page) === JSON.stringify(nextPage)) return;
     setUndoStack((current) => [...current.slice(-49), page]);
     setRedoStack([]);
+    setSelectionUndoStack(current => [...current.slice(-49), { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionRedoStack([]);
     onChange(nextPage);
   };
   const updateComponent = (id: string, update: Partial<LightningPageMetadata['components'][number]>) => {
@@ -967,24 +974,32 @@ function PageBuilder({
   const undo = () => {
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
-    setRedoStack((current) => [...current, page]);
-    setUndoStack((current) => current.slice(0, -1));
+    setRedoStack(current => [...current, page]);
+    setUndoStack(current => current.slice(0, -1));
+    setSelectionRedoStack(current => [...current, { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionUndoStack(current => current.slice(0, -1));
     onChange(previous);
     const previousIds = new Set(previous.components.map(component => component.id));
-    const restoredSelection = selectionIds.filter(id => previousIds.has(id));
+    const snapshot = selectionUndoStack[selectionUndoStack.length - 1];
+    const restoredSelection = (snapshot?.selectionIds ?? selectionIds).filter(id => previousIds.has(id));
     setSelectionIds(restoredSelection);
-    setSelectedId(previousIds.has(selectedId) ? selectedId : (restoredSelection[0] ?? ''));
+    const requestedId = snapshot?.selectedId ?? selectedId;
+    setSelectedId(previousIds.has(requestedId) ? requestedId : (restoredSelection[0] ?? ''));
   };
   const redo = () => {
     const next = redoStack[redoStack.length - 1];
     if (!next) return;
-    setUndoStack((current) => [...current, page]);
-    setRedoStack((current) => current.slice(0, -1));
+    setUndoStack(current => [...current, page]);
+    setRedoStack(current => current.slice(0, -1));
+    setSelectionUndoStack(current => [...current, { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionRedoStack(current => current.slice(0, -1));
     onChange(next);
     const nextIds = new Set(next.components.map(component => component.id));
-    const restoredSelection = selectionIds.filter(id => nextIds.has(id));
+    const snapshot = selectionRedoStack[selectionRedoStack.length - 1];
+    const restoredSelection = (snapshot?.selectionIds ?? selectionIds).filter(id => nextIds.has(id));
     setSelectionIds(restoredSelection);
-    setSelectedId(nextIds.has(selectedId) ? selectedId : (restoredSelection[0] ?? ''));
+    const requestedId = snapshot?.selectedId ?? selectedId;
+    setSelectedId(nextIds.has(requestedId) ? requestedId : (restoredSelection[0] ?? ''));
   };
   useEffect(() => {
     if (page.layoutMode !== 'free-canvas') return;
