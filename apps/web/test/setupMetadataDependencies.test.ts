@@ -125,8 +125,10 @@ test('authorised page responses prefetch ordinary component records through Reco
   assert.match(server, /records\.list\(tenantId,userId,api,50,0\)/);
   assert.match(server, /res\.json\(\{page:page\.page,initialRecords\}\)/);
   assert.match(server, /res\.json\(\{page,initialRecords\}\)/);
+  assert.match(server, /res\.setHeader\('Cache-Control','private, no-store'\);\s*res\.setHeader\('Vary','Authorization, Cookie'\);\s*res\.json\(\{page:page\.page,initialRecords\}\)/);
   assert.match(runtime, /initialRecords\?: Record<string, Record<string, unknown>\[\]\>/);
   assert.match(runtime, /initialRecordsByObject=\{pageLoad\.initialRecordsByObject\}/);
-  assert.match(runtime, /const initialRecords = !recordQuery\.filter && !properties\.liveRefreshEnabled[\s\S]*?if \(initialRecords !== undefined\)/);
+  assert.match(runtime, /const initialRecords = !recordQuery\.filter && !properties\.liveRefreshEnabled[\s\S]*?if \(initialRecords !== undefined && !initialRecordsConsumed\.current\)/);
   assert.match(runtime, /if \(!objectApiName \|\| recordQuery\.blocked\)/);
+  assert.match(runtime, /metadrive:page-flow-mutated', invalidateInitialRecords/);
 });
