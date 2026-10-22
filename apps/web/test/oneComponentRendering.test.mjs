@@ -211,7 +211,7 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(grid, /className="one-empty" role="status"/);
   assert.match(board, /role="region"/);
   assert.match(board, /<h3 className="one-heading">/);
-  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
+  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);\n  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.doesNotMatch(component, /className="one-empty"(?!\\s+role="status")/, "every empty state must announce its status");\n  const properties = await readFile(new URL("../src/core/builders/ComponentProperties/componentPropertiesView.tsx", import.meta.url), "utf8");\n  for (const section of ["Content", "Layout", "Responsive", "Appearance"]) assert.match(properties, new RegExp("propertySectionFor\\(key, definitionsByKey\\.get\\(key\\)\\) === section"));
 });
 
 
