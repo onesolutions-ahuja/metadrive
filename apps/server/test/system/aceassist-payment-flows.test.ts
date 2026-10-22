@@ -58,3 +58,11 @@ test('cash settlement uses tenant metadata and cash-only policy without direct a
  assert.match(flow,/PaymentImmutableOnceCreated/);
  assert.doesNotMatch(flow,/INSERT INTO md_records|INSERT INTO md_record_values/);
 });
+
+test('cash settlement fails closed at payment query pagination boundary',async()=>{
+ const f=fixture();
+ (f.context as unknown as {recordQuery:{find:()=>Promise<Record<string,unknown>[]>}}).recordQuery.find=async()=>
+  Array.from({length:200},(_,i)=>({Amount:1,Status:'Settled',Reference:'previous-'+i}));
+ await assert.rejects(enforceManualPaymentGuard(f.context,paymentConfig,f.fields),/safe query limit/);
+ assert.deepEqual(f.updates,[]);
+});
