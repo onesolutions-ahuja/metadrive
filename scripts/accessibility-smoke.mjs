@@ -37,19 +37,29 @@ try {
       await page.getByRole('dialog').waitFor({ state: 'visible' });
     }
     await page.addScriptTag({ path: require.resolve('axe-core/axe.min.js') });
-    const results = await page.evaluate(async () => window.axe.run(
-      document.querySelector('.une-marketing') || document.body,
-      { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }
-    ));
-    const blocking = results.violations.filter(item => ['critical', 'serious'].includes(item.impact));
-    if (results.violations.length) {
-      console.log('axe-core violations on ' + target.name + ':', JSON.stringify(results.violations.map(item => ({
-        id: item.id, impact: item.impact, help: item.help, nodes: item.nodes.length
-      })), null, 2));
+    const scan = async state => {
+      const results = await page.evaluate(async () => window.axe.run(
+        document.querySelector('.une-marketing') || document.body,
+        { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }
+      ));
+      const blocking = results.violations.filter(item => ['critical', 'serious'].includes(item.impact));
+      if (results.violations.length) {
+        console.log('axe-core violations on ' + target.name + state + ':', JSON.stringify(results.violations.map(item => ({
+          id: item.id, impact: item.impact, help: item.help, nodes: item.nodes.length
+        })), null, 2));
+      }
+      assert.deepEqual(blocking, [], 'Critical/serious WCAG violations found by axe-core on ' + target.name + state);
+      console.log('axe-core ' + target.name + state + ' scan passed: ' + results.passes.length +
+        ' checks passed; ' + results.violations.length + ' non-blocking violation types.');
+    };
+    await scan('');
+    if (target.name === 'marketing') {
+      const tabs = page.locator('.une-showcase-tabs button');
+      for (let index = 0; index < await tabs.count(); index++) {
+        await tabs.nth(index).click();
+        await scan(' / showcase tab ' + (index + 1));
+      }
     }
-    assert.deepEqual(blocking, [], 'Critical/serious WCAG violations found by axe-core on ' + target.name);
-    console.log('axe-core ' + target.name + ' scan passed: ' + results.passes.length +
-      ' checks passed; ' + results.violations.length + ' non-blocking violation types.');
   }
   assert.deepEqual(runtimeErrors, [], 'Frontend runtime errors during accessibility scan');
   if (!process.env.UI_SMOKE_PUBLISHED_URL) {
