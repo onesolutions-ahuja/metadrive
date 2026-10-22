@@ -1213,7 +1213,13 @@ export function createSystemServer(db:SqlPersistence) {
     res.setHeader('Cache-Control','private, no-store');
     res.json({styles:await loadAcetillVisualStyles(db,actor.tenant_id)});
   }));
-  app.put('/api/apps/Acetill/visual-styles',route(async(req,res)=>{
+  app.get('/api/apps/Acetill/visual-styles/draft',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({styles:await loadAcetillVisualStyles(db,actor.tenant_id,'draft')});
+  }));
+  app.put('/api/apps/Acetill/visual-styles/draft',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','manage');
     res.setHeader('Cache-Control','private, no-store');
