@@ -1,0 +1,155 @@
+name: Oracle current-main stage API validation
+
+on:
+  push:
+    branches:
+      - ops/oracle-stage-app-test-20261022
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Build current main and validate isolated Oracle stage database
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_stage_test"
+          chmod 600 "$HOME/.ssh/oracle_stage_test"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/oracle_stage_test" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          set -euo pipefail
+          db=metadrive_sql_20261022_stage
+          for attempt in $(seq 1 60); do
+            if sudo -u postgres psql -d "$db" -Atqc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'" 2>/dev/null | grep -Eq '^[7-9][0-9]{5,}$|^[1-9][0-9]{6,}$'; then
+              break
+            fi
+            if [[ "$attempt" == "60" ]]; then
+              echo "Stage database did not finish restoring within 5 minutes"
+              exit 1
+            fi
+            sleep 5
+          done
+          rows="$(sudo -u postgres psql -d "$db" -Atqc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'")"
+          tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
+          echo "STAGE_DB_READY=$db TABLES=$tables ESTIMATED_ROWS=$rows"
+          if [[ "$tables" != "288" || "$rows" -lt 700000 ]]; then
+            echo "Stage database integrity threshold failed"
+            exit 1
+          fi
+          release=/opt/metadrive/releases/oracle-stage-d01a4b7c7f064d602313d411ca5777934beb8ee9
+          if [[ ! -d "$release/.git" ]]; then
+            sudo -u metadrive git clone --depth 1 --branch main https://github.com/onesolutions-ahuja/metadrive.git "$release"
+          fi
+          commit="$(sudo -u metadrive git -C "$release" rev-parse HEAD)"
+          echo "SOURCE_COMMIT=$commit"
+          if [[ "$commit" != "d01a4b7c7f064d602313d411ca5777934beb8ee9" ]]; then
+            echo "Main source commit changed; refusing to test an unexpected revision"
+            exit 1
+          fi
+          sudo -u metadrive bash -lc "cd '$release' && npm ci && npm run build --workspace apps/server && npm run build --workspace apps/web && npm run test:login && npm run test:system --workspace apps/server"
+          sudo install -o root -g metadrive -m 0640 /etc/metadrive/private-test.env /etc/metadrive/stage-test.env
+          sudo python3 - "$release" <<'PY'
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+          release=sys.argv[1]
+          path="/etc/metadrive/stage-test.env"
+          source=open(path).read().splitlines()
+          replacements={
+            "PORT":"10001",
+            "METADRIVE_DB_NAME_OVERRIDE":"metadrive_sql_20261022_stage",
+            "METADRIVE_WEB_DIST":release+"/apps/web/dist",
+            "METADRIVE_PRIVATE_TEST_MODE":"true",
+          }
+          out=[]
+          seen=set()
+          for line in source:
+            if not line or line.lstrip().startswith("#") or "=" not in line:
+              out.append(line)
+              continue
+            key,value=line.split("=",1)
+            if key=="DATABASE_URL":
+              raw=value.strip().strip('"').strip("'")
+              u=urlsplit(raw)
+              value=urlunsplit((u.scheme,u.netloc,"/metadrive_sql_20261022_stage",u.query,u.fragment))
+            elif key in replacements:
+              value=replacements[key]
+              seen.add(key)
+            out.append(key+"="+value)
+          for key,value in replacements.items():
+            if key not in seen and key not in {"METADRIVE_DB_NAME_OVERRIDE","METADRIVE_WEB_DIST","METADRIVE_PRIVATE_TEST_MODE"}:
+              out.append(key+"="+value)
+          if not any(line.startswith("DATABASE_URL=") for line in out):
+            raise SystemExit("DATABASE_URL missing from rehearsal env")
+          open(path,"w").write("\n".join(out)+"\n")
+          PY
+          sudo chown root:metadrive /etc/metadrive/stage-test.env
+          sudo chmod 0640 /etc/metadrive/stage-test.env
+          sudo tee /etc/systemd/system/metadrive-stage-test.service >/dev/null <<EOF
+          [Unit]
+          Description=MetaDrive current-main Oracle stage API validation
+          After=network-online.target postgresql.service
+          Wants=network-online.target
+          Requires=postgresql.service
+          ConditionPathExists=/etc/metadrive/stage-test.env
+
+          [Service]
+          Type=simple
+          User=metadrive
+          Group=metadrive
+          WorkingDirectory=$release
+          EnvironmentFile=/etc/metadrive/stage-test.env
+          ExecStart=/usr/local/bin/node $release/apps/server/dist-system/system-support/entrypoint.js
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=60
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable metadrive-stage-test.service
+          sudo systemctl restart metadrive-stage-test.service
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 3 http://127.0.0.1:10001/api/health >/tmp/stage-health.json 2>/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != "1" ]]; then
+            sudo journalctl -u metadrive-stage-test.service -n 120 --no-pager
+            exit 1
+          fi
+          cat /tmp/stage-health.json
+          grep -q '"status":"ok"' /tmp/stage-health.json
+          grep -q '"persistence":"sql"' /tmp/stage-health.json
+          curl -sS -D /tmp/stage-cors.headers -o /dev/null --max-time 10 -X OPTIONS http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type,x-metadrive-request-source'
+          grep -Eiq '^access-control-allow-origin: https://unesolutions\.co\.uk\r?$' /tmp/stage-cors.headers
+          grep -Eiq '^access-control-allow-credentials: true\r?$' /tmp/stage-cors.headers
+          login_status="$(curl -sS -o /tmp/stage-login.json -w '%{http_code}' --max-time 10 -X POST http://127.0.0.1:10001/api/auth/login -H 'Origin: https://unesolutions.co.uk' -H 'Content-Type: application/json' -H 'X-MetaDrive-Request-Source: web-app' --data '{}')"
+          echo "INVALID_LOGIN_PROBE_HTTP=$login_status"
+          if [[ "$login_status" != "400" ]]; then
+            cat /tmp/stage-login.json
+            exit 1
+          fi
+          echo "STAGE_API_HEALTH=PASS"
+          echo "STAGE_CREDENTIALLED_CORS_PREFLIGHT=PASS"
+          echo "STAGE_LOGIN_ENDPOINT=PASS"
+          echo "STAGE_CURRENT_MAIN_BUILD_AND_SYSTEM_TESTS=PASS"
+          REMOTE
