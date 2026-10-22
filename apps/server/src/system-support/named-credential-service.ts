@@ -382,7 +382,8 @@ export class NamedCredentialService {
     resolvedConfig.integrationConnectionId??null,resolvedConfig.integrationConnectionId
       ?resolvedConfig.operation:null,
     resolvedConfig.integrationConnectionId?this.encryptValue(String(resolvedConfig.path)):null]);
-   for(const [apiName,value] of Object.entries(variables)){
+   // Persist the trusted credential-derived scalar snapshot encrypted for durable headers.
+   for(const [apiName,value] of Object.entries(mappedVariables)){
     if(!/^[A-Za-z][A-Za-z0-9_.]*$/.test(apiName)||!isCalloutScalar(value))
      throw new Error('Invalid durable HTTP Callout variable');
     await client.query(`
