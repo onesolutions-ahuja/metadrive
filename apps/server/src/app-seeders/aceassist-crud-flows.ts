@@ -62,7 +62,11 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
  if(operation==='Create')resources.push({name:'createdRecords',type:'Record Collection',
   dataType:objectApi,isCollection:true,availableForOutput:true});
  const config:Record<string,unknown>={object:objectApi,recordSource:'collection',collection:input,
-  ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'})};
+  ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
+  ...(objectApi==='Appointment'?{overlapGuard:{
+    startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo'],
+    statusField:'Status',excludedStatuses:['Cancelled','No Show']
+   }}:{})};
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,
   ...(objectApi==='Appointment'?{startConfig:{

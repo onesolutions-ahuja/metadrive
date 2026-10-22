@@ -1,4 +1,5 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
+import {enforceRecordOverlap} from './RecordOverlapGuard.js';
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
  const config=node.config;
@@ -18,7 +19,9 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
             throw new Error('Invalid Create Records collection field: '+field);
           fields[field]=value;
         }
-        const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+        await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+        await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+      const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
         created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
