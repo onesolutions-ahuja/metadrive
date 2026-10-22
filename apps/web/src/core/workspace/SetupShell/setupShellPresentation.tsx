@@ -310,6 +310,7 @@ export function renderSetupShell(ctx: any) {
           {route.kind === 'setup' && workspace === 'named-credentials' && (
             namedCredentialsError ? <section className="setup-card" role="alert">Unable to load credentials: {namedCredentialsError}</section> :
             !namedCredentialsLoaded ? <section className="setup-card" role="status">Loading live named credentials…</section> :
+            namedCredentialsError ? <section className="setup-card" role="alert">Unable to load Named Credentials: {namedCredentialsError}. Check OneEngine NamedCredential read access and retry.</section> :
             <PlatformWorkspaceSurface workspace="named-credentials" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
