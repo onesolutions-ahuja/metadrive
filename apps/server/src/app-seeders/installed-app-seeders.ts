@@ -5,6 +5,10 @@ import type {PoolClient} from 'pg';
  * never during Core boot or by an uninstalled frontend.
  */
 const installers:Readonly<Record<string,(client:PoolClient,tenantId:string)=>Promise<void>>>={
+  Acetill:async(client,tenantId)=>{
+    const {seedAcetillEditablePage}=await import('./acetill-editable-page.js');
+    await seedAcetillEditablePage(client,tenantId);
+  },
   AceChatter:async(client,tenantId)=>{
     const {seedAceChatterFlowsForTenant}=await import('./acechatter-flow.js');
     await seedAceChatterFlowsForTenant(client,tenantId);
