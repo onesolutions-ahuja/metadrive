@@ -3,14 +3,14 @@
 import { useEffect, useRef } from 'react';
 import { resolveSqlComponentLibrary } from '../../components/Registry/bundledRegistryClient';
 import { saveVerifiedMetadata, type MetadataPublicationResponse } from '../../metadata/Cache/verifiedMetadataCache';
-import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
+import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 
 export function shouldLoadFlowDefinitions(isAdmin: boolean, workspace: string): boolean {
   return isAdmin && (workspace === 'flow-builder' || workspace === 'page-builder' || workspace === 'scheduled-flows');
 }
 
 export function useSetupMetadata(ctx: any) {
-  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setFlowDefinitionsLoaded, setFlowDefinitionsError, setReportsLoaded, setReportsError, setDashboardsLoaded, setDashboardsError, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setFlowDefinitionsLoaded, setFlowDefinitionsError, setReportsLoaded, setReportsError, setDashboardsLoaded, setDashboardsError, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
   // Optional business metadata is resolved only for the active screen or page dependencies.
   // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
   // Load tenant permissions as soon as a screen needs them, without waiting for
@@ -220,13 +220,12 @@ export function useSetupMetadata(ctx: any) {
           setCurrentFieldAccess(user.fieldAccess);
           setCurrentRecordTypeAccess(user.recordTypeAccess);
         }).catch(() => {}); // The awaited bootstrap handles session-expiry errors.
-        const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
+        const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           Promise.resolve({ flows: [] as FlowDefinitionMetadata[] }), // Flow definitions belong to the Builder, not login.
           Promise.resolve({ platformEvents: [] as PlatformEventMetadata[] }),
           recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
           recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
-          Promise.resolve({ credentials: [] as NamedCredentialMetadata[] }),
           Promise.resolve({ emailAlerts: [] as EmailAlertMetadata[] }),
           Promise.resolve({ approvalProcesses: [] as ApprovalProcessMetadata[] }),
           Promise.resolve({ providers: [] as ConnectorProviderMetadata[] }),
@@ -253,7 +252,8 @@ export function useSetupMetadata(ctx: any) {
         if (!appPayload.apps.some((app) => app.apiName === currentAppId)) {
           setCurrentAppId(appPayload.apps[0]?.apiName ?? '');
         }
-        setNamedCredentials(credentialPayload.credentials);
+        // Named Credentials are owned by the dedicated authorised Setup loader.
+        // Never overwrite its live result with this bootstrap's empty placeholder.
         setEmailAlerts(emailAlertPayload.emailAlerts);
         setApprovalProcesses(approvalProcessPayload.approvalProcesses);
         setConnectorProviders(providerPayload.providers);
