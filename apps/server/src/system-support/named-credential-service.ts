@@ -128,6 +128,18 @@ export class NamedCredentialService {
   // Tokens, passwords and keys are never allowed to be client-readable.
   const safePublicKey=(key:string)=>/^public_[A-Za-z][A-Za-z0-9_]*$/.test(key)
    && !/(secret|token|password|passphrase|private|pin|credential|authorization|api_?key)/i.test(key);
+  const {rows:declared}=await this.db.query<{credential_name:string;field_api:string;label:string;default_value:string}>(`
+    SELECT f.credential_name,f.field_api,f.label,f.default_value
+    FROM md_connector_app_fields f
+    JOIN md_app_installations a ON a.tenant_id=f.tenant_id AND a.app_id=f.app_id
+    WHERE f.tenant_id=$1 ORDER BY f.credential_name,f.field_api`,[tenantId]);
+  const fieldsByName=new Map<string,typeof declared>();
+  for(const field of declared){
+   if(!safePublicKey(field.field_api))continue;
+   const current=fieldsByName.get(field.credential_name)??[];
+   current.push(field);
+   fieldsByName.set(field.credential_name,current);
+  }
   return rows.map(x=>{
    let configuration:Record<string,string>={};
    if(x.configuration_ciphertext){
@@ -138,9 +150,12 @@ export class NamedCredentialService {
        .filter(([key,value])=>safePublicKey(key)&&typeof value==='string')) as Record<string,string>;
     }catch{/* Never expose unreadable or confidential credential values. */}
    }
+   const fields=fieldsByName.get(x.name)??[];
+   configuration={...Object.fromEntries(fields.map(f=>[f.field_api,f.default_value])),...configuration};
+   const configurationLabels=Object.fromEntries(fields.map(f=>[f.field_api,f.label]));
    return {id:x.id,name:x.name,label:x.label,protocol:x.protocol,
     baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
-    hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration,
+    hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration,configurationLabels,
     webhookId:x.webhook_id??null,webhookEnabled:x.webhook_enabled===true,
     keyId:x.encryption_key_id,updatedAt:x.updated_at};
   });
@@ -152,7 +167,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||!['HTTPS','SMTP'].includes(String(x.protocol))
-    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))
+    ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code','Authorization Scheme'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
@@ -490,7 +505,7 @@ export class NamedCredentialService {
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     !['HTTPS','SMTP'].includes(String(x.protocol))||
-    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
+    !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code','Authorization Scheme'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
@@ -901,10 +916,26 @@ export class NamedCredentialService {
    decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
    const secret=Buffer.concat([decipher.update(encrypted.subarray(12,encrypted.length-16)),decipher.final()]).toString('utf8');
    if(item.auth_type==='Bearer')header.Authorization='Bearer '+secret;
-   else if(item.auth_type==='Basic')header.Authorization='Basic '+Buffer.from(secret).toString('base64');
+   else if(item.auth_type==='Basic'){
+    // Existing credentials may store an entire user:password string.
+    // The Named Credentials editor also supports a separate encrypted username.
+    let basicValue=secret;
+    if(item.configuration_ciphertext){
+     let settings:Record<string,unknown>;
+     try{settings=JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as Record<string,unknown>;}
+     catch{throw new Error('Invalid Basic credential configuration');}
+     if(typeof settings.username==='string'&&settings.username&&!secret.startsWith(settings.username+':'))
+      basicValue=settings.username+':'+secret;
+    }
+    header.Authorization='Basic '+Buffer.from(basicValue).toString('base64');
+   }
    else if(item.auth_type==='API Key'){
-    if(!/^X-[a-z0-9-]+$/i.test(item.header_name))throw new Error('Credential header must be an X- header');
+    if(!/^(?:X-[a-z0-9-]+|api-key)$/i.test(item.header_name))throw new Error('Credential header must be an X- header or Brevo api-key');
     header[item.header_name]=secret;
+   }else if(item.auth_type==='Authorization Scheme'){
+    if(!/^[A-Za-z][A-Za-z0-9_-]*$/.test(item.header_name))
+     throw new Error('Invalid authorization scheme');
+    header.Authorization=item.header_name+' '+secret;
    }else if(item.auth_type==='OAuth Client Credentials')oauthClientSecret=secret;
    else throw new Error('OAuth Authorization Code requires an interactive authorization grant');
   }

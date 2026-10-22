@@ -220,7 +220,7 @@ export type NamedCredentialMetadata = {
   label: string;
   protocol: 'HTTPS' | 'SMTP';
   baseUrl: string;
-  authType: 'None' | 'Bearer' | 'Basic' | 'API Key' | 'OAuth Client Credentials' | 'OAuth Authorization Code';
+  authType: 'None' | 'Bearer' | 'Basic' | 'API Key' | 'OAuth Client Credentials' | 'OAuth Authorization Code' | 'Authorization Scheme';
   headerName: string;
   hasSecret: boolean;
   webhookId?: string | null;
@@ -228,6 +228,7 @@ export type NamedCredentialMetadata = {
   webhookCallbackUrl?: string | null;
   enabled?: boolean;
   configuration?: Record<string, string>;
+  configurationLabels?: Record<string, string>;
   keyId: string;
   updatedAt: string;
 };

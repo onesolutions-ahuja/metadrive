@@ -259,6 +259,9 @@ export class AppRuntime {
           lease_until=NULL,updated_at=now()
         WHERE tenant_id=$1 AND app_api_name IN ($2,$3) AND status IN ('queued','leased')
       `,[tenantId,appApi,target.api_name]);
+      // Deactivate only the chosen connector's managed integration, retaining ciphertext.
+      const {uninstallConnectorApp}=await import('../app-seeders/connector-apps.js');
+      await uninstallConnectorApp(client,tenantId,target.api_name);
       await client.query('DELETE FROM md_app_home_pages WHERE tenant_id=$1 AND app_id=$2',
         [tenantId,target.id]);
       // Version receipt cascades; business records and shared component metadata survive.
@@ -295,12 +298,14 @@ export class AppRuntime {
   async marketplace(tenantId:string) {
     const {rows}=await this.db.query<{
       id:string;api_name:string;label:string;description:string|null;installed:boolean;
-      expires_at:Date|null;licensed:boolean;package_version:number|null;installed_version:number|null
+      expires_at:Date|null;licensed:boolean;package_version:number|null;installed_version:number|null;
+      credential_name:string|null;credential_base_url:string|null;credential_auth_type:string|null
     }>(`
       SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,COALESCE(m.label,a.label) AS label,
         COALESCE(m.description,p.description) AS description,
         (i.app_id IS NOT NULL) AS installed,iv.version AS installed_version,
         p.version AS package_version,e.expires_at,
+        c.credential_name,cred.base_url AS credential_base_url,cred.auth_type AS credential_auth_type,
         (COALESCE(e.active,false) AND
           (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
       FROM md_apps a
@@ -308,6 +313,8 @@ export class AppRuntime {
       LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
       LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
       LEFT JOIN md_tenant_app_installed_versions iv ON iv.tenant_id=$1 AND iv.app_id=a.id
+      LEFT JOIN md_connector_app_credentials c ON c.tenant_id=$1 AND c.app_id=a.id
+      LEFT JOIN md_named_credentials cred ON cred.tenant_id=$1 AND cred.id=c.credential_id
       LEFT JOIN LATERAL (
         SELECT version,description FROM md_app_package_versions
         WHERE app_id=a.id AND published=true ORDER BY version DESC LIMIT 1
@@ -317,7 +324,9 @@ export class AppRuntime {
     `,[tenantId]);
     return {records:rows.map(row=>({
       Id:row.id,Name:row.label,AppKey__c:row.api_name,
-      Description__c:row.description??'',CredentialName__c:'',
+      Description__c:row.description??'',CredentialName__c:row.credential_name??'',
+      ...(row.credential_name?{DefaultBaseUrl__c:row.credential_base_url??'',
+        AuthType__c:row.credential_auth_type??'None'}:{}),
       Installed__c:row.installed,
       LicenceStatus__c:row.licensed?'ACTIVE':'UNLICENSED',
       ...(row.package_version?{PackageVersion__c:row.package_version}:{}),

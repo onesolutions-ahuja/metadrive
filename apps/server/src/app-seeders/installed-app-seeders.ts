@@ -17,4 +17,7 @@ export async function seedInstalledAppMetadata(
 ):Promise<void>{
  const seeder=installers[appApiName];
  if(seeder)await seeder(client,tenantId);
+ // AppExchange has already checked the tenant's licence and installation.
+ const {isConnectorApp,installConnectorApp}=await import('./connector-apps.js');
+ if(isConnectorApp(appApiName))await installConnectorApp(client,tenantId,appApiName);
 }
