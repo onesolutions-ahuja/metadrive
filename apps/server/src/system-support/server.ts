@@ -88,6 +88,7 @@ import {OpenApiExternalService,registerOpenApiExternalServiceRoutes} from './ope
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
 import { PageRuntime } from '../system-files/page-runtime.js';
+import {loadAcetillVisualStyles,saveAcetillVisualStyles} from './acetill-visual-style-service.js';
 import { FlowRuntime } from '../system-files/flow-runtime.js';
 import {flowRunHistory} from '../system-files/flow-run-history.js';
 import {FlowCustomError} from '../system-files/flow-error-runtime.js';
@@ -1202,6 +1203,21 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
     res.json({components:await components.list(actor.tenant_id)});
+  }));
+  // Acetill live-React styling pilot. SQL holds overrides, not recreated JSX.
+  app.get('/api/apps/Acetill/visual-styles',route(async(req,res)=>{
+    const actor=req.actor!;
+    const canView=await rbac.allowed(actor.tenant_id,actor.user_id,'App:Acetill','read')
+       ||await rbac.allowed(actor.tenant_id,actor.user_id,'PageDefinition','read');
+    if(!canView)throw new Error('Permission denied');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({styles:await loadAcetillVisualStyles(db,actor.tenant_id)});
+  }));
+  app.put('/api/apps/Acetill/visual-styles',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','manage');
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({styles:await saveAcetillVisualStyles(db,actor.tenant_id,req.body?.styles)});
   }));
   app.get('/api/metadata/pages',route(async(req,res)=>{
     const actor=req.actor!;

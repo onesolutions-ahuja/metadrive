@@ -2,6 +2,7 @@ import * as React from 'react';
 import {createPortal} from 'react-dom';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import './acetill-terminal.css';
+import {acetillStyleCss,type AcetillVisualStyles} from './visual-styles';
 
 type Row=Record<string,unknown>;
 type Action={apiName:string;label:string};
@@ -33,7 +34,18 @@ function extractRows(result:Result):Row[] {
   return [];
 }
 /** Presentation and ephemeral cart only. Every server operation is an entitled OneEngine Flow. */
-export default function AcetillTerminal(){
+export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVisualStyles} = {}){
+  const [savedStyles,setSavedStyles]=React.useState<AcetillVisualStyles>({});
+  React.useEffect(()=>{
+    if(editorStyles !== undefined)return;
+    let active=true;
+    void apiRequest<{styles:AcetillVisualStyles}>('/apps/Acetill/visual-styles')
+      .then(result=>{if(active)setSavedStyles(result.styles??{});})
+      .catch(()=>{/* Default CSS remains authoritative if metadata is unavailable. */});
+    return ()=>{active=false;};
+  },[editorStyles]);
+  const customCss=acetillStyleCss(editorStyles??savedStyles);
+  const visualStyles=customCss?<style data-acetill-visual-overrides>{customCss}</style>:null;
   const [actions,setActions]=React.useState<Action[]>([]);
   const [products,setProducts]=React.useState<Item[]>([]);
   const [categories,setCategories]=React.useState<Category[]>([]);
@@ -218,8 +230,8 @@ export default function AcetillTerminal(){
     {setupStatus&&<p role="alert">{setupStatus}</p>}
     <div><button type="button" onClick={()=>{setPinSetup(false);setSetupPassword('');setNewPin('');}}>Cancel</button><button type="submit">Save PIN</button></div>
     </form></div>:null;
-  const settingsButton=<button type="button" className="acetill-lock-button" title="Set till PIN" aria-label="Set till PIN" onClick={()=>{setPinSetup(true);setSetupStatus('');}}>⚙</button>;
-  const lockButton=<button type="button" className="acetill-lock-button" title="Lock till" aria-label="Lock till" onClick={()=>{setTillLocked(true);setUnlockPin('');setUnlockError('');}}>🔒</button>;
+  const settingsButton=<button type="button" className="acetill-lock-button" data-acetill-element="settings" title="Set till PIN" aria-label="Set till PIN" onClick={()=>{setPinSetup(true);setSetupStatus('');}}>⚙</button>;
+  const lockButton=<button type="button" className="acetill-lock-button" data-acetill-element="lock" title="Lock till" aria-label="Lock till" onClick={()=>{setTillLocked(true);setUnlockPin('');setUnlockError('');}}>🔒</button>;
   const lockedOverlay=tillLocked?<div className="acetill-lock-screen" role="dialog" aria-modal="true" aria-label="Till locked">
     <div className="acetill-lock-panel"><div className="acetill-lock-symbol">🔒</div><h1>Till locked</h1><p>Enter your user PIN to resume this till.</p>
     <form onSubmit={e=>void unlockTillScreen(e)}><label htmlFor="acetill-unlock-pin">User PIN</label>
@@ -229,7 +241,7 @@ export default function AcetillTerminal(){
     <button disabled={unlockBusy||!unlockTill||unlockPin.length<4} type="submit">{unlockBusy?'Checking…':'Unlock till'}</button></form>
     <button className="acetill-lock-logout" type="button" onClick={()=>{void apiRequest('/auth/logout',{method:'POST'}).catch(()=>{}).finally(()=>window.location.assign('/login'));}}>Log out</button>
     </div></div>:null;
-  const displayButton=<button type="button" className="acetill-display-button" onClick={openCustomerDisplay}
+  const displayButton=<button type="button" className="acetill-display-button" data-acetill-element="customerDisplay" onClick={openCustomerDisplay}
     aria-label="Open customer display on second screen" title="Open customer display">▣ <span>Customer display</span></button>;
   const paymentDialog=paymentMode?<div className="acetill-payment-backdrop" role="presentation">
     <section className="acetill-payment-dialog" role="dialog" aria-modal="true" aria-labelledby="acetill-payment-title">
@@ -251,7 +263,7 @@ export default function AcetillTerminal(){
       {!(paymentMode==='cash'?paymentCash:paymentCard)&&<p role="status">Configure and permit the {paymentMode==='cash'?'AcetillPaymentCash':'AcetillPaymentCard'} Flow.</p>}
     </section>
   </div>:null;
-  return receipt?<>{lockedOverlay}{pinSetupDialog}<main className="acetill-receipt-screen" aria-label="Sale completed">
+  return receipt?<>{visualStyles}{lockedOverlay}{pinSetupDialog}<main className="acetill-receipt-screen" aria-label="Sale completed">
     <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
       <h1>Payment complete</h1>{lockButton}<p>Your OneEngine checkout Flow confirmed this transaction.</p>
       <dl><div><dt>Invoice reference</dt><dd>{asText(receipt.invoiceId??receipt.invoiceNumber??receipt.InvoiceId)||'Confirmed'}</dd></div>
@@ -261,15 +273,15 @@ export default function AcetillTerminal(){
         {find('EmailReceipt')&&<button type="button" disabled={busy} onClick={()=>void execute(find('EmailReceipt')!,{invoiceId:receipt.invoiceId??receipt.InvoiceId}).then(()=>setMessage('Receipt email Flow submitted.')).catch(e=>setError(String(e)))}>Email receipt</button>}
         <button type="button" className="acetill-charge" onClick={()=>{setReceipt(null);setMessage('');setError('');}}>New sale</button>
       </div>{error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
-    </section></main>{customerDisplay}</>:<>{lockedOverlay}{pinSetupDialog}<main className="acetill-terminal">
+    </section></main>{customerDisplay}</>:<>{visualStyles}{lockedOverlay}{pinSetupDialog}<main className="acetill-terminal">
     <section className="acetill-shop" aria-label="Acetill product catalogue">
-      <div className="acetill-topline">
-        <nav aria-label="Product categories" className="acetill-category-tabs">
+      <div className="acetill-topline" data-acetill-element="topbar">
+        <nav aria-label="Product categories" className="acetill-category-tabs" data-acetill-element="categories">
           <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
         {lockButton}{settingsButton}{displayButton}
-        <label className="acetill-search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
+        <label className="acetill-search" data-acetill-element="search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
       {error&&<p role="alert" className="acetill-error">{error}</p>}
@@ -277,7 +289,7 @@ export default function AcetillTerminal(){
       <div className="acetill-catalogue-scroll" tabIndex={0} aria-label="Scrollable product catalogue">
       {!getCategories&&!loading&&<p className="acetill-state">Configure AcetillGetCategories Flow to load category tabs.</p>}
       {catalogueLoading&&<p role="status" className="acetill-state">Loading products…</p>}
-      <div className="acetill-product-grid">
+      <div className="acetill-product-grid" data-acetill-element="products">
         {shown.map(p=><button type="button" key={p.id} className="acetill-product" onClick={()=>add(p)} disabled={busy}>
           <div className="acetill-product-art">{p.image?<img src={p.image} alt="" loading="lazy"/>:<span aria-hidden="true">◻</span>}</div>
           <div className="acetill-product-meta"><strong>{p.name}</strong><span>{amount(p.price)}</span></div>
@@ -285,7 +297,7 @@ export default function AcetillTerminal(){
       </div>
       {getProducts&&!catalogueLoading&&!shown.length&&<p className="acetill-state">No matching products returned by your Flow.</p>}
       </div>
-      <div className="acetill-quick-actions">
+      <div className="acetill-quick-actions" data-acetill-element="quickActions">
         {['Discount','Rewards','GiftCards','More'].map(label=>{
           const action=find(label);
           return <button key={label} type="button" disabled={!action||busy} title={!action?'Configure Acetill'+label+' Flow':undefined}
@@ -295,8 +307,8 @@ export default function AcetillTerminal(){
         })}
       </div>
     </section>
-    <aside className="acetill-current-order" aria-label="Current order">
-      <div className="acetill-order-heading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>{paymentRequestId.current=crypto.randomUUID();setCart([]);}}>⌫</button></div>
+    <aside className="acetill-current-order" data-acetill-element="order" aria-label="Current order">
+      <div className="acetill-order-heading" data-acetill-element="orderHeading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>{paymentRequestId.current=crypto.randomUUID();setCart([]);}}>⌫</button></div>
       <div className="acetill-lines">{cart.length?cart.map(p=><div className="acetill-line" key={p.id}>
         <div className="acetill-line-art">{p.image?<img src={p.image} alt=""/>:<span aria-hidden="true">◻</span>}</div>
         <div className="acetill-line-details"><strong>{p.name}</strong><div className="acetill-qty">
@@ -304,13 +316,13 @@ export default function AcetillTerminal(){
           <button type="button" aria-label={'Add '+p.name} onClick={()=>change(p.id,1)}>+</button>
         </div></div><span className="acetill-line-price">{amount(p.price*p.quantity)}</span>
       </div>):<div className="acetill-empty">Select a product to start an order.</div>}</div>
-      <div className="acetill-checkout"><div className="acetill-subtotal"><span>Estimated subtotal</span><span>{amount(subtotal)}</span></div>
+      <div className="acetill-checkout" data-acetill-element="checkout"><div className="acetill-subtotal"><span>Estimated subtotal</span><span>{amount(subtotal)}</span></div>
         <p>Final tax, discounts and payment are calculated by OneEngine Flows.</p>
         <div className="acetill-total"><strong>Subtotal</strong><strong>{amount(subtotal)}</strong></div>
-        <div className="acetill-payment-choices">
-          <button type="button" className="acetill-charge" disabled={!cart.length||busy}
+        <div className="acetill-payment-choices" data-acetill-element="paymentChoices">
+          <button type="button" className="acetill-charge" data-acetill-element="cash" disabled={!cart.length||busy}
             onClick={()=>{setError('');setCashReceived('');setPaymentMode('cash');}}>Cash</button>
-          <button type="button" className="acetill-charge" disabled={!cart.length||busy}
+          <button type="button" className="acetill-charge" data-acetill-element="card" disabled={!cart.length||busy}
             onClick={()=>{setError('');setPaymentMode('card');}}>Card</button>
         </div>
       </div>
