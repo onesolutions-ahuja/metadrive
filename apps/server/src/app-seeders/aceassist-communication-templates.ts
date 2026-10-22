@@ -54,7 +54,7 @@ export async function seedAceAssistCommunicationTemplates(client:PoolClient,tena
  const {rows:credentials}=await client.query<{id:string}>(`
   SELECT id FROM md_named_credentials WHERE tenant_id=$1
    AND name='WhatsApp_Cloud_API' AND protocol='HTTPS' AND enabled=true
-  ORDER BY created_at DESC LIMIT 1`,[tenantId]);
+  ORDER BY updated_at DESC, id DESC LIMIT 1`,[tenantId]);
  for(const object of ['Quotation','Invoice'] as const)
   for(const channel of ['Email','WhatsApp'] as const){
    const graph=sendTemplate(object,channel,credentials[0]?.id??null);
