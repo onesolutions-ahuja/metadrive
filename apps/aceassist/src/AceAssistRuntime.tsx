@@ -172,7 +172,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
    const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(apiName)+'/execute',
     {method:'POST',body:JSON.stringify({recordId:record.Id})});
    if(response.interviewId)throw Error('The Flow requires additional input');
-   setNotice('Workflow completed: '+apiName);setReload(x=>x+1);
+   setNotice('Workflow completed: '+apiName);
+   if(apiName==='AceAssistInvoiceFromAppointment'||apiName==='AceAssistConvertQuoteToInvoice'){
+    setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setChosen(null);
+   }
+   setReload(x=>x+1);
   }catch(e){setError(e instanceof Error?e.message:String(e));}
   finally{setBusy(false);}
  };
@@ -361,6 +365,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
+        &&actions.has('AceAssistInvoiceFromAppointment')&&
+        <button type="button" disabled={busy}
+         onClick={()=>void runRecordAction('AceAssistInvoiceFromAppointment',chosen)}>Create invoice</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotationWhatsApp')&&
