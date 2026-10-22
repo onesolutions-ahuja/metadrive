@@ -123,6 +123,8 @@ test('authorised page responses prefetch ordinary component records through Reco
   const runtime = readFileSync(new URL('../src/core/pages/PageRuntime/pageRuntimeViews.tsx', import.meta.url), 'utf8');
   assert.match(server, /const pageInitialRecords=async\(tenantId:string,userId:string,page:/);
   assert.match(server, /records\.list\(tenantId,userId,api,50,0\)/);
+  assert.match(server, /typeof \(filter as Record<string,unknown>\)\.value==='object'[\s\S]*?\(filter as Record<string,unknown>\)\.value!==null/);
+  assert.match(server, /\[\.\.\.objectApis\]\.slice\(0,3\)/);
   const appPageRoute = server.slice(server.indexOf("app.get('/api/apps/:appId/pages/:pageApiName'"), server.indexOf("app.get('/api/metadata/objects'"));
   const appRbacAt = appPageRoute.indexOf("await rbac.require");
   const appResolutionAt = appPageRoute.indexOf("pages.resolveAppPage");
