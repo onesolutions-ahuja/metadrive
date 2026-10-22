@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {prepareFlowHttpRequest,mapFlowHttpResponse,parseFlowHttpMapping} from
+import {prepareFlowHttpRequest,mapFlowHttpResponse,parseFlowHttpMapping,publicHttpCredentialVariables} from
  '../../src/system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../../src/system-files/flow-integration-connection.js';
 import {evaluateFlowFormula,validateFlowFormula} from '../../src/system-files/flow-formula-runtime.js';
@@ -91,4 +91,11 @@ test('Provider message Actions are exposed only through the browser metadata edi
   import.meta.url),'utf8');
  assert.match(text,/<option>Outbound Message<\/option>/);
  assert.match(text,/Outbound Message operation/);
+});
+
+
+test('public credential settings support reusable Flow URL mapping',()=>{
+ const vars=publicHttpCredentialVariables({public_phoneNumberId:'1234567890123',username:'ignore'});
+ assert.deepEqual({...vars},{public_phoneNumberId:'1234567890123'});
+ assert.equal(prepareFlowHttpRequest({path:'v26.0/{!public_phoneNumberId}/messages'},vars).path,'v26.0/1234567890123/messages');
 });
