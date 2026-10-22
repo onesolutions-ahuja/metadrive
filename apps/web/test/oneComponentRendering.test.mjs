@@ -219,5 +219,6 @@ test('accessibility smoke covers login and supports configured published-page/di
   assert.match(smoke, /UI_SMOKE_PUBLISHED_URL/);
   assert.match(smoke, /UI_SMOKE_OVERLAY_SELECTOR/);
   assert.match(smoke, /window\.axe\.run/);
+  assert.match(smoke, /showcase tab/);
   assert.match(smoke, /Critical\/serious WCAG violations/);
 });
