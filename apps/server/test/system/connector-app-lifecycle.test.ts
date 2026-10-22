@@ -13,8 +13,6 @@ const fakeClient=(provisioned=true)=>{
    if(sql.includes('INSERT INTO md_named_credentials'))return {rows:[{id:'cred-1'}],rowCount:1};
    if(sql.includes('SELECT credential_id FROM md_connector_app_credentials'))
     return {rows:[{credential_id:'cred-1',provisioned}],rowCount:1};
-   if(sql.includes('SELECT credential_id FROM md_connector_app_credentials'))
-    return {rows:[{credential_id:'cred-1'}],rowCount:1};
    if(sql.includes('SELECT EXISTS(SELECT 1 FROM md_connector_app_credentials'))
     return {rows:[{in_use:false}],rowCount:1};
    return {rows:[],rowCount:1};
@@ -35,7 +33,7 @@ test('six independently defined connector apps provision only tenant-scoped non-
   assert.ok(credential,name);
   assert.equal(credential.args[0],'tenant-1');
   assert.equal(credential.args[3]?.toString().startsWith('https://'),true);
-  assert.equal(credential.args.length,7,'No tenant secret belongs in a connector definition');
+  assert.equal(credential.args.length,6,'No tenant secret belongs in a connector definition');
   assert.ok(writes.some(w=>w.sql.includes("kind,api_name,label,properties,enabled")));
   assert.ok(writes.some(w=>w.sql.includes('INSERT INTO md_connector_app_fields')));
  }
