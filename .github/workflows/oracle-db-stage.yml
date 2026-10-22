@@ -71,7 +71,7 @@ jobs:
           sudo -u postgres createdb --owner=metadrive "$db"
           sudo -u postgres pg_restore --exit-on-error --jobs=2 --no-owner --no-acl --dbname="$db" "$dump"
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
+          DO $do$
           DECLARE obj record;
           BEGIN
             FOR obj IN
@@ -96,7 +96,7 @@ jobs:
                 EXECUTE format('ALTER TABLE public.%I OWNER TO metadrive', obj.relname);
               END IF;
             END LOOP;
-          END $;
+          END $do$;
           GRANT USAGE, CREATE ON SCHEMA public TO metadrive;
           SQL
           sudo -u postgres psql -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO metadrive'
