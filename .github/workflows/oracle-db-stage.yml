@@ -55,7 +55,7 @@ jobs:
           echo "SOURCE_SNAPSHOT_SHA256=$local_sha"
           echo "SOURCE_SNAPSHOT_BYTES=$(stat -c %s "$dump")"
           scp -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$dump" "ubuntu@$host:/tmp/metadrive-source-20261022.dump"
-          remote_sha="$(ssh -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" "sha256sum /tmp/metadrive-source-20261022.dump | awk '{print \\$1}'")"
+          remote_sha="$(ssh -i "$HOME/.ssh/oracle_stage" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" "sha256sum /tmp/metadrive-source-20261022.dump" | awk '{print $1}')"
           if [[ "$local_sha" != "$remote_sha" ]]; then
             echo "Snapshot transfer checksum mismatch"
             exit 1
