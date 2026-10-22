@@ -25,7 +25,7 @@ export function communicationSenderName(row: InboxRecord): string {
 }
 
 const occurredAt = (row: InboxRecord): string =>
-  stringValue(pick(row, 'ReceivedAt', 'SentAt', 'CreatedAt', 'CreatedDate', 'LastModifiedDate'));
+  stringValue(pick(row, '__lastMessageAt', 'ReceivedAt', 'SentAt', 'CreatedAt', 'CreatedDate', 'LastModifiedDate'));
 
 const timeValue = (row: InboxRecord): number => {
   const value = Date.parse(occurredAt(row));
