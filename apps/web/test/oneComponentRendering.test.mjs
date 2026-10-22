@@ -184,14 +184,14 @@ test('reported One UI accessibility contracts remain implemented', async () => {
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
-    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx')
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.jsx')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(overlay, /event\.key === "Escape"/);
-  assert.match(overlay, /document\.addEventListener\("focusin"/);
+  assert.match(overlay, /useModalAccessibility\(React,open,dialogRef,close\)/);\n  assert.match(shared, /document\.addEventListener\("focusin"/);
   assert.match(menu, /event\.key === "ArrowDown"/);
   assert.match(menu, /event\.key === "Home"/);
-  assert.match(menu, /document\.addEventListener\("pointerdown"/);
+  assert.match(menu, /useDismissOnOutside\(React,rootRef,open,dismiss\)/);\n  assert.match(shared, /document\.addEventListener\("pointerdown"/);
   assert.match(tabs, /aria-controls=\{panelId\}/);
   assert.match(tabs, /aria-labelledby=\{activeTabId\}/);
   assert.match(button, /aria-busy=\{p\.loading === true \? "true" : undefined\}/);
