@@ -136,3 +136,96 @@
  .ace-chat-conversation-meta{display:none}
 }
 @media(prefers-reduced-motion:reduce){.ace-chat *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Keep the conversation chrome inside the mobile visual viewport.
+   Some mobile browsers scroll the document when the keyboard/address bar changes;
+   the chat itself must remain a bounded flex column instead. */
+.ace-chat {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+.ace-chat-sidebar,
+.ace-chat-main {
+  min-height: 0;
+  height: 100%;
+}
+.ace-chat-main {
+  overflow: hidden;
+}
+.ace-chat-top {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 72px;
+  min-height: 72px;
+  flex-shrink: 0;
+}
+.ace-chat-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior-y: contain;
+}
+.ace-chat-compose {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+}
+@media (max-width: 760px) {
+  .ace-chat {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .ace-chat.has-selected-chat .ace-chat-main {
+    display: flex !important;
+    flex: 1 1 100%;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .ace-chat-top {
+    display: flex !important;
+    position: sticky;
+    top: 0;
+    flex: 0 0 62px;
+    min-height: 62px;
+    width: 100%;
+    padding-top: max(8px, env(safe-area-inset-top));
+    background: #f0f2f5;
+  }
+  .ace-chat-back {
+    display: grid !important;
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 36px;
+    height: 40px;
+    place-items: center;
+    margin-left: -4px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #075e54;
+    font-size: 35px;
+    line-height: 1;
+    touch-action: manipulation;
+  }
+  .ace-chat-thread-heading {
+    flex: 1 1 auto;
+  }
+  .ace-chat-thread {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ace-chat-compose {
+    flex: 0 0 auto;
+    padding-bottom: max(9px, env(safe-area-inset-bottom));
+  }
+}
