@@ -6,6 +6,8 @@ import { registerUniversalShell } from './core/workspace/Bootstrap/universalShel
 import { isMissingDynamicChunk, recoverMissingDynamicChunk, reloadLatestWorkspace } from './core/workspace/Bootstrap/dynamicChunkRecovery';
 
 registerUniversalShell();
+// Normalise the dedicated login document's trailing-slash path.
+if (window.location.pathname === '/login/') window.history.replaceState(window.history.state, '', '/login' + window.location.search + window.location.hash);
 
 // Vite emits this event for a missing lazy JS/CSS module after Pages publishes
 // a new content-hashed build. Fetch the fresh HTML once, never loop on 404s.
