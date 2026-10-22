@@ -1,4 +1,4 @@
-name: Oracle production cutover access check
+name: Oracle production cutover access check # retry after owner added host and Cloudflare secrets
 
 on:
   push:
