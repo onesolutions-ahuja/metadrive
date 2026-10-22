@@ -180,7 +180,7 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
 
 test('reported One UI accessibility contracts remain implemented', async () => {
   const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
-  const [overlay, menu, tabs, button, input, search, form, grid] = await Promise.all([
+  const [overlay, menu, tabs, button, input, search, form, grid, shared] = await Promise.all([
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
