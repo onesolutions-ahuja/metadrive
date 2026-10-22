@@ -226,6 +226,20 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
    ],'Name','Ascending','200')
  ];
+ const contactsFlow=definitions.find(value=>value.apiName==='AceChatterLoadContacts') as unknown as {
+  resources:Array<Record<string,unknown>>;
+  elements:Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
+  connectors:Array<{from:number;to:number;kind:string;label?:string}>;
+ }|undefined;
+ if(contactsFlow){
+  contactsFlow.resources.push({name:'sourceObjectApi',type:'Variable',dataType:'Text',availableForOutput:true});
+  contactsFlow.elements[1].config={...contactsFlow.elements[1].config,conditionLogic:'All',
+   fields:['Name','FirstName','LastName','Phone','Mobile','Email']};
+  contactsFlow.elements[2]={id:3,type:'Assignment',label:'Set contact source object',
+   config:{variable:'sourceObjectApi',operator:'Assign',value:'Contact'}};
+  contactsFlow.elements.push({id:4,type:'End',label:'End',config:{}});
+  contactsFlow.connectors=links(1,2,3,4);
+ }
  let seeded=0;
  for(const value of definitions){
   if(value.apiName==='AceChatterLoadContacts'){
