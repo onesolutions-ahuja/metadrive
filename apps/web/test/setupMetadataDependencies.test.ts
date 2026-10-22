@@ -71,3 +71,12 @@ test('session restore does not automatically spend a second timeout after a hung
   assert.match(app, /The workspace API is not responding yet\. Check the API connection and retry\./);
   assert.match(app, /onRetry=\{\(\) => \{ setAuthError\(''\); setAuthState\('anonymous'\); void restoreSession\(\); \}\}/);
 });
+
+
+test('shared API coalesces only identical default GETs and preserves explicit request options', () => {
+  const client = readFileSync(new URL('../src/core/authentication/Client/authClient.ts', import.meta.url), 'utf8');
+  assert.match(client, /if \(init !== undefined\) return performApiRequest<T>\(path, init\);/);
+  assert.match(client, /const key = JSON\.stringify\(\[accessToken \?\? null, path\]\);/);
+  assert.match(client, /const existing = inFlightGetRequests\.get\(key\);\s*if \(existing\) return existing as Promise<T>;/);
+  assert.match(client, /if \(inFlightGetRequests\.get\(key\) === request\) inFlightGetRequests\.delete\(key\);/);
+});
