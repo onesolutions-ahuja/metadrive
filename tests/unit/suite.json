@@ -5,6 +5,10 @@
   "tests": [
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
+    "apps/server/test/system/aceassist-booking-slot-preview.test.ts",
+    "apps/server/test/system/aceassist-financial-flows.test.ts",
+    "apps/server/test/system/aceassist-payment-flows.test.ts",
+    "apps/server/test/system/aceassist-v3-metadata.test.ts",
     "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
     "apps/server/test/system/acetill-editable-page.test.ts",
@@ -77,6 +81,7 @@
     "apps/server/test/system/quick-action-email-queue.test.ts",
     "apps/server/test/system/record-file-service.test.ts",
     "apps/server/test/system/record-list-view.test.ts",
+    "apps/server/test/system/record-availability-guard.test.ts",
     "apps/server/test/system/record-overlap-guard.test.ts",
     "apps/server/test/system/record-matching.test.ts",
     "apps/server/test/system/record-recycle-bin.test.ts",

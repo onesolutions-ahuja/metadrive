@@ -1,5 +1,8 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
-import {enforceRecordOverlap} from './RecordOverlapGuard.js';
+import {enforceRecordOverlap,enforceUniqueRecordInput} from './RecordOverlapGuard.js';
+import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
+import {enforceDocumentConversion,enforceDocumentSourceLink} from './DocumentFinancialGuard.js';
+import {enforceManualPaymentGuard} from './RecordPaymentGuard.js';
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
  const config=node.config;
@@ -20,7 +23,12 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
           fields[field]=value;
         }
         await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
-        const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+      await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
+        await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
+        await enforceDocumentConversion(context,config.documentConversion,fields);
+      await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
+      await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
+      const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
         created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
@@ -38,6 +46,11 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         fields[field]=value;
       }
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+      await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
+        await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
+      await enforceDocumentConversion(context,config.documentConversion,fields);
+      await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
+      await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
       // The optional scalar resultVariable retains its existing Id-only contract.

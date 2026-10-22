@@ -27,7 +27,7 @@ engine in Ace Assist. Avoid importing Page/Flow Builders into runtime bundles.
 2. Calendar (day, week, month, agenda; resource and location filtering)
 3. Create/view/edit appointment and mark visit complete or reschedule via Flows
 4. Customer/patient profile (limited by record/field permissions)
-5. Self-service booking (limited public permissions and spam protection)
+5. Authenticated tenant-user self-booking (no anonymous booking routes)
 6. Quotations and quotation lines (versioned shared Core Object metadata)
 7. Billing: Invoice and InvoiceLine, never a second billing record model
 
@@ -75,7 +75,7 @@ amounts or derive invoice balances inside frontend components.
   existing tenants after core reconciliation. Existing customisations survive
   reruns. Invoice/InvoiceLine remain unchanged.
 - All mutating actions are server-authorised and audited as applicable.
-- Tenant isolation, public-booking boundaries, app deactivation/uninstall,
+- Tenant isolation, authenticated-user booking boundaries, app deactivation/uninstall,
   server-side double-booking prevention, duplicate webhook delivery and timezone
   / daylight-saving transitions are tested.
 
@@ -127,3 +127,41 @@ Existing tenant-authored definitions, versions and business records are preserve
 conflict handling, appointment notification/reminder Flows, quotation→invoice
 conversion, payment collection and financial posting remain separate tenant
 workflows. These are not simulated in the frontend.
+
+## V3 internal booking and document workflows
+
+AceAssist is **not a public booking portal**. A valid tenant session, active app entitlement
+and OneEngine permissions are mandatory. Staff assignments default to the signed-in user.
+All booking writes call `AceAssistCreateV3Appointment` or `AceAssistUpdateV3Appointment`;
+the UI fails closed if those safer Flows are absent.
+
+The independent app seeds `BookableResource`, `StaffAvailability` and
+`AvailabilityException` as reusable SQL Objects. The built-in record `OwnerId`
+represents the staff user for recurring shifts and time off; there is no parallel user
+directory. Configure staff schedule/time-off records through authorised generic Object
+Records interfaces. Existing tenant business hours remain the fallback when a staff
+member has not configured recurring shifts.
+
+The frontend may preview time slots from authorised Get Records Flows, but it never
+promises that a slot has been reserved. A transaction-scoped generic overlap guard
+checks every assigned staff member and resource, while a metadata-based availability
+guard checks configured shifts and time-off. Legacy unmodified booking Flows may
+still lack these guards and must not be used for production booking.
+
+`Quotation.DocumentNumber` and `Invoice.DocumentNumber` use the existing shared
+SQL Auto Number Field engine. Prefixes and formats are editable through Object Manager.
+Draft `DocumentNumber` values are allocated at creation. An authenticated `AceAssistIssueInvoice` Flow independently allocates the final `InvoiceNumber` when it issues a verified draft, within the SQL transaction. Existing historical numbers remain untouched.
+
+The app provides four **inactive draft** send templates, supporting both quotation
+and invoice email and WhatsApp transport. A tenant developer must set the actual
+SMTP/HTTPS Named Credential, permitted sender, recipient mapping, WhatsApp template,
+consent/policy constraints, attachment or document rendering requirements, publish
+and verify the Flow. Drafts never deliver messages automatically.
+
+`AceAssistConvertQuoteToInvoice` verifies the accepted quotation, checks source lines, and copies related lines into a linked draft Invoice. `AceAssistIssueInvoice` validates its financial lines and sets issuance-time InvoiceNumber. OneEngine's separately assignable `AceAssistFinanceIssuer` policy controls issuing.
+
+A shared `Payment` Object and cashier-only `AceAssistRecordCashPayment` Flow validate manual cash receipts against the remaining numbered invoice balance and track part/full payment. Bank/card provider settlement remains unverified until a signed provider webhook and reconciliation are configured; no UI action claims card payment without that evidence.
+
+Record-triggered scheduled reminder Flows provide a live internal 24-hour reminder and draft email/WhatsApp reminders, which require explicitly configured Named Credentials, communication consent and approved provider templates.
+
+A shared read-only document component lets authorised users print or use the browser's **Save as PDF** facility for Flow-loaded quotations and invoices. This is not a server-generated email attachment; attachment rendering and automated PDF delivery still require a reusable document service.\n\nNot yet completed: generated email/PDF attachments, verified outbound provider delivery and inbox booking conversations, card-provider reconciliation/refunds, and live tenant/browser regression tests.
