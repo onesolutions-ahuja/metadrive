@@ -291,13 +291,13 @@ export default function NamedCredentials({
             ? { clientId: '', ...(authType==='OAuth Authorization Code'?{authorizationUrl:'',tokenUrl:''}:{tokenPath:''}), scope: '', ...draft.configuration }
             : draft.configuration });
         }}>
-          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']).map((authType) => <option key={authType}>{authType}</option>)}
+          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code', 'Authorization Scheme']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label></PlatformPageSlot>
         <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0' }}>
           <legend>Configuration variables</legend>
           {Object.entries(draft.configuration ?? {}).map(([key, value]) => (
             <label key={key} className="connector-config-row" style={{ display: 'grid', gridTemplateColumns: '40% 1fr', gap: 12, alignItems: 'center', marginBottom: 8 }}>
-              <span>{fieldLabels?.[key] || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
+              <span>{fieldLabels?.[key] || (draft.id ? credentials.find(c => c.id === draft.id)?.configurationLabels?.[key] : undefined) || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
               <input className="form-control" value={value} onChange={(event) => updateDraft({ configuration: { ...draft.configuration, [key]: event.target.value } })} />
             </label>
           ))}
@@ -307,7 +307,7 @@ export default function NamedCredentials({
           }}>Add variable</button>}
         </fieldset>
         {['OAuth Client Credentials','OAuth Authorization Code'].includes(draft.authType) && <div className="info-callout named-credential-span-full">Configure clientId and scope. Client Credentials requires tokenPath (relative to Base URL); Authorization Code requires public HTTPS authorizationUrl and tokenUrl. Enter the client secret in the encrypted Secret field. OAuth tokens are protected and never exposed to Flows.</div>}
-        {draft.authType === 'API Key' && <PlatformPageSlot slotKey="field-credentials-06"><label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label></PlatformPageSlot>}
+        {['API Key', 'Authorization Scheme'].includes(draft.authType) && <PlatformPageSlot slotKey="field-credentials-06"><label className="form-label">{draft.authType === 'Authorization Scheme' ? 'Authorization Scheme' : 'API Key Header'}<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label></PlatformPageSlot>}
         {draft.authType === 'Basic' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-07"><label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label></PlatformPageSlot>}
         {draft.authType !== 'None' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-08"><label className="form-label">{draft.authType === 'Basic' ? 'Password' : draft.authType === 'OAuth Client Credentials' ? 'Client Secret' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label></PlatformPageSlot>}
         </div>
