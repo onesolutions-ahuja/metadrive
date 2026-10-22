@@ -64,7 +64,7 @@ export default function NamedCredentials({
   onSave: (credential: CredentialInput) => Promise<{credential:NamedCredentialMetadata;webhookVerifyToken?:string}>;
   onDelete: (id: string) => Promise<void>;
   onRotate?: (id: string) => Promise<void>;
-  onTest?: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
+  onTest?: (id: string, testPath?: string) => Promise<{ connected: boolean; status?: number; message: string }>;
   onToggleEnabled?: (id: string, enabled: boolean) => Promise<void>;
   onOAuthAuthorize?: (id:string)=>Promise<string>;
 }) {
@@ -208,7 +208,15 @@ export default function NamedCredentials({
     setError('');
     setTestResults((current) => ({ ...current, [credential.id]: 'Testing connection…' }));
     try {
-      const result = await onTest(credential.id);
+      // Provider-aware path is only a UI default. The backend remains a generic
+      // read-only HTTP diagnostic controlled by OneEngine and Named Credentials.
+      const configuredPath=credential.configuration?.public_testPath?.trim();
+      let testPath=configuredPath||'';
+      try{
+        if(!configuredPath&&new URL(credential.baseUrl).hostname.toLowerCase()==='graph.facebook.com')
+          testPath='me';
+      }catch{/* Invalid base URL will be reported by the existing backend guard. */}
+      const result = await onTest(credential.id,testPath);
       setTestResults((current) => ({ ...current, [credential.id]: `${result.connected ? 'Connected' : 'Failed'}: ${result.message}` }));
     } catch (testError) {
       setTestResults((current) => ({ ...current, [credential.id]: `Failed: ${testError instanceof Error ? testError.message : 'Unable to test connection'}` }));
