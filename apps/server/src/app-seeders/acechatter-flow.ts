@@ -214,7 +214,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'Channel',operator:'Equals',value:'WhatsApp'},
     {field:'Sender',operator:'Contains',value:'@searchTerm'},
     {field:'Recipient',operator:'Contains',value:'@searchTerm'}
-   ],'ReceivedAt','Descending','200','1 AND (2 OR 3)'),
+   ],'CreatedAt','Descending','200','1 AND (2 OR 3)'),
   graph('AceChatterFindConversationByPhone','AceChatter - Find Conversation by Phone',
    'ChatConversation','phoneNumber',[
     {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
