@@ -31,3 +31,20 @@ test('AceKiosk menu navigation Flows are metadata-only and idempotent',()=>{
  assert.match(file,/if\(exists\.rowCount\)continue/);
  assert.doesNotMatch(file,/INSERT INTO md_records|INSERT INTO md_permission_assignments|INSERT INTO md_orders/);
 });
+
+test('AceKiosk Cash/Card templates use Acetill payment contract without auto-activating',()=>{
+ const templates=JSON.parse(readFileSync(new URL('../../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8'));
+ for(const method of ['Cash','Card']){
+  const flow=templates['AceKioskPayment'+method];
+  assert.equal(flow.appApiName,'AceKiosk');
+  assert.equal(flow.status,'Draft');
+  assert.ok(flow.elements.some((element)=>element.type==='Create Records'&&element.config.object==='Order'));
+  assert.ok(flow.elements.some((element)=>element.type==='Create Records'&&element.config.object==='OrderLine'));
+  assert.ok(flow.resources.some((resource)=>resource.name==='orderId'&&resource.availableForOutput));
+ }
+ const seeder=readFileSync(new URL('../../src/app-seeders/acekiosk-payment-flows.ts',import.meta.url),'utf8');
+ assert.match(seeder,/md_app_installations/);
+ assert.match(seeder,/ON CONFLICT DO NOTHING/);
+ assert.match(seeder,/1,false/);
+ assert.doesNotMatch(seeder,/md_permission_assignments/);
+});
