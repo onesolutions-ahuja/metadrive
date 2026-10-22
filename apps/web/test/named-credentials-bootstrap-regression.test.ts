@@ -6,6 +6,6 @@ import {test} from 'node:test';
 // Named Credentials API result with an empty placeholder after it loaded.
 test('generic Setup bootstrap never writes Named Credentials state',()=>{
  const source=readFileSync(new URL('../src/core/workspace/SetupShell/useSetupMetadata.ts',import.meta.url),'utf8');
- assert.doesNotMatch(source,/setNamedCredentials\\s*\\(/);
- assert.doesNotMatch(source,/credentials:\\s*\\[\\]\\s+as NamedCredentialMetadata\\[\\]/);
+ assert.doesNotMatch(source,/setNamedCredentials\s*\(/);
+ assert.doesNotMatch(source,/credentials:\s*\[\]\s+as NamedCredentialMetadata\[\]/);
 });
