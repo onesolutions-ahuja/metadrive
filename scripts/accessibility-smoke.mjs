@@ -55,9 +55,58 @@ try {
     };
     await scan('');
     if (target.name === 'component-fixture') {
+      const busyButton = page.getByRole('button', { name: 'Working…' });
+      assert.equal(await busyButton.getAttribute('aria-busy'), 'true', 'Loading buttons expose aria-busy');
+      const invalidInput = page.getByRole('textbox', { name: 'Email address' });
+      assert.equal(await invalidInput.getAttribute('aria-invalid'), 'true', 'Invalid inputs expose aria-invalid');
+      const errorId = await invalidInput.getAttribute('aria-errormessage');
+      assert.ok(errorId && await page.locator('#' + errorId).count(), 'Invalid input points to its visible error message');
+
+      const menuTrigger = page.getByRole('button', { name: /Actions/ });
+      await menuTrigger.click();
+      const menuItems = page.getByRole('menuitem');
+      await menuItems.first().waitFor({ state: 'visible' });
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'First action', 'Opening a menu focuses its first item');
+      await menuItems.first().press('ArrowDown');
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Second action', 'ArrowDown moves menu focus');
+      await page.keyboard.press('Home');
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'First action', 'Home moves menu focus to the first item');
+      await page.keyboard.press('Escape');
+      await page.getByRole('menu').waitFor({ state: 'hidden' });
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-haspopup')), 'menu', 'Closing a menu restores focus to its trigger');
+
+      const detailsTab = page.getByRole('tab', { name: 'Details' });
+      await detailsTab.press('ArrowLeft');
+      const overviewTab = page.getByRole('tab', { name: 'Overview' });
+      assert.equal(await overviewTab.getAttribute('aria-selected'), 'true', 'ArrowLeft selects the previous tab');
+      const panelId = await overviewTab.getAttribute('aria-controls');
+      assert.ok(panelId, 'Tabs expose aria-controls');
+      const panel = page.locator('#' + panelId);
+      assert.equal(await panel.getAttribute('aria-labelledby'), await overviewTab.getAttribute('id'), 'Tab and panel are linked in both directions');
+
+      const search = page.getByRole('combobox', { name: 'Contact search' });
+      await search.fill('Al');
+      const listbox = page.getByRole('listbox', { name: 'Contact search suggestions' });
+      await listbox.waitFor({ state: 'visible' });
+      await search.press('ArrowDown');
+      const activeDescendant = await search.getAttribute('aria-activedescendant');
+      assert.ok(activeDescendant, 'Search arrow navigation exposes the active descendant');
+      assert.equal(await page.locator('#' + activeDescendant).getAttribute('role'), 'option');
+      await search.press('Enter');
+      assert.equal(await search.inputValue(), 'Alice', 'Enter selects the active search suggestion');
+      assert.equal(await page.getByRole('listbox').count(), 0, 'Selecting a suggestion closes the listbox');
+
       await page.getByRole('button', { name: 'Open details' }).click();
-      await page.getByRole('dialog', { name: 'Details dialog' }).waitFor({ state: 'visible' });
+      const dialog = page.getByRole('dialog', { name: 'Details dialog' });
+      await dialog.waitFor({ state: 'visible' });
       await scan(' / open dialog');
+      const close = page.getByRole('button', { name: 'Close' });
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Close', 'Opening a dialog moves focus inside');
+      await close.press('Tab');
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Close', 'Tab remains trapped inside the dialog');
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), 'Open details', 'Closing a dialog restores trigger focus');
     }
     if (target.name === 'marketing') {
       const tabs = page.locator('.une-showcase-tabs button');
