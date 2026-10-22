@@ -62,6 +62,7 @@ export function buildCommunicationInbox(
         Name: stringValue(pick(previous, 'Name')) || senderName,
         PhoneNumber: phone,
         __isCommunicationBacked: true,
+        __communicationName: senderName,
         __lastMessageAt: timestamp >= priorTime ? timestamp : priorTime,
         __lastMessageBody: timestamp >= priorTime
           ? stringValue(pick(row, 'Body'))
@@ -75,6 +76,7 @@ export function buildCommunicationInbox(
         Status: 'WhatsApp',
         __syntheticConversation: true,
         __isCommunicationBacked: true,
+        __communicationName: senderName,
         __lastMessageAt: timestamp,
         __lastMessageBody: stringValue(pick(row, 'Body'))
       });
@@ -88,7 +90,8 @@ export function buildCommunicationInbox(
       if (!term) return true;
       const phone = normalizeChatNumber(pick(row, 'PhoneNumber'));
       const name = stringValue(pick(row, 'Name')).toLowerCase();
-      return (digits.length >= 3 && phone.includes(digits)) || name.includes(term);
+      const communicationName = stringValue(row.__communicationName).toLowerCase();
+      return (digits.length >= 3 && phone.includes(digits)) || name.includes(term) || communicationName.includes(term);
     })
     .sort((a, b) => timeValue(b) - timeValue(a) ||
       stringValue(pick(a, 'Name')).localeCompare(stringValue(pick(b, 'Name'))));
