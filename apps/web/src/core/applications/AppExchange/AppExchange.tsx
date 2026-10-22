@@ -85,6 +85,12 @@ export default function AppExchange(props: Props) {
     } finally { setBusy(false); }
   };
 
+  const uninstallFromCard = (app: ConnectorApp) => {
+    if (busy || !props.canInstall || !app.Installed__c) return;
+    if (!window.confirm('Uninstall ' + app.Name + '? Credentials and tenant records will be retained.')) return;
+    void action(app, 'uninstall');
+  };
+
   if (opened) return <Suspense fallback={<div role="status">Loading connector settings…</div>}><ConnectorAppWorkspace app={opened}
     credentials={props.credentials} flows={props.flows} canManageCredentials={props.canManageCredentials}
     canView={props.canView} canManageSecrets={props.canManageSecrets}
@@ -141,9 +147,16 @@ export default function AppExchange(props: Props) {
           <div className="exchange-card-footer">
             <span className="exchange-category-label">{app.Category__c || 'Connector'}</span>
             {app.Installed__c
-              ? <button className="btn btn-small btn-brand" onClick={() => setSelected(app.AppKey__c)}>
-                  {app.PackageVersion__c && app.PackageVersion__c > (app.InstalledPackageVersion__c ?? 0)
-                    ? 'Update available' : 'Details'} <ArrowRight size={13}/></button>
+              ? <div className="toolbar-actions">
+                  <button className="btn btn-small btn-brand" disabled={busy} onClick={() => setSelected(app.AppKey__c)}>
+                    {app.PackageVersion__c && app.PackageVersion__c > (app.InstalledPackageVersion__c ?? 0)
+                      ? 'Update available' : 'Details'} <ArrowRight size={13}/></button>
+                  <button className="btn btn-small btn-danger" disabled={busy || !props.canInstall}
+                    aria-label={'Uninstall ' + app.Name} title={!props.canInstall ? 'App installation permission required' : undefined}
+                    onClick={() => uninstallFromCard(app)}>
+                    Uninstall
+                  </button>
+                </div>
               : <button className="btn btn-brand btn-small" onClick={() => setSelected(app.AppKey__c)}>Details <Download size={13}/></button>}
           </div>
         </article>)}
