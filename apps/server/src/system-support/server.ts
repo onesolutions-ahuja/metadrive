@@ -26,6 +26,7 @@ import {seedAceKioskNavigationFlows} from '../app-seeders/acekiosk-navigation-fl
 import {seedAceKioskPaymentFlows} from '../app-seeders/acekiosk-payment-flows.js';
 import {seedAceChatterAppCatalog} from '../app-seeders/acechatter-app-catalog.js';
 import {seedAceChatterFlows} from '../app-seeders/acechatter-flow.js';
+import {seedAceAssistCrudFlows} from '../app-seeders/aceassist-crud-flows.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -2106,6 +2107,7 @@ export async function startSystemServer() {
     await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
     await seedQuotationObjectsForExistingTenants(db);
     await seedAppointmentObjectsForExistingTenants(db);
+    await seedAceAssistCrudFlows(db); // Installed tenants only; preserves edited Flow metadata.
     await seedCommunicationObjectsForExistingTenants(db);
     console.info('Core metadata seeder: existing tenants backfilled:',seededTenants);
     await bootstrapFreshTenant(db);
