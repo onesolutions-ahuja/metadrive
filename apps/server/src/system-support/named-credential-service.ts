@@ -116,8 +116,14 @@ export class NamedCredentialService {
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
    header_name:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
-   encryption_key_id:string;enabled:boolean;updated_at:Date
-  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
+   encryption_key_id:string;enabled:boolean;updated_at:Date;
+   webhook_id:string|null;webhook_enabled:boolean|null;
+  }>(`SELECT c.id,c.name,c.label,c.protocol,c.base_url,c.auth_type,c.header_name,
+     c.secret_ciphertext,c.configuration_ciphertext,c.encryption_key_id,
+     c.enabled,c.updated_at,w.id AS webhook_id,w.enabled AS webhook_enabled
+     FROM md_named_credentials c
+     LEFT JOIN md_inbound_webhook_endpoints w ON w.tenant_id=c.tenant_id AND w.credential_id=c.id
+     WHERE c.tenant_id=$1 ORDER BY c.label,c.name`,[tenantId]);
   // Generic, opt-in public settings convention for all provider integrations.
   // Tokens, passwords and keys are never allowed to be client-readable.
   const safePublicKey=(key:string)=>/^public_[A-Za-z][A-Za-z0-9_]*$/.test(key)
@@ -135,6 +141,7 @@ export class NamedCredentialService {
    return {id:x.id,name:x.name,label:x.label,protocol:x.protocol,
     baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
     hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration,
+    webhookId:x.webhook_id??null,webhookEnabled:x.webhook_enabled===true,
     keyId:x.encryption_key_id,updatedAt:x.updated_at};
   });
  }
@@ -222,6 +229,71 @@ export class NamedCredentialService {
     [tenantId,userId,'NamedCredentialKeyRotation',JSON.stringify({credentialId:id,previousKeyId:existing.encryption_key_id,newKeyId:targetId})]);
   });
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
+ }
+
+ /** Configure an optional, standalone signed inbound endpoint for this credential.
+  * No app or Flow is assigned. Only its generated verification token is returned once.
+  */
+ async configureWebhook(tenantId:string,userId:string,id:string,required:boolean,secret?:string){
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  await this.rbac.require(tenantId,userId,'WebhookSubscription','manage');
+  if(!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id)||typeof required!=='boolean'
+    ||secret!==undefined&&(typeof secret!=='string'||secret.length<16||secret.length>512))
+   throw new Error('Invalid webhook configuration');
+  const {rows:credentials}=await this.db.query<{name:string;protocol:string}>(`
+   SELECT name,protocol FROM md_named_credentials WHERE tenant_id=$1 AND id=$2`,
+   [tenantId,id]);
+  const credential=credentials[0];
+  if(!credential)throw new Error('Named Credential not found');
+  if(required&&credential.protocol!=='HTTPS')throw new Error('Webhooks require HTTPS credentials');
+  const {rows:existing}=await this.db.query<{id:string}>(`
+   SELECT id FROM md_inbound_webhook_endpoints
+   WHERE tenant_id=$1 AND credential_id=$2`,[tenantId,id]);
+  const endpoint=existing[0];
+  if(!required){
+   if(endpoint)await this.db.query(`
+    UPDATE md_inbound_webhook_endpoints SET enabled=false,updated_at=now()
+     WHERE tenant_id=$1 AND id=$2`,[tenantId,endpoint.id]);
+   return {webhookId:endpoint?.id??null,enabled:false};
+  }
+  if(!endpoint&&!secret)throw new Error('Enter the webhook signing secret');
+  let verifyToken:string|undefined;
+  let secured:{ciphertext:Buffer;keyId:string}|undefined;
+  if(secret){
+   // Meta requires a separate verify token. Generate it rather than asking for
+   // a second secret or exposing the provider signing key.
+   verifyToken=randomBytes(32).toString('hex');
+   secured=this.encryptOpaque(secret);
+  }
+  let endpointId=endpoint?.id;
+  if(endpoint){
+   await this.db.query(`
+    UPDATE md_inbound_webhook_endpoints
+     SET enabled=true,updated_at=now(),
+       verify_token_digest=COALESCE($3,verify_token_digest),
+       signature_secret_ciphertext=COALESCE($4,signature_secret_ciphertext),
+       encryption_key_id=COALESCE($5,encryption_key_id)
+     WHERE tenant_id=$1 AND id=$2`,
+    [tenantId,endpoint.id,verifyToken?createHash('sha256').update(verifyToken).digest():null,
+     secured?.ciphertext??null,secured?.keyId??null]);
+  }else{
+   const {rows:created}=await this.db.query<{id:string}>(`
+    INSERT INTO md_inbound_webhook_endpoints
+     (tenant_id,api_name,credential_id,flow_api,execution_user_id,app_id,
+      provider,verify_token_digest,signature_secret_ciphertext,encryption_key_id,
+      enabled,created_by)
+    VALUES($1,$2,$3,NULL,NULL,NULL,'HmacSha256',$4,$5,$6,true,$7)
+    RETURNING id`,
+    [tenantId,'Credential_'+credential.name,id,
+     createHash('sha256').update(verifyToken!).digest(),
+     secured!.ciphertext,secured!.keyId,userId]);
+   endpointId=created[0].id;
+  }
+  await this.db.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
+   VALUES($1,$2,'CredentialWebhookConfigured',
+    jsonb_build_object('credentialId',$3::text,'endpointId',$4::text))`,
+   [tenantId,userId,id,endpointId]);
+  return {webhookId:endpointId!,enabled:true,...(verifyToken?{verifyToken}:{})};
  }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');

@@ -27,9 +27,10 @@ export function createSetupFlowActions(ctx: any) {
   const saveNamedCredential = async (credential: {
     id?: string; name: string; label: string; protocol: NamedCredentialMetadata['protocol']; baseUrl: string;
     authType: NamedCredentialMetadata['authType']; headerName?: string; configuration?: Record<string, string>; username?: string; secret?: string;
+    webhookRequired?: boolean; webhookSecret?: string;
   }) => {
     const { id, ...body } = credential;
-    const result = await apiRequest<{ credential: NamedCredentialMetadata }>(
+    const result = await apiRequest<{ credential: NamedCredentialMetadata; webhookVerifyToken?: string }>(
       id ? `/named-credentials/${encodeURIComponent(id)}` : '/named-credentials',
       { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }
     );
@@ -37,6 +38,7 @@ export function createSetupFlowActions(ctx: any) {
       ? current.map((item) => item.id === result.credential.id ? result.credential : item)
       : [...current, result.credential]);
     notify(`Named Credential ${id ? 'updated' : 'created'}`);
+    return result;
   };
 
   const toggleNamedCredentialEnabled = async (id: string, enabled: boolean) => {
