@@ -5,6 +5,7 @@ import {executeTransformNode} from './TransformNode.js';
 import {executeDeleteRecordsNode} from './DeleteRecordsNode.js';
 import {executeUpdateRecordsNode} from './UpdateRecordsNode.js';
 import {executeGetRecordsNode} from './GetRecordsNode.js';
+import {executeParseJsonNode} from './ParseJsonNode.js';
 import {executeCreateRecordsNode} from './CreateRecordsNode.js';
 import {executeLoopNode} from './LoopNode.js';
 import type {PoolClient} from 'pg';
@@ -35,6 +36,7 @@ export function evaluateFlowCollectionStep(type:string,config:Record<string,unkn
 export async function executeFlowDataAction(context:Context):Promise<FlowActionResult> {
   const {tenantId,userId,client,node,records,recordQuery,vars,loops,evaluate,set}=context;
   const config=node.config;
+  if(node.type==='Parse JSON')return executeParseJsonNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Get Records')return executeGetRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Update Records')return executeUpdateRecordsNode({...context,conditionsFrom,recordValues,scalar});
   if(node.type==='Delete Records')return executeDeleteRecordsNode({...context,conditionsFrom,recordValues,scalar});
