@@ -324,6 +324,81 @@ export function createSystemServer(db:SqlPersistence) {
       [tenantId,userId]);
     return rows[0]?.landing_app_api??'Setup';
   };
+  // The login and refresh clients request this bootstrap explicitly. Keep it in
+  // the same authenticated response so Setup does not repeat four metadata reads
+  // immediately after rendering. Each dataset uses the same server-side RBAC and
+  // tenant-scoped services as its standalone endpoint. If any dataset cannot be
+  // loaded, omit the bundle and let the existing per-endpoint recovery path report
+  // the precise failure instead of turning a successful login into a failure.
+  const landingBootstrap=async(tenantId:string,userId:string)=>{
+    try{
+      const [objectsPayload,pagesPayload,appsPayload,session]=await Promise.all([
+        (async()=>{
+          await rbac.require(tenantId,userId,'ObjectDefinition','read');
+          const objects=await definitions.list(tenantId);
+          const configurations=await objectManagerMetadata.loadForObjects(tenantId,objects.map(item=>item.apiName));
+          return objects.map(item=>({...item,...configurations.get(item.apiName)}));
+        })(),
+        (async()=>{
+          await rbac.require(tenantId,userId,'PageDefinition','read');
+          return pages.list(tenantId);
+        })(),
+        (async()=>permittedApps(rbac,tenantId,userId,await apps.listMetadata(tenantId)))(),
+        sessionMetadata(db,tenantId,userId)
+      ]);
+      return {landing:{objects:objectsPayload,pages:pagesPayload,apps:appsPayload,user:session.user}};
+    }catch{
+      return {};
+    }
+  };
+  // Prefetch the first ordinary record page as part of the already-authorised
+  // page response. RecordEngine remains the sole data/permission path; dynamic
+  // filters stay context-aware and live presenters continue polling after hydration.
+  const pageInitialRecords=async(tenantId:string,userId:string,page:{components?:Array<{properties?:unknown}>})=>{
+    try{
+      const components=Array.isArray(page.components)?page.components:[];
+      const componentProperties=(component:{properties?:unknown}):Record<string,unknown>=>{
+        const value=component.properties;
+        return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
+      };
+      const refs=components.map(component=>componentProperties(component).objectApiName)
+        .filter((value):value is string=>typeof value==='string'&&value.startsWith('metadata:'))
+        .map(value=>value.slice('metadata:'.length));
+      const apiById=new Map<string,string>();
+      const objectIds=[...new Set(refs)].filter(value=>/^[0-9a-f-]{36}$/i.test(value));
+      if(objectIds.length){
+        const {rows}=await db.query<{id:string;api_name:string}>(
+          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1 AND id=ANY($2::uuid[])',
+          [tenantId,objectIds]);
+        for(const row of rows)apiById.set(row.id,row.api_name);
+      }
+      const objectApis=new Set<string>();
+      for(const component of components){
+        const properties=componentProperties(component);
+        const filters=properties.filters;
+        if(filters!==undefined&&filters!==null
+          &&(!Array.isArray(filters)||filters.some((filter:unknown)=>!filter||typeof filter!=='object'
+            ||Array.isArray(filter)||typeof (filter as Record<string,unknown>).value==='object'
+            &&(filter as Record<string,unknown>).value!==null)))continue;
+        const raw=properties.objectApiName;
+        if(typeof raw!=='string'||!raw)continue;
+        const api=raw.startsWith('metadata:')?apiById.get(raw.slice('metadata:'.length)):raw;
+        if(api&&/^[A-Za-z][A-Za-z0-9_]*$/.test(api))objectApis.add(api);
+      }
+      const entries=await Promise.all([...objectApis].slice(0,3).map(async api=>{
+        try{
+          const result=await records.list(tenantId,userId,api,50,0);
+          return [api,result.records] as const;
+        }catch{
+          // The normal client query will show the authoritative permission/data error.
+          return null;
+        }
+      }));
+      return Object.fromEntries(entries.filter((entry):entry is readonly [string,Record<string,unknown>[]]=>entry!==null));
+    }catch{
+      return {};
+    }
+  };
   app.post('/api/auth/login',route(async(req,res)=>{
     const {tenantSlug,email,password}=req.body??{};
     if(typeof email!=='string'||typeof password!=='string'||!email.trim()) {
@@ -337,7 +412,8 @@ export function createSystemServer(db:SqlPersistence) {
       if(challenge){res.json(challenge);return;}
       const session=await auth.issuePasswordSession(tenantId,userId,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId)});
+      if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(tenantId,userId),...(req.query.landing==='1'?await landingBootstrap(tenantId,userId):{})});
     } catch(error) {
       // Distinguish rejected credentials from SQL/session failures. A successful
       // password check followed by a failed database write must not become 401.
@@ -352,7 +428,8 @@ export function createSystemServer(db:SqlPersistence) {
     try {
       const session=await auth.refresh(token,{ip:req.ip});
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
-      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id)});
+      if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
+      res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(session.tenant_id,session.user_id),...(req.query.landing==='1'?await landingBootstrap(session.tenant_id,session.user_id):{})});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
   app.post('/api/auth/password-reset/request',route(async(req,res)=>{
@@ -369,7 +446,8 @@ export function createSystemServer(db:SqlPersistence) {
     const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code,{ip:req.ip});
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
     const actor=await auth.authenticate(session.accessToken);
-    res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id)});
+    if(req.query.landing==='1')res.setHeader('Cache-Control','no-store');
+    res.json({access_token:session.accessToken,expires_in:session.expiresIn,landingAppApi:await landingPreference(actor.tenant_id,actor.user_id),...(req.query.landing==='1'?await landingBootstrap(actor.tenant_id,actor.user_id):{})});
   }));
   // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
   app.get('/api/oauth/callback',route(async(req,res)=>{
@@ -1046,10 +1124,18 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const factor=String(req.query.formFactor??'Desktop');
     if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
-    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    const session=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    // Permission verification and profile lookup are independent SQL reads.
+    // Run them concurrently; do not serialise the home-page request on both.
+    const [,session]=await Promise.all([
+      rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read'),
+      sessionMetadata(db,actor.tenant_id,actor.user_id)
+    ]);
     const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
-    res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
+    const page=assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null;
+    const initialRecords=page?await pageInitialRecords(actor.tenant_id,actor.user_id,page):{};
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
+    res.json({page,initialRecords});
   }));
   app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1057,7 +1143,10 @@ export function createSystemServer(db:SqlPersistence) {
     const factor=String(req.query.formFactor??'Desktop');
     const page=await pages.resolveAppPage(actor.tenant_id,req.params.appId,req.params.pageApiName,factor);
     if(!page)throw new Error('Page not found');
-    res.json({page});
+    const initialRecords=await pageInitialRecords(actor.tenant_id,actor.user_id,page.page);
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
+    res.json({page:page.page,initialRecords});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1624,6 +1713,12 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
+  }));
+  app.get('/api/metadata/landing-bootstrap',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
+    res.json(await landingBootstrap(actor.tenant_id,actor.user_id));
   }));
   app.post('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;

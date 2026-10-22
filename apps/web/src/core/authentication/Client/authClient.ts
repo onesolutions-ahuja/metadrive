@@ -54,7 +54,32 @@ function refreshAccessToken() {
   return refreshInFlight;
 }
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+// Share only identical in-flight GETs. This is request coalescing, not a data cache:
+// every later navigation still goes through the server's tenant/RBAC checks.
+// Include the in-memory access token in the key so requests cannot cross an auth
+// transition, and skip custom signals/headers because their semantics are caller-owned.
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
+
+export function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  // Only default GETs are coalesced. Any explicit RequestInit may carry caller
+  // semantics (cache mode, credentials, abort signal, headers, etc.) and must
+  // remain an independent request.
+  if (init !== undefined) return performApiRequest<T>(path, init);
+  const key = JSON.stringify([accessToken ?? null, path]);
+  const existing = inFlightGetRequests.get(key);
+  if (existing) return existing as Promise<T>;
+  const request = performApiRequest<T>(path, init);
+  inFlightGetRequests.set(key, request);
+  void request.finally(() => {
+    if (inFlightGetRequests.get(key) === request) inFlightGetRequests.delete(key);
+  }).catch(() => {
+    // The caller receives the original rejection; this handler only avoids an
+    // unhandled rejection from the cleanup promise created by finally().
+  });
+  return request;
+}
+
+async function performApiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const send = (token: string | undefined) => fetch(`${apiBase}${path}`, {
     ...init,
     credentials: 'include',

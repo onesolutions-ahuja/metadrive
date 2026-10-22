@@ -137,16 +137,18 @@ function App() {
     const stillCurrent = () => generation === sessionGeneration.current;
     const restoreStartedAt = performance.now();
     const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
-    // Do not hold the login screen for more than ~20 seconds when the free API is waking.
-    // A visible retry option is safer than hiding errors behind a minute-long spinner.
-    const retryDelaysMs = [1500];
+    // Bound a hung refresh to one timeout window. Retrying an aborted request
+    // automatically doubled the worst-case wait to ~20 seconds without evidence
+    // that the second request could succeed; show the existing explicit Retry UI.
+    // Fast transient network failures and retryable HTTP responses still get one retry.
+    const retryDelaysMs = [1000];
 
     for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), 9000);
       try {
         const response = await withAuthRefreshLock(() =>
-          fetch(`${apiBase}/auth/refresh?landing=1`, {
+          fetch(`${apiBase}/auth/refresh`, {
             method: 'POST',
             credentials: 'include',
             signal: controller.signal
@@ -175,12 +177,13 @@ function App() {
         }
       } catch (error) {
         if (!stillCurrent()) return;
-        const retryableNetworkFailure =
-          error instanceof DOMException && error.name === 'AbortError'
-          || error instanceof TypeError;
+        const timedOut = error instanceof DOMException && error.name === 'AbortError';
+        const retryableNetworkFailure = error instanceof TypeError;
 
-        if (!retryableNetworkFailure || attempt === retryDelaysMs.length) {
-          setAuthError(error instanceof DOMException && error.name === 'AbortError'
+        // A timeout is already the full request budget. Do not silently spend
+        // another full timeout on an automatic retry; the screen exposes Retry.
+        if (timedOut || !retryableNetworkFailure || attempt === retryDelaysMs.length) {
+          setAuthError(timedOut
             ? 'The workspace API is not responding yet. Check the API connection and retry.'
             : error instanceof Error ? error.message : String(error));
           setAuthState('error');
