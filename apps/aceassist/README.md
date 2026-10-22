@@ -164,4 +164,4 @@ A shared `Payment` Object and cashier-only `AceAssistRecordCashPayment` Flow val
 
 Record-triggered scheduled reminder Flows provide a live internal 24-hour reminder and draft email/WhatsApp reminders, which require explicitly configured Named Credentials, communication consent and approved provider templates.
 
-Not yet completed: invoice PDF generation and attachments, verified outbound provider delivery and inbox booking conversations, card-provider reconciliation/refunds, and live tenant/browser regression tests.
+A shared read-only document component lets authorised users print or use the browser's **Save as PDF** facility for Flow-loaded quotations and invoices. This is not a server-generated email attachment; attachment rendering and automated PDF delivery still require a reusable document service.\n\nNot yet completed: generated email/PDF attachments, verified outbound provider delivery and inbox booking conversations, card-provider reconciliation/refunds, and live tenant/browser regression tests.
