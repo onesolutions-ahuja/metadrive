@@ -369,31 +369,15 @@
               "value": "{!validatedTotal}"
             },
             {
-              "field": "PaymentMethod",
-              "value": "Cash"
-            },
-            {
-              "field": "PaymentStatus",
+              "field": "Status",
               "value": "Paid"
-            },
-            {
-              "field": "PaymentRequestId",
-              "value": "{!requestId}"
-            },
-            {
-              "field": "CashReceived",
-              "value": "{!cashReceived}"
-            },
-            {
-              "field": "ChangeDue",
-              "value": "{!changeAmount}"
             }
           ],
-          "object": "Order",
+          "object": "Invoice",
           "recordSource": "fields"
         },
         "id": 12,
-        "label": "Create settled Order",
+        "label": "Create settled Invoice",
         "type": "Create Records"
       },
       {
@@ -403,7 +387,7 @@
           "loopVariable": "saveLine"
         },
         "id": 13,
-        "label": "Save each order line",
+        "label": "Save each invoice line",
         "type": "Loop"
       },
       {
@@ -426,14 +410,14 @@
           "recordLimit": "1"
         },
         "id": 14,
-        "label": "Read Product for order line",
+        "label": "Read Product for invoice line",
         "type": "Get Records"
       },
       {
         "config": {
           "fieldValues": [
             {
-              "field": "Order",
+              "field": "Invoice",
               "value": "{!record12.Id}"
             },
             {
@@ -451,23 +435,27 @@
             {
               "field": "LineTotal",
               "value": "{!saveLineAmount}"
+            },
+            {
+              "field": "Name",
+              "value": "Acetill Sale Item"
             }
           ],
-          "object": "OrderLine",
+          "object": "InvoiceLine",
           "recordSource": "fields"
         },
         "id": 15,
-        "label": "Create OrderLine using trusted price",
+        "label": "Create InvoiceLine using trusted price",
         "type": "Create Records"
       },
       {
         "config": {
           "operator": "Assign",
           "value": "{!record12.Id}",
-          "variable": "orderId"
+          "variable": "invoiceId"
         },
         "id": 16,
-        "label": "Return saved order ID",
+        "label": "Return saved invoice ID",
         "type": "Assignment"
       },
       {
@@ -519,7 +507,7 @@
       {
         "id": 22,
         "type": "Decision",
-        "label": "Verify order and line totals",
+        "label": "Verify invoice and line totals",
         "config": {
           "outcomes": [
             {
@@ -552,7 +540,7 @@
     "resources": [
       {
         "availableForInput": true,
-        "dataType": "OrderLine",
+        "dataType": "InvoiceLine",
         "isCollection": true,
         "name": "cartItems",
         "type": "Record Collection"
@@ -599,7 +587,7 @@
       {
         "availableForOutput": true,
         "dataType": "Text",
-        "name": "orderId",
+        "name": "invoiceId",
         "type": "Variable"
       },
       {
@@ -1010,23 +998,15 @@
               "value": "{!validatedTotal}"
             },
             {
-              "field": "PaymentMethod",
-              "value": "Card"
-            },
-            {
-              "field": "PaymentStatus",
+              "field": "Status",
               "value": "Paid"
-            },
-            {
-              "field": "PaymentRequestId",
-              "value": "{!requestId}"
             }
           ],
-          "object": "Order",
+          "object": "Invoice",
           "recordSource": "fields"
         },
         "id": 12,
-        "label": "Create settled Order",
+        "label": "Create settled Invoice",
         "type": "Create Records"
       },
       {
@@ -1036,7 +1016,7 @@
           "loopVariable": "saveLine"
         },
         "id": 13,
-        "label": "Save each order line",
+        "label": "Save each invoice line",
         "type": "Loop"
       },
       {
@@ -1059,14 +1039,14 @@
           "recordLimit": "1"
         },
         "id": 14,
-        "label": "Read Product for order line",
+        "label": "Read Product for invoice line",
         "type": "Get Records"
       },
       {
         "config": {
           "fieldValues": [
             {
-              "field": "Order",
+              "field": "Invoice",
               "value": "{!record12.Id}"
             },
             {
@@ -1084,23 +1064,27 @@
             {
               "field": "LineTotal",
               "value": "{!saveLineAmount}"
+            },
+            {
+              "field": "Name",
+              "value": "Acetill Sale Item"
             }
           ],
-          "object": "OrderLine",
+          "object": "InvoiceLine",
           "recordSource": "fields"
         },
         "id": 15,
-        "label": "Create OrderLine using trusted price",
+        "label": "Create InvoiceLine using trusted price",
         "type": "Create Records"
       },
       {
         "config": {
           "operator": "Assign",
           "value": "{!record12.Id}",
-          "variable": "orderId"
+          "variable": "invoiceId"
         },
         "id": 16,
-        "label": "Return saved order ID",
+        "label": "Return saved invoice ID",
         "type": "Assignment"
       },
       {
@@ -1152,7 +1136,7 @@
       {
         "id": 22,
         "type": "Decision",
-        "label": "Verify order and line totals",
+        "label": "Verify invoice and line totals",
         "config": {
           "outcomes": [
             {
@@ -1185,7 +1169,7 @@
     "resources": [
       {
         "availableForInput": true,
-        "dataType": "OrderLine",
+        "dataType": "InvoiceLine",
         "isCollection": true,
         "name": "cartItems",
         "type": "Record Collection"
@@ -1226,7 +1210,7 @@
       {
         "availableForOutput": true,
         "dataType": "Text",
-        "name": "orderId",
+        "name": "invoiceId",
         "type": "Variable"
       },
       {

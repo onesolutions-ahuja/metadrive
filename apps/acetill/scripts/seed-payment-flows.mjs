@@ -36,14 +36,14 @@ try{
  const tenant=await client.query('SELECT id FROM md_tenants WHERE slug=$1',[tenantSlug]);
  if(tenant.rowCount!==1)throw new Error('Tenant not found');
  const tenantId=tenant.rows[0].id;
- for(const object of ['Order','OrderLine','Product']){
+ for(const object of ['Invoice','InvoiceLine','Product']){
   const found=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[tenantId,object]);
   if(!found.rowCount)throw new Error('Missing required shared Object '+object);
  }
  for(const [api,label,kind] of fields)
   await client.query(`INSERT INTO md_field_definitions
    (tenant_id,object_api,api_name,label,data_type,required)
-   VALUES ($1,'Order',$2,$3,$4,false)
+   VALUES ($1,'Invoice',$2,$3,$4,false)
    ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING`,[tenantId,api,label,kind]);
  for(const name of names){
   const existing=await client.query('SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 LIMIT 1',[tenantId,name]);
