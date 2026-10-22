@@ -51,6 +51,10 @@ export async function enforceRecordAvailability(client:PoolClient,tenantId:strin
  const staff=g.staffFields.map(field=>record[field]).find(x=>typeof x==='string'&&x.trim());
  const resource=g.resourceField?record[g.resourceField]:undefined;
  if(typeof staff!=='string'||!staff.trim())throw Error('Availability requires assigned staff');
+ if(!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(staff))throw Error('Booking requires a valid tenant staff user');
+ const {rowCount:activeStaff}=await client.query(
+  'SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',[tenantId,staff]);
+ if(!activeStaff)throw Error('Assigned staff user is not enabled in this tenant');
  const {rows:settings}=await client.query<{properties:{timezone?:string}}>(
   "SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key='business-calendar'",
   [tenantId]);
