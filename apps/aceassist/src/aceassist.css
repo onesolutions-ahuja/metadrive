@@ -53,3 +53,41 @@
 .custom-assist .custom-panel-title>div{display:flex;align-items:center;gap:8px}
 @media(max-width:900px){.custom-assist .custom-panel-title>div{flex-wrap:wrap}
  .custom-assist .custom-crud-form{max-width:100%}}
+
+
+/* Shared application record editor is a centered popup, not a fixed side form. */
+.assist-modal-backdrop{position:fixed;inset:0;z-index:1500;background:rgba(13,25,44,.55);
+ display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto}
+.assist-modal{width:min(660px,100%);max-height:min(90vh,960px);overflow:auto;background:#fff;
+ border-radius:18px;box-shadow:0 28px 85px rgba(0,0,0,.22);padding:24px}
+.assist-modal-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;
+ border-bottom:1px solid #e5ebf2;padding-bottom:14px}
+.assist-modal-heading h2{margin:0;font-size:23px}
+.assist-modal-heading button{background:transparent;border:0;font-size:23px;cursor:pointer}
+.assist-modal .custom-crud-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:15px;margin-top:15px;padding:0;border:0}
+.assist-modal .custom-crud-form>label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
+.assist-modal .custom-crud-form input,.assist-modal .custom-crud-form select{width:100%;box-sizing:border-box;
+ padding:10px;border:1px solid #cbd8e6;border-radius:8px;background:#fff;color:#1c3045;font:inherit}
+.assist-modal-footer{grid-column:1/-1;display:flex;justify-content:flex-end;gap:12px;
+ padding-top:18px;border-top:1px solid #e5ebf2}
+.assist-modal-footer button{border-radius:9px;padding:11px 20px;cursor:pointer;
+ border:1px solid #d7e2eb;background:#fff}
+.assist-modal-footer button[type=submit]{background:var(--product-accent);border-color:var(--product-accent);
+ color:#fff;font-weight:700}
+.assist-lookup{position:relative;min-width:0}
+.assist-lookup label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
+.assist-lookup-menu{position:absolute;top:100%;left:0;right:0;max-height:245px;overflow:auto;
+ z-index:5;background:#fff;border:1px solid #bdd5d0;box-shadow:0 12px 32px rgba(17,40,53,.14);
+ padding:5px;border-radius:10px}
+.assist-lookup-menu button{display:block;width:100%;border:0;background:transparent;
+ text-align:left;padding:10px;border-radius:6px;cursor:pointer}
+.assist-lookup-menu button:hover,.assist-lookup-menu button:focus-visible{background:#e9f7f4}
+.assist-lookup-menu .assist-lookup-new{color:#0b8175;font-weight:750;border-bottom:1px solid #e6edf2}
+.assist-lookup-menu small{display:block;padding:10px;color:#687b89}
+.assist-lookup-menu .assist-lookup-close{text-align:center;font-size:12px;color:#607387}
+.assist-date-slot{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+.assist-date-slot label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
+.assist-date-slot small{grid-column:1/-1;color:#97642a}
+@media(max-width:620px){.assist-modal{padding:16px}.assist-modal .custom-crud-form{grid-template-columns:1fr}
+ .assist-date-slot{grid-template-columns:1fr}}

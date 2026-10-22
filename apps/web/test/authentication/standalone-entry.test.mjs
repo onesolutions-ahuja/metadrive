@@ -60,7 +60,7 @@ test('standalone web router lazy-loads app-owned UIs, not business-specific JSX'
   assert.doesNotMatch(shell,/custom-pos|custom-assist|custom-week|custom-basket|\/metadata\/objects/);
   assert.match(assist,/custom-assist/);
   assert.match(assist,/custom-week/);
-  assert.match(assist,/flowName\(editing\)/);
+  assert.match(assist,/mutationFlow/);
   assert.match(chatter,/ace-chat-thread/);
   assert.match(till,/AcetillGetProducts/);
   for(const source of [shell,assist,chatter,till])

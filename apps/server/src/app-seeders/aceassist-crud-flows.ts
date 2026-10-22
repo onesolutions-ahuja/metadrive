@@ -99,6 +99,38 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
     WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
     ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
   }
+  // Reference data is read exclusively through OneEngine Get Records Flows.
+  // Never grant mutation rights to User or Product from this application.
+  for(const lookupObject of ['User','Product']){
+   const exists=await client.query<{id:string}>(
+    'SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
+    [tenant_id,lookupObject]);
+   if(!exists.rows[0])continue;
+   const graph=makeGraph(lookupObject,'Load',[]);
+   const prior=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
+    [tenant_id,graph.apiName]);
+   if(!prior.rowCount){
+    const {rows:added}=await client.query<{id:string}>(`
+      INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+      VALUES($1,$2,$3,'Autolaunched Flow',1,true) RETURNING id`,
+      [tenant_id,graph.apiName,graph.label]);
+    const entries:Array<{path:string;kind:string;text:string|null}>=[];
+    encodeMetadataValue(graph,'/builder',entries);
+    for(const e of entries)await client.query(`
+      INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+      VALUES($1,$2,$3,$4,$5)`,[tenant_id,added[0].id,e.path,e.kind,e.text]);
+    created++;
+   }
+   // Tenant visibility and field-level access are still decided by OneEngine.
+   for(const [resource,action] of [[lookupObject,'read'],
+    ['Flow:AceAssistLoad'+lookupObject,'execute']])
+    await client.query(`
+      INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+      SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+      WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
+      ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
+  }
+
  });
  return created;
 }
