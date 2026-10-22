@@ -18,6 +18,7 @@ type CredentialInput = {
   secret?: string;
   webhookRequired?: boolean;
   webhookSecret?: string;
+  removedConfigurationKeys?: string[];
   webhookVerifyToken?: string;
 };
 
@@ -96,6 +97,7 @@ export default function NamedCredentials({
     try{await navigator.clipboard.writeText(url);setCopiedWebhookId(credential.id);}
     catch{setError('Unable to copy automatically. Open webhook details and select the URL to copy.');}
   };
+  const [removedKeys,setRemovedKeys]=useState<string[]>([]);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const webhookSecretLength=draft?.webhookSecret?.length??0;
   const webhookNeedsSecret=Boolean(draft?.webhookRequired && !credentials.some(item=>item.id===draft?.id && item.webhookId));
@@ -117,6 +119,7 @@ export default function NamedCredentials({
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
     setSavedWebhook(null);
+    setRemovedKeys([]);
     setRevealedVerifyToken(null);
     setTouched({});
     setViewing(readOnly);
@@ -151,6 +154,7 @@ export default function NamedCredentials({
     try {
       const result=await onSave({
         ...draft,
+        removedConfigurationKeys:removedKeys,
         name: draft.name.trim(),
         label: draft.label.trim(),
         baseUrl: draft.baseUrl.trim(),
@@ -300,11 +304,11 @@ export default function NamedCredentials({
     </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" style={{width:'min(1040px, calc(100vw - 32px))',maxWidth:'calc(100vw - 32px)',maxHeight:'calc(100vh - 32px)',overflowY:'auto'}} role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
+      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" style={{position:'relative',width:'min(1100px, calc(100vw - 24px))',maxWidth:'calc(100vw - 24px)',maxHeight:'calc(100dvh - 120px)',overflowY:'auto',margin:'max(92px, 8vh) auto 12px'}} role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
         <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
-        <div className="named-credential-form-grid">
+        <div className="named-credential-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 320px), 1fr))",gap:16,alignItems:"start"}}>
         <PlatformPageSlot slotKey="field-credentials-01"><label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} aria-invalid={Boolean(touched.name && fieldErrors.name)} onBlur={() => blurField('name')} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" />{touched.name && fieldErrors.name && <small role="alert" className="field-error">{fieldErrors.name}</small>}</label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-credentials-02"><label className="form-label">Label<input className="form-control" value={draft.label} aria-invalid={Boolean(touched.label && fieldErrors.label)} onBlur={() => blurField('label')} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" />{touched.label && fieldErrors.label && <small role="alert" className="field-error">{fieldErrors.label}</small>}</label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-credentials-03"><label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
@@ -320,13 +324,18 @@ export default function NamedCredentials({
         }}>
           {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code', 'Authorization Scheme']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label></PlatformPageSlot>
-        <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0' }}>
+        <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0',gridColumn:"1 / -1" }}>
           <legend>Configuration variables</legend>
           {Object.entries(draft.configuration ?? {}).map(([key, value]) => (
-            <label key={key} className="connector-config-row" style={{ display: 'grid', gridTemplateColumns: '40% 1fr', gap: 12, alignItems: 'center', marginBottom: 8 }}>
-              <span>{fieldLabels?.[key] || (draft.id ? credentials.find(c => c.id === draft.id)?.configurationLabels?.[key] : undefined) || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
-              <input className="form-control" value={value} onChange={(event) => updateDraft({ configuration: { ...draft.configuration, [key]: event.target.value } })} />
-            </label>
+            <div key={key} className="connector-config-row" style={{display:'grid',gridTemplateColumns:'minmax(130px, 1fr) minmax(160px, 2fr) auto',gap:10,alignItems:'center',marginBottom:10}}>
+              <label htmlFor={'credential-var-'+key}>{fieldLabels?.[key] || (draft.id ? credentials.find(c => c.id === draft.id)?.configurationLabels?.[key] : undefined) || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</label>
+              <input id={'credential-var-'+key} className="form-control" disabled={viewing||!canManage} value={value} onChange={(event) => updateDraft({ configuration: { ...draft.configuration, [key]: event.target.value } })} />
+              {!viewing && canManage && <button type="button" className="icon-button subtle" aria-label={'Delete variable '+key} title="Remove variable after saving" onClick={()=>{
+                const next={...draft.configuration}; delete next[key];
+                setRemovedKeys(previous=>Array.from(new Set([...previous,key])));
+                updateDraft({configuration:next});
+              }}><Trash2 size={16}/></button>}
+            </div>
           ))}
           {!viewing && <button type="button" className="btn btn-small" onClick={() => {
             const input = window.prompt('Variable name (letters, numbers, underscore)');
@@ -341,6 +350,7 @@ export default function NamedCredentials({
               return;
             }
             setError('');
+            setRemovedKeys(previous=>previous.filter(item=>item!==key));
             updateDraft({ configuration: { ...draft.configuration, [key]: draft.configuration?.[key] ?? '' } });
           }}>Add variable</button>}
         </fieldset>
