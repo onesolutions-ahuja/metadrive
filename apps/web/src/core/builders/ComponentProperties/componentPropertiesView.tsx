@@ -247,7 +247,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const objectBindings = Array.from(new Set(['objectApiName', ...Object.keys(properties).filter(isObjectBinding)]));
   const fieldsFor = (key:string) => metadataFieldObject(objects,{...properties,objectApiName},key)?.fields??[];
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
-  const propertySectionFor = (key: string, definition?: LibraryComponentMetadata['propertyDefinitions'][number]) => {
+  const propertySectionFor = (key: string, definition?: NonNullable<LibraryComponentMetadata['propertyDefinitions']>[number]) => {
     const metadata = definition as { section?: string; group?: string } | undefined;
     const declared = String(metadata?.section ?? metadata?.group ?? '').toLowerCase();
     const name = (declared + ' ' + key).toLowerCase();
