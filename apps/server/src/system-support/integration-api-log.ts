@@ -13,7 +13,7 @@ export type IntegrationCommunicationDetails={
  provider?:string;
 };
 
-export type IntegrationApiLogInput={
+export type IntegrationActivityInput={
  tenantId:string;
  direction:'Inbound'|'Outbound';
  transport?:'HTTP'|'Webhook';
@@ -32,14 +32,14 @@ export type IntegrationApiLogInput={
  communication?:IntegrationCommunicationDetails;
 };
 
-export type IntegrationActivityWriter=(input:IntegrationApiLogInput)=>Promise<void>;
+export type IntegrationActivityWriter=(input:IntegrationActivityInput)=>Promise<void>;
 
 const clean=(value:unknown,max=500):string=>
  String(value??'').replace(/[\r\n\0]/g,' ').trim().slice(0,max);
 const cleanBody=(value:unknown):string=>String(value??'').replace(/\0/g,'').slice(0,10000);
 const allowedChannels=new Set(['Email','SMS','WhatsApp','Phone','WebChat','Push','Other']);
 
-function normalized(input:IntegrationApiLogInput):IntegrationApiLogInput{
+function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
  const method=/^(GET|POST|PUT|PATCH|DELETE)$/.test(input.method.toUpperCase())
   ?input.method.toUpperCase():'OTHER';
  const endpoint=clean(input.endpoint.split(/[?#]/,1)[0],2048);
@@ -109,8 +109,8 @@ export function createIntegrationCommunicationWriter(
 }
 
 /** Best-effort shared entrypoint. It never changes the remote provider's actual result. */
-export async function writeIntegrationApiLog(
- _db:SqlPersistence,input:IntegrationApiLogInput,writer?:IntegrationActivityWriter
+export async function writeIntegrationActivity(
+ _db:SqlPersistence,input:IntegrationActivityInput,writer?:IntegrationActivityWriter
 ):Promise<void>{
  if(!writer)return;
  try{await writer(normalized(input));}
