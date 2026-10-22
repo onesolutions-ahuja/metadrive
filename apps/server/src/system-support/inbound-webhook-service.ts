@@ -31,7 +31,10 @@ function safePayload(value:unknown,depth=0):unknown {
  return typeof value==='string'?value.slice(0,2000):value;
 }
 function publicUrl(req:Request,id:string){
- return req.protocol+'://'+req.get('host')+'/api/inbound-webhooks/'+encodeURIComponent(id);
+ // Provider callbacks must be externally reachable over TLS. Render terminates TLS
+ // at its edge, so Express may see the internal HTTP hop unless proxy trust is
+ // explicitly configured. Never publish an HTTP callback URL to Meta.
+ return 'https://'+req.get('host')+'/api/inbound-webhooks/'+encodeURIComponent(id);
 }
 export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence,
  vault:NamedCredentialService,flows:FlowRuntime,rbac:RbacEngine,records?:RecordEngine){
