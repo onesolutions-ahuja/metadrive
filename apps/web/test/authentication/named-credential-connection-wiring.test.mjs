@@ -12,3 +12,14 @@ test('Named Credential Test Connection is wired from SetupApp through the shared
  assert.match(view,/onTest=\{testNamedCredential\}/);
  assert.match(list,/onClick=\{\(\) => void testCredential\(credential\)\}/);
 });
+
+test('WhatsApp diagnostics use read-only Graph profile probe while preserving RBAC',()=>{
+ const ui=readFileSync(new URL('../../src/core/integrations/NamedCredentials/NamedCredentials.tsx',import.meta.url),'utf8');
+ const server=readFileSync(new URL('../../../../server/src/system-support/server.ts',import.meta.url),'utf8');
+ assert.match(ui,/graph\.facebook\.com/);
+ assert.match(ui,/testPath='me'/);
+ assert.match(server,/await rbac\.require\(actor\.tenant_id,actor\.user_id,'NamedCredential','manage'\)/);
+ assert.match(server,/method:'GET',path/);
+ assert.match(server,/\^\[A-Za-z0-9_\.\/-\]\+\$/);
+ assert.doesNotMatch(server,/method:'POST',path.*credential-connectivity-test/);
+});
