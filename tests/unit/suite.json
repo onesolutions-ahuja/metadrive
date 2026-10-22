@@ -11,7 +11,6 @@
     "apps/server/test/system/aceassist-payment-flows.test.ts",
     "apps/server/test/system/aceassist-v3-metadata.test.ts",
     "apps/server/test/system/acechatter-communication-inbox.test.ts",
-    "apps/server/test/system/acechatter-flow.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
     "apps/server/test/system/acetill-editable-page.test.ts",
     "apps/server/test/system/acetill-payment-flow-metadata.test.ts",
