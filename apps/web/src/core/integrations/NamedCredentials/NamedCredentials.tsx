@@ -17,6 +17,7 @@ type CredentialInput = {
   secret?: string;
   webhookRequired?: boolean;
   webhookSecret?: string;
+  webhookVerifyToken?: string;
 };
 
 type CredentialDraft = Omit<CredentialInput, 'id'> & { id?: string };
@@ -32,7 +33,8 @@ const blankCredential = (): CredentialDraft => ({
   username: '',
   secret: '',
   webhookRequired: false,
-  webhookSecret: ''
+  webhookSecret: '',
+  webhookVerifyToken: ''
 });
 
 export default function NamedCredentials({
@@ -75,14 +77,16 @@ export default function NamedCredentials({
   const dismissModal = useCallback(() => { if (!saving) setDraft(null); }, [saving]);
   useModalAccessibility(Boolean(draft), modalRef, dismissModal);
   const [error, setError] = useState('');
+  const [revealedVerifyToken,setRevealedVerifyToken]=useState<string|null>(null);
+  const [loadingVerifyToken,setLoadingVerifyToken]=useState(false);
   const [savedWebhook,setSavedWebhook]=useState<{callbackUrl:string;verifyToken?:string}|null>(null);
   const [copiedWebhookId,setCopiedWebhookId]=useState<string|null>(null);
   const activeWebhookCredential=draft?.id ? credentials.find(item=>item.id===draft.id) : undefined;
   // A saved endpoint ID is enough to reconstruct the public callback from the
   // current HTTPS application origin when older API deployments omit its URL.
   const callbackFor=(credential:NamedCredentialMetadata)=>credential.webhookId
-    ? `${window.location.origin}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}`
-    : credential.webhookCallbackUrl || '';
+    ? `${window.location.origin.replace(/^http:/,'https:')}/api/inbound-webhooks/${encodeURIComponent(credential.webhookId)}`
+    : (credential.webhookCallbackUrl?.replace(/^http:/,'https:') || '');
   const activeWebhookUrl=savedWebhook?.callbackUrl || (activeWebhookCredential ? callbackFor(activeWebhookCredential) : '');
   const activeWebhookExists=Boolean(activeWebhookCredential?.webhookId);
   const copyWebhookUrl=async(credential:NamedCredentialMetadata)=>{
@@ -112,6 +116,7 @@ export default function NamedCredentials({
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
     setSavedWebhook(null);
+    setRevealedVerifyToken(null);
     setTouched({});
     setViewing(readOnly);
     setDraft(credential ? {
@@ -126,7 +131,8 @@ export default function NamedCredentials({
       username: '',
       secret: '',
       webhookRequired: credential.webhookEnabled===true,
-      webhookSecret: ''
+      webhookSecret: '',
+      webhookVerifyToken: ''
     } : preset ? { ...blankCredential(), ...preset, protocol: 'HTTPS' } : blankCredential());
   };
 
@@ -152,12 +158,14 @@ export default function NamedCredentials({
         ...(draft.secret ? { secret: draft.secret } : {}),
         ...((draft.webhookRequired || existingWebhook)
           ? {webhookRequired:Boolean(draft.webhookRequired)} : {}),
-        ...(draft.webhookSecret?{webhookSecret:draft.webhookSecret}:{})
+        ...(draft.webhookSecret?{webhookSecret:draft.webhookSecret}:{}),
+        ...(draft.webhookVerifyToken?{webhookVerifyToken:draft.webhookVerifyToken}:{})
       });
       if(draft.webhookRequired){
         setSavedWebhook({callbackUrl:result.credential.webhookCallbackUrl??'',
           verifyToken:result.webhookVerifyToken});
-        setDraft({...draft,id:result.credential.id,webhookSecret:''});
+        setDraft({...draft,id:result.credential.id,webhookSecret:'',webhookVerifyToken:''});
+        setRevealedVerifyToken(result.webhookVerifyToken??null);
         setViewing(true);
       }else setDraft(null);
     } catch (saveError) {
@@ -358,6 +366,25 @@ export default function NamedCredentials({
           {draft.webhookRequired && activeWebhookExists && !activeWebhookUrl && <div className="records-message" role="alert">
             Webhook exists, but the callback URL is missing from the server response. Please check the Named Credentials API deployment.
           </div>}
+          {draft.webhookRequired && activeWebhookExists && canManage && canManageSecrets && <div className="info-callout">
+            <strong>Webhook verification token (give this to Meta)</strong>
+            <p>Available only to credential and webhook administrators. Existing tokens created before encrypted storage cannot be retrieved; set a new token below.</p>
+            <button type="button" className="btn btn-small" disabled={loadingVerifyToken}
+              onClick={()=>{if(!draft.id)return;setLoadingVerifyToken(true);setError('');
+                void fetch('/api/named-credentials/'+encodeURIComponent(draft.id)+'/webhook-verify-token',{credentials:'include'})
+                  .then(async response=>{if(!response.ok)throw Error('Token reveal not authorised or unavailable');return response.json();})
+                  .then((result:{verifyToken:string|null})=>{setRevealedVerifyToken(result.verifyToken);if(!result.verifyToken)setError('Legacy token cannot be recovered. Enter a replacement verification token and save.');})
+                  .catch(error=>setError(error instanceof Error?error.message:String(error)))
+                  .finally(()=>setLoadingVerifyToken(false));
+              }}>Reveal verification token</button>
+            {revealedVerifyToken && <input className="form-control" readOnly type="text" value={revealedVerifyToken} onFocus={e=>e.currentTarget.select()} />}
+          </div>}
+          {draft.webhookRequired && canManageSecrets && !viewing && <label className="form-label">
+            Set or replace verification token (16–256 characters)
+            <input className="form-control" type="text" autoComplete="off" value={draft.webhookVerifyToken??''}
+              onChange={event=>updateDraft({webhookVerifyToken:event.target.value})} minLength={16} maxLength={256}
+              placeholder="Optional: choose a verification token to enter in Meta" />
+          </label>}
           {draft.webhookRequired && canManageSecrets && <label className="form-label">
             Webhook signing secret (16–512 characters)
             <input className="form-control" type="password" autoComplete="new-password"
@@ -380,9 +407,9 @@ export default function NamedCredentials({
               value={activeWebhookUrl}
               onFocus={event=>event.currentTarget.select()}/>
             <p><small>Webhook status: {credentials.find(item=>item.id===draft.id)?.webhookEnabled ? 'Enabled' : 'Disabled'}. The URL remains available whenever you reopen this connection.</small></p>
-            {savedWebhook?.verifyToken&&<>
+            {(savedWebhook?.verifyToken||revealedVerifyToken)&&<>
               <strong>Verification token (copy now; shown only once)</strong>
-              <input className="form-control" readOnly value={savedWebhook.verifyToken}
+              <input className="form-control" readOnly value={savedWebhook?.verifyToken||revealedVerifyToken||''}
                 onFocus={event=>event.currentTarget.select()}/>
             </>}
             <button type="button" className="btn btn-small" onClick={()=>{
@@ -392,7 +419,7 @@ export default function NamedCredentials({
               The signing secret is never displayed after saving.</small>
           </div>}
         <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())
-          ||webhookSecretInvalid} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
+          ||webhookSecretInvalid || Boolean(draft.webhookVerifyToken && (draft.webhookVerifyToken.length<16 || draft.webhookVerifyToken.length>256))} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
       </section>
     </div>}
   </section>;
