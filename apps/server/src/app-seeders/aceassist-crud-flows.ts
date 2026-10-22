@@ -4,6 +4,7 @@ import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js'
 import {seedAceAssistCommunicationTemplates} from './aceassist-communication-templates.js';
 import {seedAceAssistDocumentSeries} from './aceassist-document-series.js';
 import {seedAceAssistFinancialFlows} from './aceassist-financial-flows.js';
+import {seedAceAssistReminderFlows} from './aceassist-reminder-flows.js';
 import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
@@ -106,6 +107,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
   await seedAceAssistSchedulingObjects(client,tenant_id);
   await seedAceAssistDocumentSeries(client,tenant_id);
   created+=await seedAceAssistFinancialFlows(client,tenant_id);
+  created+=await seedAceAssistReminderFlows(client,tenant_id);
   created+=await seedAceAssistCommunicationTemplates(client,tenant_id);
   // Install optional shared booking Fields only for an entitled AceAssist tenant.
   for(const field of bookingFields){
