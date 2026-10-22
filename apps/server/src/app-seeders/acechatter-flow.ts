@@ -13,6 +13,7 @@ const fields:Field[]=[
  {object:'ChatMessage',name:'Direction',label:'Direction',type:'text'},
  {object:'ChatMessage',name:'SentAt',label:'Sent At',type:'datetime'},
  {object:'ChatMessage',name:'Status',label:'Status',type:'text'},
+ {object:'ChatMessage',name:'ExternalMessageId',label:'Provider Message ID',type:'text'},
  {object:'ChatChannelSettings',name:'Name',label:'Name',type:'text'},
  {object:'ChatChannelSettings',name:'PhoneNumberId',label:'WhatsApp Phone Number ID',type:'text'},
  {object:'ChatChannelSettings',name:'Active',label:'Active',type:'boolean'}
@@ -74,7 +75,10 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ['Flow:AceChatterLoadConversations','execute'],
   ['Flow:AceChatterLoadMessages','execute'],
   ['Flow:AceChatterSendMessage','execute'],
-  ['ChatConversation','read'],['ChatMessage','read'],['ChatChannelSettings','read'],
+  ['Flow:AceChatterCreateConversation','execute'],
+  ['Flow:AceChatterReceiveWebhook','execute'],
+  ['ChatConversation','read'],['ChatConversation','create'],
+  ['ChatMessage','read'],['ChatMessage','create'],['ChatChannelSettings','read'],
   ...fields.map(field=>[field.object+'.'+field.name,'read'])
  ];
  for(const [resource,action] of rights)await client.query(`
@@ -92,6 +96,101 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
  ];
  let seeded=0;
  for(const value of definitions)if(await insertGraph(client,tenantId,value,true))seeded++;
+ const createChat={
+  apiName:'AceChatterCreateConversation',label:'AceChatter - New Conversation',
+  appApiName:'AceChatter',flowType:'Autolaunched Flow',status:'Active',version:1,tests:[],
+  resources:[
+   {name:'chatName',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'phoneNumber',type:'Variable',dataType:'Text',availableForInput:true}
+  ],elements:[
+   {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+   {id:2,type:'Get Records',label:'Find existing phone',config:{
+    object:'ChatConversation',recordLimit:'1',outputVariable:'existing',
+    conditions:[{field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}]}},
+   {id:3,type:'Decision',label:'New phone?',config:{outcomes:[
+    {name:'New',label:'New',conditions:[{field:'@existing',operator:'Is Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:4,type:'Create Records',label:'Create conversation',config:{
+    object:'ChatConversation',fieldValues:[
+     {field:'Name',value:'@chatName'},{field:'PhoneNumber',value:'@phoneNumber'},
+     {field:'Status',value:'Open'}]}},
+   {id:5,type:'End',label:'End',config:{}}
+  ],connectors:[
+   ...links(1,2,3),{from:3,to:4,kind:'normal',label:'New'},
+   {from:3,to:5,kind:'normal',label:'Default'},...links(4,5)]
+ };
+ if(await insertGraph(client,tenantId,createChat as ReturnType<typeof graph>,true))seeded++;
+ const receive={
+  apiName:'AceChatterReceiveWebhook',label:'AceChatter - Receive WhatsApp Webhook',
+  appApiName:'AceChatter',flowType:'Autolaunched Flow',status:'Active',version:1,tests:[],
+  resources:[
+   {name:'webhookPayloadJson',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'requestId',type:'Variable',dataType:'Text',availableForInput:true}
+  ],elements:[
+   {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+   {id:2,type:'Parse JSON',label:'Extract verified WhatsApp text',config:{
+    source:'@webhookPayloadJson',assignments:[
+     {path:'entry[0].changes[0].value.messages[0].id',outputVariable:'providerMessageId'},
+     {path:'entry[0].changes[0].value.messages[0].from',outputVariable:'fromPhone'},
+     {path:'entry[0].changes[0].value.messages[0].text.body',outputVariable:'messageBody'},
+     {path:'entry[0].changes[0].value.contacts[0].profile.name',outputVariable:'contactName'},
+     {path:'entry[0].changes[0].value.statuses[0].id',outputVariable:'statusMessageId'},
+     {path:'entry[0].changes[0].value.statuses[0].status',outputVariable:'deliveryStatus'}
+    ]}},
+   {id:3,type:'Decision',label:'Message or receipt?',config:{outcomes:[
+    {name:'Message',label:'Message',conditions:[{field:'@providerMessageId',operator:'Is Not Null'}]},
+    {name:'Receipt',label:'Receipt',conditions:[{field:'@statusMessageId',operator:'Is Not Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:4,type:'Get Records',label:'Find existing message',config:{
+    object:'ChatMessage',recordLimit:'1',outputVariable:'previousMessage',
+    conditions:[{field:'ExternalMessageId',operator:'Equals',value:'@providerMessageId'}]}},
+   {id:5,type:'Decision',label:'Unseen message?',config:{outcomes:[
+    {name:'New',label:'New',conditions:[{field:'@previousMessage',operator:'Is Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:6,type:'Get Records',label:'Find sender conversation',config:{
+    object:'ChatConversation',recordLimit:'1',outputVariable:'existingConversation',
+    conditions:[{field:'PhoneNumber',operator:'Equals',value:'@fromPhone'}]}},
+   {id:7,type:'Decision',label:'New sender?',config:{outcomes:[
+    {name:'New',label:'New',conditions:[{field:'@existingConversation',operator:'Is Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:8,type:'Create Records',label:'Create sender',config:{
+    object:'ChatConversation',fieldValues:[
+     {field:'Name',value:'@contactName'},{field:'PhoneNumber',value:'@fromPhone'},
+     {field:'Status',value:'Open'}]}},
+   {id:9,type:'Get Records',label:'Resolve conversation',config:{
+    object:'ChatConversation',recordLimit:'1',outputVariable:'conversation',
+    conditions:[{field:'PhoneNumber',operator:'Equals',value:'@fromPhone'}]}},
+   {id:10,type:'Create Records',label:'Save inbound text',config:{
+    object:'ChatMessage',fieldValues:[
+     {field:'Name',value:'WhatsApp inbound'},
+     {field:'ConversationId',value:'@conversation.Id'},
+     {field:'ExternalMessageId',value:'@providerMessageId'},
+     {field:'Body',value:'@messageBody'},
+     {field:'Direction',value:'Inbound'},{field:'Status',value:'Received'}]}},
+   {id:11,type:'Get Records',label:'Find receipt message',config:{
+    object:'ChatMessage',recordLimit:'1',outputVariable:'receiptMessage',
+    conditions:[{field:'ExternalMessageId',operator:'Equals',value:'@statusMessageId'}]}},
+   {id:12,type:'Decision',label:'Receipt matching?',config:{outcomes:[
+    {name:'Found',label:'Found',conditions:[{field:'@receiptMessage',operator:'Is Not Null'}]},
+    {name:'Default',label:'Default'}]}},
+   {id:13,type:'Update Records',label:'Set delivery status',config:{
+    object:'ChatMessage',recordSource:'record',recordVariable:'receiptMessage',
+    fieldValues:[{field:'Status',value:'@deliveryStatus'}]}},
+   {id:14,type:'End',label:'End',config:{}}
+  ],connectors:[
+   ...links(1,2,3),{from:3,to:4,kind:'normal',label:'Message'},
+   {from:3,to:11,kind:'normal',label:'Receipt'},
+   {from:3,to:14,kind:'normal',label:'Default'},
+   ...links(4,5),{from:5,to:6,kind:'normal',label:'New'},
+   {from:5,to:14,kind:'normal',label:'Default'},
+   ...links(6,7),{from:7,to:8,kind:'normal',label:'New'},
+   {from:7,to:9,kind:'normal',label:'Default'},
+   ...links(8,9,10,14),...links(11,12),
+   {from:12,to:13,kind:'normal',label:'Found'},
+   {from:12,to:14,kind:'normal',label:'Default'},...links(13,14)
+  ]
+ };
+ if(await insertGraph(client,tenantId,receive as ReturnType<typeof graph>,true))seeded++;
  // Never activate a fake send: the tenant must author and connect a provider
  // Named Credential / callout first. Keep the editable Flow safely Draft.
  const sendDraft={
@@ -102,7 +201,8 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {name:'conversationId',type:'Variable',dataType:'Text',availableForInput:true},
    {name:'message',type:'Variable',dataType:'Text',availableForInput:true},
    {name:'recipientPhone',type:'Variable',dataType:'Text',availableForInput:true},
-   {name:'phoneNumberId',type:'Variable',dataType:'Text',availableForInput:true}
+   {name:'phoneNumberId',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'providerMessageId',type:'Variable',dataType:'Text'}
   ],
   elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
@@ -113,12 +213,18 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
      object:'ChatChannelSettings',recordLimit:'1',outputVariable:'channel',
      conditions:[{field:'Active',operator:'Equals',value:true}]}},
    {id:2,type:'HTTP Callout',label:'Configure WhatsApp Named Credential',config:{
-     method:'POST',path:'{!channel.PhoneNumberId}/messages',
+     method:'POST',path:'v26.0/{!channel.PhoneNumberId}/messages',
      body:JSON.stringify({messaging_product:'whatsapp',recipient_type:'individual',
        to:'{!conversation.PhoneNumber}',type:'text',text:{preview_url:false,body:'{!message}'}}),
-     onError:'FAIL',deliveryMode:'DURABLE_ASYNC'}},
+     onError:'FAIL',responseMapping:JSON.stringify({providerMessageId:'messages[0].id'})}},
+   {id:6,type:'Create Records',label:'Record accepted WhatsApp message',config:{
+     object:'ChatMessage',fieldValues:[
+      {field:'Name',value:'WhatsApp outbound'},
+      {field:'ConversationId',value:'@conversation.Id'},
+      {field:'Body',value:'@message'},{field:'Direction',value:'Outbound'},
+      {field:'Status',value:'Accepted'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
    {id:3,type:'End',label:'End',config:{}}
-  ],connectors:links(1,4,5,2,3)
+  ],connectors:links(1,4,5,2,6,3)
  };
  if(await insertGraph(client,tenantId,sendDraft as ReturnType<typeof graph>,false))seeded++;
  return seeded;

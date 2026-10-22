@@ -101,7 +101,7 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   // Production activate/validate always passes db and fails closed against SQL capabilities.
   const legacyElementAllowed=['Start','Assignment','Decision','Create Records','CreateRecord',
     'HTTP Callout','Action','End','Get Records','Update Records','Delete Records','Loop',
-    'Collection Filter','Collection Sort','Transform','Subflow','Wait','Roll Back Records',
+    'Collection Filter','Collection Sort','Transform','Parse JSON','Subflow','Wait','Roll Back Records',
     'Custom Error','Publish Platform Event','Orchestration Stage',
     ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type);
   if(capabilities?!capability?.allowedFlowTypes.includes(String(data.flowType)):!legacyElementAllowed)
