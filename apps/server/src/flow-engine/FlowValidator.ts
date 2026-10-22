@@ -265,9 +265,14 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
       errors.push(type+' filter conditions require valid field API names');
     }
    if(type==='Update Records'){
-    if(!Array.isArray(properties.fieldValues)||!properties.fieldValues.length)
+    const fromRecord=properties.fieldSource==='record';
+    if(properties.fieldSource!==undefined&&!fromRecord)
+     errors.push('Update Records field source is invalid');
+    if(fromRecord&&!['record','collection'].includes(source))
+     errors.push('Record-sourced Update Records needs a record or collection target');
+    if(!fromRecord&&(!Array.isArray(properties.fieldValues)||!properties.fieldValues.length))
      errors.push('Update Records requires field assignments');
-    else for(const entry of properties.fieldValues){
+    else if(!fromRecord)for(const entry of properties.fieldValues){
      const field=entry&&typeof entry==='object'&&!Array.isArray(entry)
       ?String((entry as Record<string,unknown>).field??(entry as Record<string,unknown>).apiName??''):'';
      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
