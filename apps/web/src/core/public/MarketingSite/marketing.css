@@ -147,7 +147,7 @@ body{background:#fff}
 .une-kiosk-stand:after{content:"";position:absolute;bottom:-7px;left:-40px;width:92px;height:8px;background:#363e54;border-radius:6px}
 .une-pos-layout{display:grid;grid-template-columns:1.45fr .9fr;background:#f6f8fb;min-height:295px}
 .une-pos-products{padding:18px}
-.une-pos-search{border:1px solid #e8edf4;color:#929cad;padding:10px 12px;border-radius:9px;font-size:9px;background:white}
+.une-pos-search{border:1px solid #e8edf4;color:#596579;padding:10px 12px;border-radius:9px;font-size:9px;background:white}
 .une-pos-categories{display:flex;gap:9px;margin:12px 0}
 .une-pos-categories span{font-size:9px;padding:5px 9px;border-radius:50px;background:#fff}
 .une-pos-categories span:first-child{background:#313a6a;color:white}
@@ -155,7 +155,7 @@ body{background:#fff}
 .une-pos-grid>div{background:white;border:1px solid #edf0f8;border-radius:9px;text-align:center;padding:9px 5px}
 .une-pos-grid span{display:block;font-size:26px}
 .une-pos-grid strong,.une-pos-grid small{display:block;font-size:8px}
-.une-pos-grid small{color:#6b6ee0}
+.une-pos-grid small{color:#5146b8}
 .une-pos-cart{background:#fff;border-left:1px solid #edf0f8;padding:18px;display:flex;flex-direction:column}
 .une-pos-cart>strong{font-size:13px}
 .une-pos-cart>small{font-size:9px;color:#536176;margin-bottom:20px}
