@@ -108,6 +108,8 @@ body{background:#fff}
 .une-solution-card p{font-size:12px;line-height:1.65;margin:0 0 12px}
 .une-solution-card>a{font-size:11px;font-weight:700;color:#6255d4;display:inline-flex;gap:5px;align-items:center}
 .une-showcase-section{background:#f6f8ff}
+/* WCAG AA: muted showcase copy must contrast with the pale showcase background. */
+.une-marketing .une-showcase-top>p,.une-marketing .une-showcase-copy>p{color:#596579}
 .une-showcase-top{text-align:center}
 .une-showcase-top h2{max-width:760px;margin-left:auto;margin-right:auto}
 .une-showcase-top p{margin:0}
