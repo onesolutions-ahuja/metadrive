@@ -216,7 +216,7 @@ function App() {
     if(!needsLandingRedirect)return;
     const preferred=landingApp.toLowerCase();
     if(preferred==='setup'){
-      if(window.location.pathname==='/login')window.location.replace('/setup/home');
+      if(window.location.pathname==='/login')window.location.replace(appRoutePath({kind:'setup',workspace:'home'}));
       return;
     }
     const standalone=standaloneEntryForAppId(landingApp);
