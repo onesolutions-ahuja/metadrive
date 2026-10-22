@@ -62,3 +62,12 @@ test('landing bootstrap reuses its tenant metadata instead of fetching objects, 
   assert.match(runtime, /\/apps\/\$\{encodeURIComponent\(appId\)\}\/pages\/\$\{encodeURIComponent\(pageApiName\)\}/);
   assert.match(runtime, /\/apps\/\$\{encodeURIComponent\(appId\)\}\/home-page/);
 });
+
+
+test('session restore does not automatically spend a second timeout after a hung refresh', () => {
+  const app = readFileSync(new URL('../src/core/workspace/App/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /const timedOut = error instanceof DOMException && error\.name === 'AbortError';/);
+  assert.match(app, /if \(timedOut \|\| !retryableNetworkFailure \|\| attempt === retryDelaysMs\.length\)/);
+  assert.match(app, /The workspace API is not responding yet\. Check the API connection and retry\./);
+  assert.match(app, /onRetry=\{\(\) => \{ setAuthError\(''\); setAuthState\('anonymous'\); void restoreSession\(\); \}\}/);
+});
