@@ -1604,8 +1604,6 @@ function PageBuilder({
               const opened=window.open(url,'_blank','noopener,noreferrer');
               if(!opened)onNotify('Allow popups to test the published page in the assigned application.');
             }}><ExternalLink size={14}/> Test active app</button>
-          {page.apiName==='AcetillRegisterEditable'&&<button type="button" className="btn btn-small"
-            onClick={()=>setLiveAcetillEditing(true)}>Edit live terminal styling</button>}
           <button type="button" className="icon-button subtle" aria-label="Save page" title="Save" disabled={saving} onClick={()=>void savePage()}><Save size={17}/></button>
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
