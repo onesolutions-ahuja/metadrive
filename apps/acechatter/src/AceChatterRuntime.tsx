@@ -226,15 +226,61 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     finally{setBusy(false);}
   };
 
-  const createChat=async()=>{
-    if(!newChatFlow||!chatName.trim()||!/^[1-9][0-9]{6,14}$/.test(chatPhone))return;
-    setBusy(true);setError('');
+  const startConversation=async(nameValue:string,phoneValue:unknown,sourceObjectApi='',sourceRecordId='')=>{
+    const name=nameValue.trim();
+    const phone=normalizeChatNumber(phoneValue);
+    if(!newChatFlow||!name||!validChatPhone(phone)){
+      setContactError('Enter a contact name and a valid international WhatsApp number.');
+      return;
+    }
+    setBusy(true);setError('');setContactError('');setNotice('');
     try{
       await apiRequest('/flows/'+encodeURIComponent(newChatFlow.apiName)+'/execute',{
-        method:'POST',body:JSON.stringify({chatName:chatName.trim(),phoneNumber:chatPhone})
+        method:'POST',body:JSON.stringify({chatName:name,phoneNumber:phone,sourceObjectApi,sourceRecordId})
       });
-      setShowNewChat(false);setChatName('');setChatPhone('');setRefresh(n=>n+1);
-    }catch(e){setError(errorText(e));}finally{setBusy(false);}
+      let resolved:Row|undefined;
+      if(resolveConversationFlow){
+        const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+          '/flows/'+encodeURIComponent(resolveConversationFlow.apiName)+'/execute',{
+            method:'POST',body:JSON.stringify({phoneNumber:phone,limit:200})
+          });
+        if(result.interviewId)throw new Error('Resolving the conversation requires a synchronous Autolaunched Flow.');
+        resolved=readRows(result.outputs,'conversationsJson')
+          .find(row=>normalizeChatNumber(pick(row,'PhoneNumber'))===phone);
+      }
+      setShowNewChat(false);setChatName('');setChatPhone('');
+      setFilter('');setSubmittedSearch('');
+      if(resolved&&identify(resolved)){
+        setConversations(previous=>[...previous.filter(row=>normalizeChatNumber(pick(row,'PhoneNumber'))!==phone),resolved!]);
+        setSelected(identify(resolved));
+        setNotice('Chat opened. Sending and delivery status depend on the configured WhatsApp Flow.');
+      }else{
+        setNotice('Conversation submitted through OneEngine. Refresh the inbox to open it.');
+      }
+      setRefresh(n=>n+1);
+    }catch(e){setError(errorText(e));}
+    finally{setBusy(false);}
+  };
+  const createChatFromContact=async(contact:Row)=>{
+    const phone=contactPhone(contact);
+    if(!validChatPhone(phone)){
+      setContactError('This contact has no valid WhatsApp phone number. Choose another contact or use Phone number.');
+      return;
+    }
+    if(!contactSourceObjectApi||!identify(contact)){
+      setContactError('The contact Flow must return its source object and record ID.');
+      return;
+    }
+    await startConversation(contactLabel(contact),phone,contactSourceObjectApi,identify(contact));
+  };
+  const createChatFromNumber=async(event:React.FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    await startConversation(chatName,chatPhone,'','');
+  };
+  const openNewChat=()=>{
+    setShowNewChat(true);setNewChatMode('contacts');setContacts([]);
+    setContactSearch('');setSubmittedContactSearch('');setContactError('');
+    setContactSourceObjectApi('');setChatName('');setChatPhone('');
   };
   const logout=async()=>{
     try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* clear client regardless */}
