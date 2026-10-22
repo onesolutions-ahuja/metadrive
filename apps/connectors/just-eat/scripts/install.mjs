@@ -8,20 +8,7 @@ export default Object.freeze({
   "url": "https://uk-partnerapi.just-eat.io/",
   "auth": "Authorization Scheme",
   "header": "JE-API-KEY",
-  "fields": [
-    {
-      "apiName": "public_restaurantId",
-      "label": "Restaurant ID",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_partnerId",
-      "label": "Partner ID",
-      "required": false,
-      "defaultValue": ""
-    }
-  ],
+  "fields": [],
   "operations": {},
   "docs": "https://uk.api.just-eat.io/docs",
   "notes": "For partner API calls Secret is an issued API key. OneEngine applies the fixed Authorization: JE-API-KEY scheme; other Just Eat products use different authentication."
