@@ -1659,6 +1659,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
   }));
+  app.get('/api/metadata/landing-bootstrap',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
+    res.json(await landingBootstrap(actor.tenant_id,actor.user_id));
+  }));
   app.post('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
