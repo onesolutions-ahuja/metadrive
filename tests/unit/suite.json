@@ -31,6 +31,7 @@
     "apps/server/test/system/flow-action-runtime.test.ts",
     "apps/server/test/system/flow-assignment-runtime.test.ts",
     "apps/server/test/system/flow-async-callout.test.ts",
+    "apps/server/test/system/flow-business-calendar-guard.test.ts",
     "apps/server/test/system/flow-capability-registry.test.ts",
     "apps/server/test/system/flow-collection-formulas.test.ts",
     "apps/server/test/system/flow-data-actions.test.ts",
