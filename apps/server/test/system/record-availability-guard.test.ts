@@ -4,9 +4,9 @@ import {enforceRecordAvailability} from '../../src/system-files/nodes/RecordAvai
 
 const guard={startField:'StartDateTime',endField:'EndDateTime',statusField:'Status',
  excludedStatuses:['Cancelled'],staffFields:['AssignedUser','AssignedTo'],resourceField:'Resource',
- schedule:{object:'StaffAvailability',staff:'Staff',active:'Active',
+ schedule:{object:'StaffAvailability',staff:'OwnerId',active:'Active',
   weekday:'Weekday',start:'StartTime',end:'EndTime'},
- exception:{object:'AvailabilityException',staff:'Staff',resource:'Resource',
+ exception:{object:'AvailabilityException',staff:'OwnerId',resource:'Resource',
   active:'Active',start:'StartDateTime',end:'EndDateTime'}};
 const record={StartDateTime:'2026-10-22T10:00:00Z',EndDateTime:'2026-10-22T11:00:00Z',
  AssignedUser:'staff-1',Resource:'room-2',Status:'Scheduled'};
@@ -26,7 +26,10 @@ test('scheduling guard checks tenant staff shifts and resource exceptions',async
  assert.equal(queries.length,3);
  assert.match(queries[1].sql,/r.tenant_id=\$1/);
  assert.match(queries[2].sql,/value_datetime/);
- assert.deepEqual(queries[2].values[8],['staff-1','room-2']);
+ assert.deepEqual(queries[2].values[8],['room-2']);
+ assert.equal(queries[2].values[9],'staff-1');
+ assert.match(queries[1].sql,/r.owner_id::text/);
+ assert.match(queries[2].sql,/r.owner_id::text/);
 });
 test('configured staff shifts outside allowed time reject appointment',async()=>{
  const {client}=stub(true,false,false);
