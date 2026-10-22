@@ -272,8 +272,10 @@ function MetadataBoundPageComponent({
   // Never grants data permissions or persists cross-tenant information.
   const [pageState, setPageState] = useState<Record<string, unknown>>({});
   const pendingFlowOutputs=useRef(new Map<string,{flowApiName:string;mappings:Record<string,unknown>}>());
+  const initialRecordsConsumed=useRef(false);
   useEffect(() => {
     setPageState({});
+    initialRecordsConsumed.current=false;
     const sync = (event: Event) => {
       const detail=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
       if(detail?.pageSessionKey !== pageSessionKey || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(detail.key))return;
@@ -362,7 +364,8 @@ function MetadataBoundPageComponent({
     const initialRecords = !recordQuery.filter && !properties.liveRefreshEnabled
       ? initialRecordsByObject?.[objectApiName]
       : undefined;
-    if (initialRecords !== undefined) {
+    if (initialRecords !== undefined && !initialRecordsConsumed.current) {
+      initialRecordsConsumed.current=true;
       setRecords(initialRecords);
       setRecordsForQueryKey(recordQueryKey);
       setDataError('');
