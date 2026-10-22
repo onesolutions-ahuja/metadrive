@@ -116,3 +116,17 @@ test('login and MFA include landing bootstrap; session restore uses one authenti
   assert.doesNotMatch(app, /fetch\(`\$\{apiBase\}\/auth\/refresh\?landing=1/);
   assert.match(loader, /apiRequest<\{ landing\?: NonNullable<typeof landing> \}>\('\/metadata\/landing-bootstrap'\)/);
 });
+
+
+test('authorised page responses prefetch ordinary component records through RecordEngine', () => {
+  const server = readFileSync(new URL('../../server/src/system-support/server.ts', import.meta.url), 'utf8');
+  const runtime = readFileSync(new URL('../src/core/pages/PageRuntime/pageRuntimeViews.tsx', import.meta.url), 'utf8');
+  assert.match(server, /const pageInitialRecords=async\(tenantId:string,userId:string,page:/);
+  assert.match(server, /records\.list\(tenantId,userId,api,50,0\)/);
+  assert.match(server, /res\.json\(\{page:page\.page,initialRecords\}\)/);
+  assert.match(server, /res\.json\(\{page,initialRecords\}\)/);
+  assert.match(runtime, /initialRecords\?: Record<string, Record<string, unknown>\[\]\>/);
+  assert.match(runtime, /initialRecordsByObject=\{pageLoad\.initialRecordsByObject\}/);
+  assert.match(runtime, /const initialRecords = !recordQuery\.filter && !properties\.liveRefreshEnabled[\s\S]*?if \(initialRecords !== undefined\)/);
+  assert.match(runtime, /if \(!objectApiName \|\| recordQuery\.blocked\)/);
+});
