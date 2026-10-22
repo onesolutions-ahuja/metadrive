@@ -133,15 +133,25 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const endpoint=await load(req.params.id);
   const signature=req.get('x-hub-signature-256');
   const raw=req.rawWebhookBody;
-  if(!endpoint||!raw||raw.length>262144||!signature
-    ||!/^sha256=[a-f0-9]{64}$/i.test(signature)){
-   res.status(401).json({error:'Webhook signature invalid'});return;
+  const reject=(reason:string,rawBodyBytes?:number)=>{
+   // Log only a bounded reason code and body length; never log signature, body, or secret.
+   console.warn('Inbound webhook rejected',JSON.stringify({
+    endpointId:req.params.id,reason,...(rawBodyBytes===undefined?{}:{rawBodyBytes})
+   }));
+   res.status(401).json({error:'Webhook signature invalid'});
+  };
+  if(!endpoint){reject('endpoint_unavailable');return;}
+  if(!raw){reject('raw_body_unavailable');return;}
+  if(raw.length>262144){reject('body_too_large',raw.length);return;}
+  if(!signature){reject('signature_missing',raw.length);return;}
+  if(!/^sha256=[a-f0-9]{64}$/i.test(signature)){
+   reject('signature_format_invalid',raw.length);return;
   }
   const secret=vault.decryptOpaque(endpoint.signature_secret_ciphertext,endpoint.encryption_key_id);
   const signatureDigest=createHmac('sha256',secret).update(raw).digest();
   const supplied=Buffer.from(signature.slice(7),'hex');
   if(!matches(signatureDigest,supplied)){
-   res.status(401).json({error:'Webhook signature invalid'});return;
+   reject('signature_mismatch',raw.length);return;
   }
   // Credential-linked webhooks are ingestion endpoints: persist Communication directly.
   // AceChatter reads Communication through its authorised Flows; it is not a webhook consumer.
