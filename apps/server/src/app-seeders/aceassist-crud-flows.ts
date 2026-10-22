@@ -69,7 +69,15 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
   ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
   ...(objectApi==='Appointment'?{overlapGuard:{
     startField:'StartDateTime',endField:'EndDateTime',groupFields:['AssignedUser','AssignedTo'],
-    statusField:'Status',excludedStatuses:['Cancelled','No Show']
+    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed']
+   },availabilityGuard:{
+    startField:'StartDateTime',endField:'EndDateTime',
+    staffFields:['AssignedUser','AssignedTo'],resourceField:'Resource',
+    statusField:'Status',excludedStatuses:['Cancelled','No Show','Completed'],
+    schedule:{object:'StaffAvailability',staff:'Staff',active:'Active',
+     weekday:'Weekday',start:'StartTime',end:'EndTime'},
+    exception:{object:'AvailabilityException',staff:'Staff',resource:'Resource',
+     active:'Active',start:'StartDateTime',end:'EndDateTime'}
    }}:{})};
  return {apiName,label:'Ace Assist - '+operation+' '+objectApi+' (metadata fields)',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,
