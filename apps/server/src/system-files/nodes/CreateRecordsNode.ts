@@ -20,8 +20,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
           fields[field]=value;
         }
         await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
-        await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
-      const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+        const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
         created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
@@ -38,6 +37,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         if(!scalar(value))throw new Error('Create Records values must be scalar');
         fields[field]=value;
       }
+      await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
       // The optional scalar resultVariable retains its existing Id-only contract.
