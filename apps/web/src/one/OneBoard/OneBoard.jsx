@@ -14,12 +14,14 @@ function Board({ p, rows }) {
       : [...new Set(rows.map((x) => view(x[field] || "Unassigned")))];
   return (
     <div
+      role="region"
+      aria-label={p.label || "Board"}
       className="one-grid"
       style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))" }}
     >
       {groups.map((g) => (
-        <section className="one-surface" key={String(g)}>
-          <strong>{view(g)}</strong>
+        <section className="one-surface" key={String(g)} aria-label={String(view(g))}>
+          <h3 className="one-heading">{view(g)}</h3>
           <div
             className="one-stack"
             style={{ flexDirection: "column", marginTop: 10 }}

@@ -10,7 +10,7 @@ import {
 function Document({ p }) {
   const url = p.src || p.url || p.documentUrl,
     valid = typeof url === "string" && /^https:\/\//i.test(url);
-  if (!valid) return <div className="one-empty">Select a document</div>;
+  if (!valid) return <div className="one-empty" role="status">Select a document</div>;
   const isImage = /\.(png|jpe?g|webp|gif)(?:[?#]|$)/i.test(url);
   return (
     <section className="one-surface">

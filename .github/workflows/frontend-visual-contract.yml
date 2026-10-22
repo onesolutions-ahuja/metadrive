@@ -5,6 +5,7 @@ on:
       - 'apps/web/**'
       - 'scripts/check-ui-design-tokens.mjs'
       - 'scripts/marketing-visual-smoke.mjs'
+      - 'scripts/accessibility-smoke.mjs'
       - '.github/workflows/frontend-visual-contract.yml'
       - 'package-lock.json'
       - 'package.json'
@@ -26,6 +27,8 @@ jobs:
         run: npm ci
       - name: Check shared UI design contract
         run: node scripts/check-ui-design-tokens.mjs
+      - name: Run component and canvas UX regression tests
+        run: npm run test:components
       - name: Build frontend
         run: npm run build --workspace apps/web
 
@@ -41,11 +44,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install browser test tooling
-        run: npm install --no-save --package-lock=false playwright && npx playwright install --with-deps chromium
+        run: npm install --no-save --package-lock=false playwright axe-core && npx playwright install --with-deps chromium
       - name: Start marketing preview
         run: nohup npm run dev --workspace apps/web -- --host 127.0.0.1 --port 4173 > /tmp/metadrive-vite.log 2>&1 &
       - name: Check marketing responsiveness and screenshots
         run: node scripts/marketing-visual-smoke.mjs
+      - name: Run axe-core accessibility scan
+        run: node scripts/accessibility-smoke.mjs
       - name: Save visual evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -826,7 +826,7 @@ function ShoppingCartTill({ props }) {
             )}
             {props.loading && <p role="status">Loading products…</p>}
             {!props.loading && !filtered.length && (
-              <p className="one-empty">
+              <p className="one-empty" role="status">
                 {props.emptyProductsText || "No products found."}
               </p>
             )}
@@ -870,7 +870,7 @@ function ShoppingCartTill({ props }) {
           <h3 className="one-heading">{props.basketTitle || "Current sale"}</h3>
           <div aria-live="polite">
             {!cart.length && (
-              <p className="one-empty">
+              <p className="one-empty" role="status">
                 {props.emptyBasketText || "Scan or select products to start."}
               </p>
             )}
