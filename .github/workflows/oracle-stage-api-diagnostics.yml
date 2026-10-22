@@ -21,6 +21,7 @@ jobs:
           ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
         run: |
           set -euo pipefail
+          echo "STAGE_API_CLEANUP=BEGIN"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_diag"
           chmod 600 "$HOME/.ssh/oracle_diag"
