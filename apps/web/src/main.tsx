@@ -44,8 +44,20 @@ class WorkspaceFailureBoundary extends React.Component<
 > {
   state: { error: Error | null } = { error: null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error) {
-    console.error('MetaDrive workspace failed to render', error);
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('MetaDrive workspace failed to render', error, info.componentStack);
+    // Preserve the actual browser exception across the immediate login/logout
+    // navigation, instead of losing its cause in a one-frame error boundary.
+    // No credentials, URLs with queries, cookies, tokens or user records.
+    try {
+      window.sessionStorage.setItem('md_last_workspace_exception', JSON.stringify({
+        route: window.location.pathname,
+        errorName: error.name,
+        message: error.message.slice(0, 1200),
+        componentStack: (info.componentStack ?? '').slice(0, 1800),
+        recordedAt: new Date().toISOString()
+      }));
+    } catch { /* Browsers can disable session storage. */ }
     recoverMissingDynamicChunk(error);
   }
   render() {

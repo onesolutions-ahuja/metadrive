@@ -236,7 +236,18 @@ function App() {
   if (authState === 'anonymous') return <Login branding={standaloneEntry??undefined} onStart={cancelRestore} onSuccess={loginSuccess} />;
   if (authState === 'error') return <Login branding={standaloneEntry??undefined} error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   if(window.location.pathname==='/oauth/authorize')return <React.Suspense fallback={<div role="status">Loading consent…</div>}><LazyOAuthConsent/></React.Suspense>;
-  const onLogout=()=>{sessionGeneration.current += 1;setEntryTiming(null);setAccessToken(undefined);setAuthState('anonymous');};
+  const onLogout=()=>{
+    sessionGeneration.current += 1;
+    setAccessToken(undefined);
+    // Logout links navigate to /login. Do not render a half-reset workspace
+    // during that navigation, which can trip the global workspace boundary.
+    if (window.location.pathname !== '/login') {
+      window.location.replace('/login');
+      return;
+    }
+    setEntryTiming(null);
+    setAuthState('anonymous');
+  };
   if(needsLandingRedirect)return <div className="auth-loading" role="status">Opening assigned application…</div>;
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}>{standaloneEntry.slug==='acekiosk'?<AceKioskAccessGate onLogout={onLogout}/>:<LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/>}</React.Suspense>;
   return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
