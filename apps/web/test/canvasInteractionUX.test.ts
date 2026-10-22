@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent } from '../src/core/builders/PageBuilder/canvasInteractions';
+import { readFile } from 'node:fs/promises';
+import { snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent, alignCanvasComponents } from '../src/core/builders/PageBuilder/canvasInteractions';
 
 test('canvas movement aligns with adjacent element edges and returns visible guide flags', () => {
   const result = snapCanvasPosition(
@@ -47,4 +48,30 @@ test('group and ungroup retain the original component position and properties', 
   assert.equal(restored[0].position?.x,32);
   assert.equal(restored[0].position?.y,64);
   assert.equal(restored[0].properties.value,'User customization');
+});
+
+
+test('multi-select alignment updates every selected unlocked component in one immutable result', () => {
+  const components = [
+    {id:'a',type:'Card',label:'A',visible:true,region:'main' as const,properties:{},position:{x:80,y:20,width:100,height:60}},
+    {id:'b',type:'Card',label:'B',visible:true,region:'main' as const,properties:{},position:{x:220,y:90,width:200,height:80}},
+    {id:'locked',type:'Card',label:'Locked',visible:true,region:'main' as const,properties:{canvasLocked:true},position:{x:60,y:40,width:120,height:60}},
+    {id:'other',type:'Card',label:'Other',visible:true,region:'main' as const,properties:{},position:{x:30,y:10,width:80,height:40}}
+  ];
+  const aligned = alignCanvasComponents(components,['a','b','locked'],'x','center',{width:800,height:600});
+  assert.equal(aligned[0].position?.x,350);
+  assert.equal(aligned[1].position?.x,300);
+  assert.equal(aligned[2].position?.x,60);
+  assert.equal(aligned[3].position?.x,30);
+  assert.notEqual(aligned,components);
+  assert.equal(components[0].position?.x,80,'original component objects are not mutated');
+});
+
+
+test('Page Builder records and restores selection state with undo and redo', async () => {
+  const source = await readFile(new URL('../src/core/builders/PageBuilder/pageBuilderView.tsx', import.meta.url), 'utf8');
+  assert.match(source, /setSelectionUndoStack\(current =>/);
+  assert.match(source, /selectionIds: \[\.\.\.selectionIds\]/);
+  assert.match(source, /const snapshot = selectionRedoStack\[selectionRedoStack\.length - 1\]/);
+  assert.match(source, /alignCanvasComponents\(page\.components/);
 });

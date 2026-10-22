@@ -98,7 +98,7 @@ import { isComponentVisible } from '../../components/Properties/componentVisibil
 import PageComponentVisualEditor from '../ComponentStyleEditor/PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import PageComponentStyleEditor from '../ComponentStyleEditor/PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition } from './canvasInteractions';
+import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition, alignCanvasComponents } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from '../../pages/PageRuntime/pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import AppExchange from '../../applications/AppExchange/AppExchange';
@@ -349,6 +349,9 @@ function PageBuilder({
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
+  type CanvasSelectionSnapshot = { selectedId: string; selectionIds: string[] };
+  const [selectionUndoStack, setSelectionUndoStack] = useState<CanvasSelectionSnapshot[]>([]);
+  const [selectionRedoStack, setSelectionRedoStack] = useState<CanvasSelectionSnapshot[]>([]);
   type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge; element: HTMLElement; current: { x: number; y: number; width: number; height: number } } | null>(null);
   const canvasGuideXRef = useRef<HTMLDivElement | null>(null);
@@ -471,6 +474,8 @@ function PageBuilder({
     setFitCanvas(true);
     setUndoStack([]);
     setRedoStack([]);
+    setSelectionUndoStack([]);
+    setSelectionRedoStack([]);
     setPreviewMode(false);
     setPageSettingsOpen(false);
     setDynamicFormsUpgradeOpen(false);
@@ -516,6 +521,8 @@ function PageBuilder({
     if (JSON.stringify(page) === JSON.stringify(nextPage)) return;
     setUndoStack((current) => [...current.slice(-49), page]);
     setRedoStack([]);
+    setSelectionUndoStack(current => [...current.slice(-49), { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionRedoStack([]);
     onChange(nextPage);
   };
   const updateComponent = (id: string, update: Partial<LightningPageMetadata['components'][number]>) => {
@@ -951,29 +958,48 @@ function PageBuilder({
     setSelectedId(copy.id); setComponentMenuId('');
   };
   const alignSelected = (axis: 'x' | 'y', anchor: 'start' | 'center' | 'end') => {
-    if (!selected?.position || isCanvasLocked(selected) || selected.properties.canvasLocked === true) return;
-    const dimension = axis === 'x' ? 'width' : 'height';
-    const span = axis === 'x' ? page.canvasWidth : page.canvasHeight;
-    const freeSpace = Math.max(0, span - selected.position[dimension]);
-    const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
-    updateComponent(selected.id, { position: { ...selected.position, [axis]: value } });
+    const targets = page.components.filter(component =>
+      selectionIds.includes(component.id) && component.position
+      && !rawLayoutParentId(component) && !isCanvasLocked(component)
+      && component.properties.canvasLocked !== true);
+    const selectedTargets = targets.length > 1 ? targets
+      : selected?.position && !isCanvasLocked(selected) && selected.properties.canvasLocked !== true
+        ? [selected] : [];
+    if (!selectedTargets.length) return;
+    const aligned = alignCanvasComponents(page.components, selectedTargets.map(component => component.id),
+      axis, anchor, { width: page.canvasWidth, height: page.canvasHeight });
+    applyPage({ ...page, components: aligned });
   };
   const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
-    setRedoStack((current) => [...current, page]);
-    setUndoStack((current) => current.slice(0, -1));
+    setRedoStack(current => [...current, page]);
+    setUndoStack(current => current.slice(0, -1));
+    setSelectionRedoStack(current => [...current, { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionUndoStack(current => current.slice(0, -1));
     onChange(previous);
-    setSelectedId(previous.components[0]?.id ?? '');
+    const previousIds = new Set(previous.components.map(component => component.id));
+    const snapshot = selectionUndoStack[selectionUndoStack.length - 1];
+    const restoredSelection = (snapshot?.selectionIds ?? selectionIds).filter(id => previousIds.has(id));
+    setSelectionIds(restoredSelection);
+    const requestedId = snapshot?.selectedId ?? selectedId;
+    setSelectedId(previousIds.has(requestedId) ? requestedId : (restoredSelection[0] ?? ''));
   };
   const redo = () => {
     const next = redoStack[redoStack.length - 1];
     if (!next) return;
-    setUndoStack((current) => [...current, page]);
-    setRedoStack((current) => current.slice(0, -1));
+    setUndoStack(current => [...current, page]);
+    setRedoStack(current => current.slice(0, -1));
+    setSelectionUndoStack(current => [...current, { selectedId, selectionIds: [...selectionIds] }]);
+    setSelectionRedoStack(current => current.slice(0, -1));
     onChange(next);
-    setSelectedId(next.components[0]?.id ?? '');
+    const nextIds = new Set(next.components.map(component => component.id));
+    const snapshot = selectionRedoStack[selectionRedoStack.length - 1];
+    const restoredSelection = (snapshot?.selectionIds ?? selectionIds).filter(id => nextIds.has(id));
+    setSelectionIds(restoredSelection);
+    const requestedId = snapshot?.selectedId ?? selectedId;
+    setSelectedId(nextIds.has(requestedId) ? requestedId : (restoredSelection[0] ?? ''));
   };
   useEffect(() => {
     if (page.layoutMode !== 'free-canvas') return;
@@ -1060,6 +1086,8 @@ function PageBuilder({
         }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
+        setSelectionUndoStack([]);
+        setSelectionRedoStack([]);
         setRedoStack([]);
         if (returnToList) onBackToPages();
       }
@@ -1103,6 +1131,8 @@ function PageBuilder({
         setPageSettingsOpen(cloned.components.length === 0);
         setPreviewMode(false);
         setUndoStack([]);
+        setSelectionUndoStack([]);
+        setSelectionRedoStack([]);
         setRedoStack([]);
       }
     } finally {
@@ -1163,6 +1193,8 @@ function PageBuilder({
       setCreatePageOpen(false);
       setNewPageLabel('');
       setUndoStack([]);
+      setSelectionUndoStack([]);
+      setSelectionRedoStack([]);
       setRedoStack([]);
       setPreviewMode(false);
     } finally {

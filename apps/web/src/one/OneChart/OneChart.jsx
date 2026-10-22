@@ -16,7 +16,7 @@ function Chart({ p, rows }) {
     }));
   const max = Math.max(1, ...entries.map((x) => Math.abs(x.n))),
     type = p.chartType || "bar";
-  if (!entries.length) return <div className="one-empty">No chart data</div>;
+  if (!entries.length) return <div className="one-empty" role="status">No chart data</div>;
   if (type === "donut") {
     const total = entries.reduce((s, x) => s + Math.max(0, x.n), 0) || 1;
     let acc = 0;

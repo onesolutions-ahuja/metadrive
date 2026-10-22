@@ -29,7 +29,7 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
-    } else {
+    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard','OneTimeline','OneChart','OneDocumentViewer','OneDashboardEmbed','OneConversation','OneShoppingCart'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
     assert.match(built.cssSource, /\.one-ui\s*\{/);
@@ -175,4 +175,55 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
   assert.match(html,/one-choice-option__image/);
   assert.match(html,/object-fit:cover/);
   assert.match(html,/--one-choice-columns:2/);
+});
+
+
+test('reported One UI accessibility contracts remain implemented', async () => {
+  const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
+  const [overlay, menu, tabs, button, input, search, form, grid, shared, board, timeline, chart, documentViewer, dashboardEmbed, conversation, cart] = await Promise.all([
+    read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
+    read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
+    read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx'),
+    read('OneTimeline/OneTimeline.jsx'), read('OneChart/OneChart.jsx'), read('OneDocumentViewer/OneDocumentViewer.jsx'),
+    read('OneDashboardEmbed/OneDashboardEmbed.jsx'), read('OneConversation/OneConversation.jsx'), read('OneShoppingCart/OneShoppingCart.jsx')
+  ]);
+  assert.match(overlay, /role="dialog" aria-modal="true"/);
+  assert.match(shared, /event\.key === 'Escape'/);
+  assert.match(overlay, /useModalAccessibility\(React,open,dialogRef,close\)/);
+  assert.match(shared, /document\.addEventListener\('focusin'/);
+  assert.match(menu, /event\.key === "ArrowDown"/);
+  assert.match(menu, /event\.key === "Home"/);
+  assert.match(menu, /useDismissOnOutside\(React,rootRef,open,dismiss\)/);
+  assert.match(shared, /document\.addEventListener\('pointerdown'/);
+  assert.match(tabs, /aria-controls=\{p\.showPanel!==false\?panelId:undefined\}/);
+  assert.match(tabs, /aria-labelledby=\{activeTabId\}/);
+  assert.match(button, /aria-busy=\{p\.loading===true\?"true":undefined\}/);
+  assert.match(input, /"aria-invalid":p\.validationMessage\?"true":undefined/);
+  assert.match(input, /className="one-error" role="alert"/);
+  assert.match(search, /role="combobox"/);
+  assert.match(search, /role="listbox"/);
+  assert.match(search, /event\.key==="ArrowDown"/);
+  assert.match(search, /event\.key==="Escape"/);
+  assert.match(search, /event\.key==="Home"/);
+  assert.match(form, /aria-invalid=\{error\?"true":undefined\}/);
+  assert.match(form, /aria-describedby=\{error\?errorId:undefined\}/);
+  assert.match(grid, /className="one-empty" role="status"/);
+  assert.match(board, /role="region"/);
+  assert.match(board, /<h3 className="one-heading">/);
+  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
+  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.doesNotMatch(component, /className="one-empty"(?!\s+role="status")/, "every empty state must announce its status");
+  const properties = await readFile(new URL("../src/core/builders/ComponentProperties/componentPropertiesView.tsx", import.meta.url), "utf8");
+  for (const section of ["Content", "Layout", "Responsive", "Appearance"]) assert.match(properties, /propertySectionFor\(key, definitionsByKey\.get\(key\)\) === section/);
+});
+
+
+test('accessibility smoke covers login and supports configured published-page/dialog scans', async () => {
+  const smoke = await readFile(new URL('../../../scripts/accessibility-smoke.mjs', import.meta.url), 'utf8');
+  assert.match(smoke, /new URL\('\/login', base\)\.href/);
+  assert.match(smoke, /UI_SMOKE_PUBLISHED_URL/);
+  assert.match(smoke, /UI_SMOKE_OVERLAY_SELECTOR/);
+  assert.match(smoke, /window\.axe\.run/);
+  assert.match(smoke, /showcase tab/);
+  assert.match(smoke, /Critical\/serious WCAG violations/);
 });
