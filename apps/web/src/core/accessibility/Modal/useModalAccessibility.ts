@@ -1,3 +1,4 @@
+import * as React from 'react';
 import type { RefObject } from 'react';
 import { useModalAccessibility as sharedModalAccessibility } from '../../../one/shared/accessibilityHooks.jsx';
 
@@ -5,5 +6,5 @@ import { useModalAccessibility as sharedModalAccessibility } from '../../../one/
 export function useModalAccessibility<T extends HTMLElement>(
   active: boolean, dialog: RefObject<T>, onEscape: () => void
 ): void {
-  sharedModalAccessibility(active, dialog, onEscape);
+  sharedModalAccessibility(React, active, dialog, onEscape);
 }
