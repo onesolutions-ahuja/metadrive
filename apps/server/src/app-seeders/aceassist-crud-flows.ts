@@ -13,7 +13,7 @@ export const ACEASSIST_EDITABLE_FIELDS:Record<string,readonly string[]>={
  Invoice:['Name','Customer','InvoiceDate','DueDate','Status','Notes','CurrencyCode','Subtotal','DiscountAmount','TaxAmount','Total'],
  InvoiceLine:['Name','Invoice','Product','Description','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal']
 };
-type FlowGraph={apiName:string;label:string;appApiName:string;flowType:string;status:string;version:number;elements:Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;connectors:Array<{from:number;to:number;kind:string;label:string}>;resources:Array<Record<string,unknown>>;tests:unknown[]};
+type FlowGraph={apiName:string;label:string;appApiName:string;flowType:string;status:string;version:number;startConfig?:Record<string,unknown>;elements:Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;connectors:Array<{from:number;to:number;kind:string;label:string}>;resources:Array<Record<string,unknown>>;tests:unknown[]};
 const start={id:1,type:'Start',label:'Start',config:{executionContext:'User'}};
 const end={id:3,type:'End',label:'End',config:{}};
 function makeGraph(objectApi:string,operation:'Load'|'Create'|'Update'|'Delete',availableFields:string[]):FlowGraph {
@@ -38,6 +38,8 @@ function makeGraph(objectApi:string,operation:'Load'|'Create'|'Update'|'Delete',
  }
  return {apiName,label:'Ace Assist - '+name,appApiName:'AceAssist',
   flowType:'Autolaunched Flow',status:'Active',version:1,
+  ...(objectApi==='Appointment'&&(operation==='Create'||operation==='Update')
+    ?{startConfig:{businessCalendarGuard:{startInput:'StartDateTime',endInput:'EndDateTime'}}}:{}),
   elements:[start,{id:2,type:operation==='Load'?'Get Records':operation+' Records',label:name,config},end],
   connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'}],
   resources,tests:[]};
