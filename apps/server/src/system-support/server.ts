@@ -1270,10 +1270,17 @@ export function createSystemServer(db:SqlPersistence) {
   app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','manage');
+    // A connection test is read-only and cannot follow an arbitrary URL or
+    // bypass tenant credential activation, licence checks or OneEngine RBAC.
+    const path=req.body?.path===undefined?'':req.body.path;
+    if(typeof path!=='string'||path.length>512||path.startsWith('/')
+      ||path.includes('\\')||path.includes('..')||/[?#\\r\\n]/.test(path)
+      ||(path!==''&&!/^[A-Za-z0-9_./-]+$/.test(path)))
+      throw new Error('Invalid Named Credential test path');
     const result=await namedCredentials.callout(
       actor.tenant_id,actor.user_id,
-      {namedCredentialId:req.params.id,method:'GET',path:''},{},'credential-connectivity-test');
-    res.json({success:true,status:result.status});
+      {namedCredentialId:req.params.id,method:'GET',path},{},'credential-connectivity-test');
+    res.json({success:result.status>=200&&result.status<300,status:result.status});
   }));
   app.post('/api/named-credentials/:id/rotate',route(async(req,res)=>{
     const actor=req.actor!;
