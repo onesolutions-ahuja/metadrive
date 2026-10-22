@@ -318,8 +318,10 @@ function MetadataBoundPageComponent({
   },[pageSessionKey]);
   const stateChannel = useFlowStateChannel(properties, sessionId, apiRequest, disableActions === true);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [recordsForQueryKey, setRecordsForQueryKey] = useState('');
   const [contactRecords, setContactRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
+  const [dataErrorForQueryKey, setDataErrorForQueryKey] = useState('');
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -349,7 +351,9 @@ function MetadataBoundPageComponent({
     let requestId = 0;
     let pending = false;
     setRecords([]);
+    setRecordsForQueryKey('');
     setDataError('');
+    setDataErrorForQueryKey('');
     if (!objectApiName || recordQuery.blocked) {
       setDataLoading(false);
       return () => { active = false; };
@@ -362,10 +366,15 @@ function MetadataBoundPageComponent({
         const rows = await loadFlowScreenRecords(objectApiName,recordQuery.filter);
         if (active && request === requestId) {
           setRecords(rows);
+          setRecordsForQueryKey(recordQueryKey);
           setDataError('');
+          setDataErrorForQueryKey('');
         }
       } catch (reason) {
-        if (active && request === requestId) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
+        if (active && request === requestId) {
+          setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
+          setDataErrorForQueryKey(recordQueryKey);
+        }
       } finally {
         pending = false;
         if (active && request === requestId) setDataLoading(false);
@@ -441,7 +450,9 @@ function MetadataBoundPageComponent({
     name: String(row[String(properties.contactNameFieldApiName??'')]??''),
     phone: String(row[String(properties.contactPhoneFieldApiName??'')]??'')
   })).filter(contact => contact.id && contact.phone);
-  const filteredRecords=filterPageComponentRecords(records,properties.filters,fields,{pageState,recordId,sessionId});
+  // Data from the previous object/filter must not flash while the new query is pending.
+  const currentQueryRecords = recordsForQueryKey === recordQueryKey ? records : [];
+  const filteredRecords=filterPageComponentRecords(currentQueryRecords,properties.filters,fields,{pageState,recordId,sessionId});
   const relatedKey=String(properties.relatedFilterKey??'');
   const relatedField=String(properties.relatedFieldApiName??'');
   const selectedId=relatedKey?pageState[relatedKey]:undefined;
@@ -569,7 +580,7 @@ function MetadataBoundPageComponent({
     });
   }, [sessionId, disableActions]);
   return <div style={properties.fillRegion === true ? {height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'} : undefined}>
-    {dataError && <div className="records-message" role="alert">{dataError}</div>}
+    {dataError && dataErrorForQueryKey === recordQueryKey && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...resolvedProperties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties: resolvedProperties, objects, reports, flows: availableFlows, pageState,
@@ -628,10 +639,21 @@ function LightningAppRuntime({
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>, context?:{requestId?:string}) => void;
   onStandaloneModeChange: (enabled: boolean) => void;
 }) {
-  const [page, setPage] = useState<LightningPageMetadata | null>(null);
   const layoutDevice = usePageLayoutDevice();
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const routeKey = JSON.stringify([appId, pageApiName ?? '', formFactor]);
+  const [pageLoad, setPageLoad] = useState<{
+    routeKey: string;
+    page: LightningPageMetadata | null;
+    error: string;
+    loading: boolean;
+  }>({ routeKey: '', page: null, error: '', loading: true });
+  // Never render a page/error produced for a different route. Effects run after
+  // render, so the route-key check closes the stale-state frame before the
+  // request effect has had a chance to reset state.
+  const routePending = pageLoad.routeKey !== routeKey;
+  const page = routePending ? null : pageLoad.page;
+  const error = routePending ? '' : pageLoad.error;
+  const loading = routePending || pageLoad.loading;
   const [activeTab, setActiveTab] = useState('');
   const [layoutState,setLayoutState]=useState<Record<string,unknown>>({});
   useEffect(()=>{
@@ -647,21 +669,22 @@ function LightningAppRuntime({
   },[appId,page?.apiName]);
   useEffect(() => {
     let active = true;
-    setPage(null);
-    setError('');
-    setLoading(true);
+    setPageLoad({ routeKey, page: null, error: '', loading: true });
     const endpoint = pageApiName
       ? `/apps/${encodeURIComponent(appId)}/pages/${encodeURIComponent(pageApiName)}?formFactor=${formFactor}`
       : `/apps/${encodeURIComponent(appId)}/home-page?formFactor=${formFactor}`;
     void apiRequest<{ page: LightningPageMetadata | null }>(endpoint).then((payload) => {
-      if (active) setPage(payload.page);
+      if (active) setPageLoad({ routeKey, page: payload.page, error: '', loading: false });
     }).catch((failure: unknown) => {
-      if (active) setError(failure instanceof Error ? failure.message : 'Unable to load Lightning page');
-    }).finally(() => {
-      if (active) setLoading(false);
+      if (active) setPageLoad({
+        routeKey,
+        page: null,
+        error: failure instanceof Error ? failure.message : 'Unable to load Lightning page',
+        loading: false
+      });
     });
     return () => { active = false; };
-  }, [appId, pageApiName, formFactor]);
+  }, [routeKey, appId, pageApiName, formFactor]);
   useEffect(() => {
     setActiveTab('');
   }, [page?.apiName]);
