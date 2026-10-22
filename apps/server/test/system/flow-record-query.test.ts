@@ -109,8 +109,8 @@ test('Flow Get Records supports current-user OwnerId filters without granting wi
  assert.equal(rows.length,1);
  assert.equal(rows[0].OwnerId,'user-1');
  assert.equal(rows[0].Name,'Assigned Contact');
- assert.match(statements[1].sql,/COALESCE\\(r\\.owner_id,r\\.owner_queue_id\\)::text/);
+ assert.ok(statements[1].sql.includes('COALESCE(r.owner_id,r.owner_queue_id)::text'));
  assert.deepEqual(statements[1].params.slice(0,6),
   ['tenant-1','Contact','user-1','user-1','Name','assigned']);
- assert.match(statements[1].sql,/md_record_access\\(\\$1,\\$3,r\\.id,'read'\\)/);
+ assert.ok(statements[1].sql.includes("md_record_access($1,$3,r.id,'read')"));
 });
