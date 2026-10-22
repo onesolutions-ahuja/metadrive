@@ -35,7 +35,15 @@ test('six independently defined connector apps provision only tenant-scoped non-
   assert.equal(credential.args[3]?.toString().startsWith('https://'),true);
   assert.equal(credential.args.length,6,'No tenant secret belongs in a connector definition');
   assert.ok(writes.some(w=>w.sql.includes("kind,api_name,label,properties,enabled")));
-  assert.ok(writes.some(w=>w.sql.includes('INSERT INTO md_connector_app_fields')));
+  const fields=writes.filter(w=>w.sql.includes('INSERT INTO md_connector_app_fields'));
+  assert.deepEqual(fields.map(w=>w.args[3]),name==='WhatsAppConnector'?['public_phoneNumberId']:[],
+    name+' must provision only required non-secret variables');
+  assert.ok(fields.every(w=>w.args[5]===true),'Seeded configuration variables must be required');
+  const cleanup=writes.find(w=>w.sql.includes('DELETE FROM md_connector_app_fields'));
+  assert.ok(cleanup,'Reinstall must prune obsolete package-managed fields');
+  assert.deepEqual(cleanup.args[3],fields.map(w=>w.args[3]));
+  assert.ok(!writes.some(w=>w.sql.includes('DELETE FROM md_named_credentials')),
+    'Pruning configuration field definitions must never delete credentials');
  }
 });
 
