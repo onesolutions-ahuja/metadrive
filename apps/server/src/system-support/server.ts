@@ -375,7 +375,6 @@ export function createSystemServer(db:SqlPersistence) {
       const objectApis=new Set<string>();
       for(const component of components){
         const properties=componentProperties(component);
-        if(properties.liveRefreshEnabled===true)continue;
         const filters=properties.filters;
         if(filters!==undefined&&filters!==null
           &&(!Array.isArray(filters)||filters.some((filter:unknown)=>!filter||typeof filter!=='object'
