@@ -12,7 +12,9 @@ export default function OneSearch(props) {
     if(event.key==="ArrowDown"){event.preventDefault();setActiveIndex(index=>(index+1)%suggestions.length);}
     else if(event.key==="ArrowUp"){event.preventDefault();setActiveIndex(index=>index<=0?suggestions.length-1:index-1);}
     else if(event.key==="Enter"&&activeIndex>=0){event.preventDefault();choose(suggestions[activeIndex]);}
-    else if(event.key==="Escape")setActiveIndex(-1);
+    else if(event.key==="Home"){event.preventDefault();setActiveIndex(0);}
+    else if(event.key==="End"){event.preventDefault();setActiveIndex(suggestions.length-1);}
+    else if(event.key==="Escape"){setActiveIndex(-1);setSuggestionsDismissed(true);}
   };
   return <div {...root}><label className="one-label">{p.label||"Search"}
     <input className="one-control" type="search" role="combobox" aria-autocomplete="list" aria-expanded={suggestions.length>0} aria-controls={suggestions.length?listId:undefined} aria-activedescendant={activeIndex>=0?listId+"-option-"+activeIndex:undefined} placeholder={p.placeholder||"Search"} value={p.value!==undefined?String(p.value):query} onKeyDown={onKeyDown} onChange={e=>{
