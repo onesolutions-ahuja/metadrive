@@ -143,14 +143,22 @@ export function useSetupMetadata(ctx: any) {
     const loadMetadata = async () => {
       const failures: string[] = [];
       const pending = new Map<string, Promise<unknown>>();
-      // The successful login/session-refresh response already carries these
-      // tenant-scoped metadata snapshots. Seed the request map with that exact
-      // response so the follow-up editor bootstrap reuses it instead of issuing
-      // duplicate requests after the landing screen has rendered.
-      if (entryTiming?.landing) {
-        pending.set('/metadata/objects', Promise.resolve({ objects: entryTiming.landing.objects }));
-        pending.set('/metadata/pages', Promise.resolve({ pages: entryTiming.landing.pages }));
-        pending.set('/metadata/apps', Promise.resolve({ apps: entryTiming.landing.apps }));
+      // Login can carry the bootstrap directly. Session restoration deliberately
+      // returns its token promptly, then obtains the same RBAC-checked snapshot
+      // through one authenticated request instead of four independent reads.
+      let landing = entryTiming?.landing;
+      if (!landing) {
+        try {
+          landing = (await apiRequest<{ landing?: NonNullable<typeof landing> }>('/metadata/landing-bootstrap')).landing;
+        } catch {
+          // Fall back to the existing individual endpoints and their error states.
+        }
+      }
+      if (landing) {
+        pending.set('/metadata/objects', Promise.resolve({ objects: landing.objects }));
+        pending.set('/metadata/pages', Promise.resolve({ pages: landing.pages }));
+        pending.set('/metadata/apps', Promise.resolve({ apps: landing.apps }));
+        pending.set('/auth/me', Promise.resolve({ user: landing.user }));
       }
       // Reuse the four essential requests when optional data loads later.
       // This avoids fetching the same objects/pages/apps twice.
@@ -177,12 +185,12 @@ export function useSetupMetadata(ctx: any) {
         if (fastEntryRoute) {
           // Trusted tenant-scoped RBAC bootstrap is returned with successful
           // refresh/login: render immediately without 4 more HTTP round trips.
-          const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
+          const [firstObjects, firstPages, firstApps, firstSession] = landing
             ? [
-                { objects: entryTiming.landing.objects },
-                { pages: entryTiming.landing.pages },
-                { apps: entryTiming.landing.apps },
-                { user: entryTiming.landing.user }
+                { objects: landing.objects },
+                { pages: landing.pages },
+                { apps: landing.apps },
+                { user: landing.user }
               ] as const
             : await Promise.all([
             recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
