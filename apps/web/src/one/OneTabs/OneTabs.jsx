@@ -24,11 +24,11 @@ export default function OneTabs(props) {
   const activeTabId=p.showAllTab===true && active===-1 ? tabId(0) : tabId((p.showAllTab===true?1:0)+active);
   return <div {...css}>
     <div className="one-tabs" role="tablist" aria-label={p.label || "Tabs"} style={chipMode?{display:"flex",flexWrap:p.wrapTabs===false?"nowrap":"wrap",overflowX:p.wrapTabs===false?"auto":"visible",gap:Number(p.gap)>=0?Number(p.gap):8}:undefined}>
-      {p.showAllTab===true && <button id={tabId(0)} type="button" className="one-tab" role="tab" aria-selected={active===-1} aria-controls={panelId} tabIndex={active===-1?0:-1} onKeyDown={event=>moveTab(event,0)} onClick={()=>{
+      {p.showAllTab===true && <button id={tabId(0)} type="button" className="one-tab" role="tab" aria-selected={active===-1} aria-controls={p.showPanel!==false?panelId:undefined} tabIndex={active===-1?0:-1} onKeyDown={event=>moveTab(event,0)} onClick={()=>{
         setActive(-1);
         if(p.pageSessionKey&&p.filterKey&&typeof window!=="undefined") window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected",{detail:{pageSessionKey:p.pageSessionKey,filterKey:p.filterKey,value:"",recordId:"",label:p.allTabLabel||"All",sourceObjectApiName:p.objectApiName||""}}));
       }} style={{borderRadius:p.tabStyle==="pill"?999:undefined,backgroundColor:active===-1?(p.accentColor||"#E4002B"):undefined,color:active===-1?"#FFFFFF":undefined}}>{p.allTabLabel||"All"}</button>}
-      {tabs.map((name,i)=>{const index=i+(p.showAllTab===true?1:0);return <button id={tabId(index)} type="button" className="one-tab" key={i} role="tab" aria-selected={active===i} aria-controls={panelId} tabIndex={active===i?0:-1} onKeyDown={event=>moveTab(event,index)} onClick={()=>selectTab(name,i)} style={p.tabStyle==="pill"?{borderRadius:999,backgroundColor:active===i?(p.accentColor||"#E4002B"):undefined,color:active===i?"#FFFFFF":undefined}:undefined}>{name}</button>;})}
+      {tabs.map((name,i)=>{const index=i+(p.showAllTab===true?1:0);return <button id={tabId(index)} type="button" className="one-tab" key={i} role="tab" aria-selected={active===i} aria-controls={p.showPanel!==false?panelId:undefined} tabIndex={active===i?0:-1} onKeyDown={event=>moveTab(event,index)} onClick={()=>selectTab(name,i)} style={p.tabStyle==="pill"?{borderRadius:999,backgroundColor:active===i?(p.accentColor||"#E4002B"):undefined,color:active===i?"#FFFFFF":undefined}:undefined}>{name}</button>;})}
     </div>
     {p.showPanel!==false && <div id={panelId} className="one-surface" role="tabpanel" tabIndex={0} aria-labelledby={activeTabId} style={{marginTop:8}}>
       {Array.isArray(children)?children[active]:(p.panels&&p.panels[active]?.content)||children||tabs[active]||"No categories"}
