@@ -1216,6 +1216,8 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/named-credentials',route(async(req,res)=>{
     const actor=req.actor!;
+    res.setHeader('Cache-Control','private, no-store');
+    res.setHeader('Vary','Authorization, Cookie');
     res.json({credentials:await namedCredentials.list(actor.tenant_id,actor.user_id)});
   }));
   app.post('/api/named-credentials',route(async(req,res)=>{

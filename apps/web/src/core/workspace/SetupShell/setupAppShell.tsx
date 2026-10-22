@@ -310,6 +310,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     // Connector administration is optional; never request secrets on unrelated tenant routes.
     if (route.kind !== 'setup' || !['named-credentials', 'app-exchange', 'flow-builder'].includes(workspace)) return;
     let active = true;
+    const credentialsRequest = new AbortController();
     setNamedCredentialsLoaded(false);
     setNamedCredentialsError('');
     setConnectorRightsLoaded(false);
@@ -327,14 +328,22 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     void apiRequest<{ view: boolean; edit: boolean; secrets: boolean; test: boolean; install: boolean; licence: boolean }>('/connector-apps/capabilities')
       .then((rights) => { if (active) {setConnectorRights(rights);setConnectorRightsLoaded(true);} })
       .catch((error:unknown) => { if (active) {setConnectorRightsError(error instanceof Error?error.message:String(error));setConnectorRightsLoaded(true);} });
-    void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials')
+    void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials',{
+      cache:'no-store',signal:credentialsRequest.signal
+    })
       .then(({ credentials }) => {
-        if (active) {setNamedCredentials(credentials);setNamedCredentialsLoaded(true);}
+        if(!active)return;
+        if(!Array.isArray(credentials))throw new Error('Invalid Named Credentials API response: credentials array missing');
+        setNamedCredentials(credentials);
+        setNamedCredentialsError('');
+        setNamedCredentialsLoaded(true);
       })
       .catch((error:unknown) => {
-        if(active){setNamedCredentials([]);setNamedCredentialsError(error instanceof Error?error.message:String(error));setNamedCredentialsLoaded(true);}
+        if(!active || credentialsRequest.signal.aborted)return;
+        setNamedCredentialsError(error instanceof Error?error.message:String(error));
+        setNamedCredentialsLoaded(true);
       });
-    return () => { active = false; };
+    return () => { active = false; credentialsRequest.abort(); };
   }, [route.kind, workspace]);
 
   useSetupMetadata({ advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, readVerifiedMetadata, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAccessControlLoaded, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setFlowDefinitionsLoaded, setFlowDefinitionsError, setReportsLoaded, setReportsError, setDashboardsLoaded, setDashboardsError, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace });
