@@ -6,7 +6,7 @@ export default function OneMenu(props) {
   const { kind, root, query, setQuery, selected, setSelected, open, setOpen, localPage, setPage, options } = useOneActions(p);
   const rootRef = React.useRef(null), triggerRef = React.useRef(null), menuRef = React.useRef(null);
   const dismiss = React.useCallback(() => { setOpen(false); triggerRef.current?.focus(); }, [setOpen]);
-  useDismissOnOutside(rootRef, open, dismiss);
+  useDismissOnOutside(React,rootRef,open,dismiss);
   React.useEffect(() => {
     if (!open || typeof document === "undefined") return undefined;
     const items = () => Array.from(menuRef.current?.querySelectorAll('[role="menuitem"]:not(:disabled)') || []);
