@@ -80,8 +80,9 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   if(!matches(signatureDigest,supplied)){
    res.status(401).json({error:'Webhook signature invalid'});return;
   }
-  // Legacy Flow-bound endpoints are still supported; new credential endpoints
-  // write Communication records and never require or execute a mapped Flow.
+  // A credential webhook may also route through an authorised tenant Flow.
+  // Preserve the existing Communication archive when Flow routing is configured.
+  // Legacy app/Flow-only endpoints retain their existing Flow-only behaviour.
   if(endpoint.flow_api){
    const {rows:active}=await db.query(`
      SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2
@@ -116,7 +117,10 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
      webhookEndpoint:endpoint.api_name
     });
-   }else{
+   }
+   // Credential-linked endpoints keep their existing generic Communication
+   // record even when a tenant enables a reusable Flow consumer.
+   if(!endpoint.flow_api||endpoint.credential_name){
     if(!records)throw new Error('Communication record engine unavailable');
     const sanitized=JSON.stringify(safePayload(req.body)).slice(0,10000);
     await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
