@@ -1,0 +1,103 @@
+name: Oracle live deployment audit
+
+on:
+  push:
+    branches:
+      - ops/oracle-cutover-access-check-20261022
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Audit Oracle and source database without exposing secrets
+        shell: bash
+        env:
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
+          METADRIVE_AIVEN_DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_audit"
+          chmod 600 "$HOME/.ssh/oracle_audit"
+          host="${ORACLE_SSH_HOST:-132.145.18.46}"
+          ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          ssh -i "$HOME/.ssh/oracle_audit" -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes "ubuntu@$host" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "ORACLE_HOST=$(hostname)"
+          echo "POSTGRES_SERVICE=$(systemctl is-active postgresql)"
+          echo "REHEARSAL_SERVICE=$(systemctl is-active metadrive-private-test.service || true)"
+          echo "PRODUCTION_API_SERVICE=$(systemctl is-active metadrive-api.service || true)"
+          echo "PRODUCTION_WORKER_SERVICE=$(systemctl is-active metadrive-worker.service || true)"
+          echo "CURRENT_RELEASE=$(sudo readlink -f /opt/metadrive/current 2>/dev/null || echo missing)"
+          echo "RELEASES:"
+          sudo find /opt/metadrive/releases -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+          echo "SYSTEMD_METADRIVE_UNITS:"
+          systemctl list-unit-files 'metadrive*' --no-legend | awk '{print $1, $2}' || true
+          echo "ENVIRONMENT_SAFE_SUMMARY:"
+          sudo python3 - <<'PY'
+          from urllib.parse import urlsplit
+          p = "/etc/metadrive/private-test.env"
+          try:
+              lines = open(p).read().splitlines()
+          except OSError:
+              print("ENV_FILE=missing")
+              raise SystemExit(0)
+          for line in lines:
+              line = line.strip()
+              if not line or line.startswith("#") or "=" not in line:
+                  continue
+              k, v = line.split("=", 1)
+              print("ENV_KEY=" + k)
+              if k in ("DATABASE_URL", "PGHOST", "PGDATABASE"):
+                  if k == "DATABASE_URL":
+                      v = v.strip().strip('"').strip("'")
+                      u = urlsplit(v)
+                      print("DATABASE_HOST=" + str(u.hostname))
+                      print("DATABASE_NAME=" + u.path.lstrip("/"))
+                  elif k == "PGHOST":
+                      print("DATABASE_HOST=" + v.strip().strip('"').strip("'"))
+                  else:
+                      print("DATABASE_NAME=" + v.strip().strip('"').strip("'"))
+          PY
+          echo "LOCAL_DATABASES_AND_TABLES:"
+          sudo -u postgres psql -d postgres -Atc "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname" | while IFS= read -r db; do
+            tables="$(sudo -u postgres psql -d "$db" -Atqc "SELECT count(*) FROM pg_tables WHERE schemaname='public'" 2>/dev/null || echo unavailable)"
+            printf 'DATABASE=%s PUBLIC_TABLES=%s\n' "$db" "$tables"
+          done
+          for db in metadrive_sql_20261012 metadrive_sql_20261012_rehearsal; do
+            echo "ROW_ESTIMATES_DB=$db"
+            sudo -u postgres psql -d "$db" -Atc "SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'" 2>&1 | sed 's/^/ESTIMATED_LIVE_ROWS=/'
+            sudo -u postgres psql -d "$db" -Atc "SELECT relname || ':' || n_live_tup FROM pg_stat_user_tables WHERE schemaname='public' ORDER BY n_live_tup DESC LIMIT 10" 2>&1
+          done
+          echo "LOCAL_HEALTH:"
+          for path in /health /api/health; do
+            printf '%s ' "$path"
+            curl -sS -o /tmp/metadrive-health.out -w 'HTTP=%{http_code}\n' --max-time 5 "http://127.0.0.1:10000$path" || true
+            head -c 250 /tmp/metadrive-health.out 2>/dev/null || true
+            echo
+          done
+          echo "LISTENERS:"
+          sudo ss -lntp | grep -E ':(22|80|443|5432|10000)\b' || true
+          REMOTE
+          if [[ -n "$METADRIVE_AIVEN_DATABASE_URL" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client >/dev/null
+            SOURCE_DB_URL="$(python3 - <<'PY'
+          import os
+          from urllib.parse import urlsplit, urlunsplit
+          u = urlsplit(os.environ["METADRIVE_AIVEN_DATABASE_URL"])
+          print(urlunsplit((u.scheme, u.netloc, "/metadrive_sql_20261012", u.query, u.fragment)))
+          PY
+          )"
+            echo "AIVEN_SOURCE_DATABASE:"
+            psql "$SOURCE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "SELECT 'DATABASE=' || current_database() || ' TABLES=' || (SELECT count(*) FROM pg_tables WHERE schemaname='public') || ' ESTIMATED_ROWS=' || (SELECT COALESCE(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public')" 
+          else
+            echo "AIVEN_SECRET=MISSING"
+            exit 1
+          fi
