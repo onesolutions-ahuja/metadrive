@@ -275,7 +275,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   };
   const createChatFromNumber=async(event:React.FormEvent<HTMLFormElement>)=>{
     event.preventDefault();
-    await startConversation(chatName,chatPhone,'','');
+    await startConversation(chatName.trim()||('+'+normalizeChatNumber(chatPhone)),chatPhone,'','');
   };
   const openNewChat=()=>{
     setShowNewChat(true);setNewChatMode('contacts');setContacts([]);
@@ -363,11 +363,11 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
              </button>;
            })}</div>}
         </div>:<form className="ace-chat-number-form" onSubmit={event=>void createChatFromNumber(event)}>
-          <label>Contact name<input required autoComplete="name" value={chatName} onChange={event=>setChatName(event.target.value)} maxLength={100} placeholder="Name"/></label>
+          <label>Contact name (optional)<input autoComplete="name" value={chatName} onChange={event=>setChatName(event.target.value)} maxLength={100} placeholder="Name"/></label>
           <label>WhatsApp number<input required autoComplete="tel" inputMode="tel" value={chatPhone} onChange={event=>setChatPhone(event.target.value)} placeholder="+44 7700 900123"/></label>
           <small>Include the country code. Spaces and a leading + are accepted.</small>
           {contactError&&<p className="ace-chat-contact-error" role="alert">{contactError}</p>}
-          <button type="submit" className="ace-chat-start-button" disabled={busy||!chatName.trim()||!validChatPhone(chatPhone)}>Start chat</button>
+          <button type="submit" className="ace-chat-start-button" disabled={busy||!validChatPhone(chatPhone)}>Start chat</button>
         </form>}
       </section>
     </div>}
