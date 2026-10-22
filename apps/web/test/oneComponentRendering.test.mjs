@@ -189,11 +189,11 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(shared, /event\.key === "Escape"/);
   assert.match(overlay, /useModalAccessibility\(React,open,dialogRef,close\)/);
-  assert.match(shared, /document\\.addEventListener\\('focusin'/);
+  assert.match(shared, /document\.addEventListener\('focusin'/);
   assert.match(menu, /event\.key === "ArrowDown"/);
   assert.match(menu, /event\.key === "Home"/);
   assert.match(menu, /useDismissOnOutside\(React,rootRef,open,dismiss\)/);
-  assert.match(shared, /document\\.addEventListener\\('pointerdown'/);
+  assert.match(shared, /document\.addEventListener\('pointerdown'/);
   assert.match(tabs, /aria-controls=\{panelId\}/);
   assert.match(tabs, /aria-labelledby=\{activeTabId\}/);
   assert.match(button, /aria-busy=\{p\.loading === true \? "true" : undefined\}/);
