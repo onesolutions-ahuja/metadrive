@@ -7,6 +7,8 @@ const fields:Field[]=[
  {object:'ChatConversation',name:'Name',label:'Name',type:'text'},
  {object:'ChatConversation',name:'PhoneNumber',label:'Phone Number',type:'phone'},
  {object:'ChatConversation',name:'Status',label:'Status',type:'text'},
+ {object:'ChatConversation',name:'SourceObjectApi',label:'Source Object API',type:'text'},
+ {object:'ChatConversation',name:'SourceRecordId',label:'Source Record ID',type:'text'},
  {object:'ChatMessage',name:'Name',label:'Name',type:'text'},
  {object:'ChatMessage',name:'ConversationId',label:'Conversation',type:'reference'},
  {object:'ChatMessage',name:'Body',label:'Body',type:'longtext'},
@@ -20,7 +22,7 @@ const fields:Field[]=[
 ];
 const links=(...ids:number[])=>ids.slice(0,-1).map((from,i)=>({from,to:ids[i+1],kind:'normal',label:'Next'}));
 function graph(apiName:string,label:string,object:string,input:string,conditions:unknown[],sortField:string,sortOrder='Ascending',recordLimit='all',conditionLogic?:string){
- const collection=object==='ChatConversation'?'conversations':object==='Communication'?'communications':'messages';
+ const collection=object==='ChatConversation'?'conversations':object==='Communication'?'communications':object==='Contact'?'contacts':'messages';
  return {apiName,label,appApiName:'AceChatter',flowType:'Autolaunched Flow',
   status:'Active',version:1,tests:[],resources:[
    {name:input,type:'Variable',dataType:'Text',availableForInput:true},
@@ -96,6 +98,64 @@ export async function reconcileAceChatterCredentialFlow(client:PoolClient,tenant
   INSERT INTO md_security_events(tenant_id,action,details)
   VALUES($1,'AceChatterCredentialFlowReconciled',
    jsonb_build_object('flowId',$2::text,'removedNode',5,'preservedCredential',true))`,
+  [tenantId,flowId]);
+ return true;
+}
+
+/** Add contact provenance only to the unchanged seeded create-conversation Flow. */
+export async function reconcileAceChatterCreateConversationContactFields(client:PoolClient,tenantId:string):Promise<boolean>{
+ const {rows:flows}=await client.query<{id:string}>(`
+  SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name='AceChatterCreateConversation'
+    AND archived=false ORDER BY version DESC LIMIT 1 FOR UPDATE`,[tenantId]);
+ const flowId=flows[0]?.id;
+ if(!flowId)return false;
+ const {rows}=await client.query<MetadataValueRow>(`
+  SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+   WHERE tenant_id=$1 AND flow_id=$2 ORDER BY property_path`,[tenantId,flowId]);
+ if(!rows.length)return false;
+ const source=decodeMetadataValues(rows).builder;
+ if(!source||typeof source!=='object'||Array.isArray(source))return false;
+ const graph=source as Record<string,unknown>;
+ if(!Array.isArray(graph.resources)||!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
+ const resources=graph.resources as Array<Record<string,unknown>>;
+ const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const connectors=graph.connectors as Array<{from:number;to:number;kind:string;label?:string}>;
+ const create=elements.find(node=>node.id===4);
+ const fieldsValue=create?.config?.fieldValues;
+ if(resources.some(item=>item.name==='sourceObjectApi')&&resources.some(item=>item.name==='sourceRecordId')
+  &&Array.isArray(fieldsValue)&&fieldsValue.some(item=>(item as Record<string,unknown>)?.field==='SourceObjectApi')
+  &&fieldsValue.some(item=>(item as Record<string,unknown>)?.field==='SourceRecordId'))return false;
+ // Fail closed if the tenant has customised the existing Flow.
+ if(elements.length!==5||connectors.length!==5
+  ||elements.find(node=>node.id===1)?.type!=='Start'
+  ||elements.find(node=>node.id===2)?.type!=='Get Records'
+  ||elements.find(node=>node.id===2)?.config?.object!=='ChatConversation'
+  ||elements.find(node=>node.id===2)?.config?.outputVariable!=='existing'
+  ||elements.find(node=>node.id===3)?.type!=='Decision'
+  ||create?.type!=='Create Records'||create.config?.object!=='ChatConversation'
+  ||elements.find(node=>node.id===5)?.type!=='End'
+  ||!connectors.some(edge=>edge.from===1&&edge.to===2)
+  ||!connectors.some(edge=>edge.from===2&&edge.to===3)
+  ||!connectors.some(edge=>edge.from===3&&edge.to===4&&edge.label==='New')
+  ||!connectors.some(edge=>edge.from===3&&edge.to===5&&edge.label==='Default')
+  ||!connectors.some(edge=>edge.from===4&&edge.to===5))return false;
+ const oldFields=Array.isArray(fieldsValue)?fieldsValue as Array<Record<string,unknown>>:[];
+ if(oldFields.length!==3||!['Name','PhoneNumber','Status'].every(field=>oldFields.some(item=>item.field===field)))return false;
+ if(!resources.some(item=>item.name==='chatName'&&item.availableForInput===true)
+  ||!resources.some(item=>item.name==='phoneNumber'&&item.availableForInput===true))return false;
+ resources.push({name:'sourceObjectApi',type:'Variable',dataType:'Text',availableForInput:true});
+ resources.push({name:'sourceRecordId',type:'Variable',dataType:'Text',availableForInput:true});
+ create.config={...create.config,fieldValues:[...oldFields,
+  {field:'SourceObjectApi',value:'@sourceObjectApi'},
+  {field:'SourceRecordId',value:'@sourceRecordId'}]};
+ const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',encoded);
+ await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,flowId]);
+ for(const item of encoded)await client.query(`
+  INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+  VALUES($1,$2,$3,$4,$5)`,[tenantId,flowId,item.path,item.kind,item.text]);
+ await client.query(`INSERT INTO md_security_events(tenant_id,action,details)
+  VALUES($1,'AceChatterContactLinkFlowReconciled',jsonb_build_object('flowId',$2::text,'fieldsAdded',2))`,
   [tenantId,flowId]);
  return true;
 }
@@ -182,6 +242,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
  const rights=[
   ['App:AceChatter','read'],
   ['Flow:AceChatterLoadConversations','execute'],
+  ['Flow:AceChatterLoadContacts','execute'],
   ['Flow:AceChatterLoadMessages','execute'],
   ['Flow:AceChatterLoadCommunications','execute'],
   ['Flow:AceChatterFindConversationByPhone','execute'],
@@ -192,6 +253,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   ['Flow:AceChatterCreateConversation','execute'],
   ['Flow:AceChatterReceiveWebhook','execute'],
   ['ChatConversation','read'],['ChatConversation','create'],
+  ['ChatConversation.SourceObjectApi','create'],['ChatConversation.SourceRecordId','create'],
   ['ChatMessage','read'],['ChatMessage','create'],['ChatChannelSettings','read'],
   ...fields.map(field=>[field.object+'.'+field.name,'read'])
  ];
@@ -209,6 +271,11 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   graph('AceChatterLoadMessages','AceChatter - Load Messages',
    'ChatMessage','conversationId',[
     {field:'ConversationId',operator:'Equals',value:'@conversationId'}],'SentAt'),
+  graph('AceChatterLoadContacts','AceChatter - Load User-Linked Contacts',
+   'Contact','searchTerm',[
+    {field:'OwnerId',operator:'Equals',value:'{!$User.Id}'},
+    {field:'Name',operator:'Contains',value:'@searchTerm'}
+   ],'Name','Ascending','all'),
   graph('AceChatterLoadCommunications','AceChatter - Load WhatsApp Communications',
    'Communication','searchTerm',[
     {field:'Channel',operator:'Equals',value:'WhatsApp'},
@@ -220,14 +287,36 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}
    ],'Name','Ascending','200')
  ];
+ const contactsFlow=definitions.find(value=>value.apiName==='AceChatterLoadContacts') as unknown as {
+  resources:Array<Record<string,unknown>>;
+  elements:Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;
+  connectors:Array<{from:number;to:number;kind:string;label?:string}>;
+ }|undefined;
+ if(contactsFlow){
+  contactsFlow.resources.push({name:'sourceObjectApi',type:'Variable',dataType:'Text',availableForOutput:true});
+  contactsFlow.elements[1].config={...contactsFlow.elements[1].config,conditionLogic:'All',
+   fields:['Name','FirstName','LastName','Phone','Mobile','Email']};
+  contactsFlow.elements[2]={id:3,type:'Assignment',label:'Set contact source object',
+   config:{variable:'sourceObjectApi',operator:'Assign',value:'Contact'}};
+  contactsFlow.elements.push({id:4,type:'End',label:'End',config:{}});
+  contactsFlow.connectors=links(1,2,3,4);
+ }
  let seeded=0;
- for(const value of definitions)if(await insertGraph(client,tenantId,value,true))seeded++;
+ for(const value of definitions){
+  if(value.apiName==='AceChatterLoadContacts'){
+   const {rows:contactObject}=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',[tenantId,'Contact']);
+   value.status=contactObject.length?'Active':'Draft';
+   if(await insertGraph(client,tenantId,value,contactObject.length>0))seeded++;
+  }else if(await insertGraph(client,tenantId,value,true))seeded++;
+ }
  const createChat={
   apiName:'AceChatterCreateConversation',label:'AceChatter - New Conversation',
   appApiName:'AceChatter',flowType:'Autolaunched Flow',status:'Active',version:1,tests:[],
   resources:[
    {name:'chatName',type:'Variable',dataType:'Text',availableForInput:true},
-   {name:'phoneNumber',type:'Variable',dataType:'Text',availableForInput:true}
+   {name:'phoneNumber',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'sourceObjectApi',type:'Variable',dataType:'Text',availableForInput:true},
+   {name:'sourceRecordId',type:'Variable',dataType:'Text',availableForInput:true}
   ],elements:[
    {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
    {id:2,type:'Get Records',label:'Find existing phone',config:{
@@ -239,13 +328,15 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
    {id:4,type:'Create Records',label:'Create conversation',config:{
     object:'ChatConversation',fieldValues:[
      {field:'Name',value:'@chatName'},{field:'PhoneNumber',value:'@phoneNumber'},
-     {field:'Status',value:'Open'}]}},
+     {field:'Status',value:'Open'},{field:'SourceObjectApi',value:'@sourceObjectApi'},
+     {field:'SourceRecordId',value:'@sourceRecordId'}]}},
    {id:5,type:'End',label:'End',config:{}}
   ],connectors:[
    ...links(1,2,3),{from:3,to:4,kind:'normal',label:'New'},
    {from:3,to:5,kind:'normal',label:'Default'},...links(4,5)]
  };
  if(await insertGraph(client,tenantId,createChat as ReturnType<typeof graph>,true))seeded++;
+ await reconcileAceChatterCreateConversationContactFields(client,tenantId);
  const receive={
   apiName:'AceChatterReceiveWebhook',label:'AceChatter - Receive WhatsApp Webhook',
   appApiName:'AceChatter',flowType:'Autolaunched Flow',status:'Active',version:1,tests:[],
