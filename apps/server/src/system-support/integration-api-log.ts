@@ -1,3 +1,5 @@
+import type {Express,NextFunction,Request,Response} from 'express';
+import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
 export type IntegrationApiLogInput={
@@ -42,4 +44,41 @@ export async function writeIntegrationApiLog(db:SqlPersistence,input:Integration
    error:error instanceof Error?error.name:'UnknownError'
   }));
  }
+}
+
+type LogActor={tenant_id:string;user_id:string};
+type LogRequest=Request&{actor?:LogActor};
+
+/** Tenant-scoped, RBAC-protected metadata view; never returns request or response bodies. */
+export function registerIntegrationApiLogRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
+ app.get('/api/metadata/integration-api-logs',(req:Request,res:Response,next:NextFunction)=>{
+  void (async()=>{
+   const actor=(req as LogRequest).actor;
+   if(!actor)throw new Error('Authenticated tenant required');
+   await rbac.require(actor.tenant_id,actor.user_id,'NamedCredential','read');
+   const rawLimit=req.query.limit;
+   const limit=rawLimit===undefined?100:Number(rawLimit);
+   if(!Number.isSafeInteger(limit)||limit<1||limit>200)throw new Error('Invalid integration log limit');
+   const rawDirection=req.query.direction;
+   const direction=rawDirection===undefined?null:
+    rawDirection==='Inbound'||rawDirection==='Outbound'?rawDirection:null;
+   if(rawDirection!==undefined&&direction===null)throw new Error('Invalid integration log direction');
+   const {rows}=await db.query<{
+    id:string;direction:string;transport:string;provider:string;credential_id:string|null;
+    endpoint:string;method:string;status_code:number|null;outcome:string;duration_ms:number;
+    request_bytes:number;response_bytes:number;error_code:string|null;created_at:Date
+   }>(`SELECT id::text,direction,transport,provider,credential_id::text,endpoint,method,
+      status_code,outcome,duration_ms,request_bytes,response_bytes,error_code,created_at
+     FROM md_integration_api_logs WHERE tenant_id=$1 AND ($2::text IS NULL OR direction=$2)
+     ORDER BY created_at DESC,id DESC LIMIT $3`,[actor.tenant_id,direction,limit]);
+   res.setHeader('Cache-Control','no-store');
+   res.json({logs:rows.map(row=>({
+    id:row.id,direction:row.direction,transport:row.transport,provider:row.provider,
+    credentialId:row.credential_id,endpoint:row.endpoint,method:row.method,
+    statusCode:row.status_code,outcome:row.outcome,durationMs:row.duration_ms,
+    requestBytes:row.request_bytes,responseBytes:row.response_bytes,
+    errorCode:row.error_code,createdAt:row.created_at
+   }))});
+  })().catch(next);
+ });
 }
