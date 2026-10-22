@@ -1,4 +1,5 @@
 import {TillPinService} from '../system-support/till-pin-service.js';
+import {enforceFlowBusinessCalendar} from '../system-files/flow-business-calendar-guard.js';
 import {failedFlowLogs,pendingFlowInterviews} from './FlowExecutionHistory.js';
 import {executeActionButtonNode} from '../system-files/nodes/ActionButtonNode.js';
 import {executeWaitPauseNode} from '../system-files/nodes/WaitPauseNode.js';
@@ -470,6 +471,8 @@ export class FlowRuntime {
     if(rows[0]?.has_editor){
       const editor=await this.loadEditor(tenantId,flowApi);
       const startConfig=editor.startConfig as Record<string,unknown>;
+      if(startConfig.businessCalendarGuard)await enforceFlowBusinessCalendar(
+        this.db,tenantId,startConfig.businessCalendarGuard,inputs);
       if(startConfig.securityOperation==='VerifyCurrentUserTillPin'){
         const verified=await new TillPinService(this.db).verify(tenantId,userId,inputs.pin);
         return {completed:true,status:'completed',outputs:{verified}};
