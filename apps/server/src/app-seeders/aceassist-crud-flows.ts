@@ -103,7 +103,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
   // Never grant mutation rights to User or Product from this application.
   for(const lookupObject of ['User','Product']){
    const exists=await client.query<{id:string}>(
-    'SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',
+    'SELECT id FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
     [tenant_id,lookupObject]);
    if(!exists.rows[0])continue;
    const graph=makeGraph(lookupObject,'Load',[]);
