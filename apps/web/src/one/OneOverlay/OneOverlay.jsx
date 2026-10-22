@@ -1,5 +1,6 @@
 import { useOneLayout, options, shared, fire } from "../shared/OneLayout.jsx";
 import OneTenantImage from "../shared/OneTenantImage.jsx";
+import { useModalAccessibility } from "../shared/accessibilityHooks.jsx";
 
 export default function OneOverlay(props) {
   const p = { ...props, kind: props.kind || "Overlay" };
@@ -31,32 +32,8 @@ export default function OneOverlay(props) {
     setOpen(false);
     if(p.openOnFilterKey && p.pageSessionKey && typeof window!=="undefined") window.dispatchEvent(new CustomEvent("metadrive:page-filter-selected",{detail:{pageSessionKey:p.pageSessionKey,filterKey:p.openOnFilterKey,value:"",recordId:"",label:"",sourceObjectApiName:""}}));
   },[setOpen,p.openOnFilterKey,p.pageSessionKey]);
-  React.useEffect(() => {
-    if (!open || typeof document === "undefined") return undefined;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const focusable = () => Array.from(dialogRef.current?.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') || []).filter(element => element.getClientRects().length > 0);
-    const focusFirst = () => (focusable()[0] || dialogRef.current)?.focus();
-    focusFirst();
-    const onKeyDown = event => {
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
-      if (event.key !== "Tab") return;
-      const items = focusable();
-      if (!items.length) { event.preventDefault(); dialogRef.current?.focus(); }
-      else if (event.shiftKey && (document.activeElement === items[0] || !dialogRef.current?.contains(document.activeElement))) { event.preventDefault(); items[items.length - 1].focus(); }
-      else if (!event.shiftKey && (document.activeElement === items[items.length - 1] || !dialogRef.current?.contains(document.activeElement))) { event.preventDefault(); items[0].focus(); }
-    };
-    const onFocusIn = event => { if (dialogRef.current && !dialogRef.current.contains(event.target)) focusFirst(); };
-    document.addEventListener("keydown",onKeyDown,true);
-    document.addEventListener("focusin",onFocusIn,true);
-    return () => {
-      document.removeEventListener("keydown",onKeyDown,true);
-      document.removeEventListener("focusin",onFocusIn,true);
-      document.body.style.overflow = previousOverflow;
-      if (previousFocus?.isConnected) previousFocus.focus();
-    };
-  },[open,close]);
+  useModalAccessibility(open,dialogRef,close);
+
   return <div {...css}>
     {p.hideTrigger !== true && <button ref={triggerRef} type="button" className="one-btn" onClick={() => setOpen(true)}>{p.openLabel || "Open"}</button>}
     {open && <div className="one-overlay-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
