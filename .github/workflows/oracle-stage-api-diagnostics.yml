@@ -1,47 +1,81 @@
-name: Stop isolated Oracle staging API
+name: Start Oracle production worker and close temporary SSH access
 
 on:
-  push:
-    branches:
-      - ops/oracle-stage-api-diagnostics-20261022
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  stop:
+  activate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
-      - name: Stop stage API to prevent cloned production jobs from executing
+      - name: Activate production worker and remove temporary GitHub SSH allowlist
         shell: bash
         env:
           ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
           ORACLE_SSH_HOST: ${{ secrets.ORACLE_SSH_HOST }}
         run: |
           set -euo pipefail
-          echo "STAGE_API_CLEANUP=BEGIN"
           install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_diag"
-          chmod 600 "$HOME/.ssh/oracle_diag"
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/oracle_activate"
+          chmod 600 "$HOME/.ssh/oracle_activate"
           host="${ORACLE_SSH_HOST:-132.145.18.46}"
           ssh-keyscan -T 5 -H "$host" >> "$HOME/.ssh/known_hosts" 2>/dev/null
-          ssh -i "$HOME/.ssh/oracle_diag" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
+          ssh -i "$HOME/.ssh/oracle_activate" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "ubuntu@$host" 'sudo bash -s' <<'REMOTE'
           set -euo pipefail
-          sudo systemctl stop metadrive-stage-test.service || true
-          sudo systemctl disable metadrive-stage-test.service || true
-          state="$(systemctl is-active metadrive-stage-test.service || true)"
-          echo "STAGE_API_SERVICE=$state"
-          if [[ "$state" == "active" ]]; then
-            echo "Stage API did not stop"
+          release=/opt/metadrive/releases/oracle-stage-d7ebd0734610a44f5aacdb49823699e52d1077cf
+          test -f /etc/metadrive/production.env
+          test -f "$release/apps/server/dist-system/system-support/job-worker-entrypoint.js"
+          sudo tee /etc/systemd/system/metadrive-worker.service >/dev/null <<EOF
+          [Unit]
+          Description=MetaDrive production durable job worker
+          After=network-online.target postgresql.service metadrive-api.service
+          Wants=network-online.target
+          Requires=postgresql.service
+          ConditionPathExists=/etc/metadrive/production.env
+
+          [Service]
+          Type=simple
+          User=metadrive
+          Group=metadrive
+          WorkingDirectory=$release
+          EnvironmentFile=/etc/metadrive/production.env
+          ExecStart=/usr/local/bin/node $release/apps/server/dist-system/system-support/job-worker-entrypoint.js
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=60
+          UMask=0077
+          NoNewPrivileges=true
+          PrivateTmp=true
+          ProtectSystem=strict
+          ProtectHome=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now metadrive-worker.service
+          sleep 2
+          worker_state="$(systemctl is-active metadrive-worker.service || true)"
+          api_state="$(systemctl is-active metadrive-api.service || true)"
+          echo "PRODUCTION_API_SERVICE=$api_state"
+          echo "PRODUCTION_WORKER_SERVICE=$worker_state"
+          if [[ "$api_state" != "active" || "$worker_state" != "active" ]]; then
+            sudo journalctl -u metadrive-api.service -n 40 --no-pager
+            sudo journalctl -u metadrive-worker.service -n 60 --no-pager
             exit 1
           fi
-          ipset create metadrive_actions_v4 hash:net family inet timeout 1800 -exist
-          ipset flush metadrive_actions_v4
-          curl -fsSL --max-time 15 https://api.github.com/meta | jq -r '.actions[] | select(index(":") == null)' | while IFS= read -r cidr; do
-            ipset add metadrive_actions_v4 "$cidr" timeout 1800 -exist
-          done
-          iptables -C INPUT -m set --match-set metadrive_actions_v4 src -p tcp --dport 22 -j ACCEPT 2>/dev/null || iptables -I INPUT 6 -m set --match-set metadrive_actions_v4 src -p tcp --dport 22 -j ACCEPT
-          echo "TEMPORARY_GITHUB_SSH_ALLOWLIST_REFRESHED=30m"
+          sudo systemctl stop metadrive-stage-test.service 2>/dev/null || true
+          sudo systemctl disable metadrive-stage-test.service 2>/dev/null || true
+          sudo systemctl stop metadrive-private-test.service 2>/dev/null || true
+          sudo systemctl disable metadrive-private-test.service 2>/dev/null || true
+          sudo iptables -D INPUT -m set --match-set metadrive_actions_v4 src -p tcp --dport 22 -j ACCEPT 2>/dev/null || true
+          sudo ipset destroy metadrive_actions_v4 2>/dev/null || true
+          echo "TEMPORARY_GITHUB_SSH_ALLOWLIST=REMOVED"
+          echo "STAGING_SERVICES=STOPPED"
           REMOTE
+          curl -fsS --max-time 10 https://api.unesolutions.co.uk/api/health
+          echo
+          echo "ORACLE_PRODUCTION_WORKER_AND_FIREWALL_CLEANUP=PASS"
