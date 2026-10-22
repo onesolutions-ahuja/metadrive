@@ -1,14 +1,14 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js';
-import {seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
+import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
  'Appointment','Customer','Quotation','QuotationLine','Invoice','InvoiceLine'
 ] as const;
 
 export const ACEASSIST_EDITABLE_FIELDS:Record<string,readonly string[]>={
- Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct','Location','AssignedTo','AssignedUser','Description','Notes'],
+ Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct','Location','Resource','AssignedTo','AssignedUser','Description','Notes'],
  Customer:['Name','Email','Phone','BillingAddress','ShippingAddress','Active'],
  Quotation:['Name','Customer','IssueDate','ExpiryDate','Status','Notes','CurrencyCode','Subtotal','DiscountAmount','TaxAmount','Total'],
  QuotationLine:['Name','Quotation','Product','Description','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal'],
@@ -204,6 +204,34 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
       SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
       WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser'
       ON CONFLICT DO NOTHING`,[tenant_id,resource,action]);
+  }
+  // Scheduling catalog is read through authorised Get Records Flows.
+  // Changes to staff shifts and resource settings require Object Manager/RBAC administration.
+  for(const item of ACEASSIST_SCHEDULING_OBJECTS){
+   const graph=makeGraph(item.api,'Load',ACEASSIST_SCHEDULING_FIELD_NAMES[item.api]);
+   const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
+    [tenant_id,graph.apiName]);
+   if(!existing.rowCount){
+    const {rows:inserted}=await client.query<{id:string}>(`
+     INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+     VALUES($1,$2,$3,'Autolaunched Flow',1,true) RETURNING id`,
+     [tenant_id,graph.apiName,graph.label]);
+    const entries:Array<{path:string;kind:string;text:string|null}>=[];
+    encodeMetadataValue(graph,'/builder',entries);
+    for(const e of entries)await client.query(`
+     INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+     VALUES($1,$2,$3,$4,$5)`,[tenant_id,inserted[0].id,e.path,e.kind,e.text]);
+    created++;
+   }
+   for(const [resource,action] of [[item.api,'read'],
+     ['Flow:'+graph.apiName,'execute'],
+     ...ACEASSIST_SCHEDULING_FIELD_NAMES[item.api].map(field=>[item.api+'.'+field,'read'])]){
+    await client.query(`
+     INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+     SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+     WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser' ON CONFLICT DO NOTHING`,
+     [tenant_id,resource,action]);
+   }
   }
   // App-owned record trigger: no frontend notification business logic.
   // Recipient is the authenticated operator; delivery failure follows the fault connector
