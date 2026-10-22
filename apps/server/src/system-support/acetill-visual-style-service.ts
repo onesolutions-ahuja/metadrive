@@ -1,7 +1,7 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {ACETILL_STYLE_TARGETS,validAcetillStyleValue,type AcetillVisualStyles} from './acetill-visual-style-schema.js';
 
-/** Tenant-owned visual overrides; never alters installed package or customer Flows. */
+/** Tenant-owned visual drafts are isolated from the published live terminal. */
 export function validateAcetillVisualStyles(raw:unknown):AcetillVisualStyles{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid Acetill styles');
  const entries=Object.entries(raw);
@@ -22,24 +22,21 @@ export function validateAcetillVisualStyles(raw:unknown):AcetillVisualStyles{
  }
  return clean;
 }
-export async function loadAcetillVisualStyles(db:SqlPersistence,tenantId:string):Promise<AcetillVisualStyles>{
- const {rows}=await db.query<{properties:unknown}>(`
-  SELECT properties FROM md_system_definitions
-  WHERE tenant_id=$1 AND kind='app-visual-styles' AND api_name='AcetillRegister'
-    AND enabled=true LIMIT 1`,[tenantId]);
- const raw=rows[0]?.properties;
- if(!raw||typeof raw!=='object'||Array.isArray(raw))return {};
- const styles=(raw as Record<string,unknown>).styles;
- try{return validateAcetillVisualStyles(styles??{});}
+export async function loadAcetillVisualStyles(
+ db:SqlPersistence,tenantId:string,mode:'draft'|'published'='published'
+):Promise<AcetillVisualStyles>{
+ const {rows}=await db.query<{draft_styles:unknown;published_styles:unknown}>(`
+  SELECT draft_styles,published_styles FROM md_acetill_visual_styles
+  WHERE tenant_id=$1 LIMIT 1`,[tenantId]);
+ const raw=mode==='draft'?rows[0]?.draft_styles:rows[0]?.published_styles;
+ try{return validateAcetillVisualStyles(raw??{});}
  catch{return {};}
 }
 export async function saveAcetillVisualStyles(db:SqlPersistence,tenantId:string,raw:unknown){
  const styles=validateAcetillVisualStyles(raw);
- await db.query(`INSERT INTO md_system_definitions
-   (tenant_id,kind,api_name,label,properties,enabled)
-   VALUES($1,'app-visual-styles','AcetillRegister','Acetill visual overrides',$2::jsonb,true)
-   ON CONFLICT(tenant_id,kind,api_name)
-   DO UPDATE SET properties=EXCLUDED.properties,enabled=true,updated_at=now()`,
-  [tenantId,JSON.stringify({version:1,styles})]);
+ await db.query(`INSERT INTO md_acetill_visual_styles(tenant_id,draft_styles)
+   VALUES($1,$2::jsonb) ON CONFLICT(tenant_id)
+   DO UPDATE SET draft_styles=EXCLUDED.draft_styles,revision=md_acetill_visual_styles.revision+1,
+   updated_at=now()`,[tenantId,JSON.stringify(styles)]);
  return styles;
 }
