@@ -26,6 +26,9 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   const [categories,setCategories]=useState<Array<{id:string;name:string;order:number}>>([]);
   const [serviceMode,setServiceMode]=useState('Takeaway');
   const [paymentMethod,setPaymentMethod]=useState('');
+  const [cashReceived,setCashReceived]=useState('');
+  const [cardPaymentConfirmed,setCardPaymentConfirmed]=useState(false);
+  const paymentRequestId=React.useRef(crypto.randomUUID());
   const [search,setSearch]=useState('');
   const [sessionId,setSessionId]=useState('');
   const [category,setCategory]=useState('All');
@@ -93,7 +96,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const restart=()=>{
     if(sessionId&&actions.some(a=>a.apiName==='AceKioskRestart'))void executeAction('AceKioskRestart',{sessionId}).catch(e=>setError(e instanceof Error?e.message:String(e)));
-    setCart([]);setSessionId('');setPaymentMethod('');setCategory('All');setSubcategory('All');setSearch('');setProducts(catalog);setScreen('welcome');
+    setCart([]);setSessionId('');setPaymentMethod('');setCashReceived('');setCardPaymentConfirmed(false);paymentRequestId.current=crypto.randomUUID();setCategory('All');setSubcategory('All');setSearch('');setProducts(catalog);setScreen('welcome');
   };
   const subcategories=useMemo(()=>[...new Set(products.filter(p=>matchCategory(p)).map(p=>p.subcategory).filter(Boolean))],[products,category,categories]);
   const displayed=useMemo(()=>products.filter(p=>matchCategory(p)&&(subcategory==='All'||p.subcategory.toLowerCase()===subcategory.toLowerCase())&&(!search||p.name.toLowerCase().includes(search.toLowerCase()))),[products,category,subcategory,search,categories]);
@@ -138,18 +141,31 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
     }else setCart(items=>items.map(l=>l.key===key?{...l,quantity:next}:l).filter(l=>l.quantity>0));
   };
   const checkout=async()=>{
-    // Never write Orders directly or trust preview totals. Only an authorised tenant Flow may validate and commit.
-    const action=actions.find(a=>/^(AceKioskCheckout|KioskCheckout)$/.test(a.apiName));
-    if(!action){setError('Checkout is not configured: an authorised AceKioskCheckout Flow must validate the order and payment before confirmation.');return;}
+    const flowName=paymentMethod==='Cash'?'AceKioskPaymentCash':'AceKioskPaymentCard';
+    if(!actions.some(a=>a.apiName===flowName)){
+      setError(flowName+' is not active or authorised in OneEngine. Activate and assign the configured Cash/Card payment Flow.');return;
+    }
+    const received=Number(cashReceived);
+    if(paymentMethod==='Cash'&&(!Number.isFinite(received)||received<subtotal)){
+      setError('Cash received must cover the order preview total.');return;
+    }
+    if(paymentMethod==='Card'&&!cardPaymentConfirmed){
+      setError('Confirm that the external card terminal has completed payment.');return;
+    }
     setBusy(true);setError('');
     try{
-      const response=await apiRequest<{outputs?:RecordRow;interviewId?:string}>(`/flows/${encodeURIComponent(action.apiName)}/execute`,{
-        method:'POST',body:JSON.stringify({sessionId,serviceMode,paymentMethod,cartItemsJson:JSON.stringify(cart.map(l=>({productId:l.product.id,quantity:l.quantity,selections:l.selections})))})
+      const response=await apiRequest<{completed?:boolean;outputs?:RecordRow;interviewId?:string}>(`/flows/${encodeURIComponent(flowName)}/execute`,{
+        method:'POST',body:JSON.stringify({
+          cartItems:cart.map(l=>({Product:l.product.id,Quantity:l.quantity})),
+          cartTotal:subtotal,requestId:paymentRequestId.current,
+          ...(paymentMethod==='Cash'?{cashReceived:received}:{cardPaymentConfirmed:true})
+        })
       });
       const outputs=response.outputs??{};
       const status=String(outputs.status??'').toLowerCase();
-      if(!['complete','completed','confirmed'].includes(status)||!outputs.orderId)throw Error(response.interviewId?'Order processing is still pending. Do not retry until its status is confirmed.':String(outputs.message??'Checkout did not return a confirmed order. No success has been assumed.'));
-      setResult(outputs);setCart([]);setScreen('confirmation');
+      if(response.interviewId||!outputs.orderId||!(response.completed===true||['completed','complete','success'].includes(status)))
+        throw Error(response.interviewId?'Payment Flow is still processing; no confirmed order yet.':String(outputs.message??'Payment Flow did not confirm an order.'));
+      setResult(outputs);setCart([]);paymentRequestId.current=crypto.randomUUID();setScreen('confirmation');
     }catch(e){setError(e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
@@ -164,7 +180,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
       <div className="ak-menu-content"><input className="ak-search" aria-label="Search menu" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/>{subcategories.length>0&&<nav className="ak-subcategories" aria-label="Menu subcategories">{['All',...subcategories].map(c=><button key={c} className={subcategory===c?'active':''} onClick={()=>setSubcategory(c)}>{c}</button>)}</nav>}<section className="ak-products">{loading?<p role="status">Loading your menu…</p>:displayed.length===0?<p>No products are available in this category.</p>:displayed.map(item=><article className="ak-product" key={item.id}><div className="ak-image">{item.image?<img src={item.image} alt={item.name} loading="lazy"/>:<span aria-hidden="true">✦</span>}</div><div className="ak-product-body">{item.badge&&<span className="ak-product-badge">{item.badge}</span>}<h2>{item.name}</h2><p>{item.description}</p><div><strong>{money(item.price)}</strong><button onClick={()=>void choose(item)} aria-label={`Add ${item.name}`}>CHOOSE +</button></div></div></article>)}</section></div></div>
       <div className="ak-floating"><button className="ak-basket-open" onClick={()=>setScreen('cart')}>🛒 SHOW BASKET <span>{quantity}</span></button><button className="ak-place" onClick={()=>setScreen('cart')}>PLACE ORDER <strong>{money(subtotal)}</strong></button></div></main>}
     {screen==='cart'&&<main className="ak-order"><button className="ak-back" onClick={()=>setScreen('menu')}>← Back to menu</button><h1>Your basket</h1>{cart.length===0?<p>Your basket is empty.</p>:cart.map(l=><div className="ak-orderline" key={l.key}><div><strong>{l.product.name}</strong><p>{money(l.product.price)} each</p>{l.selections.length>0&&<small>Customised: {l.selections.map(s=>s.choiceId).join(', ')}</small>}</div><div className="ak-counter"><button onClick={()=>adjust(l.key,-1)}>−</button><span>{l.quantity}</span><button onClick={()=>adjust(l.key,1)}>+</button></div></div>)}<div className="ak-subtotal"><span>Estimated subtotal</span><strong>{money(subtotal)}</strong></div><p className="ak-small">Tax, discounts, total and stock are calculated by MetaDrive at checkout.</p><button className="ak-primary" disabled={!cart.length} onClick={()=>setScreen('checkout')}>Continue to checkout →</button></main>}
-    {screen==='checkout'&&<main className="ak-order"><button className="ak-back" onClick={()=>setScreen('cart')}>← Back to basket</button><p className="ak-overline">FINAL STEP · {serviceMode.toUpperCase()}</p><h1>HOW WOULD YOU LIKE TO PAY?</h1><div className="ak-paymethods"><button className={paymentMethod==='Card'?'active':''} onClick={()=>setPaymentMethod('Card')}>CARD</button><button className={paymentMethod==='Cash'?'active':''} onClick={()=>setPaymentMethod('Cash')}>CASH</button></div><p>{quantity} item(s) · Preview subtotal {money(subtotal)}</p><p className="ak-small">Your configured OneEngine checkout Flow will verify prices, tax, availability and payment before an order can be confirmed.</p><button className="ak-primary" disabled={busy||!cart.length||!paymentMethod} onClick={()=>void checkout()}>{busy?'Processing…':'CONFIRM ORDER →'}</button></main>}
+    {screen==='checkout'&&<main className="ak-order"><button className="ak-back" onClick={()=>setScreen('cart')}>← Back to basket</button><p className="ak-overline">FINAL STEP · {serviceMode.toUpperCase()}</p><h1>HOW WOULD YOU LIKE TO PAY?</h1><div className="ak-paymethods"><button className={paymentMethod==='Card'?'active':''} onClick={()=>{setPaymentMethod('Card');setCardPaymentConfirmed(false);}}>CARD</button><button className={paymentMethod==='Cash'?'active':''} onClick={()=>{setPaymentMethod('Cash');setCashReceived('');}}>CASH</button></div><p>{quantity} item(s) · Preview subtotal {money(subtotal)}</p>{paymentMethod==='Cash'&&<label className="ak-tender">Cash received (£)<input type="number" min={subtotal.toFixed(2)} step="0.01" inputMode="decimal" value={cashReceived} onChange={e=>setCashReceived(e.target.value)}/><strong>Change: {money(Math.max(0,Number(cashReceived||0)-subtotal))}</strong></label>}{paymentMethod==='Card'&&<label className="ak-card-confirm"><input type="checkbox" checked={cardPaymentConfirmed} onChange={e=>setCardPaymentConfirmed(e.target.checked)}/> I confirm the separate card terminal reports payment completed successfully.</label>}<p className="ak-small">Your OneEngine Cash/Card Flow verifies actual Product prices and saves the Order. This screen does not process card payments itself.</p><button className="ak-primary" disabled={busy||!cart.length||!paymentMethod||(paymentMethod==='Cash'&&(!Number.isFinite(Number(cashReceived))||Number(cashReceived)<subtotal))||(paymentMethod==='Card'&&!cardPaymentConfirmed)} onClick={()=>void checkout()}>{busy?'Processing…':'CONFIRM ORDER →'}</button></main>}
     {screen==='confirmation'&&<main className="ak-order ak-confirmed"><p className="ak-overline">ORDER CONFIRMED</p><h1>Thank you!</h1><p>Your order was confirmed by MetaDrive.</p><strong>Order: {String(result?.orderId??'')}</strong><button className="ak-primary" onClick={restart}>Start another order →</button></main>}
     {customising&&<ProductCustomiser name={customising.name} image={customising.image} groups={options[customising.id]??[]}
       onCancel={()=>setCustomising(null)} onAdd={selections=>{void addChoice(customising,selections);}}/>}
