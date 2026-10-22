@@ -130,8 +130,9 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    &&matches(endpoint.verify_token_digest,digest(token)));
   if(endpoint)await writeIntegrationActivity(db,{
    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-   provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
-   method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
+   provider:endpoint.credential_name??endpoint.provider,
+   actorUserId:endpoint.execution_user_id??endpoint.created_by,
+   endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
    durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
    errorCode:valid?null:'VERIFY_TOKEN_REJECTED'
   },activityWriter);
@@ -149,8 +150,9 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    if(!endpoint)return;
    await writeIntegrationActivity(db,{
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-    provider:endpoint.credential_name??endpoint.provider,endpoint:'/api/inbound-webhooks/'+endpoint.api_name,
-    method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
+    provider:endpoint.credential_name??endpoint.provider,
+    actorUserId:endpoint.execution_user_id??endpoint.created_by,
+    endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
     requestBytes:raw?.length??0,errorCode:errorCode??null
    },activityWriter);
   };
