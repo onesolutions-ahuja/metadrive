@@ -33,7 +33,7 @@ test('AceKiosk menu navigation Flows are metadata-only and idempotent',()=>{
 });
 
 test('AceKiosk Cash/Card templates use Acetill payment contract without auto-activating',()=>{
- const templates=JSON.parse(readFileSync(new URL('../../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8'));
+ const templates=JSON.parse(readFileSync(new URL('../../../acekiosk/flows/payment-flows.v1.json',import.meta.url),'utf8'));
  for(const method of ['Cash','Card']){
   const flow=templates['AceKioskPayment'+method];
   assert.equal(flow.appApiName,'AceKiosk');
