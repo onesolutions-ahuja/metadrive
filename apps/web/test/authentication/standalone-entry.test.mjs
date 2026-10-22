@@ -51,6 +51,12 @@ test('standalone web router lazy-loads app-owned UIs, not business-specific JSX'
   assert.match(shell,/LazyAceAssist/);
   assert.match(shell,/LazyAceChatter/);
   assert.match(shell,/LazyAcetill/);
+  const tillShell=readFileSync(new URL('../../../acetill/src/AcetillShell.tsx',import.meta.url),'utf8');
+  assert.match(tillShell,/AcetillTerminal/);
+  assert.match(tillShell,/ACETILL_STANDALONE_ENTRY/);
+  assert.match(tillShell,/\/auth\/logout/);
+  assert.match(tillShell,/standalone-product-header/);
+  assert.doesNotMatch(shell,/AcetillTerminal|standalone-product-header|standalone-product-brand|\/auth\/logout/);
   assert.doesNotMatch(shell,/custom-pos|custom-assist|custom-week|custom-basket|\/metadata\/objects/);
   assert.match(assist,/custom-assist/);
   assert.match(assist,/custom-week/);
