@@ -321,7 +321,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       try {
         const {canManage,encryptionReady}=await apiRequest<{canManage:boolean;encryptionReady:boolean}>(
           '/named-credentials/readiness',{cache:'no-store',signal:credentialsRequest.signal});
-        if(active){setCanManageNamedCredentials(canManage===true);setNamedCredentialsEncryptionReady(encryptionReady===true);}
+        if(active){setCanManageNamedCredentials(canManage===true);setNamedCredentialsEncryptionReady(encryptionReady===true);setNamedCredentialsError('');}
       }catch(error){
         if(active&&!credentialsRequest.signal.aborted){
           setCanManageNamedCredentials(false);
