@@ -49,6 +49,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const loadConversations=flowBySuffix(actions,'LoadConversations');
   const loadMessages=flowBySuffix(actions,'LoadMessages');
   const loadCommunications=flowBySuffix(actions,'LoadCommunications');
+  const resolveConversationFlow=flowBySuffix(actions,'FindConversationByPhone');
   const sendFlow=flowBySuffix(actions,'SendMessage');
   const newChatFlow=flowBySuffix(actions,'CreateConversation');
   const inboxConversations=buildCommunicationInbox(conversations,communications,submittedSearch);
@@ -147,20 +148,23 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       const phone=normalizeChatNumber(pick(selectedRow,'PhoneNumber'));
       if(!/^\d{7,15}$/.test(phone))throw new Error('This chat has no valid WhatsApp number.');
       if(selectedRow.__syntheticConversation===true){
-        if(!newChatFlow||!loadConversations)
-          throw new Error('Activate the authorised Create Conversation and Load Conversations Flows before sending to a new chat.');
+        if(!newChatFlow||!resolveConversationFlow)
+          throw new Error('Activate the authorised Create Conversation and Find Conversation by Phone Flows before sending to a new chat.');
         await apiRequest('/flows/'+encodeURIComponent(newChatFlow.apiName)+'/execute',{
           method:'POST',body:JSON.stringify({chatName:label(selectedRow),phoneNumber:phone})
         });
         const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
-          '/flows/'+encodeURIComponent(loadConversations.apiName)+'/execute',{
-            method:'POST',body:JSON.stringify({searchTerm:'',limit:100})
+          '/flows/'+encodeURIComponent(resolveConversationFlow.apiName)+'/execute',{
+            method:'POST',body:JSON.stringify({phoneNumber:phone,limit:200})
           });
         if(result.interviewId)throw new Error('Resolving the recipient requires a synchronous Autolaunched Flow.');
-        const loaded=readRows(result.outputs,'conversationsJson');
-        const resolved=loaded.find(row=>normalizeChatNumber(pick(row,'PhoneNumber'))===phone);
+        const resolvedRows=readRows(result.outputs,'conversationsJson');
+        const resolved=resolvedRows.find(row=>normalizeChatNumber(pick(row,'PhoneNumber'))===phone);
         if(!resolved)throw new Error('The authorised Flow did not return the WhatsApp conversation after creation.');
-        setConversations(loaded);targetConversation=resolved;setSelected(identify(resolved));
+        setConversations(previous=>[
+          ...previous.filter(row=>normalizeChatNumber(pick(row,'PhoneNumber'))!==phone),resolved
+        ]);
+        targetConversation=resolved;setSelected(identify(resolved));
       }
       const conversationId=identify(targetConversation);
       if(!conversationId)throw new Error('The selected chat has no authorised conversation record.');
@@ -197,7 +201,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         <input aria-label="Filter by chat number or contact" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Filter by chat number or contact…" />
         <button type="submit" disabled={!loadCommunications||busy}>Filter</button>
       </form>
-      {!loadConversations&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadConversations Autolaunched Flow to enable sending from received-message chats.</p>}
+      {!loadConversations&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadConversations Autolaunched Flow to list saved conversations.</p>}
       {!loadCommunications&&<p className="ace-chat-hint">Activate an authorised AceChatterLoadCommunications Flow to read incoming WhatsApp messages from Communication records.</p>}
       <nav aria-label="Conversations">{filtered.map(row=><button key={identify(row)} className={selected===identify(row)?'selected':''} onClick={()=>setSelected(identify(row))}>
         <span className="ace-chat-avatar">{label(row).slice(0,1).toUpperCase()}</span><span><strong>{label(row)}</strong><small>{String(pick(row,'PhoneNumber','Status','Description')??'Conversation')}</small></span></button>)}</nav>
