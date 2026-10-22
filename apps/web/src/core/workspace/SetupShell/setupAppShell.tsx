@@ -915,9 +915,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   // Use the existing tenant-scoped credential test endpoint. The UI expects
   // connected/message, whereas the backend returns success/status.
-  const testNamedCredential = async (id: string): Promise<{connected:boolean;status?:number;message:string}> => {
+  const testNamedCredential = async (id: string, testPath=''): Promise<{connected:boolean;status?:number;message:string}> => {
     const result=await apiRequest<{success:boolean;status:number}>(
-      '/named-credentials/'+encodeURIComponent(id)+'/test',{method:'POST'});
+      '/named-credentials/'+encodeURIComponent(id)+'/test',
+      {method:'POST',body:JSON.stringify({path:testPath})});
     const status=Number(result.status);
     return {connected:result.success===true&&status>=200&&status<300,
       status,message:result.success===true&&status>=200&&status<300
