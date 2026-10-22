@@ -22,7 +22,8 @@ const tabs:Tab[]=[
  {object:'Quotation',label:'Quotations'},
  {object:'QuotationLine',label:'Quotation lines'},
  {object:'Invoice',label:'Billing / Invoices'},
- {object:'InvoiceLine',label:'Invoice lines'}
+ {object:'InvoiceLine',label:'Invoice lines'},
+ {object:'Payment',label:'Payments'}
 ];
 const inputFields:Record<string,string[]>={
  Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','Location','AssignedTo','Description','Notes'],
@@ -71,6 +72,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [returnToAppointment,setReturnToAppointment]=useState(false);
  const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
+ const [cashInvoice,setCashInvoice]=useState<Row|null>(null);
+ const [cashAmount,setCashAmount]=useState('');
+ const [cashRequestId,setCashRequestId]=useState('');
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
  const [weekOf,setWeekOf]=useState(()=>dateKey(new Date()));
@@ -185,6 +189,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
    .catch(cause=>{if(alive)setError(cause instanceof Error?cause.message:String(cause));});
   return()=>{alive=false;};
  },[actions,reload]);
+ const openCashPayment=(invoice:Row)=>{
+  const outstanding=Math.round((Number(invoice.Total??0)-Number(invoice.AmountPaid??0))*100)/100;
+  setCashInvoice(invoice);setCashAmount(outstanding>0?String(outstanding):'');
+  setCashRequestId(window.crypto.randomUUID());setError('');setNotice('');
+ };
+ const submitCashPayment=async(event:React.FormEvent)=>{
+  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashPayment'))return;
+  const amount=Number(cashAmount);
+  if(!Number.isFinite(amount)||amount<=0||Math.abs(amount*100-Math.round(amount*100))>0.00001){
+   setError('Enter a positive amount with at most two decimal places.');return;
+  }
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashPayment/execute',{
+    method:'POST',body:JSON.stringify({recordId:cashInvoice.Id,amount,requestId:cashRequestId})});
+   if(response.interviewId)throw Error('Cash settlement has not completed');
+   setCashInvoice(null);setNotice('Cash settlement recorded by authorised Flow.');
+   setReload(x=>x+1);
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
+ };
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
   for(const field of fields){
@@ -349,6 +374,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
        {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistRecordCashPayment')
+        &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
+        <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
+         Record cash payment</button>}
        {current.object==='Invoice'&&actions.has('AceAssistSendInvoice')&&
         <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendInvoice',chosen)}>Send invoice</button>}
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
@@ -358,6 +387,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
    </aside></div>
   </main>
 
+  {cashInvoice&&<div className="assist-modal-backdrop" role="presentation">
+   <section className="assist-modal" role="dialog" aria-modal="true"
+    aria-label="Record cash settlement">
+    <header className="assist-modal-heading"><h2>Record cash payment</h2>
+     <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Close</button></header>
+    <form className="custom-crud-form" onSubmit={e=>void submitCashPayment(e)}>
+     <p>Invoice: {String(cashInvoice.InvoiceNumber??cashInvoice.Name??'')}</p>
+     <p>Outstanding: {Math.max(0,Number(cashInvoice.Total??0)-Number(cashInvoice.AmountPaid??0)).toFixed(2)}</p>
+     <label>Cash received
+      <input type="number" min="0.01" step="0.01" required
+       value={cashAmount} onChange={event=>setCashAmount(event.target.value)}/>
+     </label>
+     <p>Only record cash actually received. Card payments require a verified provider callback.</p>
+     {error&&<p role="alert">{error}</p>}
+     <footer className="assist-modal-footer">
+      <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Cancel</button>
+      <button type="submit" disabled={busy}>{busy?'Recording…':'Record payment'}</button>
+     </footer>
+    </form>
+   </section>
+  </div>}
   {editing&&<div className="assist-modal-backdrop" role="presentation"
    onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>
    <section className="assist-modal" role="dialog" aria-modal="true"
