@@ -10,6 +10,9 @@ test('Meta verification and signatures are mandatory before an inbound Flow runs
  const endpoint='11111111-1111-4111-8111-111111111111';
  const tenant='22222222-2222-4222-8222-222222222222';
  let called=0,inserted=0;
+ const warningLogs:string[]=[];
+ const originalWarn=console.warn;
+ console.warn=(...args:unknown[])=>warningLogs.push(args.map(String).join(' '));
  const db={query:async(sql:string)=>{
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Inbox',flow_api:'AceChatterReceive',
@@ -45,9 +48,14 @@ test('Meta verification and signatures are mandatory before an inbound Flow runs
    headers:{'content-type':'application/json','x-hub-signature-256':'sha256='+'0'.repeat(64)},
    body:raw});
   assert.equal(invalid.status,401);assert.equal(called,0);assert.equal(inserted,0);
+  assert.match(warningLogs.join(' '),/signature_mismatch/);
+  assert.doesNotMatch(warningLogs.join(' '),/whatsapp-test-application-secret|whatsapp-test-verify-token/);
   const signature=createHmac('sha256',secret).update(raw).digest('hex');
   const valid=await fetch(base,{method:'POST',
    headers:{'content-type':'application/json','x-hub-signature-256':'sha256='+signature},body:raw});
   assert.equal(valid.status,200);assert.equal(called,1);assert.equal(inserted,1);
- }finally{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
+ }finally{
+  console.warn=originalWarn;
+  await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+ }
 });
