@@ -42,6 +42,10 @@ test('AceChatter links Communication threads to authorised ChatConversation and 
   assert.equal(inbox.length,1);
   assert.equal(inbox[0].Id,'conversation-1');
   assert.equal(inbox[0].PhoneNumber,'447700900123');
+  const bySenderName=buildCommunicationInbox([
+    {Id:'conversation-1',Name:'Saved contact',PhoneNumber:'+44 7700 900123',Status:'Open'}
+  ],communications,'Test Customer');
+  assert.equal(bySenderName.length,1,'filter should match the WhatsApp sender name even when the saved contact label differs');
 
   const merged=mergeCommunicationMessages(communications,[
     {Id:'legacy-copy',Direction:'Inbound',Body:'Hello',ExternalMessageId:'wamid.1',
