@@ -351,6 +351,49 @@ export function createSystemServer(db:SqlPersistence) {
       return {};
     }
   };
+  // Prefetch the first ordinary record page as part of the already-authorised
+  // page response. RecordEngine remains the sole data/permission path; dynamic
+  // filters and live presenters stay on their normal context-aware requests.
+  const pageInitialRecords=async(tenantId:string,userId:string,page:{components?:Array<{properties?:Record<string,unknown>}>})=>{
+    try{
+      const components=Array.isArray(page.components)?page.components:[];
+      const refs=components.map(component=>component.properties?.objectApiName)
+        .filter((value):value is string=>typeof value==='string'&&value.startsWith('metadata:'))
+        .map(value=>value.slice('metadata:'.length));
+      const apiById=new Map<string,string>();
+      if(refs.length){
+        const {rows}=await db.query<{id:string;api_name:string}>(
+          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1 AND enabled=true',[tenantId]);
+        for(const row of rows)apiById.set(row.id,row.api_name);
+      }
+      const objectApis=new Set<string>();
+      for(const component of components){
+        const properties=component.properties??{};
+        if(properties.liveRefreshEnabled===true)continue;
+        const filters=properties.filters;
+        if(filters!==undefined&&filters!==null
+          &&(!Array.isArray(filters)||filters.some((filter:unknown)=>!filter||typeof filter!=='object'
+            ||Array.isArray(filter)||typeof (filter as Record<string,unknown>).value==='object'
+            &&(filter as Record<string,unknown>).value!==null)))continue;
+        const raw=properties.objectApiName;
+        if(typeof raw!=='string'||!raw)continue;
+        const api=raw.startsWith('metadata:')?apiById.get(raw.slice('metadata:'.length)):raw;
+        if(api&&/^[A-Za-z][A-Za-z0-9_]*$/.test(api))objectApis.add(api);
+      }
+      const entries=await Promise.all([...objectApis].slice(0,12).map(async api=>{
+        try{
+          const result=await records.list(tenantId,userId,api,50,0);
+          return [api,result.records] as const;
+        }catch{
+          // The normal client query will show the authoritative permission/data error.
+          return null;
+        }
+      }));
+      return Object.fromEntries(entries.filter((entry):entry is readonly [string,unknown[]]=>entry!==null));
+    }catch{
+      return {};
+    }
+  };
   app.post('/api/auth/login',route(async(req,res)=>{
     const {tenantSlug,email,password}=req.body??{};
     if(typeof email!=='string'||typeof password!=='string'||!email.trim()) {
@@ -1083,7 +1126,9 @@ export function createSystemServer(db:SqlPersistence) {
       sessionMetadata(db,actor.tenant_id,actor.user_id)
     ]);
     const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
-    res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
+    const page=assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null;
+    const initialRecords=page?await pageInitialRecords(actor.tenant_id,actor.user_id,page):{};
+    res.json({page,initialRecords});
   }));
   app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1091,7 +1136,8 @@ export function createSystemServer(db:SqlPersistence) {
     const factor=String(req.query.formFactor??'Desktop');
     const page=await pages.resolveAppPage(actor.tenant_id,req.params.appId,req.params.pageApiName,factor);
     if(!page)throw new Error('Page not found');
-    res.json({page});
+    const initialRecords=await pageInitialRecords(actor.tenant_id,actor.user_id,page.page);
+    res.json({page:page.page,initialRecords});
   }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
