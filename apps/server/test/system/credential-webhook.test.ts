@@ -72,7 +72,7 @@ test('credential webhook Flow routing preserves the Communication archive',async
  const endpoint='11111111-1111-4111-8111-111111111111';
  const actor='33333333-3333-4333-8333-333333333333';
  const secret='provider-app-secret-value';
- let executed=0,archived=0,status='received';
+ let executed=0,archived=0,status='received',flowActive=true;
  const db={query:async(sql:string)=>{
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',
@@ -81,7 +81,7 @@ test('credential webhook Flow routing preserves the Communication archive',async
    verify_token_digest:createHash('sha256').update('token').digest(),
    signature_secret_ciphertext:Buffer.from('secret'),encryption_key_id:'active'
   }]};
-  if(sql.includes('SELECT 1 FROM md_flow_definitions'))return {rows:[{ok:true}]};
+  if(sql.includes('SELECT 1 FROM md_flow_definitions'))return {rows:flowActive?[{ok:true}]:[]};
   if(sql.includes('INSERT INTO md_inbound_webhook_events'))
    return {rows:[{id:'44444444-4444-4444-8444-444444444444',status}]};
   if(sql.includes("SET status='completed'"))status='completed';
@@ -116,6 +116,17 @@ test('credential webhook Flow routing preserves the Communication archive',async
   }
   assert.equal(executed,1);
   assert.equal(archived,1);
+  // An uninstalled/deactivated optional Flow cannot interrupt a credential
+  // webhook shared by other apps: keep archiving the verified provider event.
+  flowActive=false;status='received';
+  const secondRaw=raw.replace('wamid.test','wamid.next');
+  const secondSignature='sha256='+createHmac('sha256',secret).update(secondRaw).digest('hex');
+  const fallback=await fetch(url,{method:'POST',
+   headers:{'content-type':'application/json','x-hub-signature-256':secondSignature},
+   body:secondRaw});
+  assert.equal(fallback.status,200);
+  assert.equal(executed,1);
+  assert.equal(archived,2);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
