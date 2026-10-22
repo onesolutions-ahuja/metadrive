@@ -11,7 +11,7 @@ import {decodeMetadataValues,type MetadataValueRow} from '../system-files/compon
 import {flowAppIsEntitled} from '../system-files/flow-validation.js';
 import {prepareFlowHttpRequest,bindPublicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
-import {writeIntegrationApiLog} from './integration-api-log.js';
+import {writeIntegrationApiLog,type IntegrationActivityWriter,type IntegrationCommunicationDetails} from './integration-api-log.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -26,6 +26,39 @@ type CalloutScalar=string|number|boolean|null;
 const isCalloutScalar=(value:unknown):value is CalloutScalar=>
  value===null||typeof value==='string'||typeof value==='boolean'
  ||typeof value==='number'&&Number.isFinite(value);
+
+function mappedCommunicationDetails(config:Record<string,unknown>,
+ variables:Record<string,string|number|boolean|null>,responseBody?:string):IntegrationCommunicationDetails|undefined{
+ const raw=config.communicationLog;
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))return undefined;
+ const mapping=raw as Record<string,unknown>;
+ const render=(value:unknown):string|undefined=>{
+  if(typeof value!=='string')return undefined;
+  return value.replace(/\\{!([A-Za-z][A-Za-z0-9_.]*)\\}/g,(_match,key:string)=>
+   Object.hasOwn(variables,key)?String(variables[key]??''):'');
+ };
+ const details:IntegrationCommunicationDetails={};
+ for(const key of ['channel','name','sender','recipient','subject','body','provider'] as const){
+  const value=render(mapping[key]);
+  if(value!==undefined)details[key]=value;
+ }
+ const path=mapping.externalMessageIdResponsePath;
+ if(typeof path==='string'&&responseBody&&/^[A-Za-z][A-Za-z0-9_]*(?:\\[\\d+\\])?(?:\\.[A-Za-z][A-Za-z0-9_]*(?:\\[\\d+\\])?)*$/.test(path)){
+  try{
+   let value:unknown=JSON.parse(responseBody);
+   for(const part of path.match(/[A-Za-z][A-Za-z0-9_]*|\\[\\d+\\]/g)??[]){
+    if(part.startsWith('[')){
+     if(!Array.isArray(value)){value=undefined;break;}
+     value=value[Number(part.slice(1,-1))];
+    }else if(value&&typeof value==='object'&&!Array.isArray(value))
+     value=(value as Record<string,unknown>)[part];
+    else {value=undefined;break;}
+   }
+   if(typeof value==='string'||typeof value==='number')details.externalMessageId=String(value);
+  }catch{/* Provider response IDs are optional metadata; never fail the HTTP callout for logging. */}
+ }
+ return details;
+}
 const publicIp=(address:string)=>{
    if(isIP(address)===4){
     const [a,b]=address.split('.').map(Number);
@@ -45,6 +78,8 @@ const publicIp=(address:string)=>{
 export class NamedCredentialService {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
   private dispatching=false;
+  private integrationActivityWriter?:IntegrationActivityWriter;
+  setIntegrationActivityWriter(writer:IntegrationActivityWriter){this.integrationActivityWriter=writer;}
   private activeKeyId():string {
    return process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID || 'legacy';
  }
@@ -1081,8 +1116,9 @@ export class NamedCredentialService {
     credentialId:String(config.namedCredentialId),actorUserId:userId,
     endpoint:auditEndpoint,method,outcome:'network_error',
     durationMs:Date.now()-requestStartedAt,requestBytes,
-    errorCode:error instanceof Error?error.name:'NETWORK_ERROR'
-   });
+    errorCode:error instanceof Error?error.name:'NETWORK_ERROR',
+    communication:mappedCommunicationDetails(config,flowVariables)
+   },this.integrationActivityWriter);
    throw error;
   }
   const successful=result.status>=200&&result.status<300;
@@ -1092,8 +1128,9 @@ export class NamedCredentialService {
    endpoint:auditEndpoint,method,statusCode:result.status,
    outcome:successful?'success':'http_error',durationMs:Date.now()-requestStartedAt,
    requestBytes,responseBytes:Buffer.byteLength(result.body),
-   errorCode:successful?null:'HTTP_STATUS_'+result.status
-  });
+   errorCode:successful?null:'HTTP_STATUS_'+result.status,
+   communication:mappedCommunicationDetails(config,flowVariables,result.body)
+  },this.integrationActivityWriter);
   if(!successful)throw new Error('HTTP Callout failed with status '+result.status);
   return {status:result.status,body:result.body.slice(0,4096)};
  }
