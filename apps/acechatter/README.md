@@ -41,11 +41,11 @@ Assign the `AceChatterUser` permission set explicitly to the intended users and 
 
 `AceChatterSendMessage` includes an editable **HTTP Callout** node with:
 - Method: `POST`
-- Relative path: `{!phoneNumberId}/messages`
-- Body: WhatsApp Cloud API text message JSON, mapping `recipientPhone` and `message`
+- Relative path: `v26.0/{!public_phoneNumberId}/messages`
+- Body: WhatsApp Cloud API text message JSON, mapping the authorised conversation's `PhoneNumber` and the Flow's `message` input
 - Delivery: `DURABLE_ASYNC` through the shared MetaDrive callout dispatcher
 
-In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/vXX.X/` and the Meta WhatsApp access token. Set the callout's `namedCredentialId` to that saved credential. Replace `vXX.X` with the supported Graph API version. No access token or phone number ID is seeded.
+In Flow Builder, configure an enabled tenant-scoped HTTPS **Named Credential** with base URL `https://graph.facebook.com/` and the Meta WhatsApp access token plus the non-secret `public_phoneNumberId` setting. Set the callout's `namedCredentialId` to that saved credential. The Flow path carries the Graph API version (`v26.0` here); change it to a version supported by your Meta app when needed. No access token or phone number ID is seeded.
 
 The UI supplies only `conversationId` and `message`. The seeded Flow retrieves the selected `ChatConversation` through OneEngine, resolves its `PhoneNumber`, and addresses the Graph API using `{!public_phoneNumberId}` supplied by the selected encrypted Named Credential. The shared callout runtime binds `public_` values from that credential only and fails closed if the required setting is absent. Configure the tenant Named Credential and validate/activate the Flow only after provider tests. The Flow remains Draft on a fresh install until configured; the UI never claims provider delivery from Flow execution alone.
 
