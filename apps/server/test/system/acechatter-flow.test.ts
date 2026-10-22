@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {reconcileAceChatterCreateConversationContactFields,reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
+import {reconcileAceChatterCommunicationFlow,reconcileAceChatterCreateConversationContactFields,reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
 import {decodeMetadataValues,encodeMetadataValue} from '../../src/system-files/component-runtime.js';
 import {executeHttpCalloutNode} from '../../src/system-files/nodes/HttpCalloutNode.js';
 import {executeCreateRecordsNode} from '../../src/system-files/nodes/CreateRecordsNode.js';
@@ -69,9 +69,24 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(getCommunications?.config.recordLimit,'200');
  assert.deepEqual(getCommunications?.config.conditions,[
   {field:'Channel',operator:'Equals',value:'WhatsApp'},
-  {field:'Direction',operator:'Equals',value:'Inbound'},
-  {field:'Sender',operator:'Contains',value:'@searchTerm'}
+  {field:'Sender',operator:'Contains',value:'@searchTerm'},
+  {field:'Recipient',operator:'Contains',value:'@searchTerm'}
  ]);
+ assert.equal(getCommunications?.config.sortField,'CreatedAt');
+ assert.equal(getCommunications?.config.conditionLogic,'1 AND (2 OR 3)');
+ const sendGraph=decodeMetadataValues(
+  graphValues.get('flow-AceChatterSendMessage')??[]).builder as {
+   elements:Array<{id:number;type:string;config:Record<string,unknown>}>;
+  };
+ const outboundCommunication=sendGraph.elements.find(node=>node.id===7);
+ assert.equal(outboundCommunication?.type,'Create Records');
+ assert.equal(outboundCommunication?.config.object,'Communication');
+ assert.deepEqual((outboundCommunication?.config.fieldValues as Array<{field:string;value:string}>)
+  .filter(field=>['Channel','Direction','Recipient','Body','ExternalMessageId'].includes(field.field)),[
+   {field:'Channel',value:'WhatsApp'},{field:'Direction',value:'Outbound'},
+   {field:'Recipient',value:'@conversation.PhoneNumber'},{field:'Body',value:'@message'},
+   {field:'ExternalMessageId',value:'@providerMessageId'}
+  ]);
  const resolverGraph=decodeMetadataValues(
   graphValues.get('flow-AceChatterFindConversationByPhone')??[]).builder as {
    elements:Array<{type:string;config:Record<string,unknown>}>;
@@ -93,11 +108,68 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   'WhatsApp delivery must remain disabled until provider credentials are configured');
  assert.equal(created.filter(call=>call.params[3]===true).length,7);
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
+  &&call.params[1]==='Communication'&&call.params[2]==='create'),true,
+  'the send Flow must have explicit OneEngine create permission for Communication records');
+ assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
   'AceChatter users need explicit OneEngine read permission for Communication records');
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication.Sender'&&call.params[2]==='read'),true,
   'the Flow needs field-level read permission for sender-number filtering');
+});
+
+test('reconcile known AceChatter send Flow to write outbound Communication without changing its callout',async()=>{
+ const credential='caaefd14-fe71-4d4c-81de-14b3d1704897';
+ const old={
+  apiName:'AceChatterSendMessage',status:'Active',resources:[],
+  elements:[
+   {id:1,type:'Start',config:{}},
+   {id:4,type:'Get Records',config:{object:'ChatConversation',recordLimit:'1',outputVariable:'conversation',
+    conditions:[{field:'Id',operator:'Equals',value:'@conversationId'}]}},
+   {id:2,type:'HTTP Callout',config:{namedCredentialId:credential,
+    path:'v26.0/{!public_phoneNumberId}/messages',method:'POST'}},
+   {id:6,type:'Create Records',config:{object:'ChatMessage',fieldValues:[
+    {field:'Body',value:'@message'},{field:'ExternalMessageId',value:'@providerMessageId'}]}},
+   {id:3,type:'End',config:{}}
+  ],connectors:[
+   {from:1,to:4,kind:'normal'},{from:4,to:2,kind:'normal'},
+   {from:2,to:6,kind:'normal'},{from:6,to:3,kind:'normal'}
+  ]
+ };
+ const initial:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(old,'/builder',initial);
+ let stored=initial.map(item=>({property_path:item.path,value_kind:item.kind,value_text:item.text}));
+ let audits=0,deletions=0;
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes('SELECT id FROM md_flow_definitions'))
+   return {rows:[{id:'flow-id'}],rowCount:1};
+  if(sql.includes('SELECT property_path,value_kind,value_text'))
+   return {rows:stored,rowCount:stored.length};
+  if(sql.startsWith('DELETE FROM md_flow_editor_values')){
+   stored=[];deletions++;return {rows:[],rowCount:0};
+  }
+  if(sql.includes('INSERT INTO md_flow_editor_values')){
+   stored.push({property_path:String(params[2]),value_kind:String(params[3]),
+    value_text:params[4]===null?null:String(params[4])});
+  }
+  if(sql.includes('INSERT INTO md_security_events'))audits++;
+  return {rows:[],rowCount:1};
+ }} as never;
+ assert.equal(await reconcileAceChatterCommunicationFlow(client,'tenant-a'),true);
+ const current=decodeMetadataValues(stored).builder as typeof old & {
+  elements:Array<{id:number;type:string;config:Record<string,unknown>}>;
+  connectors:Array<{from:number;to:number}>;
+ };
+ const callout=current.elements.find(element=>element.id===2);
+ assert.equal(callout?.config.namedCredentialId,credential);
+ assert.equal(callout?.config.path,'v26.0/{!public_phoneNumberId}/messages');
+ const communication=current.elements.find(element=>element.id===7);
+ assert.equal(communication?.config.object,'Communication');
+ assert.equal(current.connectors.some(edge=>edge.from===6&&edge.to===7),true);
+ assert.equal(current.connectors.some(edge=>edge.from===7&&edge.to===3),true);
+ assert.equal(await reconcileAceChatterCommunicationFlow(client,'tenant-a'),false);
+ assert.equal(deletions,1);
+ assert.equal(audits,1);
 });
 
 test('reconcile AceChatter sender Flow from Named Credential without overwriting tenant configuration',async()=>{
