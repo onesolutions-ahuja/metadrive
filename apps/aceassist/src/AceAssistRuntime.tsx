@@ -274,7 +274,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
         editingObject==='Appointment'&&field.apiName==='Service'?
          <SearchRecord label="Service" value={form.Service??''}
           options={lookupRows.Product??[]} emptyMessage="No available products/services"
-          onChange={id=>setForm(x=>({...x,Service:id}))}/>:
+          onChange={id=>{const product=(lookupRows.Product??[]).find(row=>String(row.Id??row.id)===id);
+           setForm(x=>({...x,Service:String(product?.Name??id)}));}}/>:
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
          <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
