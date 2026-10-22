@@ -183,8 +183,8 @@ export function useSetupMetadata(ctx: any) {
         // not wait for the Flow Builder, report builders, connectors and dashboards.
         const fastEntryRoute = route.kind !== 'setup' || route.workspace === 'home';
         if (fastEntryRoute) {
-          // Trusted tenant-scoped RBAC bootstrap is returned with successful
-          // refresh/login: render immediately without 4 more HTTP round trips.
+          // The tenant-scoped RBAC bootstrap came from login or the single
+          // authenticated bootstrap endpoint: avoid four separate HTTP round trips.
           const [firstObjects, firstPages, firstApps, firstSession] = landing
             ? [
                 { objects: landing.objects },
