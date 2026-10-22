@@ -35,6 +35,9 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [filter,setFilter]=useState('');
   const [submittedSearch,setSubmittedSearch]=useState('');
   const [draft,setDraft]=useState('');
+  const [showNewChat,setShowNewChat]=useState(false);
+  const [chatName,setChatName]=useState('');
+  const [chatPhone,setChatPhone]=useState('');
   const [actions,setActions]=useState<Action[]>([]);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -44,6 +47,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const loadConversations=flowBySuffix(actions,'LoadConversations');
   const loadMessages=flowBySuffix(actions,'LoadMessages');
   const sendFlow=flowBySuffix(actions,'SendMessage');
+  const newChatFlow=flowBySuffix(actions,'CreateConversation');
   useEffect(()=>{
     let live=true;
     void apiRequest<{actions:Action[]}>('/flows/available-actions?product=AceChatter')
@@ -95,6 +99,16 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     }catch(e){setError(errorText(e));}
     finally{setBusy(false);}
   };
+  const createChat=async()=>{
+    if(!newChatFlow||!chatName.trim()||!/^[1-9][0-9]{6,14}$/.test(chatPhone))return;
+    setBusy(true);setError('');
+    try{
+      await apiRequest('/flows/'+encodeURIComponent(newChatFlow.apiName)+'/execute',{
+        method:'POST',body:JSON.stringify({chatName:chatName.trim(),phoneNumber:chatPhone})
+      });
+      setShowNewChat(false);setChatName('');setChatPhone('');setRefresh(n=>n+1);
+    }catch(e){setError(errorText(e));}finally{setBusy(false);}
+  };
   const logout=async()=>{
     try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* clear client regardless */}
     onLogout();window.location.assign('/login');
@@ -103,7 +117,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   return <div className="ace-chat">
     <aside className="ace-chat-sidebar">
       <header className="ace-chat-brand"><div className="ace-chat-logo">✦</div><div><strong>AceChatter</strong><small>Customer messaging</small></div><button title="Sign out" onClick={()=>void logout()}>Sign out</button></header>
-      <div className="ace-chat-sidebar-heading"><h1>Chats</h1><button onClick={()=>setRefresh(n=>n+1)} disabled={busy}>↻ Refresh</button></div>
+      <div className="ace-chat-sidebar-heading"><h1>Chats</h1><button onClick={()=>setRefresh(n=>n+1)} disabled={busy}>↻ Refresh</button><button onClick={()=>setShowNewChat(true)} disabled={busy||!newChatFlow}>+ New Chat</button></div>
       <form onSubmit={e=>{e.preventDefault();setSubmittedSearch(filter);}} className="ace-chat-search">
         <input aria-label="Search conversations" value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search conversations…" />
         <button type="submit" disabled={!loadConversations||busy}>Search</button>
@@ -131,5 +145,15 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         {!sendFlow&&<small>The sending Flow must be active and authorised. In MetaDrive Flow Builder, open AceChatterSendMessage, assign a WhatsApp HTTPS Named Credential to its HTTP Callout, validate the sender settings and recipient lookup, then activate the Flow. Until then, messages cannot be sent.</small>}
       </section>
     </main>
+    {showNewChat&&<div className="ace-chat-modal-backdrop" role="presentation">
+      <div className="ace-chat-modal" role="dialog" aria-modal="true" aria-label="New WhatsApp conversation">
+        <h2>New WhatsApp conversation</h2><p>Creates a tenant conversation through OneEngine Flow. Use international digits without +.</p>
+        <form onSubmit={event=>{event.preventDefault();void createChat();}}>
+          <label>Contact name<input required value={chatName} onChange={event=>setChatName(event.target.value)} maxLength={100}/></label>
+          <label>WhatsApp number<input required inputMode="tel" pattern="[1-9][0-9]{6,14}" placeholder="447XXXXXXXXX" value={chatPhone} onChange={event=>setChatPhone(event.target.value)}/></label>
+          <div className="ace-chat-modal-actions"><button type="button" onClick={()=>setShowNewChat(false)}>Cancel</button><button type="submit" disabled={busy||!chatName.trim()||!/^[1-9][0-9]{6,14}$/.test(chatPhone)}>Create</button></div>
+        </form>
+      </div>
+    </div>}
   </div>;
 }
