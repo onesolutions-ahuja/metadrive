@@ -21,12 +21,9 @@ test('only safe CSS properties can be interpolated in live terminal',()=>{
  assert.match(css,/transform: translate\(0px,-42px\) !important/);
  assert.equal(acetillStyleCss({cash:{backgroundColor:'url(x)'}}),'');
 });
-test('Page Builder points to original Acetill React implementation',()=>{
+test('Acetill editable pages use the shared metadata Page Builder',()=>{
  const builder=readFileSync(new URL('../../web/src/core/builders/PageBuilder/pageBuilderView.tsx',import.meta.url),'utf8');
- const editor=readFileSync(new URL('../src/AcetillVisualEditor.tsx',import.meta.url),'utf8');
- assert.match(builder,/AcetillVisualEditor/);
- assert.match(builder,/page\.apiName==='AcetillRegisterEditable'/);
- assert.match(editor,/AcetillTerminal/);
- assert.match(editor,/onPointerMoveCapture=\{moveElement\}/);
- assert.match(editor,/Save visual changes/);
+ assert.doesNotMatch(builder,/AcetillVisualEditor/);
+ assert.doesNotMatch(builder,/page\.apiName==='AcetillRegisterEditable'/);
+ assert.match(builder,/builder-editor-mode/);
 });
