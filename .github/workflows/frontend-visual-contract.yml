@@ -47,7 +47,9 @@ jobs:
         run: nohup npm run dev --workspace apps/web -- --host 127.0.0.1 --port 4173 > /tmp/metadrive-vite.log 2>&1 &
       - name: Check marketing responsiveness and screenshots
         run: node scripts/marketing-visual-smoke.mjs
-      - name: Run axe-core accessibility scan\n        run: node scripts/accessibility-smoke.mjs\n      - name: Save visual evidence
+      - name: Run axe-core accessibility scan
+        run: node scripts/accessibility-smoke.mjs
+      - name: Save visual evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
