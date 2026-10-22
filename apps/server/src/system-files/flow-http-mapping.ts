@@ -132,3 +132,27 @@ export function publicHttpCredentialVariables(configuration:unknown):Record<stri
  }
  return output;
 }
+
+/** The public_ namespace belongs to the selected tenant Named Credential.
+ * Do not fall back to caller-supplied Flow inputs if a credential is incomplete. */
+export function bindPublicHttpCredentialVariables(
+ variables:FlowHttpVariables,configuration:unknown,templates:unknown[]
+):FlowHttpVariables {
+ const bound:FlowHttpVariables=Object.create(null) as FlowHttpVariables;
+ for(const [name,value] of Object.entries(variables)){
+  if(!name.startsWith('public_'))bound[name]=value;
+ }
+ const settings=publicHttpCredentialVariables(configuration);
+ const required=new Set<string>();
+ for(const template of templates){
+  if(typeof template!=='string')continue;
+  for(const hit of template.matchAll(/\{!(public_[A-Za-z][A-Za-z0-9_]*)\}/g))
+   required.add(hit[1]);
+ }
+ for(const name of required){
+  if(!Object.hasOwn(settings,name))
+   throw new Error('Required Named Credential public setting is unavailable: '+name);
+ }
+ Object.assign(bound,settings);
+ return bound;
+}
