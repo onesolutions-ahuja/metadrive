@@ -79,11 +79,13 @@ export class PageRuntime {
       }))};
   }
   async load(tenantId:string,pageApi:string){
-    const {rows}=await this.db.query<{found:boolean}>(`SELECT EXISTS(
-      SELECT 1 FROM md_page_definitions p JOIN md_lightning_page_details d
-        ON d.tenant_id=p.tenant_id AND d.page_id=p.id
-      WHERE p.tenant_id=$1 AND p.api_name=$2) AS found`,[tenantId,pageApi]);
-    return rows[0]?.found?{page:await this.metadata(tenantId,pageApi)}:this.loadLegacy(tenantId,pageApi);
+    // metadata() already checks the tenant-scoped Lightning page row. Reuse
+    // that result instead of issuing a separate EXISTS query before loading it.
+    const page=await this.metadata(tenantId,pageApi).catch(error=>{
+      if(error instanceof Error&&error.message==='Page not found')return null;
+      throw error;
+    });
+    return page?{page}:this.loadLegacy(tenantId,pageApi);
   }
 
   /** Transactional draft publishing and component persistence; no JSON columns. */
