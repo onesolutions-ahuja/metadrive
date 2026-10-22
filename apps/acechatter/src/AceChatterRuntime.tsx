@@ -112,6 +112,20 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     return()=>{live=false;};
   },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch,refresh]);
 
+  // Refresh inbox and active threads like a messaging app. Pause while hidden and
+  // refresh immediately when the user returns to the tab.
+  useEffect(()=>{
+    const refreshWhenVisible=()=>{
+      if(document.visibilityState==='visible')setRefresh(value=>value+1);
+    };
+    const timer=window.setInterval(refreshWhenVisible,5000);
+    document.addEventListener('visibilitychange',refreshWhenVisible);
+    return()=>{
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange',refreshWhenVisible);
+    };
+  },[]);
+
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
     if(!loadConversations){setConversations([]);return;}
@@ -128,7 +142,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     return()=>{live=false;};
   },[loadConversations?.apiName,refresh]);
 
-  // Incoming messages are sourced from Communication records via an authorised Flow.
+  // Both incoming and outgoing messages are sourced from Communication records via an authorised Flow.
   useEffect(()=>{
     if(!loadCommunications){setCommunications([]);return;}
     let live=true;setBusy(true);setError('');
@@ -139,7 +153,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         method:'POST',body:JSON.stringify({searchTerm,limit:200})
       }).then(result=>{
         if(!live)return;
-        if(result.interviewId)throw new Error('Loading received messages requires a synchronous Autolaunched Flow.');
+        if(result.interviewId)throw new Error('Loading WhatsApp Communications requires a synchronous Autolaunched Flow.');
         setCommunications(readRows(result.outputs,'communicationsJson'));
       }).catch(e=>{if(live)setError(errorText(e));})
       .finally(()=>{if(live)setBusy(false);});
@@ -162,7 +176,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     if(!selected||!selectedRow||(!loadMessages&&!loadCommunications)){
       setMessages([]);return;
     }
-    let live=true;setBusy(true);setError('');setMessages([]);
+    let live=true;setBusy(true);setError('');
     const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
       ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
