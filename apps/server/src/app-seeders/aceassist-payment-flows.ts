@@ -109,7 +109,8 @@ export async function seedAceAssistPaymentFlows(client:PoolClient,tenantId:strin
   ['Payment','read'],['Payment','create'],['Invoice','read'],['Invoice','edit'],
   ...PAYMENT_FIELDS.flatMap(([api])=>[['Payment.'+api,'read'],['Payment.'+api,'create']]),
   ...['AmountPaid','Status'].flatMap(api=>[['Invoice.'+api,'read'],['Invoice.'+api,'edit']]),
-  ...['Total','InvoiceNumber'].map(api=>['Invoice.'+api,'read'])
+  ...['Total','InvoiceNumber','Customer','Quotation','Subtotal','DiscountAmount','TaxAmount']
+   .map(api=>['Invoice.'+api,'read'])
  ];
  for(const [policy,rights] of [['AceAssistUser',standardRights],['AceAssistCashier',cashierRights]] as const)
   for(const [resource,action] of rights)await client.query(`
