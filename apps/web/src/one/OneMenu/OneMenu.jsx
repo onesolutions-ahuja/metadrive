@@ -1,5 +1,5 @@
 import { useOneActions, css, arr, label, value, fire } from "../shared/OneActions.jsx";
-import { useDismissOnOutside } from "../shared/accessibilityHooks.ts";
+import { useDismissOnOutside } from "../shared/accessibilityHooks";
 
 export default function OneMenu(props) {
   const p = { ...props, kind: props.kind || "Menu" };
