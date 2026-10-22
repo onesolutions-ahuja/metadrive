@@ -33,7 +33,7 @@ jobs:
       - name: Run comprehensive repository checks for pull requests
         if: github.event_name == 'pull_request'
         run: npm run check
-      - name: Verify production frontend, Render API and browser login
+      - name: Verify current production frontend API and browser login
         if: github.event_name == 'pull_request'
         run: node scripts/verify-public-render-routing.mjs
   publish:
@@ -50,15 +50,16 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Build branded frontend with verified API destination
+      - name: Build branded frontend with verified Oracle API destination
         env:
           GITHUB_PAGES: 'true'
           GITHUB_PAGES_BASE_PATH: '/'
-          VITE_API_BASE_URL: https://metadrive-nxd7.onrender.com/api
+          VITE_API_BASE_URL: https://api.unesolutions.co.uk/api
         run: npm run build --workspace apps/web
       - run: node scripts/verify-pages-artifacts.mjs
-      - name: Check Render API connectivity (informational)
-        continue-on-error: true
+      - name: Verify Oracle API health and credentialed browser CORS
+        env:
+          METADRIVE_API_BASE_URL: https://api.unesolutions.co.uk/api
         run: node scripts/verify-render-api.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -66,6 +67,10 @@ jobs:
           path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
-      # Release the current main frontend, including metadata integrity diagnostics.
+      # Verify the exact frontend release has propagated before checking its API binding.
       - name: Verify published site serves this exact frontend bundle
         run: node scripts/verify-pages-artifacts.mjs --live
+      - name: Verify published frontend binds to Oracle API and login CORS
+        env:
+          METADRIVE_API_BASE_URL: https://api.unesolutions.co.uk/api
+        run: node scripts/verify-public-render-routing.mjs
