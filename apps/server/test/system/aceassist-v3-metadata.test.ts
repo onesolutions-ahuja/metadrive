@@ -47,3 +47,13 @@ test('new booking paths only use internal tenant users and shared Flow guards',(
 void seedAceAssistSchedulingObjects;
 void seedAceAssistDocumentSeries;
 void seedAceAssistCommunicationTemplates;
+
+test('WhatsApp booking is a disabled verified-provider orchestration with dedupe and RBAC',()=>{
+ const code=readFileSync(new URL('../../src/app-seeders/aceassist-whatsapp-booking-flow.ts',import.meta.url),'utf8');
+ assert.match(code,/AceAssistWhatsAppCreateBooking/);
+ assert.match(code,/uniqueInputGuard/);
+ assert.match(code,/availabilityGuard:ACEASSIST_BOOKING_AVAILABILITY/);
+ assert.match(code,/VALUES\(\$1,\$2,\$3,'Autolaunched Flow',1,false\)/);
+ assert.match(code,/AceAssistWhatsAppBookingService/);
+ assert.doesNotMatch(code,/INSERT INTO md_records|publicBooking/);
+});
