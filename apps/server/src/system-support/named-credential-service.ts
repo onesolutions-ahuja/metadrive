@@ -340,7 +340,7 @@ export class NamedCredentialService {
     [tenantId,credentialId]);
   if(!credentialSettings[0])throw new Error('HTTPS credential unavailable');
   const needsPublic=templates.some(value=>typeof value==='string'
-    &&/\\{!public_[A-Za-z][A-Za-z0-9_]*\\}/.test(value));
+    &&/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(value));
   const configuration=needsPublic&&credentialSettings[0].configuration_ciphertext
    ?JSON.parse(this.decryptOpaque(credentialSettings[0].configuration_ciphertext,
       credentialSettings[0].encryption_key_id)) as unknown:null;
@@ -885,7 +885,7 @@ export class NamedCredentialService {
   // provider configuration. Sensitive settings are never exposed to a Flow.
   const templates=[config.path,config.body,config.headers];
   const needsPublicSetting=templates.some(value=>typeof value==='string'
-    &&/\\{!public_[A-Za-z][A-Za-z0-9_]*\\}/.test(value));
+    &&/\{!public_[A-Za-z][A-Za-z0-9_]*\}/.test(value));
   const decoded=!previouslyPrepared&&needsPublicSetting&&item.configuration_ciphertext
    ?JSON.parse(this.decryptOpaque(item.configuration_ciphertext,item.encryption_key_id)) as unknown:null;
   const flowVariables=previouslyPrepared?variables:
