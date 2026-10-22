@@ -126,9 +126,9 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
          </div>)}
       </section>
       <section className="ace-chat-compose" aria-label="Compose via workflow">
-        <label>Sending: {sendFlow?.label??'AceChatterSendMessage Flow not configured'}</label>
+        <label>Sending: {sendFlow?.label??'WhatsApp sending unavailable'}</label>
         <div className="ace-chat-compose-row"><textarea aria-label="Message to send" placeholder="Type a message…" value={draft} onChange={e=>setDraft(e.target.value)} rows={2} disabled={!selectedRow||!loadMessages}/><button onClick={()=>void send()} disabled={busy||!selectedRow||!loadMessages||!draft.trim()||!sendFlow}>Send →</button></div>
-        {!sendFlow&&<small>Activate AceChatterSendMessage in MetaDrive Flow Builder.</small>}
+        {!sendFlow&&<small>The sending Flow must be active and authorised. In MetaDrive Flow Builder, open AceChatterSendMessage, assign a WhatsApp HTTPS Named Credential to its HTTP Callout, validate the sender settings and recipient lookup, then activate the Flow. Until then, messages cannot be sent.</small>}
       </section>
     </main>
   </div>;
