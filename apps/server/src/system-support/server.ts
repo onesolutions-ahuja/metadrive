@@ -363,7 +363,7 @@ export function createSystemServer(db:SqlPersistence) {
       const apiById=new Map<string,string>();
       if(refs.length){
         const {rows}=await db.query<{id:string;api_name:string}>(
-          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1 AND enabled=true',[tenantId]);
+          'SELECT id,api_name FROM md_object_definitions WHERE tenant_id=$1',[tenantId]);
         for(const row of rows)apiById.set(row.id,row.api_name);
       }
       const objectApis=new Set<string>();
