@@ -110,7 +110,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(created.filter(call=>call.params[3]===true).length,7);
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='create'),true,
-  'the send Flow must have explicit OneEngine create permission for Communication records');
+  'inbound WhatsApp message ingestion needs explicit OneEngine Communication create permission');
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
   'AceChatter users need explicit OneEngine read permission for Communication records');
