@@ -1,129 +1,228 @@
 import * as React from 'react';
-import {useEffect,useState} from 'react';
+import {useEffect,useMemo,useState} from 'react';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
+import {checkBusinessHours,dateKey,scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import './aceassist.css';
 
-type DataRow=Record<string,unknown>;
-type ObjectInfo={apiName:string;label?:string;fields?:Array<{apiName:string;label?:string;type?:string;required?:boolean}>};
-const show=(value:unknown)=>value==null?'—':typeof value==='object'?JSON.stringify(value):String(value);
-
-/** Ace Assist's independent presentation. MetaDrive server remains authoritative. */
-export default function AceAssistRuntime({entry,onLogout}:{entry:typeof ACEASSIST_STANDALONE_ENTRY;onLogout:()=>void}) {
-  const tabs=[
-    {label:'Appointments',object:'Appointment'},
-    {label:'Customers',object:'Customer'},
-    {label:'Quotations',object:'Quotation'},
-    {label:'Quotation lines',object:'QuotationLine'},
-    {label:'Invoices',object:'Invoice'}
-  ];
-  const [objects,setObjects]=useState<ObjectInfo[]>([]);
-  const [selected,setSelected]=useState(0);
-  const [rows,setRows]=useState<DataRow[]>([]);
-  const [busy,setBusy]=useState(true);
-  const [error,setError]=useState('');
-  const [message,setMessage]=useState('');
-  const [flowInput,setFlowInput]=useState('{}');
-  const [flowActions,setFlowActions]=useState<Array<{apiName:string;label:string}>>([]);
-  const [flowError,setFlowError]=useState('');
-  const [reload,setReload]=useState(0);
-  useEffect(()=>{
-    let active=true;
-    void apiRequest<{actions:Array<{apiName:string;label:string}>}>(
-      '/flows/available-actions?product='+encodeURIComponent(entry.appId)
-    ).then(response=>{if(active){setFlowActions(response.actions??[]);setFlowError('');}})
-      .catch(e=>{if(active){setFlowActions([]);setFlowError(e instanceof Error?e.message:String(e));}});
-    return()=>{active=false;};
-  },[entry.appId]);
-  const current=tabs[selected];
-  const metadata=objects.find(o=>o.apiName.toLowerCase()===current?.object.toLowerCase());
-  useEffect(()=>{
-    let active=true;setBusy(true);setError('');
-    void apiRequest<{objects:ObjectInfo[]}>('/metadata/objects').then(response=>{
-      if(active)setObjects(response.objects??[]);
-    }).catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setBusy(false);});
-    return()=>{active=false;};
-  },[]);
-  useEffect(()=>{
-    let active=true;setRows([]);setMessage('');
-    if(!metadata)return;
-    setBusy(true);setError('');
-    void apiRequest<{records:DataRow[]}>(`/records/${encodeURIComponent(metadata.apiName)}?limit=50`).then(response=>{
-      if(active)setRows(response.records??[]);
-    }).catch(e=>{if(active)setError(e instanceof Error?e.message:String(e));}).finally(()=>{if(active)setBusy(false);});
-    return()=>{active=false;};
-  },[metadata?.apiName,reload]);
-  const logout=async()=>{
-    try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* Clear local session regardless. */}
-    onLogout();window.location.assign('/login');
-  };
-
-  const [day,setDay]=useState(()=>new Date().toISOString().slice(0,10));
-  const [chosen,setChosen]=useState<DataRow|null>(null);
-  const itemName=(row:DataRow)=>String(row.Name??row.Subject??row.Title??row.Id??'Unnamed');
-  const startOfWeek=new Date(day+'T12:00:00');
-  startOfWeek.setDate(startOfWeek.getDate()-((startOfWeek.getDay()+6)%7));
-  const week=Array.from({length:7},(_,index)=>{
-    const d=new Date(startOfWeek);d.setDate(d.getDate()+index);return d.toISOString().slice(0,10);
-  });
-  const workflowInputs=()=>{
-    const parsed=JSON.parse(flowInput);
-    if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Inputs must be a JSON object');
-    return {...parsed,...(chosen?{recordId:chosen.Id}:{})};
-  };
-  const runAction=async(apiName:string)=>{
-    try{
-      setBusy(true);setError('');setMessage('');
-      const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>('/flows/'+encodeURIComponent(apiName)+'/execute',{
-        method:'POST',body:JSON.stringify(workflowInputs())
-      });
-      setMessage(result.interviewId?'Workflow waiting for further input':JSON.stringify(result.outputs??result));
-      setReload(v=>v+1);
-    }catch(e){setError(e instanceof Error?e.message:String(e));}
-    finally{setBusy(false);}
-  };
-  const actions=<section className="custom-actions">
-    <div className="custom-panel-title"><h2>Actions</h2><span>OneEngine workflows</span></div>
-    {flowError&&<p role="alert">{flowError}</p>}
-    {!flowError&&flowActions.length===0&&<p>No permitted active workflows yet. Configure and activate them in MetaDrive Flow Builder.</p>}
-    <div className="custom-action-buttons">{flowActions.map(action=>
-      <button key={action.apiName} type="button" disabled={busy} onClick={()=>void runAction(action.apiName)}>{action.label}</button>)}</div>
-    <details className="custom-inputs"><summary>Additional workflow inputs</summary>
-      <textarea aria-label="Workflow inputs JSON" value={flowInput} onChange={e=>setFlowInput(e.target.value)} rows={4}/></details>
-  </section>;
-  return <div className={'standalone-product custom-'+entry.slug} style={{'--product-accent':entry.accent} as React.CSSProperties}>
-    <header className="standalone-product-header">
-      <div className="standalone-product-brand"><span className="standalone-product-mark">{entry.label[0]}</span>
-        <span><strong>{entry.label}</strong><small>{entry.tagline}</small></span></div>
-      <span className="custom-connected">OneEngine connected</span>
-      <button type="button" className="standalone-product-logout" onClick={()=>void logout()}>Sign out</button>
-    </header>
-    {error&&<div role="alert" className="standalone-product-message">{error}</div>}
-    {message&&<div role="status" className="standalone-product-message">{message}</div>}
-    <main className="custom-assist">
-      <div className="custom-heading"><div><span className="custom-eyebrow">ACE ASSIST</span><h1>Schedule & visits</h1><p>Your tenant appointments and service activity</p></div>
-        <label className="custom-date">Week of <input type="date" value={day} onChange={e=>setDay(e.target.value)}/></label></div>
-      <nav className="custom-tabs" aria-label="Booking sections">{tabs.map((tab,i)=><button type="button" key={tab.object}
-        aria-current={selected===i?'page':undefined} onClick={()=>{setSelected(i);setChosen(null);}}>{tab.label}</button>)}</nav>
-      <div className="custom-assist-layout"><section className="custom-calendar">
-        <div className="custom-panel-title"><h2>{current?.label}</h2><button type="button" onClick={()=>setReload(n=>n+1)}>Refresh</button></div>
-        {current?.object==='Appointment'?<div className="custom-week">{week.map(date=><div className="custom-day" key={date}>
-          <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong><small>{date.slice(8)}</small>
-          {rows.filter(r=>String(r.StartDateTime??r.Start??r.Date??r.AppointmentDate??'').slice(0,10)===date).map((row,i)=>
-            <button type="button" key={String(row.Id??i)} className="custom-visit" onClick={()=>setChosen(row)}>
-              {itemName(row)}<small>{String(row.Status??'Scheduled')}</small></button>)}
-        </div>)}</div>:
-          <div className="custom-record-list">{rows.map((row,i)=><button key={String(row.Id??i)} type="button"
-            onClick={()=>setChosen(row)}><strong>{itemName(row)}</strong><small>{String(row.Status??row.Id??'')}</small></button>)}</div>}
-        {busy&&<p role="status">Loading tenant data…</p>}
-        {!metadata&&!busy&&<p className="custom-empty">This object is not available to the signed-in user.</p>}
-        {metadata&&!busy&&rows.length===0&&<p className="custom-empty">No accessible records. New appointments are created by your configured workflows.</p>}
-      </section><aside className="custom-visit-detail">
-        <div className="custom-panel-title"><h2>Visit details</h2><span>OneEngine</span></div>
-        {chosen?<dl>{Object.entries(chosen).slice(0,12).map(([key,value])=><div key={key}><dt>{key}</dt><dd>{show(value)}</dd></div>)}</dl>:
-          <p className="custom-empty">Select a visit or record to view details.</p>}
-        {actions}
-      </aside></div>
-    </main>
-  </div>;
+type Row=Record<string,unknown>;
+type Field={apiName:string;label?:string;type?:string;dataType?:string;required?:boolean};
+type ObjectInfo={apiName:string;label?:string;fields?:Field[]};
+type Operation='Create'|'Update'|'Delete';
+type FlowResponse={outputs?:Record<string,unknown>;variables?:Record<string,unknown>;
+  interviewId?:string;status?:string};
+type Tab={object:string;label:string};
+const tabs:Tab[]=[
+ {object:'Appointment',label:'Appointments'},
+ {object:'Customer',label:'Customers'},
+ {object:'Quotation',label:'Quotations'},
+ {object:'QuotationLine',label:'Quotation lines'},
+ {object:'Invoice',label:'Billing / Invoices'},
+ {object:'InvoiceLine',label:'Invoice lines'}
+];
+const inputFields:Record<string,string[]>={
+ Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','Location','AssignedTo','Description','Notes'],
+ Customer:['Name','Email','Phone','BillingAddress','ShippingAddress','Active'],
+ Quotation:['Name','Customer','IssueDate','ExpiryDate','Status','Notes','CurrencyCode','Subtotal','DiscountAmount','TaxAmount','Total'],
+ QuotationLine:['Name','Quotation','Product','Description','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal'],
+ Invoice:['Name','Customer','InvoiceDate','DueDate','Status','Notes','CurrencyCode','Subtotal','DiscountAmount','TaxAmount','Total'],
+ InvoiceLine:['Name','Invoice','Product','Description','Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal']
+};
+const show=(v:unknown)=>v==null?'—':typeof v==='object'?JSON.stringify(v):String(v);
+const title=(r:Row)=>String(r.Name??r.Subject??r.Title??r.Id??'Record');
+function fieldType(field:Field){
+ const type=String(field.dataType??field.type??'').toLowerCase();
+ if(type==='datetime')return 'datetime-local';
+ if(type==='date')return 'date';
+ if(type==='number'||type==='currency'||type==='percent')return 'number';
+ if(type==='email')return 'email';
+ return 'text';
+}
+const scalar=(value:string,field:Field):unknown=>{
+ const type=String(field.dataType??field.type??'').toLowerCase();
+ if(type==='number'||type==='currency'||type==='percent')return value===''?null:Number(value);
+ if(type==='boolean')return value==='true';
+ return value===''?null:value;
+};
+const formatInput=(v:unknown,field:Field)=>{
+ if(v==null)return '';
+ const type=fieldType(field);
+ if(type==='datetime-local')return String(v).slice(0,16);
+ return String(v);
+};
+export default function AceAssistRuntime({entry,onLogout}:{
+ entry:typeof ACEASSIST_STANDALONE_ENTRY;onLogout:()=>void
+}) {
+ const [objects,setObjects]=useState<ObjectInfo[]>([]);
+ const [actions,setActions]=useState<Set<string>>(new Set());
+ const [selected,setSelected]=useState(0);
+ const [rows,setRows]=useState<Row[]>([]);
+ const [busy,setBusy]=useState(false);
+ const [error,setError]=useState('');
+ const [notice,setNotice]=useState('');
+ const [weekOf,setWeekOf]=useState(()=>dateKey(new Date()));
+ const [chosen,setChosen]=useState<Row|null>(null);
+ const [editing,setEditing]=useState<Operation|null>(null);
+ const [form,setForm]=useState<Record<string,string>>({});
+ const [reload,setReload]=useState(0);
+ const [hours,setHours]=useState<BusinessCalendar|null>(null);
+ const [hoursError,setHoursError]=useState('');
+ const current=tabs[selected];
+ const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
+ const fields=useMemo(()=> (metadata?.fields??[]).filter(f=>
+  inputFields[current.object].includes(f.apiName)&&f.apiName!=='Id'
+ ),[metadata,current.object]);
+ const flowName=(operation:'Load'|Operation)=>'AceAssist'+operation+current.object;
+ const can=(operation:'Load'|Operation)=>actions.has(flowName(operation));
+ const loaded=useMemo(()=>new Set(objects.map(x=>x.apiName.toLowerCase())),[objects]);
+ useEffect(()=>{
+  let alive=true;
+  void Promise.all([
+   apiRequest<{objects:ObjectInfo[]}>('/metadata/objects'),
+   apiRequest<{actions:Array<{apiName:string}>}>('/flows/available-actions?product='+encodeURIComponent(entry.appId))
+  ]).then(([o,f])=>{if(alive){setObjects(o.objects??[]);setActions(new Set((f.actions??[]).map(x=>x.apiName)));}})
+    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar')
+   .then(r=>{if(alive)setHours(r.calendar??null);})
+   .catch(e=>{if(alive)setHoursError(e instanceof Error?e.message:String(e));});
+  return()=>{alive=false;};
+ },[entry.appId]);
+ const fetchRows=async(operation:'Load',object:string)=>{
+  const api='AceAssist'+operation+object;
+  const res=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',
+    {method:'POST',body:JSON.stringify({})});
+  const output=(res.outputs??res.variables??{});
+  const collection=object.charAt(0).toLowerCase()+object.slice(1)+'Records';
+  const v=output[collection];
+  if(!Array.isArray(v))throw Error('Get Records Flow did not return '+collection+'. Check Flow output permissions.');
+  return v.filter(x=>x&&typeof x==='object'&&!Array.isArray(x)) as Row[];
+ };
+ useEffect(()=>{
+  let alive=true;
+  setRows([]);setChosen(null);setError('');
+  if(!loaded.has(current.object.toLowerCase())||!can('Load'))return;
+  setBusy(true);
+  void fetchRows('Load',current.object).then(data=>{if(alive)setRows(data);})
+   .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));})
+   .finally(()=>{if(alive)setBusy(false);});
+  return()=>{alive=false;};
+ },[current.object,loaded,actions,reload]);
+ const startEdit=(operation:Operation,row?:Row)=>{
+  const values:Record<string,string>={};
+  for(const field of fields)values[field.apiName]=formatInput(row?.[field.apiName],field);
+  setForm(values);setChosen(row??null);setEditing(operation);setError('');setNotice('');
+ };
+ const submit=async(e:React.FormEvent)=>{
+  e.preventDefault();if(!editing||busy)return;
+  if(!can(editing)){setError('The '+editing+' Flow is not available to this user.');return;}
+  if(editing==='Delete'&&!chosen?.Id)return;
+  if(editing!=='Delete'&&current.object==='Appointment'){
+   const violation=checkBusinessHours(hours,form.StartDateTime??'',form.EndDateTime??'');
+   if(violation){setError(violation);return;}
+  }
+  const payload:Record<string,unknown>={};
+  if(editing!=='Create')payload.recordId=chosen?.Id;
+  if(editing!=='Delete'){
+   for(const field of fields)payload[field.apiName]=scalar(form[field.apiName]??'',field);
+  }
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(flowName(editing))+'/execute',
+    {method:'POST',body:JSON.stringify(payload)});
+   if(response.interviewId)throw Error('Workflow requires further input; no record change confirmed.');
+   setNotice(editing+' '+current.label.toLowerCase()+' completed through OneEngine.');
+   setEditing(null);setReload(v=>v+1);
+  }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
+  finally{setBusy(false);}
+ };
+ const monday=new Date(weekOf+'T12:00:00');
+ monday.setDate(monday.getDate()-((monday.getDay()+6)%7));
+ const week=Array.from({length:7},(_,i)=>{
+  const d=new Date(monday);d.setDate(d.getDate()+i);return dateKey(d);
+ });
+ const logout=async()=>{
+  try{await apiRequest('/auth/logout',{method:'POST'});}catch{/* clear local session */}
+  onLogout();window.location.assign('/login');
+ };
+ return <div className={'standalone-product custom-'+entry.slug}
+   style={{'--product-accent':entry.accent} as React.CSSProperties}>
+  <header className="standalone-product-header">
+   <div className="standalone-product-brand"><span className="standalone-product-mark">A</span>
+    <span><strong>{entry.label}</strong><small>{entry.tagline}</small></span></div>
+   <span className="custom-connected">OneEngine connected</span>
+   <button type="button" className="standalone-product-logout" onClick={()=>void logout()}>Sign out</button>
+  </header>
+  <main className="custom-assist">
+   <div className="custom-heading"><div><span className="custom-eyebrow">ACE ASSIST</span>
+    <h1>Schedule &amp; visits</h1><p>Live tenant Objects · OneEngine Flows</p></div>
+    <label className="custom-date">Week of <input type="date" value={weekOf} onChange={e=>setWeekOf(e.target.value)}/></label>
+   </div>
+   {error&&<p role="alert" className="standalone-product-message">{error}</p>}
+   {notice&&<p role="status" className="standalone-product-message">{notice}</p>}
+   <nav className="custom-tabs" aria-label="Booking sections">{tabs.map((tab,i)=>
+    <button key={tab.object} type="button" aria-current={i===selected?'page':undefined}
+     onClick={()=>{setSelected(i);setEditing(null);setNotice('');}}>{tab.label}</button>)}</nav>
+   <div className="custom-assist-layout"><section className="custom-calendar">
+    <div className="custom-panel-title"><h2>{current.label}</h2>
+     <div style={{display:'flex',gap:8}}>
+      <button type="button" onClick={()=>setReload(n=>n+1)} disabled={busy}>Refresh</button>
+      <button type="button" onClick={()=>startEdit('Create')} disabled={!can('Create')||busy}>New {current.object}</button>
+     </div></div>
+    {current.object==='Appointment'&&<p className="custom-calendar-hours">
+     {hours?'Business hours · '+hours.timezone:'Business hours unavailable'}
+     {hoursError&&' · '+hoursError}
+    </p>}
+    {!loaded.has(current.object.toLowerCase())&&<p className="custom-empty">Object unavailable to this user.</p>}
+    {loaded.has(current.object.toLowerCase())&&!can('Load')&&<p className="custom-empty">
+     No authorised Get Records Flow. Ask an administrator to install or activate AceAssistLoad{current.object}.
+    </p>}
+    {current.object==='Appointment'&&can('Load')?<div className="custom-week">
+     {week.map(date=>{const window=hours?scheduleForDay(hours,date):null;
+      return <div className="custom-day" key={date} aria-label={date}>
+       <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong>
+       <small>{date.slice(8)}</small>
+       <small>{window?window.open+'–'+window.close:'Closed / holiday'}</small>
+       {rows.filter(row=>String(row.StartDateTime??'').slice(0,10)===date)
+        .map((row,i)=><button key={String(row.Id??i)} type="button" className="custom-visit"
+        onClick={()=>setChosen(row)}>{title(row)}
+        <small>{String(row.StartDateTime??'').slice(11,16)} {String(row.Status??'Scheduled')}</small></button>)}
+      </div>;
+     })}</div>:<div className="custom-record-list">
+     {rows.map((row,i)=><button key={String(row.Id??i)} type="button" onClick={()=>setChosen(row)}>
+      <strong>{title(row)}</strong><small>{String(row.Status??row.Id??'')}</small>
+     </button>)}
+    </div>}
+    {busy&&<p role="status">Running OneEngine Flow…</p>}
+    {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
+   </section>
+   <aside className="custom-visit-detail">
+    <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
+    {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
+      <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
+      <div className="custom-action-buttons">
+       <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
+      </div>
+     </>:<p className="custom-empty">Select a record to edit or view details.</p>}
+    {editing&&<form className="custom-crud-form" onSubmit={e=>void submit(e)}>
+     <h3>{editing} {current.object}</h3>
+     {editing==='Delete'?<p>Delete this record through the authorised OneEngine Flow? This cannot be undone.</p>:
+      fields.map(field=><label key={field.apiName}>{field.label??field.apiName}
+       {String(field.dataType??field.type??'').toLowerCase()==='boolean'?
+        <select value={form[field.apiName]??''} onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}>
+         <option value="">Unset</option><option value="true">Yes</option><option value="false">No</option>
+        </select>:
+        <input type={fieldType(field)} value={form[field.apiName]??''}
+         step={fieldType(field)==='number'?'any':undefined}
+         required={field.apiName==='Name'||field.required}
+         onChange={e=>setForm(x=>({...x,[field.apiName]:e.target.value}))}/>}
+      </label>)}
+     <div className="custom-action-buttons">
+      <button type="submit" disabled={busy}>{editing==='Delete'?'Confirm Delete':'Save through Flow'}</button>
+      <button type="button" onClick={()=>setEditing(null)} disabled={busy}>Cancel</button>
+     </div>
+    </form>}
+   </aside></div>
+  </main>
+ </div>;
 }
