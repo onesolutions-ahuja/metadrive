@@ -40,7 +40,7 @@ export default function AcetillVisualEditor({
  const drag=React.useRef<Drag|null>(null);
  React.useEffect(()=>{
   let active=true;
-  void apiRequest<{styles:AcetillVisualStyles}>('/apps/Acetill/visual-styles')
+  void apiRequest<{styles:AcetillVisualStyles}>('/apps/Acetill/visual-styles/draft')
     .then(result=>{
       if(!active)return;
       setStyles(result.styles??{});setSaved(result.styles??{});
@@ -96,11 +96,11 @@ export default function AcetillVisualEditor({
    if(busy||loading)return;
    setBusy(true);setError('');setNotice('');
    try{
-     const result=await apiRequest<{styles:AcetillVisualStyles}>('/apps/Acetill/visual-styles',{
+     const result=await apiRequest<{styles:AcetillVisualStyles}>('/apps/Acetill/visual-styles/draft',{
        method:'PUT',body:JSON.stringify({styles})
      });
      setStyles(result.styles);setSaved(result.styles);
-     setNotice('Saved to SQL. Acetill will use these styling overrides.');
+     setNotice('Draft saved. Your live Acetill terminal remains unchanged.');
    }catch(e){setError(e instanceof Error?e.message:'Unable to save styles');}
    finally{setBusy(false);}
  };
@@ -112,7 +112,7 @@ export default function AcetillVisualEditor({
  return <section className="acetill-visual-editor" aria-label="Edit live Acetill terminal">
    <header className="acetill-visual-toolbar">
      <div><strong>Acetill · Live visual editor</strong>
-       <p>Original React interface. Edit properties without rebuilding OneComponents.</p></div>
+       <p>Editable draft of the real terminal. Your live terminal stays unchanged.</p></div>
      <div className="acetill-visual-actions">
        <button className="btn" type="button" onClick={()=>checkExit(onBackToPages)}>Pages</button>
        <button className="btn" type="button" onClick={()=>checkExit(onBack)}>Standard Page Builder</button>

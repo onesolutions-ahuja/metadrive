@@ -25,7 +25,7 @@ test('Page Builder points to original Acetill React implementation',()=>{
  const builder=readFileSync(new URL('../../web/src/core/builders/PageBuilder/pageBuilderView.tsx',import.meta.url),'utf8');
  const editor=readFileSync(new URL('../src/AcetillVisualEditor.tsx',import.meta.url),'utf8');
  assert.match(builder,/AcetillVisualEditor/);
- assert.match(builder,/page\.apiName==='AcetillRegister'/);
+ assert.match(builder,/page\.apiName==='AcetillRegisterEditable'/);
  assert.match(editor,/AcetillTerminal/);
  assert.match(editor,/onPointerMoveCapture=\{moveElement\}/);
  assert.match(editor,/Save visual changes/);
