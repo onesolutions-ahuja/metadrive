@@ -67,3 +67,27 @@ export async function enforceRecordOverlap(client:PoolClient,tenantId:string,obj
   if(rowCount)throw Error('This staff member or resource is already booked for the selected time');
  }
 }
+
+/** Idempotent provider-input identity. Tenant-scoped transaction lock plus the
+ * same shared Record persistence; enabled only by explicit Flow metadata.
+ */
+export async function enforceUniqueRecordInput(client:PoolClient,tenantId:string,
+ objectApi:string,raw:unknown,record:Record<string,unknown>):Promise<void>{
+ if(raw===null||raw===undefined)return;
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid unique input guard');
+ const key=(raw as Record<string,unknown>).field;
+ if(typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key))
+  throw Error('Invalid unique input Field');
+ const value=record[key];
+ if(typeof value!=='string'||value.length<1||value.length>255)
+  throw Error('External input idempotency reference required');
+ await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+  [tenantId+':flow-unique:'+objectApi+':'+key+':'+value]);
+ const {rowCount}=await client.query(`
+  SELECT 1 FROM md_records r
+  JOIN md_record_values v ON v.tenant_id=r.tenant_id
+   AND v.record_id=r.id AND v.object_api=r.object_api AND v.field_api=$3
+  WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false
+   AND v.value_text=$4 LIMIT 1`,[tenantId,objectApi,key,value]);
+ if(rowCount)throw Error('External request was already processed');
+}
