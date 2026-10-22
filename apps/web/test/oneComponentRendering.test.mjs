@@ -29,7 +29,7 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
-    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard'].includes(fixture.apiName)) {
+    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid','OneBoard','OneTimeline','OneChart','OneDocumentViewer','OneDashboardEmbed','OneConversation','OneShoppingCart'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
     assert.match(built.cssSource, /\.one-ui\s*\{/);
@@ -180,11 +180,11 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
 
 test('reported One UI accessibility contracts remain implemented', async () => {
   const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
-  const [overlay, menu, tabs, button, input, search, form, grid, shared, board] = await Promise.all([
+  const [overlay, menu, tabs, button, input, search, form, grid, shared, board, timeline, chart, documentViewer, dashboardEmbed, conversation, cart] = await Promise.all([
     read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
     read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
     read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
-    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx')
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx'), read('shared/accessibilityHooks.ts'), read('OneBoard/OneBoard.jsx'),\n    read('OneTimeline/OneTimeline.jsx'), read('OneChart/OneChart.jsx'), read('OneDocumentViewer/OneDocumentViewer.jsx'),\n    read('OneDashboardEmbed/OneDashboardEmbed.jsx'), read('OneConversation/OneConversation.jsx'), read('OneShoppingCart/OneShoppingCart.jsx')
   ]);
   assert.match(overlay, /role="dialog" aria-modal="true"/);
   assert.match(shared, /event\.key === 'Escape'/);
@@ -206,5 +206,5 @@ test('reported One UI accessibility contracts remain implemented', async () => {
   assert.match(form, /aria-describedby=\{error\?errorId:undefined\}/);
   assert.match(grid, /className="one-empty" role="status"/);
   assert.match(board, /role="region"/);
-  assert.match(board, /<h3 className="one-heading">/);
+  assert.match(board, /<h3 className="one-heading">/);\n  for (const component of [grid,timeline,chart,documentViewer,dashboardEmbed,conversation,cart]) assert.match(component, /className="one-empty" role="status"/);
 });
