@@ -20,6 +20,17 @@ export class PlatformTenantService {
    ) AS authorised`,[tenantId,userId]);
   return rows[0]?.authorised===true;
  }
+ /** Reusable, least-privileged read for scheduling apps. No access to unrelated
+  * tenant settings or management APIs. Always tenant-scoped and server-authorised.
+  */
+ async getBusinessCalendar(tenantId:string,userId:string):Promise<unknown> {
+  const allowed=await this.rbac.allowed(tenantId,userId,'BusinessCalendar','read');
+  if(!allowed)await this.rbac.require(tenantId,userId,'TenantSettings','read');
+  const {rows}=await this.db.query<{properties:unknown}>(
+   "SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key='business-calendar'",
+   [tenantId]);
+  return rows[0]?.properties??null;
+ }
  async getSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings'|'business-calendar'|'offline-briefcase') {
   await this.rbac.require(tenantId,userId,'TenantSettings','read');
   const {rows}=await this.db.query<{properties:unknown}>(
