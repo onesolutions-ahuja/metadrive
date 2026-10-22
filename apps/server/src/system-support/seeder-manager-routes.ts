@@ -5,6 +5,7 @@ import type {PlatformTenantService} from '../system-files/platform-tenant-servic
 import {FRESH_CORE_OBJECTS} from '../app-seeders/fresh-core-objects.js';
 import {FRESH_STANDARD_FIELDS} from '../app-seeders/fresh-standard-fields.js';
 import {CART_OBJECTS} from '../app-seeders/cart-objects.js';
+import {APPOINTMENT_OBJECTS} from '../app-seeders/core-appointment-objects.js';
 import {PRODUCT_IMAGE_FIELD} from '../app-seeders/product-image-field.js';
 
 type SeedField={apiName:string;label:string;dataType:string;relatedObject?:string;maxLength?:number};
@@ -17,7 +18,11 @@ const coreObjects:SeedObject[]=FRESH_CORE_OBJECTS.map(o=>({
     .map(f=>({...f}))
 }));
 const cartObjects:SeedObject[]=CART_OBJECTS.map(o=>({apiName:o.apiName,label:o.label,fields:o.fields.map(f=>({...f}))}));
+const appointmentObjects:SeedObject[]=APPOINTMENT_OBJECTS.map(o=>({
+ apiName:o.apiName,label:o.label,fields:o.fields.map(f=>({...f}))
+}));
 const seeds:Seed[]=[
+ {id:'appointment-objects',label:'Appointment standard object',description:'Appointment fields and scheduling metadata',objects:appointmentObjects},
  {id:'core-objects',label:'Core object catalog',description:'Standard and system object definitions and fields',objects:coreObjects},
  {id:'cart-objects',label:'Cart objects',description:'Cart and Cart Line',objects:cartObjects},
  {id:'product-image',label:'Product image field',description:'Adds Product.ImageUrl where missing',objects:[{apiName:'Product',label:'Product',fields:[{...PRODUCT_IMAGE_FIELD,apiName:PRODUCT_IMAGE_FIELD.apiName,label:PRODUCT_IMAGE_FIELD.label,dataType:PRODUCT_IMAGE_FIELD.dataType}]}]},
