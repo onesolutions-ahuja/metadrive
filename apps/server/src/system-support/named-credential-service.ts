@@ -934,7 +934,9 @@ export class NamedCredentialService {
    const authorization='Basic '+Buffer.from(clientId+':'+oauthClientSecret).toString('base64');
    const tokenResponse=await new Promise<string>((resolve,reject)=>{
     const request=secureRequest(tokenUrl,{method:'POST',agent:false,
-     lookup:(_host,_options,cb)=>cb(null,resolved[0].address,resolved[0].family),
+     lookup:(_host,options,cb)=>options.all
+      ?cb(null,[{address:resolved[0].address,family:resolved[0].family}])
+      :cb(null,resolved[0].address,resolved[0].family),
      timeout:15000,headers:{Authorization:authorization,'Content-Type':'application/x-www-form-urlencoded',
        Accept:'application/json','Content-Length':Buffer.byteLength(payload)}},response=>{
       if((response.statusCode??0)<200||(response.statusCode??0)>=300){
@@ -968,7 +970,9 @@ export class NamedCredentialService {
   const address=resolved[0];
   const result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
    const call=secureRequest(destination,{method,headers:header,timeout,
-    agent:false,lookup:(_host,_options,cb)=>cb(null,address.address,address.family)},res=>{
+    agent:false,lookup:(_host,options,cb)=>options.all
+     ?cb(null,[{address:address.address,family:address.family}])
+     :cb(null,address.address,address.family)},res=>{
       const status=res.statusCode??0;
       const chunks:Buffer[]=[];let length=0;
       res.on('data',(chunk:Buffer)=>{
