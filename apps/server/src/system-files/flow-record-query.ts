@@ -136,18 +136,58 @@ export class FlowRecordQuery {
     let sort='r.created_at ASC,r.id ASC';
     if(options.sortField!==undefined){
       if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(options.sortField))throw new Error('Invalid Flow sort field');
-      const sortField=options.sortField==='Id'?undefined:definitions.get(options.sortField);
-      if(options.sortField!=='Id'&&!sortField)throw new Error('Unknown Flow sort field');
+      const systemSort=options.sortField==='CreatedAt'||options.sortField==='LastModifiedDate';
+      const sortField=options.sortField==='Id'||systemSort?undefined:definitions.get(options.sortField);
+      if(options.sortField!=='Id'&&!systemSort&&!sortField)throw new Error('Unknown Flow sort field');
       if(sortField&&!await this.rbac.allowed(tenantId,userId,objectApi+'.'+sortField.api_name,'read'))
         throw new Error('Flow sort field is not readable');
       if(options.sortOrder!==undefined&&!['Ascending','Descending','asc','desc'].includes(options.sortOrder))
         throw new Error('Invalid Flow sort order');
       const direction=['Descending','desc'].includes(options.sortOrder??'')?'DESC':'ASC';
-      sort=options.sortField==='Id'?`r.id ${direction}`:`(
+      sort=options.sortField==='Id'?`r.id ${direction}`:
+        options.sortField==='CreatedAt'?`r.created_at ${direction},r.id ASC`:
+        options.sortField==='LastModifiedDate'?`r.updated_at ${direction},r.id ASC`:`(
         SELECT COALESCE(sv.value_text,sv.reference_record_id::text,sv.value_boolean::text,sv.value_number::text,sv.value_date::text,sv.value_datetime::text)
         FROM md_record_values sv
         WHERE sv.tenant_id=r.tenant_id AND sv.record_id=r.id AND sv.object_api=r.object_api
-          AND sv.field_api=${'$'+(params.length+1)}
+          AND sv.field_api=${'
+    }
+    params.push(limit);
+    const result=await executor.query<ValueRow>(`
+      WITH matching AS (
+        SELECT r.id,r.created_at,r.updated_at,COALESCE(r.owner_id,r.owner_queue_id) AS owner_id,
+          r.record_type_id
+        FROM md_records r
+        WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')
+          AND (${logic})
+        ORDER BY ${sort} LIMIT $${params.length}
+      )
+      SELECT m.id,m.created_at,m.updated_at,m.owner_id,m.record_type_id,
+        v.field_api,v.value_text,v.reference_record_id,v.value_number,v.value_boolean,v.value_date,v.value_datetime,f.data_type
+      FROM matching m
+      LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=m.id AND v.object_api=$2
+      LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
+      ORDER BY m.created_at,m.id,v.field_api
+    `,params);
+    const readableFields=[...new Set(result.rows.map(row=>row.field_api)
+      .filter((field):field is string=>Boolean(field)&&field!=='OwnerId'))];
+    const grants=await this.rbac.allowedMany(tenantId,userId,
+      readableFields.map(field=>({resource:objectApi+'.'+field,action:'read'})));
+    const readable=new Set(readableFields.filter((_field,index)=>grants[index]));
+    const records=new Map<string,Record<string,unknown>>();
+    for(const row of result.rows){
+      if(!records.has(row.id))records.set(row.id,{Id:row.id,CreatedAt:row.created_at.toISOString(),
+        LastModifiedDate:row.updated_at.toISOString(),OwnerId:row.owner_id,RecordTypeId:row.record_type_id});
+      if(!row.field_api||row.field_api==='OwnerId'||!readable.has(row.field_api))continue;
+      const value=row.reference_record_id??row.value_text??row.value_number??row.value_boolean??row.value_date??row.value_datetime;
+      records.get(row.id)![row.field_api]=value===null?null:
+        ['number','currency','percent'].includes(String(row.data_type))?Number(value):
+          row.data_type==='boolean'?(value===true||value==='true'):value;
+    }
+    return [...records.values()];
+  }
+}
++(params.length+1)}
       ) ${direction} NULLS LAST,r.id ASC`;
       if(sortField)params.push(sortField.api_name);
     }
