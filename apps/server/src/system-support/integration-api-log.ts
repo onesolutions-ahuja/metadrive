@@ -92,6 +92,7 @@ export function createIntegrationCommunicationWriter(
    (input.responseBytes??0)+'B · '+endpoint,500);
 
   await records.create(input.tenantId,systemUserId,'Communication',{
+   OwnerId:input.actorUserId||systemUserId,
    Name:clean(details.name||input.direction+' API - '+input.provider,500),
    Channel:allowedChannels.has(String(details.channel))?details.channel:'Other',
    Direction:input.direction,Status:status,
