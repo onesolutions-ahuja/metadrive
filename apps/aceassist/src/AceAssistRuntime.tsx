@@ -65,6 +65,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [actions,setActions]=useState<Set<string>>(new Set());
  const [selected,setSelected]=useState(0);
  const [rows,setRows]=useState<Row[]>([]);
+ const [relatedRows,setRelatedRows]=useState<Row[]>([]);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
  const [returnToAppointment,setReturnToAppointment]=useState(false);
@@ -149,6 +150,28 @@ export default function AceAssistRuntime({entry,onLogout}:{
    .catch(ex=>{if(alive)setError(ex instanceof Error?ex.message:String(ex));});
   return()=>{alive=false;};
  },[fields,current.object,loaded,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
+  setRelatedRows([]);
+  if(!chosen||!['Quotation','Invoice'].includes(current.object))return;
+  const child=current.object+'Line';
+  if(!actions.has('AceAssistLoad'+child))return;
+  void fetchRows('Load',child).then(data=>{
+   if(alive)setRelatedRows(data.filter(x=>String(x[current.object]??'')===String(chosen.Id??'')));
+  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  return()=>{alive=false;};
+ },[current.object,chosen?.Id,actions,reload]);
+ const runRecordAction=async(apiName:string,record:Row)=>{
+  if(!actions.has(apiName)||busy)return;
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(apiName)+'/execute',
+    {method:'POST',body:JSON.stringify({recordId:record.Id})});
+   if(response.interviewId)throw Error('The Flow requires additional input');
+   setNotice('Workflow completed: '+apiName);setReload(x=>x+1);
+  }catch(e){setError(e instanceof Error?e.message:String(e));}
+  finally{setBusy(false);}
+ };
  const startEdit=(operation:Operation,row?:Row)=>{
   const values:Record<string,string>={};
   for(const field of fields){
@@ -281,8 +304,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
     {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
+      {['Quotation','Invoice'].includes(current.object)&&<section className="assist-related-list">
+       <h3>{current.object} lines</h3>
+       {!actions.has('AceAssistLoad'+current.object+'Line')?<p>No authorised line lookup Flow.</p>:
+        relatedRows.length?relatedRows.map(line=><div key={idOf(line)}>
+         <strong>{title(line)}</strong><span>{String(line.Quantity??'')} × {String(line.UnitPrice??'')}</span>
+        </div>):<p>No lines attached to this record.</p>}
+       {actions.has('AceAssistCreateV2'+current.object+'Line')&&
+        <button type="button" onClick={()=>{
+         const object=current.object+'Line';
+         setEditing('Create');setEditingObject(object);setForm({[current.object]:String(chosen.Id??'')});
+         setError('');
+        }}>Add line</button>}
+      </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
+       {current.object==='Quotation'&&actions.has('AceAssistConvertQuoteToInvoice')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistConvertQuoteToInvoice',chosen)}>Convert to invoice</button>}
+       {current.object==='Invoice'&&actions.has('AceAssistSendInvoice')&&
+        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendInvoice',chosen)}>Send invoice</button>}
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
       </div>
      </>:<p className="custom-empty">Select a record to edit or view details.</p>}
