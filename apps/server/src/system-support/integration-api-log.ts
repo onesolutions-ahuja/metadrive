@@ -101,8 +101,8 @@ export function createIntegrationCommunicationWriter(
    Provider:clean(details.provider||input.provider,500),
    RelatedObject:'IntegrationApiCall',
    RelatedRecordId:input.credentialId??undefined,
-   SentAt:input.direction==='Outbound'?now:undefined,
-   ReceivedAt:input.direction==='Inbound'?now:undefined,
+   SentAt:input.direction==='Outbound'&&input.outcome==='success'?now:undefined,
+   ReceivedAt:input.direction==='Inbound'&&input.outcome==='success'?now:undefined,
    ErrorMessage:input.outcome==='success'?undefined:clean(input.errorCode||input.outcome,2000)
   });
  };
