@@ -98,7 +98,7 @@ import { isComponentVisible } from '../../components/Properties/componentVisibil
 import PageComponentVisualEditor from '../ComponentStyleEditor/PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import PageComponentStyleEditor from '../ComponentStyleEditor/PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition } from './canvasInteractions';
+import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent, snapCanvasPosition, alignCanvasComponents } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from '../../pages/PageRuntime/pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from '../../pages/TemplatePageRuntime/pageComponentLayout';
 import AppExchange from '../../applications/AppExchange/AppExchange';
@@ -959,18 +959,9 @@ function PageBuilder({
       : selected?.position && !isCanvasLocked(selected) && selected.properties.canvasLocked !== true
         ? [selected] : [];
     if (!selectedTargets.length) return;
-    const dimension = axis === 'x' ? 'width' : 'height';
-    const span = axis === 'x' ? page.canvasWidth : page.canvasHeight;
-    const positions = new Map(selectedTargets.map(component => {
-      const position = component.position!;
-      const freeSpace = Math.max(0, span - position[dimension]);
-      const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
-      return [component.id, { ...position, [axis]: value }];
-    }));
-    applyPage({ ...page, components: page.components.map(component => {
-      const position = positions.get(component.id);
-      return position ? { ...component, position } : component;
-    }) });
+    const aligned = alignCanvasComponents(page.components, selectedTargets.map(component => component.id),
+      axis, anchor, { width: page.canvasWidth, height: page.canvasHeight });
+    applyPage({ ...page, components: aligned });
   };
   const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
