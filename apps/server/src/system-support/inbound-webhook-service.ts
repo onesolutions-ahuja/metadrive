@@ -164,7 +164,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const signatureDigest=createHmac('sha256',secret).update(raw).digest();
   const supplied=Buffer.from(signature.slice(7),'hex');
   if(!matches(signatureDigest,supplied)){
-   reject('signature_mismatch',raw.length);return;
+   await reject('signature_mismatch',raw.length);return;
   }
   // Credential-linked webhooks are ingestion endpoints: persist Communication directly.
   // AceChatter reads Communication through its authorised Flows; it is not a webhook consumer.
