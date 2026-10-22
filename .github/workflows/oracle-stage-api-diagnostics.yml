@@ -1,6 +1,11 @@
 name: Start Oracle production worker and close temporary SSH access
 
 on:
+  push:
+    branches:
+      - ops/oracle-stage-api-diagnostics-20261022
+    paths:
+      - .github/workflows/oracle-stage-api-diagnostics.yml
   workflow_dispatch:
 
 permissions:
