@@ -199,7 +199,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from '../../metadata/Definitions/metadata';
-const AcetillVisualEditor = React.lazy(() => import('../../../../../acetill/src/AcetillVisualEditor'));
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onDeletePage, onExit, onNotify, onLaunchFlow,
@@ -233,8 +232,6 @@ function PageBuilder({
   onBackToPages: () => void;
 }) {
   const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
-  const [liveAcetillEditing,setLiveAcetillEditing]=useState(page.apiName==='AcetillRegisterEditable');
-  useEffect(()=>setLiveAcetillEditing(page.apiName==='AcetillRegisterEditable'),[page.apiName]);
   useEffect(() => {
     if (preparedAppId) setBuilderAppApiName(preparedAppId);
   }, [preparedAppId]);
@@ -1538,11 +1535,6 @@ function PageBuilder({
     visible: true,
     region: 'main'
   }, -1, true);
-  // Display the real Acetill React interface, not a reconstructed OneComponent page.
-  if(editorMode&&page.apiName==='AcetillRegisterEditable'&&liveAcetillEditing)
-    return <React.Suspense fallback={<div role="status">Loading live Acetill editor…</div>}>
-      <AcetillVisualEditor onBack={()=>setLiveAcetillEditing(false)} onBackToPages={onBackToPages}/>
-    </React.Suspense>;
   return (
     <div className={`builder-page ${editorMode ? "builder-editor-mode" : "builder-list-mode"}`}>
       {externalPreviewTarget && createPortal(
