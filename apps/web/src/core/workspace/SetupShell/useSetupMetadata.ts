@@ -143,8 +143,17 @@ export function useSetupMetadata(ctx: any) {
     const loadMetadata = async () => {
       const failures: string[] = [];
       const pending = new Map<string, Promise<unknown>>();
-      // Reuse the four essential requests when the optional data loads later.
-      // This avoids fetching the same objects/pages/apps/session twice.
+      // The successful login/session-refresh response already carries these
+      // tenant-scoped metadata snapshots. Seed the request map with that exact
+      // response so the follow-up editor bootstrap reuses it instead of issuing
+      // duplicate requests after the landing screen has rendered.
+      if (entryTiming?.landing) {
+        pending.set('/metadata/objects', Promise.resolve({ objects: entryTiming.landing.objects }));
+        pending.set('/metadata/pages', Promise.resolve({ pages: entryTiming.landing.pages }));
+        pending.set('/metadata/apps', Promise.resolve({ apps: entryTiming.landing.apps }));
+      }
+      // Reuse the four essential requests when optional data loads later.
+      // This avoids fetching the same objects/pages/apps twice.
       const recover = <T,>(path: string, fallback: T): Promise<T> => {
         const existing = pending.get(path);
         if (existing) return existing as Promise<T>;
