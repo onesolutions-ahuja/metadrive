@@ -1457,7 +1457,7 @@ export function createSystemServer(db:SqlPersistence) {
     const authCheck=await db.query<{password_hash:string}>(
       'SELECT password_hash FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
       [actor.tenant_id,actor.user_id]);
-    if(!authCheck.rows[0]||!await authentication.verifyPassword(password,authCheck.rows[0].password_hash))
+    if(!authCheck.rows[0]||!await new AuthenticationService(db).verifyPassword(password,authCheck.rows[0].password_hash))
       throw new Error('Invalid current password');
     await new TillPinService(db).set(actor.tenant_id,actor.user_id,pin);
     res.status(204).end();
