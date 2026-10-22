@@ -354,10 +354,14 @@ export function createSystemServer(db:SqlPersistence) {
   // Prefetch the first ordinary record page as part of the already-authorised
   // page response. RecordEngine remains the sole data/permission path; dynamic
   // filters and live presenters stay on their normal context-aware requests.
-  const pageInitialRecords=async(tenantId:string,userId:string,page:{components?:Array<{properties?:Record<string,unknown>}>})=>{
+  const pageInitialRecords=async(tenantId:string,userId:string,page:{components?:Array<{properties?:unknown}>})=>{
     try{
       const components=Array.isArray(page.components)?page.components:[];
-      const refs=components.map(component=>component.properties?.objectApiName)
+      const componentProperties=(component:{properties?:unknown}):Record<string,unknown>=>{
+        const value=component.properties;
+        return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
+      };
+      const refs=components.map(component=>componentProperties(component).objectApiName)
         .filter((value):value is string=>typeof value==='string'&&value.startsWith('metadata:'))
         .map(value=>value.slice('metadata:'.length));
       const apiById=new Map<string,string>();
@@ -368,7 +372,7 @@ export function createSystemServer(db:SqlPersistence) {
       }
       const objectApis=new Set<string>();
       for(const component of components){
-        const properties=component.properties??{};
+        const properties=componentProperties(component);
         if(properties.liveRefreshEnabled===true)continue;
         const filters=properties.filters;
         if(filters!==undefined&&filters!==null
@@ -389,7 +393,7 @@ export function createSystemServer(db:SqlPersistence) {
           return null;
         }
       }));
-      return Object.fromEntries(entries.filter((entry):entry is readonly [string,unknown[]]=>entry!==null));
+      return Object.fromEntries(entries.filter((entry):entry is readonly [string,Record<string,unknown>[]]=>entry!==null));
     }catch{
       return {};
     }
