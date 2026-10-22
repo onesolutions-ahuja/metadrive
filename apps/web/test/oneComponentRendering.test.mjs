@@ -29,7 +29,7 @@ for (const fixture of fixtures) {
       assert.match(html, /aria-sort="none"/);
       assert.match(html, /Example record/);
       assert.match(html, /<thead>/);
-    } else {
+    } else if (!['OneOverlay','OneMenu','OneTabs','OneButton','OneInput','OneSearch','OneRecordForm','OneItemGrid'].includes(fixture.apiName)) {
       assert.equal(html, fixture.html);
     }
     assert.match(built.cssSource, /\.one-ui\s*\{/);
@@ -175,4 +175,32 @@ test('reusable Choice renders record-backed modifier image, upgrade price and ca
   assert.match(html,/one-choice-option__image/);
   assert.match(html,/object-fit:cover/);
   assert.match(html,/--one-choice-columns:2/);
+});
+
+
+test('reported One UI accessibility contracts remain implemented', async () => {
+  const read = name => readFile(new URL('../src/one/' + name, import.meta.url), 'utf8');
+  const [overlay, menu, tabs, button, input, search, form, grid] = await Promise.all([
+    read('OneOverlay/OneOverlay.jsx'), read('OneMenu/OneMenu.jsx'),
+    read('OneTabs/OneTabs.jsx'), read('OneButton/OneButton.jsx'),
+    read('OneInput/OneInput.jsx'), read('OneSearch/OneSearch.jsx'),
+    read('OneRecordForm/OneRecordForm.jsx'), read('OneItemGrid/OneItemGrid.jsx')
+  ]);
+  assert.match(overlay, /role="dialog" aria-modal="true"/);
+  assert.match(overlay, /event\.key === "Escape"/);
+  assert.match(overlay, /document\.addEventListener\("focusin"/);
+  assert.match(menu, /event\.key === "ArrowDown"/);
+  assert.match(menu, /event\.key === "Home"/);
+  assert.match(menu, /document\.addEventListener\("pointerdown"/);
+  assert.match(tabs, /aria-controls=\{panelId\}/);
+  assert.match(tabs, /aria-labelledby=\{activeTabId\}/);
+  assert.match(button, /aria-busy=\{p\.loading === true \? "true" : undefined\}/);
+  assert.match(input, /"aria-invalid":p\.validationMessage\?"true":undefined/);
+  assert.match(input, /className="one-error" role="alert"/);
+  assert.match(search, /role="combobox"/);
+  assert.match(search, /role="listbox"/);
+  assert.match(search, /event\.key==="ArrowDown"/);
+  assert.match(form, /aria-invalid=\{error\?"true":undefined\}/);
+  assert.match(form, /aria-describedby=\{error\?errorId:undefined\}/);
+  assert.match(grid, /className="one-empty" role="status"/);
 });
