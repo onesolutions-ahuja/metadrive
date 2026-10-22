@@ -1,3 +1,4 @@
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {PoolClient} from 'pg';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 
@@ -29,4 +30,14 @@ export async function seedAcetillLockFlowForTenant(client:PoolClient,tenantId:st
  (tenant_id,flow_id,property_path,value_kind,value_text) VALUES($1,$2,$3,$4,$5)`,
  [tenantId,rows[0].id,e.path,e.kind,e.text]);
  return true;
+}
+
+export async function seedAcetillLockFlows(db:SqlPersistence):Promise<number>{
+ const {rows}=await db.query<{tenant_id:string}>(`SELECT DISTINCT i.tenant_id
+ FROM md_app_installations i JOIN md_apps a ON a.id=i.app_id AND a.api_name='Acetill' AND a.enabled=true
+ JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=i.tenant_id
+ WHERE e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())`);
+ let count=0;
+ for(const row of rows)if(await db.transaction(client=>seedAcetillLockFlowForTenant(client,row.tenant_id)))count++;
+ return count;
 }
