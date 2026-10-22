@@ -58,7 +58,7 @@ const bookingFields=[
 ] as const;
 
 function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGraph {
- const apiName='AceAssist'+operation+'V2'+objectApi;
+ const apiName='AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi;
  const input='recordsInput';
  const resources:Array<Record<string,unknown>>=[
   {name:input,type:'Record Collection',dataType:objectApi,isCollection:true,availableForInput:true}
@@ -174,7 +174,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
     ...(['Load','Create','Update','Delete'] as const).map(operation=>
       ['Flow:AceAssist'+operation+objectApi,'execute']),
     ...(['Create','Update'] as const).map(operation=>
-      ['Flow:AceAssist'+operation+'V2'+objectApi,'execute'])
+      ['Flow:AceAssist'+operation+(objectApi==='Appointment'?'V3':'V2')+objectApi,'execute'])
    ];
    for(const [resource,action] of rights)await client.query(`
     INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
