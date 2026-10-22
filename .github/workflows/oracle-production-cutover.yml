@@ -1,6 +1,11 @@
 name: Oracle production API cutover
 
 on:
+  push:
+    branches:
+      - ops/oracle-production-cutover-20261022
+    paths:
+      - .github/workflows/oracle-production-cutover.yml
   workflow_dispatch:
 
 permissions:
