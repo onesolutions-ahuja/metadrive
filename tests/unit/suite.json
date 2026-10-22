@@ -11,6 +11,7 @@
     "apps/server/test/system/business-automation-recipes.test.ts",
     "apps/server/test/system/business-calendar-settings.test.ts",
     "apps/server/test/system/cart-objects.test.ts",
+    "apps/server/test/system/core-appointment-objects.test.ts",
     "apps/server/test/system/core-object-defaults.test.ts",
     "apps/server/test/system/core-quotation-objects.test.ts",
     "apps/server/test/system/cors-if-match.test.ts",
