@@ -980,11 +980,9 @@ function PageBuilder({
     setUndoStack((current) => current.slice(0, -1));
     onChange(previous);
     const previousIds = new Set(previous.components.map(component => component.id));
-    setSelectionIds(current => {
-      const restored = current.filter(id => previousIds.has(id));
-      setSelectedId(currentSelected => previousIds.has(currentSelected) ? currentSelected : (restored[0] ?? ''));
-      return restored;
-    });
+    const restoredSelection = selectionIds.filter(id => previousIds.has(id));
+    setSelectionIds(restoredSelection);
+    setSelectedId(previousIds.has(selectedId) ? selectedId : (restoredSelection[0] ?? ''));
   };
   const redo = () => {
     const next = redoStack[redoStack.length - 1];
@@ -993,11 +991,9 @@ function PageBuilder({
     setRedoStack((current) => current.slice(0, -1));
     onChange(next);
     const nextIds = new Set(next.components.map(component => component.id));
-    setSelectionIds(current => {
-      const restored = current.filter(id => nextIds.has(id));
-      setSelectedId(currentSelected => nextIds.has(currentSelected) ? currentSelected : (restored[0] ?? ''));
-      return restored;
-    });
+    const restoredSelection = selectionIds.filter(id => nextIds.has(id));
+    setSelectionIds(restoredSelection);
+    setSelectedId(nextIds.has(selectedId) ? selectedId : (restoredSelection[0] ?? ''));
   };
   useEffect(() => {
     if (page.layoutMode !== 'free-canvas') return;
