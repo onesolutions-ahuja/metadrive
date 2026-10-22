@@ -709,6 +709,17 @@ function LightningAppRuntime({
     return () => { active = false; };
   }, [routeKey, appId, pageApiName, formFactor]);
   useEffect(() => {
+    const invalidateInitialRecords = (event: Event) => {
+      const detail = (event as CustomEvent<{pageSessionKey:string}>).detail;
+      if (detail?.pageSessionKey !== appId + ':' + page?.apiName) return;
+      setPageLoad(current => current.routeKey === routeKey
+        ? { ...current, initialRecordsByObject: {} }
+        : current);
+    };
+    window.addEventListener('metadrive:page-flow-mutated', invalidateInitialRecords);
+    return () => window.removeEventListener('metadrive:page-flow-mutated', invalidateInitialRecords);
+  }, [appId, page?.apiName, routeKey]);
+  useEffect(() => {
     setActiveTab('');
   }, [page?.apiName]);
   useEffect(() => {
