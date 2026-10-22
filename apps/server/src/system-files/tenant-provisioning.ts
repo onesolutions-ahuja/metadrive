@@ -7,6 +7,7 @@ import {seedQuotationObjects} from '../app-seeders/core-quotation-objects.js';
 import {seedAppointmentObjects} from '../app-seeders/core-appointment-objects.js';
 import {seedFreshBundledComponents} from '../app-seeders/bundled-components.js';
 import {seedFreshProductImageField} from '../app-seeders/product-image-field.js';
+import {seedCommunicationObjects} from '../app-seeders/core-communication-objects.js';
 
 export type TenantRequest={
   slug:string;
@@ -96,6 +97,7 @@ export class TenantProvisioning {
         [tenantId,permissionSet.rows[0].id]);
       // Fresh tenant catalog belongs to the same SQL transaction; business records are never seeded.
       await seedFreshCoreObjects(client,tenantId);
+      await seedCommunicationObjects(client,tenantId);
       await seedQuotationObjects(client,tenantId);
       await seedAppointmentObjects(client,tenantId);
       await seedCartObjects(client,tenantId);
