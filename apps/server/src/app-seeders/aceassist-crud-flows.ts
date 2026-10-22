@@ -1,6 +1,7 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {encodeMetadataValue} from '../system-files/component-runtime.js';
 import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js';
+import {seedAceAssistDocumentSeries} from './aceassist-document-series.js';
 import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
 
 export const ACEASSIST_CRUD_OBJECTS = [
@@ -101,6 +102,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
  for(const {tenant_id} of tenants)await db.transaction(async client=>{
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[tenant_id+':aceassist:crud']);
   await seedAceAssistSchedulingObjects(client,tenant_id);
+  await seedAceAssistDocumentSeries(client,tenant_id);
   // Install optional shared booking Fields only for an entitled AceAssist tenant.
   for(const field of bookingFields){
    const object=await client.query('SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2',
