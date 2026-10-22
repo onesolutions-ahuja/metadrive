@@ -14,9 +14,9 @@ const errorText=(e:unknown)=>e instanceof Error?e.message:String(e);
  * The Flow owns object selection, filtering, sorting, pagination and RBAC.
  * No browser-side Record API fallback or client-selected object names. */
 function readRows(outputs:Record<string,unknown>|undefined,
-  key:'conversationsJson'|'messagesJson'|'communicationsJson'):Row[]{
+  key:'conversationsJson'|'messagesJson'|'communicationsJson'|'contactsJson'):Row[]{
   const nativeKey=key==='conversationsJson'?'conversations':
-    key==='messagesJson'?'messages':'communications';
+    key==='messagesJson'?'messages':key==='communicationsJson'?'communications':'contacts';
   const value=outputs?.[nativeKey]??outputs?.[key]??outputs?.recordsJson;
   let parsed:unknown=value;
   if(typeof value==='string'){
@@ -29,6 +29,17 @@ function readRows(outputs:Record<string,unknown>|undefined,
 }
 const flowBySuffix=(actions:Action[],suffix:string)=>
   actions.find(action=>action.apiName.toLowerCase()==='acechatter'+suffix.toLowerCase());
+const contactLabel=(row:Row)=>{
+  const direct=pick(row,'Name','DisplayName','ContactName');
+  if(direct!==undefined&&String(direct).trim())return String(direct).trim();
+  const name=[pick(row,'FirstName','GivenName'),pick(row,'LastName','FamilyName')]
+    .map(value=>String(value??'').trim()).filter(Boolean).join(' ');
+  return name||String(pick(row,'PhoneNumber','Mobile','Phone','Id')??'Contact');
+};
+const contactPhone=(row:Row)=>normalizeChatNumber(
+  pick(row,'WhatsAppPhoneNumber','WhatsAppPhone','Mobile','MobilePhone','PhoneNumber','Phone')
+);
+const validChatPhone=(value:unknown)=>/^[1-9][0-9]{6,14}$/.test(normalizeChatNumber(value));
 
 export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [conversations,setConversations]=useState<Row[]>([]);
@@ -39,6 +50,13 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [submittedSearch,setSubmittedSearch]=useState('');
   const [draft,setDraft]=useState('');
   const [showNewChat,setShowNewChat]=useState(false);
+  const [newChatMode,setNewChatMode]=useState<'contacts'|'number'>('contacts');
+  const [contacts,setContacts]=useState<Row[]>([]);
+  const [contactSearch,setContactSearch]=useState('');
+  const [submittedContactSearch,setSubmittedContactSearch]=useState('');
+  const [contactsLoading,setContactsLoading]=useState(false);
+  const [contactError,setContactError]=useState('');
+  const [contactSourceObjectApi,setContactSourceObjectApi]=useState('');
   const [chatName,setChatName]=useState('');
   const [chatPhone,setChatPhone]=useState('');
   const [actions,setActions]=useState<Action[]>([]);
@@ -52,6 +70,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const resolveConversationFlow=flowBySuffix(actions,'FindConversationByPhone');
   const sendFlow=flowBySuffix(actions,'SendMessage');
   const newChatFlow=flowBySuffix(actions,'CreateConversation');
+  const loadContactsFlow=flowBySuffix(actions,'LoadContacts');
   const inboxConversations=buildCommunicationInbox(conversations,communications,submittedSearch);
   const selectedRow=inboxConversations.find(row=>identify(row)===selected);
   const selectedPhone=normalizeChatNumber(pick(selectedRow??{},'PhoneNumber'));
@@ -63,6 +82,35 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       .catch(e=>{if(live)setError(errorText(e));});
     return()=>{live=false;};
   },[]);
+
+  // Contacts are discovered only through the tenant's authorised Flow and its configured user-link filter.
+  useEffect(()=>{
+    if(!showNewChat||newChatMode!=='contacts')return;
+    if(!loadContactsFlow){
+      setContacts([]);
+      setContactSourceObjectApi('');
+      setContactError('Activate an authorised AceChatterLoadContacts Flow configured for the contact object and current-user relationship.');
+      setContactsLoading(false);
+      return;
+    }
+    let live=true;
+    setContactsLoading(true);setContactError('');
+    void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+      '/flows/'+encodeURIComponent(loadContactsFlow.apiName)+'/execute',{
+        method:'POST',body:JSON.stringify({searchTerm:submittedContactSearch,limit:200})
+      }).then(result=>{
+        if(!live)return;
+        if(result.interviewId)throw new Error('Contact selection requires a synchronous Autolaunched Flow.');
+        const outputs=result.outputs??{};
+        const source=String(outputs.sourceObjectApi??'').trim();
+        if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(source))
+          throw new Error('The Load Contacts Flow must return sourceObjectApi so selected records can be linked safely.');
+        setContactSourceObjectApi(source);
+        setContacts(readRows(outputs,'contactsJson'));
+      }).catch(e=>{if(live){setContacts([]);setContactError(errorText(e));}})
+      .finally(()=>{if(live)setContactsLoading(false);});
+    return()=>{live=false;};
+  },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch,refresh]);
 
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
