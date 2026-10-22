@@ -361,17 +361,17 @@ function MetadataBoundPageComponent({
       setDataLoading(false);
       return () => { active = false; };
     }
-    const initialRecords = !recordQuery.filter && !properties.liveRefreshEnabled
+    const initialRecords = !recordQuery.filter
       ? initialRecordsByObject?.[objectApiName]
       : undefined;
-    if (initialRecords !== undefined && !initialRecordsConsumed.current) {
+    const useInitialRecords = initialRecords !== undefined && !initialRecordsConsumed.current;
+    if (useInitialRecords) {
       initialRecordsConsumed.current=true;
       setRecords(initialRecords);
       setRecordsForQueryKey(recordQueryKey);
       setDataError('');
       setDataErrorForQueryKey('');
       setDataLoading(false);
-      return () => { active = false; };
     }
     const refresh = async () => {
       if (pending || !active) return;
@@ -395,8 +395,10 @@ function MetadataBoundPageComponent({
         if (active && request === requestId) setDataLoading(false);
       }
     };
-    setDataLoading(true);
-    void refresh();
+    if (!useInitialRecords) {
+      setDataLoading(true);
+      void refresh();
+    }
     // The shared Object API remains the RBAC-enforced read source. Poll only
     // live conversation presenters, and only while the document is visible.
     const chatter = Boolean(properties.liveRefreshEnabled) && !disableActions;
