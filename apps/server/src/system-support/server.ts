@@ -170,6 +170,17 @@ export function createSystemServer(db:SqlPersistence) {
   configureTrustedProxy(app,process.env.METADRIVE_TRUST_PROXY_CIDRS);
   app.disable('x-powered-by');
   app.use((_req,res,next)=>withAuditContext({},()=>{res.setHeader('X-Correlation-ID',auditContext()!.correlationId);next();}));
+  // Log webhook ingress and response status without logging query tokens, signatures,
+  // request bodies, or credential material. This distinguishes delivery from processing failures.
+  app.use((req,res,next)=>{
+    if(/^\\/api\\/inbound-webhooks\\/[^/]+\\/?$/.test(req.path)){
+      const started=Date.now();
+      res.on('finish',()=>console.info('Inbound webhook request',JSON.stringify({
+        method:req.method,path:req.path,status:res.statusCode,durationMs:Date.now()-started
+      })));
+    }
+    next();
+  });
   app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb',verify:(req,_res,bytes)=>{
     if((req.url??'').startsWith('/api/inbound-webhooks/') && bytes.length<=262144)
