@@ -32,7 +32,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   return {rows:[],rowCount:1};
  }} as never;
  const first=await seedAceChatterFlowsForTenant(client,'tenant-a');
- assert.equal(first,7);
+ assert.equal(first,8);
  assert.equal(graphRows>0,true);
  assert.equal(flows.has('AceChatterLoadConversations'),true);
  assert.equal(flows.has('AceChatterLoadMessages'),true);
@@ -42,6 +42,23 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(flows.has('AceChatterSendMessage'),true);
  assert.equal(flows.has('AceChatterReceiveWebhook'),true);
  assert.equal(flows.has('AceChatterCreateConversation'),true);
+ const contactsGraph=decodeMetadataValues(
+  graphValues.get('flow-AceChatterLoadContacts')??[]).builder as {
+   resources:Array<{name:string;type:string;availableForOutput?:boolean}>;
+   elements:Array<{type:string;config:Record<string,unknown>}>;
+  };
+ const getContacts=contactsGraph.elements.find(node=>node.type==='Get Records');
+ assert.equal(getContacts?.config.object,'Contact');
+ assert.equal(getContacts?.config.outputVariable,'contacts');
+ assert.deepEqual(getContacts?.config.conditions,[
+  {field:'OwnerId',operator:'Equals',value:'{!$User.Id}'},
+  {field:'Name',operator:'Contains',value:'@searchTerm'}
+ ]);
+ assert.equal(contactsGraph.resources.some(resource=>resource.name==='contacts'
+  &&resource.type==='Record Collection'&&resource.availableForOutput===true),true);
+ assert.equal(contactsGraph.resources.some(resource=>resource.name==='sourceObjectApi'
+  &&resource.availableForOutput===true),true);
+ assert.equal(contactsGraph.elements.find(node=>node.type==='Assignment')?.config.value,'Contact');
  const communicationGraph=decodeMetadataValues(
   graphValues.get('flow-AceChatterLoadCommunications')??[]).builder as {
    elements:Array<{type:string;config:Record<string,unknown>}>;
@@ -74,7 +91,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  const created=seen.filter(call=>call.sql.includes('INSERT INTO md_flow_definitions'));
  assert.equal(created.find(call=>call.params[1]==='AceChatterSendMessage')?.params[3],false,
   'WhatsApp delivery must remain disabled until provider credentials are configured');
- assert.equal(created.filter(call=>call.params[3]===true).length,6);
+ assert.equal(created.filter(call=>call.params[3]===true).length,7);
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
   'AceChatter users need explicit OneEngine read permission for Communication records');
