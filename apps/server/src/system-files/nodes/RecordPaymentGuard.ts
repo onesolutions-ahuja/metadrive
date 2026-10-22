@@ -55,6 +55,7 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  const entries=await context.recordQuery.find(context.tenantId,context.userId,
   config.paymentObject,[{field:config.invoiceField,operator:'Equals',value:id}],
   undefined,{limit:200},context.client);
+ if(entries.length===200)throw Error('Payment history exceeds the safe query limit; reconcile before accepting more payments');
  const existing=entries.filter(entry=>entry[config.statusField]===config.settledStatus);
  if(existing.some(entry=>entry[config.referenceField]===paymentRef))
   throw Error('This payment has already been recorded');
