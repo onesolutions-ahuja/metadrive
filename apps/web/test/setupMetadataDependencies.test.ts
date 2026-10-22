@@ -106,6 +106,6 @@ test('login, MFA and session restore return the requested tenant landing bootstr
   assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(tenantId,userId\\)/);
   assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(session\\.tenant_id,session\\.user_id\\)/);
   assert.match(server, /req\\.query\\.landing==='1'\\?await landingBootstrap\\(actor\\.tenant_id,actor\\.user_id\\)/);
-  assert.match(login, /challenge\\? '\/auth\/mfa\/verify\\?landing=1'/);
+  assert.match(login, /challenge\\?'\/auth\/mfa\/verify\\?landing=1'/);
   assert.match(login, /'\/auth\/login\\?landing=1'/);
 });
