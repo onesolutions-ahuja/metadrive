@@ -16,10 +16,10 @@ const weekdays = [
   ['sunday', 'Sunday']
 ] as const;
 const blankCalendar = (): BusinessCalendar => ({
-  fiscalYearStart: { month: 1, day: 1 },
-  timezone: 'Europe/London',
+  fiscalYearStart: { month: 0, day: 0 },
+  timezone: '',
   weeklyHours: Object.fromEntries(weekdays.map(([day]) =>
-    [day, { closed: day === 'saturday' || day === 'sunday', open: '09:00', close: '17:00' }])) as Record<string, Day>,
+    [day, { closed: false, open: '', close: '' }])) as Record<string, Day>,
   holidays: []
 });
 
@@ -28,6 +28,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
   permitted: boolean;
 }) {
   const [calendar, setCalendar] = useState(blankCalendar);
+  const [configured, setConfigured] = useState(false);
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayLabel, setHolidayLabel] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,8 +42,11 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     let active = true;
     setLoading(true);
     setError('');
+    setNotice('');
     void request<{ calendar: BusinessCalendar | null }>('/tenant/business-calendar')
-      .then(({ calendar: saved }) => { if (active && saved) setCalendar(saved); })
+      .then(({ calendar: saved }) => {
+        if (active) { setCalendar(saved ?? blankCalendar()); setConfigured(Boolean(saved)); }
+      })
       .catch((cause: unknown) => {
         if (active) setError(cause instanceof Error ? cause.message : 'Unable to load business calendar');
       })
@@ -53,6 +57,12 @@ export default function BusinessCalendarSettings({ request, permitted }: {
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving) return;
+    if (!calendar.timezone.trim() || !calendar.fiscalYearStart.month || !calendar.fiscalYearStart.day ||
+      weekdays.some(([day]) => !calendar.weeklyHours[day].closed &&
+        (!calendar.weeklyHours[day].open || !calendar.weeklyHours[day].close))) {
+      setError('Set fiscal year, time zone and opening/closing times (or mark each day closed) before saving.');
+      return;
+    }
     setSaving(true);
     setError('');
     setNotice('');
@@ -61,6 +71,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
         method: 'PUT', body: JSON.stringify(calendar)
       });
       setCalendar(result.calendar);
+      setConfigured(true);
       setNotice('Fiscal year, business hours and holidays saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save business calendar');
@@ -77,24 +88,26 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     {loading && <p role="status">Loading business calendar…</p>}
     {error && <p className="business-calendar-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    {!loading && !error && !configured && <p role="status">Business calendar not configured. Enter and save your tenant settings.</p>}
     <form onSubmit={(event) => void save(event)}>
       <div className="business-calendar-options">
         <label>Fiscal year starts
-          <span><select aria-label="Fiscal year start month" value={calendar.fiscalYearStart.month}
+          <span><select required aria-label="Fiscal year start month" value={calendar.fiscalYearStart.month}
             onChange={event => setCalendar(value => ({ ...value, fiscalYearStart: {
               ...value.fiscalYearStart, month: Number(event.target.value)
             } }))}>
+            <option value={0}>Select month</option>
             {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>
               {new Date(2000, index, 1).toLocaleString(undefined, { month: 'long' })}
             </option>)}
           </select>
-          <input aria-label="Fiscal year start day" type="number" min={1} max={31}
+          <input aria-label="Fiscal year start day" type="number" min={1} max={31} required
             value={calendar.fiscalYearStart.day} onChange={event => setCalendar(value => ({
               ...value, fiscalYearStart: { ...value.fiscalYearStart, day: Number(event.target.value) }
             }))} /></span>
         </label>
         <label>Organization time zone
-          <input value={calendar.timezone} maxLength={100}
+          <input required placeholder="e.g. Europe/London" value={calendar.timezone} maxLength={100}
             onChange={event => setCalendar(value => ({ ...value, timezone: event.target.value }))} />
         </label>
       </div>
@@ -106,13 +119,13 @@ export default function BusinessCalendarSettings({ request, permitted }: {
             onChange={event => setCalendar(value => ({ ...value, weeklyHours: {
               ...value.weeklyHours, [day]: { ...value.weeklyHours[day], closed: event.target.checked }
             } }))} /> Closed</label>
-          <label>Opens <input type="time" disabled={calendar.weeklyHours[day].closed}
+          <label>Opens <input type="time" required={!calendar.weeklyHours[day].closed} disabled={calendar.weeklyHours[day].closed}
             value={calendar.weeklyHours[day].open} onChange={event => setCalendar(value => ({
               ...value, weeklyHours: { ...value.weeklyHours, [day]: {
                 ...value.weeklyHours[day], open: event.target.value
               } }
             }))} /></label>
-          <label>Closes <input type="time" disabled={calendar.weeklyHours[day].closed}
+          <label>Closes <input type="time" required={!calendar.weeklyHours[day].closed} disabled={calendar.weeklyHours[day].closed}
             value={calendar.weeklyHours[day].close} onChange={event => setCalendar(value => ({
               ...value, weeklyHours: { ...value.weeklyHours, [day]: {
                 ...value.weeklyHours[day], close: event.target.value
