@@ -161,6 +161,7 @@ export async function seedAceAssistFinancialFlows(client:PoolClient,tenantId:str
  const standardRights=[
   ['Flow:AceAssistConvertQuoteToInvoice','execute'],
   ['Invoice.Quotation','read'],['Invoice.Quotation','create'],
+  ['Invoice.InvoiceNumber','read'],
   ['Quotation','read'],['QuotationLine','read'],['Invoice','read'],['InvoiceLine','read'],
   ...['Quantity','UnitPrice','DiscountAmount','TaxAmount','LineTotal','Name','Product','Description']
    .map(x=>['QuotationLine.'+x,'read']),
