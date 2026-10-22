@@ -951,12 +951,26 @@ function PageBuilder({
     setSelectedId(copy.id); setComponentMenuId('');
   };
   const alignSelected = (axis: 'x' | 'y', anchor: 'start' | 'center' | 'end') => {
-    if (!selected?.position || isCanvasLocked(selected) || selected.properties.canvasLocked === true) return;
+    const targets = page.components.filter(component =>
+      selectionIds.includes(component.id) && component.position
+      && !rawLayoutParentId(component) && !isCanvasLocked(component)
+      && component.properties.canvasLocked !== true);
+    const selectedTargets = targets.length > 1 ? targets
+      : selected?.position && !isCanvasLocked(selected) && selected.properties.canvasLocked !== true
+        ? [selected] : [];
+    if (!selectedTargets.length) return;
     const dimension = axis === 'x' ? 'width' : 'height';
     const span = axis === 'x' ? page.canvasWidth : page.canvasHeight;
-    const freeSpace = Math.max(0, span - selected.position[dimension]);
-    const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
-    updateComponent(selected.id, { position: { ...selected.position, [axis]: value } });
+    const positions = new Map(selectedTargets.map(component => {
+      const position = component.position!;
+      const freeSpace = Math.max(0, span - position[dimension]);
+      const value = anchor === 'start' ? 0 : anchor === 'center' ? Math.round(freeSpace / 2) : freeSpace;
+      return [component.id, { ...position, [axis]: value }];
+    }));
+    applyPage({ ...page, components: page.components.map(component => {
+      const position = positions.get(component.id);
+      return position ? { ...component, position } : component;
+    }) });
   };
   const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
@@ -965,7 +979,12 @@ function PageBuilder({
     setRedoStack((current) => [...current, page]);
     setUndoStack((current) => current.slice(0, -1));
     onChange(previous);
-    setSelectedId(previous.components[0]?.id ?? '');
+    const previousIds = new Set(previous.components.map(component => component.id));
+    setSelectionIds(current => {
+      const restored = current.filter(id => previousIds.has(id));
+      setSelectedId(currentSelected => previousIds.has(currentSelected) ? currentSelected : (restored[0] ?? ''));
+      return restored;
+    });
   };
   const redo = () => {
     const next = redoStack[redoStack.length - 1];
@@ -973,7 +992,12 @@ function PageBuilder({
     setUndoStack((current) => [...current, page]);
     setRedoStack((current) => current.slice(0, -1));
     onChange(next);
-    setSelectedId(next.components[0]?.id ?? '');
+    const nextIds = new Set(next.components.map(component => component.id));
+    setSelectionIds(current => {
+      const restored = current.filter(id => nextIds.has(id));
+      setSelectedId(currentSelected => nextIds.has(currentSelected) ? currentSelected : (restored[0] ?? ''));
+      return restored;
+    });
   };
   useEffect(() => {
     if (page.layoutMode !== 'free-canvas') return;
