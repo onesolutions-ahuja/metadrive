@@ -7,6 +7,7 @@
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
     "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",
+    "apps/server/test/system/acetill-editable-page.test.ts",
     "apps/server/test/system/acetill-payment-flow-metadata.test.ts",
     "apps/server/test/system/acetill-visual-style.test.ts",
     "apps/server/test/system/builder-contracts.test.ts",
