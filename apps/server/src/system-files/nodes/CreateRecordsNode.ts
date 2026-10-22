@@ -1,5 +1,5 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
-import {enforceRecordOverlap} from './RecordOverlapGuard.js';
+import {enforceRecordOverlap,enforceUniqueRecordInput} from './RecordOverlapGuard.js';
 import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
 import {enforceDocumentConversion,enforceDocumentSourceLink} from './DocumentFinancialGuard.js';
 import {enforceManualPaymentGuard} from './RecordPaymentGuard.js';
@@ -23,6 +23,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
           fields[field]=value;
         }
         await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+      await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
         await enforceDocumentConversion(context,config.documentConversion,fields);
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
@@ -45,6 +46,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         fields[field]=value;
       }
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+      await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
       await enforceDocumentConversion(context,config.documentConversion,fields);
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
