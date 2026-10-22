@@ -76,6 +76,12 @@ export default function NamedCredentials({
   useModalAccessibility(Boolean(draft), modalRef, dismissModal);
   const [error, setError] = useState('');
   const [savedWebhook,setSavedWebhook]=useState<{callbackUrl:string;verifyToken?:string}|null>(null);
+  const [copiedWebhookId,setCopiedWebhookId]=useState<string|null>(null);
+  const copyWebhookUrl=async(credential:NamedCredentialMetadata)=>{
+    if(!credential.webhookCallbackUrl)return;
+    try{await navigator.clipboard.writeText(credential.webhookCallbackUrl);setCopiedWebhookId(credential.id);}
+    catch{setError('Unable to copy automatically. Open webhook details and select the URL to copy.');}
+  };
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const fieldErrors = { name: !/^[A-Za-z][A-Za-z0-9_]*$/.test(draft?.name ?? '') ? 'Use a name starting with a letter, containing only letters, numbers and underscores.' : '', label: !(draft?.label.trim()) ? 'Label is required.' : '', baseUrl: !(draft?.baseUrl.trim()) ? 'URL is required.' : draft?.protocol === 'HTTPS' && !/^https:\/\//i.test(draft.baseUrl.trim()) ? 'Use an HTTPS URL.' : '' };
   const blurField = (field: keyof typeof fieldErrors) => setTouched(current => ({...current, [field]: true}));
@@ -231,7 +237,7 @@ export default function NamedCredentials({
     {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Check METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in the active server environment (or the legacy METADRIVE_CREDENTIAL_ENCRYPTION_KEY). Preserve existing keys when moving between hosting providers.</div>}
     <div className="table-scroll">
       <table className="slds-table">
-        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th>{!embedded && <th>Status</th>}<th>Actions</th></tr></thead>
+        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Inbound Webhook</th>{!embedded && <th>Status</th>}<th>Actions</th></tr></thead>
         <tbody>{pagedCredentials.map((credential) => <tr key={credential.id}>
           <td><button className="btn btn-link" onClick={() => editCredential(credential, true)}>{credential.label}</button></td>
           <td>{credential.name}</td>
@@ -241,6 +247,13 @@ export default function NamedCredentials({
           <td>{credential.authType === 'None' ? 'Not required' : credential.hasSecret ? 'Stored · masked' : 'Not configured'}</td>
           <td>{new Date(credential.updatedAt).toLocaleString()}</td>
           <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
+          <td>{credential.webhookId ? <div style={{display:'grid',gap:6}}>
+            <span>{credential.webhookEnabled ? 'Enabled' : 'Disabled'}</span>
+            {credential.webhookCallbackUrl ? <>
+              <button type="button" className="btn btn-small" onClick={()=>void copyWebhookUrl(credential)}>{copiedWebhookId===credential.id?'Copied URL':'Copy callback URL'}</button>
+              <button type="button" className="btn btn-link" onClick={()=>editCredential(credential,true)}>View webhook details</button>
+            </> : <span role="alert">Callback URL unavailable</span>}
+          </div> : <span>Not configured</span>}</td>
           {!embedded && <td><label className="credential-switch" aria-label={`Connection status for ${credential.label}`}><input type="checkbox" role="switch" checked={credential.enabled !== false} disabled={!canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => void toggleEnabled(credential)} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId === credential.id ? 'Updating…' : credential.enabled === false ? 'Disabled' : 'Enabled'}</span></label></td>}
           <td><div className="toolbar-actions">
             {credential.authType==='OAuth Authorization Code'&&onOAuthAuthorize&&
@@ -343,11 +356,12 @@ export default function NamedCredentials({
         {(savedWebhook?.callbackUrl ||
           (draft.webhookRequired && credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl))
           && <div className="info-callout" style={{marginTop:14}}>
-            <strong>Webhook callback URL</strong>
+            <strong>Webhook callback URL — register this address with your provider</strong>
             <input className="form-control" readOnly
               value={savedWebhook?.callbackUrl||
                 credentials.find(item=>item.id===draft.id)?.webhookCallbackUrl||''}
               onFocus={event=>event.currentTarget.select()}/>
+            <p><small>Webhook status: {credentials.find(item=>item.id===draft.id)?.webhookEnabled ? 'Enabled' : 'Disabled'}. The URL remains available whenever you reopen this connection.</small></p>
             {savedWebhook?.verifyToken&&<>
               <strong>Verification token (copy now; shown only once)</strong>
               <input className="form-control" readOnly value={savedWebhook.verifyToken}
