@@ -71,6 +71,7 @@
     "apps/server/test/system/object-quick-action-runtime.test.ts",
     "apps/server/test/system/offline-briefcase-settings.test.ts",
     "apps/server/test/system/offline-publication-contract.test.ts",
+    "apps/server/test/system/parse-json-flow-node.test.ts",
     "apps/server/test/system/password-reset-service.test.ts",
     "apps/server/test/system/product-image-field.test.ts",
     "apps/server/test/system/quick-action-email-queue.test.ts",
