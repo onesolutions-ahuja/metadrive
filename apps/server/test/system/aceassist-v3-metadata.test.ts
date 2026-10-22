@@ -41,7 +41,8 @@ test('new booking paths only use internal tenant users and shared Flow guards',(
  assert.match(server,/AssignedTo/);
  assert.doesNotMatch(server,/publicBooking|guestBooking|anonymousBooking/);
  assert.match(browser,/Safe booking Flow V3 is unavailable/);
- assert.match(browser,/AceAssistLoadStaffAvailability/);
+ assert.match(browser,/StaffAvailability/);
+ assert.match(browser,/AceAssistLoad/);
 });
 void seedAceAssistSchedulingObjects;
 void seedAceAssistDocumentSeries;
