@@ -8,26 +8,7 @@ export default Object.freeze({
   "url": "https://api.brevo.com/v3/",
   "auth": "API Key",
   "header": "api-key",
-  "fields": [
-    {
-      "apiName": "public_senderEmail",
-      "label": "Verified sender email",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_senderName",
-      "label": "Sender name",
-      "required": false,
-      "defaultValue": ""
-    },
-    {
-      "apiName": "public_templateId",
-      "label": "Transactional template ID",
-      "required": false,
-      "defaultValue": ""
-    }
-  ],
+  "fields": [],
   "operations": {
     "SendTransactionalEmail": {
       "method": "POST",
