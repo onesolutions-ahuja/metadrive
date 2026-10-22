@@ -9,6 +9,7 @@ import {bindPublicHttpCredentialVariables,prepareFlowHttpRequest} from '../../sr
 
 test('AceChatter app seeding is tenant-scoped, idempotent and preserves business data',async()=>{
  const seen:Array<{sql:string;params:unknown[]}>=[],flows=new Set<string>();
+ const graphValues=new Map<string,Array<{property_path:string;value_kind:string;value_text:string|null}>>();
  let graphRows=0;
  const client={query:async(sql:string,params:unknown[]=[])=>{
   seen.push({sql,params});
@@ -19,7 +20,14 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
     const name=String(params[1]);flows.add(name);
     return {rows:[{id:'flow-'+name}],rowCount:1};
   }
-  if(sql.includes('INSERT INTO md_flow_editor_values'))graphRows++;
+  if(sql.includes('INSERT INTO md_flow_editor_values')){
+   graphRows++;
+   const flowId=String(params[1]);
+   const values=graphValues.get(flowId)??[];
+   values.push({property_path:String(params[2]),value_kind:String(params[3]),
+    value_text:params[4]===null?null:String(params[4])});
+   graphValues.set(flowId,values);
+  }
   return {rows:[],rowCount:1};
  }} as never;
  const first=await seedAceChatterFlowsForTenant(client,'tenant-a');
@@ -31,6 +39,19 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(flows.has('AceChatterSendMessage'),true);
  assert.equal(flows.has('AceChatterReceiveWebhook'),true);
  assert.equal(flows.has('AceChatterCreateConversation'),true);
+ const communicationGraph=decodeMetadataValues(
+  graphValues.get('flow-AceChatterLoadCommunications')??[]).builder as {
+   elements:Array<{type:string;config:Record<string,unknown>}>;
+  };
+ const getCommunications=communicationGraph.elements.find(node=>node.type==='Get Records');
+ assert.equal(getCommunications?.config.object,'Communication');
+ assert.equal(getCommunications?.config.outputVariable,'communications');
+ assert.equal(getCommunications?.config.recordLimit,'200');
+ assert.deepEqual(getCommunications?.config.conditions,[
+  {field:'Channel',operator:'Equals',value:'WhatsApp'},
+  {field:'Direction',operator:'Equals',value:'Inbound'},
+  {field:'Sender',operator:'Contains',value:'@searchTerm'}
+ ]);
  const before=graphRows;
  const second=await seedAceChatterFlowsForTenant(client,'tenant-a');
  assert.equal(second,0);
