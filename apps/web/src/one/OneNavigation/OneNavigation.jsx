@@ -49,7 +49,7 @@ export default function OneNavigation(props) {
           </button>
         ))}
       </div>
-      {!options.length && <div className="one-muted">Add navigation items</div>}
+      {!options.length && <div className="one-empty" role="status">Add navigation items</div>}
     </nav>
   );
 }
