@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
-import {encodeMetadataValue} from '../system-files/component-runtime.js';
+import {encodeMetadataValue,decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 
 type FlowTemplate={apiName:string;label:string;appApiName:string;flowType:string;
  status:string;elements:unknown[];connectors:unknown[];resources:unknown[];tests:unknown[]};
@@ -29,6 +29,13 @@ export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number
     ('Flow:AceKioskPaymentCash','execute'),('Flow:AceKioskPaymentCard','execute'),
     ('Product','read'),('Product.Price','read'),('Product.Active','read'),
     ('Order','create'),('OrderLine','create'),
+    ('Invoice','create'),('InvoiceLine','create'),
+    ('Invoice.Name','create'),('Invoice.Subtotal','create'),
+    ('Invoice.Total','create'),('Invoice.Status','create'),
+    ('Invoice.Checkout_Request_ID__c','create'),('Invoice.Payment_Method__c','create'),
+    ('InvoiceLine.Invoice','create'),('InvoiceLine.Product','create'),
+    ('InvoiceLine.Quantity','create'),('InvoiceLine.UnitPrice','create'),
+    ('InvoiceLine.LineTotal','create'),
     ('Order.Name','create'),('Order.Total','create'),('Order.Subtotal','create'),
     ('Order.PaymentMethod','create'),('Order.PaymentStatus','create'),
     ('Order.PaymentRequestId','create'),('Order.CashReceived','create'),
@@ -38,7 +45,7 @@ export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number
    ) AS x(resource,action)
    WHERE s.tenant_id=$1 AND s.api_name='AceKioskUser'
    ON CONFLICT DO NOTHING`,[tenantId]);
-  const needed=['Order','OrderLine','Product'];
+  const needed=['Order','OrderLine','Product','Invoice','InvoiceLine'];
   const {rows:found}=await client.query<{api_name:string}>(`
    SELECT api_name FROM md_object_definitions WHERE tenant_id=$1 AND api_name=ANY($2)`,
    [tenantId,needed]);
@@ -49,7 +56,54 @@ export async function seedAceKioskPaymentFlows(db:SqlPersistence):Promise<number
     throw Error('Invalid kiosk payment Flow template: '+name);
    const existing=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
      [tenantId,name]);
-   if(existing.rowCount)continue;
+   if(existing.rowCount){
+     // Upgrade only the untouched original kiosk v1. If a tenant has edited its
+     // existing Flow, leave it untouched for an explicit administrator merge.
+     const {rows:versions}=await client.query<{id:string;version:number;active:boolean}>(`
+       SELECT id,version,active FROM md_flow_definitions
+       WHERE tenant_id=$1 AND api_name=$2 ORDER BY version DESC`,[tenantId,name]);
+     if(versions.length!==1||versions[0].version!==1)continue;
+     const {rows:stored}=await client.query<MetadataValueRow>(`
+       SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+       WHERE tenant_id=$1 AND flow_id=$2`,[tenantId,versions[0].id]);
+     const current=decodeMetadataValues(stored).builder as Record<string,unknown>|undefined;
+     const source=JSON.parse(readFileSync(
+       new URL('../../../acetill/flows/payment-flows.v1.json',import.meta.url),'utf8')) as Record<string,FlowTemplate>;
+     const method=name.endsWith('Cash')?'Cash':'Card';
+     const original=source['AcetillPayment'+method];
+     const baseline:FlowTemplate={
+       ...original,apiName:name,label:'AceKiosk Payment '+method,
+       appApiName:'AceKiosk',status:'Draft',
+       elements:(original.elements as Array<{id:number;label:string;config:Record<string,unknown>}>).map(e=>({
+         ...e,label:e.label.replace('Acetill','AceKiosk'),
+         config:Array.isArray(e.config?.fieldValues)?{
+           ...e.config,fieldValues:(e.config.fieldValues as Array<{field:string;value:unknown}>).map(f=>
+             f.field==='Name'&&f.value==='Acetill Sale'?{...f,value:'AceKiosk Order'}:f)
+         }:e.config
+       }))
+     };
+     const stable=(value:unknown):string=>JSON.stringify(value,(_key,v)=>
+       v&&typeof v==='object'&&!Array.isArray(v)
+         ?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
+     if(!current||stable({...current,status:'Draft'})!==stable(baseline))continue;
+     const activated=versions[0].active;
+     const nextTemplate={...template,status:activated?'Active':'Draft'};
+     // SQL partial unique index allows only one active Flow version.
+     if(activated)await client.query(`
+       UPDATE md_flow_definitions SET active=false WHERE id=$1 AND tenant_id=$2`,
+       [versions[0].id,tenantId]);
+     const {rows:upgraded}=await client.query<{id:string}>(`
+       INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+       VALUES($1,$2,$3,'Autolaunched Flow',2,$4) RETURNING id`,
+       [tenantId,name,template.label,activated]);
+     const values:Array<{path:string;kind:string;text:string|null}>=[];
+     encodeMetadataValue(nextTemplate,'/builder',values);
+     for(const value of values)await client.query(`
+       INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+       VALUES($1,$2,$3,$4,$5)`,[tenantId,upgraded[0].id,value.path,value.kind,value.text]);
+     created++;
+     continue;
+   }
    const {rows:flows}=await client.query<{id:string}>(`
     INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
     VALUES($1,$2,$3,'Autolaunched Flow',1,false) RETURNING id`,
