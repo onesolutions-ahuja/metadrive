@@ -60,6 +60,7 @@ export async function seedOneChatterInstalledPage(client:Pick<PoolClient,'query'
           conversationBodyFieldApiName:'Body',conversationStatusFieldApiName:'Status',
           conversationContactNameFieldApiName:'Sender',
           contactNameFieldApiName:'Name',contactPhoneFieldApiName:'Phone',
+          contactChoices:[], // Declared collection shape, populated by authorised Flow output.
           stateBindings:allowContacts?{contactChoices:'oneChatterContacts'}:{},
           conversationNormalizePhoneNumbers:true,conversationNameFromParticipant:true,
           conversationIncomingValue:'Inbound',conversationOutgoingValue:'Outbound',
