@@ -165,3 +165,38 @@ A shared `Payment` Object and cashier-only `AceAssistRecordCashPayment` Flow val
 Record-triggered scheduled reminder Flows provide a live internal 24-hour reminder and draft email/WhatsApp reminders, which require explicitly configured Named Credentials, communication consent and approved provider templates.
 
 A shared read-only document component lets authorised users print or use the browser's **Save as PDF** facility for Flow-loaded quotations and invoices. This is not a server-generated email attachment; attachment rendering and automated PDF delivery still require a reusable document service.\n\nNot yet completed: generated email/PDF attachments, verified outbound provider delivery and inbox booking conversations, card-provider reconciliation/refunds, and live tenant/browser regression tests.
+
+
+## Mobile workspace — current implementation
+
+The standalone phone UI uses real **AceAssistLoadAppointment**, **AceAssistLoadCustomer**,
+**AceAssistLoadInvoice**, User and Product lookups, plus the existing authorised
+V3 booking and V2 document mutation Flows. There is no synthetic data source,
+separate finance engine, or front-end direct Object CRUD. The mobile footer
+provides Home, Calendar, Billing, Customers and More navigation.
+
+- Home appointments and unpaid-invoice cards are computed from accessible Flow
+  outputs only. Missing permissions disable quick actions and prevent restricted
+  data from being loaded. Mixed-currency balances are not summed into a false
+  single-currency total.
+- Calendar day/week/month views show tenant-local appointment times. Staff and
+  service filters use authorised User/Product lookup Flows; day navigation and
+  create/edit booking keep the same V3 guard checks.
+- Creating a Quotation or Invoice opens the new parent document for line entry
+  if the Flow returns its record ID. Line rows are shown inside the parent
+  details. Their create/update/delete actions use the installed metadata Flows,
+  and the document header and totals reflect server-returned data.
+- Parent totals and line totals are never written by the presentation form.
+  RecordEngine's financial mutation guards calculate them and reject changes
+  to locked or issued documents. The UI also disables line editing when locked.
+- Responsive mobile dialogs use the same authorised metadata form fields as
+  desktop. The actual permission boundary remains the OneEngine API, not
+  a disabled browser control.
+
+**Still to validate before deployment:** tenant-installed Flow discovery and field
+permissions for representative doctors, salons and barbers; mobile browser
+layouts on physical devices; legitimate timezone/DST boundaries; and cash
+settlement. Card payments and outbound message delivery are not simulated:
+they require their existing provider/credential and verification workflows.
+The mobile app is intentionally a generic service-business UI; industry-specific
+record schemas remain centrally defined through tenant Objects.
