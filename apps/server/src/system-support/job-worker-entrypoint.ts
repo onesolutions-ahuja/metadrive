@@ -14,6 +14,7 @@ import {OutboundWebhookDispatcher,registerOutboundWebhookJobHandler}
  from './outbound-webhook-worker.js';
 import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 import {applySystemMigrations} from './system-migrations.js';
+import {createIntegrationCommunicationWriter} from './integration-api-log.js';
 
 export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
  const db=new SqlPersistence(env.DATABASE_URL??'');
@@ -22,6 +23,12 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
   const credentials=new NamedCredentialService(db,rbac);
+  // Durable Flow and webhook callouts run in this separate process. Wire the same
+  // central Communication writer here as in the API server so worker-originated
+  // HTTP attempts are not silently omitted from Communication.
+  const integrationLogRecords=new RecordEngine(db,rbac,credentials);
+  credentials.setIntegrationActivityWriter(
+   createIntegrationCommunicationWriter(db,integrationLogRecords));
   const service=new DurableJobService(db);
   const flows=new FlowRuntime(db,rbac,records,
    (tenant,user,config,vars,key)=>credentials.callout(tenant,user,config,vars,key),
