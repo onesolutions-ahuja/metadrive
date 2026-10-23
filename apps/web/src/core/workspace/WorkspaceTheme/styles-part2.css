@@ -279,7 +279,7 @@
 .exchange-empty strong { color: #35453a; font-size: 12px; }
 .exchange-empty p { margin: 5px 0 8px; color: var(--muted); font-size:var(--md-fs-xs,11px); }
 .exchange-backdrop { position: fixed; z-index: 15; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 22px; background: rgb(19 30 24 / 48%); }
-.exchange-detail, .exchange-confirm { position: relative; width: min(660px,100%); max-height: calc(100vh - 44px); overflow-y: auto; padding: 25px; border: 1px solid #e5e9e2; border-radius: 10px; background: #fff; box-shadow: 0 18px 60px rgb(0 0 0 / 22%); }
+.exchange-detail, .exchange-confirm { position: relative; width: min(660px,100%); max-height: calc(100vh - 44px); max-height: calc(100dvh - 44px); overflow-y: auto; padding: 25px; border: 1px solid #e5e9e2; border-radius: 10px; background: #fff; box-shadow: 0 18px 60px rgb(0 0 0 / 22%); }
 .exchange-close { position: absolute; top: 13px; right: 13px; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: #f2f4f0; color: #55635a; }
 .exchange-close:hover { background: #e8ece6; }
 .exchange-detail-head { display: flex; align-items: center; gap: 13px; padding-right: 28px; }
@@ -359,7 +359,7 @@
   .exchange-category-row button { flex: 0 0 auto; }
   .exchange-detail-columns { grid-template-columns: 1fr; gap: 10px; }
   .exchange-backdrop { padding: 12px; }
-  .exchange-detail, .exchange-confirm { max-height: calc(100vh - 24px); padding: 19px; }
+  .exchange-detail, .exchange-confirm { max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); padding: 19px; }
   .exchange-detail-rating { flex-wrap: wrap; }
 }
 
@@ -1060,7 +1060,7 @@
 .page-embedded-dashboard-bars > div {flex:1;min-width:0;max-width:120px;height:140px;display:flex;flex-direction:column;justify-content:flex-end;gap:7px}
 .page-embedded-dashboard-bars small {text-overflow:ellipsis;white-space:nowrap;overflow:hidden;text-align:center}
 .page-embedded-dashboard-bar {display:block;min-height:3px;border-radius:4px 4px 0 0;background:var(--brand,#0176d3)}
-.page-layer-tree {padding:8px;max-height:calc(100vh - 290px);overflow:auto}
+.page-layer-tree {padding:8px;max-height:calc(100vh - 290px); max-height: calc(100dvh - 290px);overflow:auto}
 .page-layer-row {display:flex;align-items:center;gap:6px;margin-block:4px}
 .page-layer-row .btn {flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:800px) {
