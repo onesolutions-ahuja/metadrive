@@ -22,7 +22,9 @@ test('calendar opens read-only and requires explicit edit before save',()=>{
  assert.match(source,/editing \? <><label className="business-calendar-closed"/);
  assert.match(source,/<button type="submit" className="btn btn-primary"/);
  assert.match(source,/<form noValidate onSubmit=/);
- assert.match(source,/setSavedCalendar\(result\.calendar\)/);
+ assert.match(source,/setSavedCalendar\(verified\)/);
+ assert.match(source,/cache:'no-store'/);
+ assert.match(source,/readback\.calendar/);
  assert.match(source,/setEditing\(false\)/);
 });
 
@@ -31,4 +33,15 @@ test('business hours offer half-hour suggestions and accept custom minute values
  assert.match(source,/onChange\(parsed \?\? ''\)/);
  assert.match(source,/parseTime\(hours\.open\)/);
  assert.match(source,/parseTime\(hours\.close\)/);
+});
+
+const aceAssist=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+
+test('AceAssist distinguishes a pending calendar request from missing tenant hours',()=>{
+ assert.match(aceAssist,/setHoursLoading\\(true\\)/);
+ assert.match(aceAssist,/setHoursLoading\\(false\\)/);
+ assert.match(aceAssist,/hoursLoading\\?'Loading business hours/);
+ assert.match(aceAssist,/hoursLoading\\?'Loading…'/);
+ assert.match(aceAssist,/cache:'no-store'/);
+ assert.match(aceAssist,/Promise\\.allSettled\\(relations\\.map/);
 });
