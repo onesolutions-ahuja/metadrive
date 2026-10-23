@@ -6,6 +6,21 @@ type PresentationContext = { grants: readonly ChannelGrant[]; userId: string; vi
 type Presenter = (records: readonly CommunicationRow[], context: PresentationContext, properties:Record<string,unknown>) => Record<string, unknown>;
 
 function communicationThread(records: readonly CommunicationRow[], context: PresentationContext, properties:Record<string,unknown>): Record<string, unknown> {
+  // Object rows have already passed server-side OneEngine object/field/record
+  // authorisation. Write Flows still perform their own permission checks.
+  if(properties.conversationAccessMode==='recordPermissions'){
+    const model=buildChatterView(records,properties);
+    const defaultAccount=typeof properties.conversationDefaultAccount==='string'
+      ?properties.conversationDefaultAccount.trim():'';
+    const accountIds=[...new Set([...model.conversations.map(row=>row.channelAccountId),
+      ...(defaultAccount?[defaultAccount]:[])].filter(Boolean))];
+    const sendEnabled=properties.sendEnabled===true;
+    return {...model,
+      conversations:model.conversations.map(row=>({...row,canSend:sendEnabled,canAssign:false})),
+      currentUserId:context.userId,canViewAll:true,allowedAccountIds:accountIds,
+      canSend:sendEnabled,eligibleAssignees:[],
+      channelAccounts:accountIds.map(id=>({id,name:id,canSend:sendEnabled,canAssign:false}))};
+  }
   const grants = new Map(context.grants.filter(grant=>grant.canRead).map(grant => [grant.channelAccountId, grant]));
   const visible = records.filter(row => grants.has(String(row[conversationField(properties,'account')] ?? '')));
   const model = buildChatterView(visible,properties);
