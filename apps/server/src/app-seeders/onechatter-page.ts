@@ -34,10 +34,15 @@ export async function seedOneChatterInstalledPage(client:Pick<PoolClient,'query'
       [tenantId,pageId,ONECHATTER_APP.apiName]);
     // The send Flow starts Draft until the tenant configures a real provider;
     // the visual composer must never assume outbound permission.
-    const {rows:sendFlows}=await client.query<{active:boolean}>(`SELECT active
-      FROM md_flow_definitions WHERE tenant_id=$1 AND api_name='AceChatterSendMessage'
-        AND active=true AND archived=false ORDER BY version DESC LIMIT 1`,[tenantId]);
-    const allowSend=sendFlows.length>0;
+    const requiredFlows=['AceChatterCreateConversation','AceChatterFindConversationByPhone',
+      'AceChatterSendMessage','AceChatterLoadContacts'];
+    const {rows:activeFlows}=await client.query<{api_name:string}>(`SELECT DISTINCT api_name
+      FROM md_flow_definitions WHERE tenant_id=$1 AND api_name = ANY($2::text[])
+        AND active=true AND archived=false`,[tenantId,requiredFlows]);
+    const available=new Set(activeFlows.map(row=>row.api_name));
+    const allowSend=['AceChatterCreateConversation','AceChatterFindConversationByPhone',
+      'AceChatterSendMessage'].every(name=>available.has(name));
+    const allowContacts=available.has('AceChatterLoadContacts');
     const nodes=[
       {key:'brand',type:'Custom:OneText',label:'OneChatter title',region:'header',
         props:{text:'OneChatter',fontSize:26,fontWeight:700,textColor:'#075E54'}},
@@ -52,6 +57,8 @@ export async function seedOneChatterInstalledPage(client:Pick<PoolClient,'query'
           conversationOutgoingOccurredFieldApiName:'SentAt',
           conversationBodyFieldApiName:'Body',conversationStatusFieldApiName:'Status',
           conversationContactNameFieldApiName:'Sender',
+          contactNameFieldApiName:'Name',contactPhoneFieldApiName:'Phone',
+          stateBindings:allowContacts?{contactChoices:'oneChatterContacts'}:{},
           conversationNormalizePhoneNumbers:true,conversationNameFromParticipant:true,
           conversationIncomingValue:'Inbound',conversationOutgoingValue:'Outbound',
           restrictToAssigned:false,liveRefreshEnabled:true,
@@ -59,6 +66,9 @@ export async function seedOneChatterInstalledPage(client:Pick<PoolClient,'query'
           sendEnabled:allowSend,messageMaxLength:4096,
           filters:[{field:'Channel',operator:'Equals',value:'WhatsApp'}],
           actionFlows:{
+            ...(allowContacts?{start:{actionType:'Flow',flowApiName:'AceChatterLoadContacts',
+              inputs:{searchTerm:'',limit:200},
+              outputs:{contacts:'oneChatterContacts'}}}:{}),
             create:{actionType:'Flow',flowApiName:'AceChatterCreateConversation',inputs:{
               chatName:'$event.chatName',phoneNumber:'$event.phoneNumber',
               sourceObjectApi:'',sourceRecordId:''}},
