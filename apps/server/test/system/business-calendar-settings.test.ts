@@ -5,9 +5,9 @@ import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 
 const calendar={
- fiscalYearStart:{month:4,day:1},timezone:'Europe/London',
+ fiscalYearStart:{month:4,day:6},timezone:'Europe/London',
  weeklyHours:{
-  monday:{closed:false,open:'09:00',close:'17:00'},
+  monday:{closed:false,open:'09:31',close:'17:01'},
   tuesday:{closed:false,open:'09:00',close:'17:00'},
   wednesday:{closed:false,open:'09:00',close:'17:00'},
   thursday:{closed:false,open:'09:00',close:'17:00'},
@@ -36,6 +36,23 @@ test('business calendar is validated, tenant-scoped, and audited transactionally
  assert.ok(writes[0].sql.includes('md_tenant_settings'));
  assert.deepEqual(writes[0].args,['tenant-1',JSON.stringify(calendar)]);
  assert.ok(writes.some(write=>write.sql.includes('tenant.business-calendar.updated')));
+});
+
+test('AceAssist business calendar read returns saved tenant settings for its caller',async()=>{
+ const reads:Array<{sql:string;args:unknown[]}>= [];
+ const db={query:async(sql:string,args:unknown[]=[])=>(reads.push({sql,args}),{
+  rows:[{properties:calendar}]
+ })} as unknown as SqlPersistence;
+ const grants:Array<string>=[];
+ const rbac={allowed:async(tenant:string,user:string,resource:string,action:string)=>{
+  grants.push([tenant,user,resource,action].join(':'));
+  return true;
+ }} as unknown as RbacEngine;
+ const saved=await new PlatformTenantService(db,rbac).getBusinessCalendar('tenant-1','user-1');
+ assert.deepEqual(saved,calendar);
+ assert.deepEqual(grants,['tenant-1:user-1:BusinessCalendar:read']);
+ assert.ok(reads[0].sql.includes('md_tenant_settings'));
+ assert.deepEqual(reads[0].args,['tenant-1']);
 });
 
 test('business calendar rejects invalid timezone, hours and holiday dates before writing',async()=>{
