@@ -17,6 +17,11 @@ try {
  const url=new URL(raw);
  if(!['postgres:','postgresql:'].includes(url.protocol))
   throw Error('Invalid SQL URL scheme');
+ const transport=url.searchParams.get('sslmode')??'unset';
+ output('runtime_sslmode',
+  ['disable','allow','prefer','require','verify-ca','verify-full','no-verify','unset']
+   .includes(transport)?transport:'custom');
+ output('runtime_tls_ca_present',Boolean(process.env.METADRIVE_DB_CA_CERT?.trim()));
  const override=process.env.METADRIVE_DB_NAME_OVERRIDE?.trim();
  if(override){
   if(!/^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(override))throw Error('Invalid DB name override');
@@ -35,7 +40,7 @@ try {
  }
  // Clone the same SQL connection selection as SqlPersistence without printing it.
  client=new pg.Client({connectionString:url.toString(),...(ssl?{ssl}:{}),
-  connectionTimeoutMillis:10000,application_name:'metadrive-oci-calendar-readonly'});
+  connectionTimeoutMillis:10000});
  await client.connect();
  await client.query('BEGIN READ ONLY');
  await client.query("SET LOCAL statement_timeout = '5000ms'");
@@ -84,10 +89,22 @@ try {
  await client.query('ROLLBACK');
  output('diagnostic_completed',true);
 } catch(error){
- // Do not print error messages or exception structures; PG exceptions sometimes
- // include server/connection detail. SQLSTATE code is safe for diagnosis.
- output('diagnostic_error_code',
-  typeof error?.code==='string'?error.code:'UNCLASSIFIED');
+ // PostgreSQL messages may include server addresses, roles and database names.
+ // Classify locally and expose only a fixed public vocabulary.
+ const detail=String(error?.message??'').toLowerCase();
+ const code=typeof error?.code==='string'?error.code:'UNCLASSIFIED';
+ const category=/no pg_hba\.conf entry/.test(detail)
+   ?/no encryption|ssl off/.test(detail)?'PG_HBA_REJECTED_NO_TLS':'PG_HBA_REJECTED'
+   :/password authentication failed/.test(detail)?'PASSWORD_AUTHENTICATION_FAILED'
+   :/peer authentication failed/.test(detail)?'PEER_AUTHENTICATION_FAILED'
+   :/role .* does not exist/.test(detail)?'DATABASE_ROLE_MISSING'
+   :/permission denied for database/.test(detail)?'DATABASE_CONNECT_DENIED'
+   :/certificate/.test(detail)?'CERTIFICATE_AUTHENTICATION'
+   :code==='28000'?'OTHER_DATABASE_AUTHORIZATION'
+   :code==='28P01'?'OTHER_PASSWORD_AUTHENTICATION'
+   :'OTHER_CONNECTION_ERROR';
+ output('diagnostic_error_code',code);
+ output('diagnostic_failure_category',category);
  process.exitCode=1;
 } finally {
  if(client)await client.end().catch(()=>{});
