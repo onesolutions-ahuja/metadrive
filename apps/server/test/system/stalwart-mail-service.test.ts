@@ -22,7 +22,7 @@ test('Stalwart v0.16 Account/set created object IDs and credential maps work end
   else if(method==='x:Account/query')result={ids:[]};
   else if(method==='x:Account/set'&&'tenantGroup' in (args.create as Record<string,unknown>)){
    const create=(args.create as Record<string,Record<string,unknown>>).tenantGroup;
-   assert.deepEqual(create.roles,{'@type':'Custom',roleIds:[]});
+   assert.deepEqual(create.roles,{'@type':'Custom',roleIds:{}});
    assert.deepEqual(create.permissions,{'@type':'Inherit'});
    result={created:{tenantGroup:{id:'group-1'}}};
   }

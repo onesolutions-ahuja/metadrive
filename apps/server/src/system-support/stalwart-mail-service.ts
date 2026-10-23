@@ -95,7 +95,7 @@ export class StalwartMailService {
   if(!domain)throw new Error('No enabled mail domain is available');
   const result=responseObject(await this.call('x:Account/set',{create:{tenantGroup:{
    '@type':'Group',name,domainId:domain.id,description:'MetaDrive tenant mailbox membership',
-   roles:{'@type':'Custom',roleIds:[]},permissions:{'@type':'Inherit'},quotas:{},aliases:{}
+   roles:{'@type':'Custom',roleIds:{}},permissions:{'@type':'Inherit'},quotas:{},aliases:{}
   }}}),'x:Account/set');
   const created=result.created&&typeof result.created==='object'&&!Array.isArray(result.created)?object(result.created):{};
   // JMAP Foo/set returns created.<clientId> as an object containing its id.
