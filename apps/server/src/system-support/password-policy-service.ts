@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import type {SqlExecutor,SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+import {isPlatformRecoveryMailConfigured} from './platform-recovery-mailer.js';
 
 export const passwordPolicySchema=z.object({
  min_length:z.number().int().min(12).max(128).default(12),
@@ -53,12 +54,8 @@ export class PasswordPolicyService{
   if(!parsed.success)throw new Error('Invalid password policy');
   const p=parsed.data;
   await this.db.transaction(async client=>{
-   if(p.max_age_days>0){
-    const delivery=await client.query(`SELECT s.tenant_id FROM md_password_recovery_settings s
-     JOIN md_named_credentials c ON c.tenant_id=s.tenant_id AND c.id=s.smtp_credential_id
-     WHERE s.tenant_id=$1 AND s.from_email<>'' AND c.protocol='SMTP' AND c.enabled=true`,[tenantId]);
-    if(!delivery.rowCount)throw new Error('Invalid expiry policy: configure password recovery delivery first');
-   }
+   if(p.max_age_days>0&&!isPlatformRecoveryMailConfigured())
+    throw new Error('Invalid expiry policy: platform SMTP recovery delivery is not configured');
    await client.query(`INSERT INTO md_password_policies(tenant_id,min_length,require_uppercase,require_lowercase,
     require_number,require_symbol,max_age_days,history_count,max_failed_attempts,lockout_minutes)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(tenant_id) DO UPDATE SET
