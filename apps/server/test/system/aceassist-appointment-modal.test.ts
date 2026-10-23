@@ -36,10 +36,10 @@ test('Ace Assist financial line CRUD is guarded and recalculates parent totals i
  const financial=readFileSync(new URL('../../src/app-seeders/aceassist-financial-flows.ts',import.meta.url),'utf8');
  assert.match(guard,/export async function prepareDocumentLineMutation/);
  assert.match(guard,/export async function recalculateDocumentLineTotals/);
- assert.match(create,/prepareDocumentLineMutation\(context,config\.documentLineTotals,undefined,fields\)/);
- assert.match(create,/recalculateDocumentLineTotals\(context,config\.documentLineTotals,lineMutation\.newParent\)/);
- assert.match(update,/recalculateDocumentLineTotals\(context,config\.documentLineTotals,lineMutation\.oldParent\)/);
- assert.match(remove,/recalculateDocumentLineTotals\(context,context\.node\.config\.documentLineTotals,lineMutation\.oldParent/);
+ assert.match(create,/prepareDocumentLineMutation\\(context,lineTotalsConfig,undefined,fields\\)/);
+ assert.match(create,/recalculateDocumentLineTotals\\(context,lineTotalsConfig,lineMutation\\.newParent\\)/);
+ assert.match(update,/recalculateDocumentLineTotals\\(context,lineTotalsConfig,lineMutation\\.oldParent\\)/);
+ assert.match(remove,/recalculateDocumentLineTotals\\(context,lineTotalsConfig,lineMutation\\.oldParent/);
  assert.match(crud,/documentLineTotals:lineTotals\(objectApi\)/);
  assert.match(financial,/documentLineTotals:\{parentObject:'Invoice',parentField:'Invoice'/);
 });
