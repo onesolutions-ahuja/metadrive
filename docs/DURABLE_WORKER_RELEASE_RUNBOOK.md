@@ -35,10 +35,13 @@ tenant-scoped Communication records with status, endpoint/provider, timing, and
 byte counts. Credentials, headers, and generic request/response bodies are not
 copied by default; explicitly mapped business messages may populate their
 Communication fields. SMTP records omit recipient addresses and email content.
-Communication persistence is best-effort so a record-write failure does not
-turn a completed provider operation into a reported delivery failure; inspect
-sanitized server diagnostics for `Integration Communication write failed` if a
-record is missing.
+Communication record creation is decoupled from provider results. Failed
+record writes remain in a tenant-scoped SQL outbox for retry by the API server
+and durable worker; monitor pending rows in
+`md_communication_delivery_outbox`. If SQL is unavailable before an outbox row
+can be created, inspect sanitized server diagnostics for
+`Integration Communication write failed`; that attempt cannot be recovered
+from the outbox.
 
 ## Rollback and monitoring
 Rollback deployment code and worker independently, while preserving the additive SQL schema and all tenant records. Do not manually drop durable job/outbox tables or typed `md_record_values` columns to roll back code. Track queued/leased/failed jobs by tenant, `FLOW_RECONCILIATION_REQUIRED` and `DELIVERY_OUTCOME_UNKNOWN` counts, lease expiry, actor revocation, app uninstall, and retries. Do not log tokens, email payloads, recipients, or tenant data.

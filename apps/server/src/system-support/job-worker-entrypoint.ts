@@ -14,7 +14,7 @@ import {OutboundWebhookDispatcher,registerOutboundWebhookJobHandler}
  from './outbound-webhook-worker.js';
 import {decodeMetadataValues,type MetadataValueRow} from '../system-files/component-runtime.js';
 import {applySystemMigrations} from './system-migrations.js';
-import {createIntegrationCommunicationWriter} from './integration-api-log.js';
+import {createIntegrationCommunicationWriter,IntegrationCommunicationOutbox} from './integration-api-log.js';
 
 export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
  const db=new SqlPersistence(env.DATABASE_URL??'');
@@ -27,8 +27,9 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
   // central Communication writer here as in the API server so worker-originated
   // HTTP attempts are not silently omitted from Communication.
   const integrationLogRecords=new RecordEngine(db,rbac,credentials);
-  credentials.setIntegrationActivityWriter(
-   createIntegrationCommunicationWriter(db,integrationLogRecords));
+  const integrationCommunicationOutbox=new IntegrationCommunicationOutbox(
+   db,createIntegrationCommunicationWriter(db,integrationLogRecords));
+  credentials.setIntegrationActivityWriter(integrationCommunicationOutbox.write);
   const service=new DurableJobService(db);
   const flows=new FlowRuntime(db,rbac,records,
    (tenant,user,config,vars,key)=>credentials.callout(tenant,user,config,vars,key),
@@ -85,6 +86,8 @@ export async function startDurableJobWorker(env:NodeJS.ProcessEnv=process.env) {
     // Claims use tenant-scoped SQL row locks; uncertain outcomes stay quarantined.
     try { await credentials.dispatchOne(); }
     catch(error){console.error('Durable HTTP Callout poll failed',error);}
+    try { await integrationCommunicationOutbox.dispatchOne(); }
+    catch(error){console.error('Integration Communication outbox poll failed',error);}
     if(running)await new Promise<void>(resolve=>setTimeout(resolve,interval));
    }
   } finally {

@@ -91,6 +91,7 @@ export class SqlPersistence {
       'md_field_type_migration_config','md_field_type_migration_picklist_values',
       'md_field_type_migration_rollup_filters');
     names.push('md_flow_email_jobs','md_record_files');
+    names.push('md_communication_delivery_outbox');
     names.push('md_tenant_automation_settings');
     names.push('md_tenant_api_usage_daily');
     names.push('md_metadata_package_installations','md_metadata_package_versions',
