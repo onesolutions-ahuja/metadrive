@@ -91,6 +91,23 @@ function whatsappMessages(payload:unknown,endpointId:string):Array<Record<string
  }
  return result;
 }
+
+/** Idempotency guard for provider messages when an earlier multi-message webhook partially failed. */
+async function hasInboundMessage(db:SqlPersistence,tenantId:string,externalMessageId:string):Promise<boolean>{
+ const {rows}=await db.query<{id:string}>(
+  `SELECT r.id FROM md_records r
+   JOIN md_record_values message_id ON message_id.tenant_id=r.tenant_id
+    AND message_id.record_id=r.id AND message_id.object_api=r.object_api
+    AND message_id.field_api='ExternalMessageId'
+   JOIN md_record_values related ON related.tenant_id=r.tenant_id
+    AND related.record_id=r.id AND related.object_api=r.object_api
+    AND related.field_api='RelatedObject'
+   WHERE r.tenant_id=$1 AND r.object_api='Communication' AND r.is_deleted=false
+    AND message_id.value_text=$2 AND related.value_text='InboundWebhookEndpoint'
+   LIMIT 1`,[tenantId,externalMessageId]);
+ return rows.length>0;
+}
+
 function publicUrl(req:Request,id:string){
  // Provider callbacks must be externally reachable over TLS. Render terminates TLS
  // at its edge, so Express may see the internal HTTP hop unless proxy trust is
@@ -215,15 +232,41 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    // Save the provider message before any optional legacy Flow work. A credential
    // webhook never executes AceChatterReceiveWebhook or any other app Flow.
    if(endpoint.credential_name){
-    if(!records)throw new Error('Communication record engine unavailable');
+    if(!records&&!activityWriter)throw new Error('Communication record engine unavailable');
     const messages=whatsappMessages(req.body,endpoint.id);
+    let writtenMessages=0;
     for(const values of messages){
-     await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
-      'Communication',values);
+     const externalMessageId=typeof values.ExternalMessageId==='string'?values.ExternalMessageId:'';
+     if(externalMessageId&&await hasInboundMessage(db,endpoint.tenant_id,externalMessageId))continue;
+     if(activityWriter){
+      // The one Communication record carries both the real inbound message and this
+      // webhook attempt's result/latency/byte counts; do not emit a second API row.
+      await activityWriter({
+       tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
+       provider:endpoint.credential_name??endpoint.provider,
+       actorUserId:endpoint.execution_user_id??endpoint.created_by,
+       endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'POST',
+       statusCode:200,outcome:'success',durationMs:Date.now()-requestStartedAt,
+       requestBytes:raw.length,responseBytes:Buffer.byteLength('{"received":true}'),
+       communication:{
+        channel:String(values.Channel??'WhatsApp'),name:String(values.Name??'WhatsApp inbound'),
+        sender:String(values.Sender??''),recipient:String(values.Recipient??''),
+        body:String(values.Body??''),provider:String(values.Provider??endpoint.provider),
+        externalMessageId:externalMessageId||undefined,
+        relatedObject:'InboundWebhookEndpoint',relatedRecordId:endpoint.id,
+        conversationId:typeof values.ConversationId==='string'?values.ConversationId:undefined,
+        receivedAt:typeof values.ReceivedAt==='string'?values.ReceivedAt:undefined
+       }
+      });
+     }else{
+      await records!.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
+       'Communication',values);
+     }
+     writtenMessages++;
     }
-    requestCommunicationRecorded=messages.length>0;
+    requestCommunicationRecorded=writtenMessages>0;
     // Non-message callbacks (for example delivery-status notifications) are retained
-    // in the webhook event archive, but do not masquerade as customer messages.
+    // in the webhook event archive and receive a generic API activity Communication.
    }else if(flowAvailable&&endpoint.flow_api&&endpoint.execution_user_id){
     const json=raw.toString('utf8');
     await flows.execute(endpoint.tenant_id,endpoint.flow_api,endpoint.execution_user_id,{
