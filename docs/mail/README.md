@@ -12,7 +12,7 @@ Configure these on the MetaDrive API process, never in browser build variables:
 
 The management client accepts Stalwart's same-origin `307` from `/.well-known/jmap` to `/jmap/session`; it does not follow redirects for JMAP API calls or to other destinations.
 
-Never use a `VITE_*` variable for the management key. Keep Stalwart port 8080 private. Create a restricted API key with Replace permission mode and only the account/domain get/query/create/update/destroy permissions needed for the management service.
+Never use a `VITE_*` variable for the management key. Keep Stalwart port 8080 private. Create a restricted API key with Replace permission mode and only the account/domain get/query/create/update/destroy permissions needed for the management service, plus the following narrowly scoped permissions needed to grant mailbox users their webmail access: `authenticate`, `jmapEmailGet`, `jmapEmailQuery`, `jmapMailboxGet`, `jmapIdentityGet`, `jmapEmailUpdate`, `jmapEmailImport`, `jmapEmailSubmissionCreate`, `jmapBlobUpload`, and `jmapBlobGet`. Mailbox users receive this explicit Replace set rather than Stalwart's broad default User role; keep the API key's allowed permission set limited to those grants.
 
 The service creates a deterministic internal Stalwart Group per MetaDrive tenant and uses standard `memberGroupIds` membership to scope mailboxes. Do not manually delete generated `mdt<tenant-uuid-without-hyphens>` groups. The assignable `MailAdmin` permission set grants `Mailbox:read` and `Mailbox:manage` but is not automatically assigned.
 

@@ -30,6 +30,11 @@ test('Stalwart v0.16 Account/set created object IDs and credential maps work end
    const create=(args.create as Record<string,Record<string,unknown>>).newMailbox;
    assert.deepEqual(create.memberGroupIds,{'group-1':true});
    assert.deepEqual(create.credentials,{'0':{'@type':'Password',secret:'strong-test-password'}});
+   assert.deepEqual(create.permissions,{'@type':'Replace',enabledPermissions:{
+    authenticate:true,jmapEmailGet:true,jmapEmailQuery:true,jmapMailboxGet:true,
+    jmapIdentityGet:true,jmapEmailUpdate:true,jmapEmailImport:true,
+    jmapEmailSubmissionCreate:true,jmapBlobUpload:true,jmapBlobGet:true
+   },disabledPermissions:{}});
    result={created:{newMailbox:{id:'account-1'}}};
   }else throw Error('Unexpected JMAP call: '+method);
   return new Response(JSON.stringify({methodResponses:[[method,result,callId]]}),{status:200});

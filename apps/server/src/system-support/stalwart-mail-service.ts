@@ -157,7 +157,11 @@ export class StalwartMailService {
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
    '@type':'User',name,domainId,description,memberGroupIds:{[groupId]:true},
    credentials:{'0':{'@type':'Password',secret:password}},
-   roles:{'@type':'User'},permissions:{'@type':'Inherit'},
+   roles:{'@type':'User'},permissions:{'@type':'Replace',enabledPermissions:{
+    authenticate:true,jmapEmailGet:true,jmapEmailQuery:true,jmapMailboxGet:true,
+    jmapIdentityGet:true,jmapEmailUpdate:true,jmapEmailImport:true,
+    jmapEmailSubmissionCreate:true,jmapBlobUpload:true,jmapBlobGet:true
+   },disabledPermissions:{}},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
   }}}),'x:Account/set');
   const createdIds=created.created&&typeof created.created==='object'&&!Array.isArray(created.created)?object(created.created):{};
