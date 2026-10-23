@@ -3,11 +3,13 @@ import {useMemo,useState} from 'react';
 import {CalendarDays,ChevronLeft,ChevronRight,Clock3,FileText,
  Plus,Search,SlidersHorizontal,UserRound,UsersRound,Wallet} from 'lucide-react';
 import {asBusinessLocal} from './businessDateTime';
+import {scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 
 type Row=Record<string,unknown>;
 type Props={
  object:string;rows:Row[];customers:Row[];users:Row[];products:Row[];
  date:string;timeZone:string;loading:boolean;canLoad:boolean;canCreate:boolean;
+ hours:BusinessCalendar|null;hoursLoading:boolean;hoursError:string;
  onDateChange:(value:string)=>void;onOpen:(record:Row)=>void;onCreate:()=>void;
  onRefresh:()=>void;
 };
@@ -45,7 +47,7 @@ function statusClass(value:unknown){
   ['confirmed','issued'].includes(status)?'confirmed':'pending';
 }
 export function AceAssistMobileRecords({object,rows,customers,users,products,date,timeZone,
- loading,canLoad,canCreate,onDateChange,onOpen,onCreate,onRefresh}:Props){
+ hours,hoursLoading,hoursError,loading,canLoad,canCreate,onDateChange,onOpen,onCreate,onRefresh}:Props){
  const [search,setSearch]=useState('');
  const [staff,setStaff]=useState('');
  const [service,setService]=useState('');
@@ -115,6 +117,12 @@ export function AceAssistMobileRecords({object,rows,customers,users,products,dat
      </button>;
     })}
    </div>
+   <div className="assist-phone-hours" role="status"><Clock3 size={15}/>
+    <span>{hoursLoading?'Checking business hours…':hoursError?'Business hours unavailable: '+hoursError:
+     !hours?'Business hours are not configured':(()=>{
+      const window=scheduleForDay(hours,date);
+      return window?'Open '+window.open+'–'+window.close+' · '+hours.timezone:'Closed / holiday · '+hours.timezone;
+     })()}</span></div>
    <div className="assist-phone-filter-row">
     <label><UsersRound size={16}/><span className="sr-only">Filter by staff</span>
      <select aria-label="Filter by staff" value={staff} onChange={e=>setStaff(e.target.value)}>
