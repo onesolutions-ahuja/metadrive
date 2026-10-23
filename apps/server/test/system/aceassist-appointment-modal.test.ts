@@ -13,9 +13,33 @@ test('Ace Assist record editors use dialogs and user/customer/product Flow looku
  assert.match(src,/\{busy\?'Saving…':editing==='Delete'\?'Delete':'Save'\}/);
  assert.doesNotMatch(src,/Save through Flow/);
  assert.match(src,/\/auth\/me/);
+ // Appointment buttons must accept the V3 actions that the tenant seeder grants.
+ assert.match(src,/disabled=\{!\(can\('Create'\)\|\|canDynamic\('Create',current\.object\)\)\|\|busy\}/);
+ assert.match(src,/disabled=\{!\(can\('Update'\)\|\|canDynamic\('Update',current\.object\)\)\|\|busy\}/);
+ // Line-item lookups must follow the active editor, including Product, rather than
+ // relying on lookup state populated by a previously visited tab.
+ assert.match(src,/const lookupFor=editing\?editingObject:current\.object/);
+ assert.match(src,/\['QuotationLine','InvoiceLine'\]\.includes\(lookupFor\)\?\['Product'\]:\[\]/);
  assert.match(picker,/role="combobox"/);
  assert.match(picker,/\+ Add new/);
  assert.match(seeder,/\['User','Product'\]/);
  assert.match(seeder,/makeGraph\(lookupObject,'Load',\[\]\)/);
  assert.doesNotMatch(src,/\/records\//);
+});
+
+test('Ace Assist financial line CRUD is guarded and recalculates parent totals in Flows',()=>{
+ const guard=readFileSync(new URL('../../src/system-files/nodes/DocumentFinancialGuard.ts',import.meta.url),'utf8');
+ const create=readFileSync(new URL('../../src/system-files/nodes/CreateRecordsNode.ts',import.meta.url),'utf8');
+ const update=readFileSync(new URL('../../src/system-files/nodes/UpdateRecordsNode.ts',import.meta.url),'utf8');
+ const remove=readFileSync(new URL('../../src/system-files/nodes/DeleteRecordsNode.ts',import.meta.url),'utf8');
+ const crud=readFileSync(new URL('../../src/app-seeders/aceassist-crud-flows.ts',import.meta.url),'utf8');
+ const financial=readFileSync(new URL('../../src/app-seeders/aceassist-financial-flows.ts',import.meta.url),'utf8');
+ assert.match(guard,/export async function prepareDocumentLineMutation/);
+ assert.match(guard,/export async function recalculateDocumentLineTotals/);
+ assert.match(create,/prepareDocumentLineMutation\(context,lineTotalsConfig,undefined,fields\)/);
+ assert.match(create,/recalculateDocumentLineTotals\(context,lineTotalsConfig,lineMutation\.newParent\)/);
+ assert.match(update,/recalculateDocumentLineTotals\(context,lineTotalsConfig,lineMutation\.oldParent\)/);
+ assert.match(remove,/recalculateDocumentLineTotals\(context,lineTotalsConfig,lineMutation\.oldParent/);
+ assert.match(crud,/documentLineTotals:lineTotals\(objectApi\)/);
+ assert.match(financial,/documentLineTotals:\{parentObject:'Invoice',parentField:'Invoice'/);
 });

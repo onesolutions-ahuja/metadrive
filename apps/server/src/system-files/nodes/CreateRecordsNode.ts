@@ -1,7 +1,7 @@
 import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
 import {enforceRecordOverlap,enforceUniqueRecordInput} from './RecordOverlapGuard.js';
 import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
-import {enforceDocumentConversion,enforceDocumentSourceLink} from './DocumentFinancialGuard.js';
+import {defaultDocumentLineTotalsConfig,enforceDocumentConversion,enforceDocumentSourceLink,prepareDocumentLineMutation,recalculateDocumentLineTotals} from './DocumentFinancialGuard.js';
 import {enforceManualPaymentGuard} from './RecordPaymentGuard.js';
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
@@ -9,6 +9,8 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
  const apiName=/^[A-Za-z][A-Za-z0-9_]*$/;
     const objectApi=String(config.object??config.objectApi??'');
     if(!apiName.test(objectApi))throw new Error('Invalid Flow Object');
+    const lineTotalsConfig=(objectApi==='QuotationLine'||objectApi==='InvoiceLine')
+      ?config.documentLineTotals??defaultDocumentLineTotalsConfig(objectApi):null;
     if(config.recordSource==='collection'){
       const source=recordValues(vars[String(config.collection??'')]);
       const created:Record<string,unknown>[]=[];
@@ -22,14 +24,17 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
             throw new Error('Invalid Create Records collection field: '+field);
           fields[field]=value;
         }
-        await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
+        const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
+          ?await prepareDocumentLineMutation(context,lineTotalsConfig,undefined,fields):null;
+      await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
         await enforceDocumentConversion(context,config.documentConversion,fields);
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
       await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
-        created.push({...fields,Id:id});
+      if(lineMutation)await recalculateDocumentLineTotals(context,lineTotalsConfig,lineMutation.newParent);
+      created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
         vars[config.resultVariable]=created;
@@ -45,6 +50,8 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         if(!scalar(value))throw new Error('Create Records values must be scalar');
         fields[field]=value;
       }
+      const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
+        ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
@@ -52,6 +59,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
       await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
+      if(lineMutation)await recalculateDocumentLineTotals(context,config.documentLineTotals,lineMutation.newParent);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
       // The optional scalar resultVariable retains its existing Id-only contract.
       vars['record'+node.id]={...fields,Id:id};
