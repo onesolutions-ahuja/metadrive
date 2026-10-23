@@ -31,7 +31,7 @@ export class PasswordResetService {
     "SELECT count(*)::text AS requests FROM md_password_reset_challenges WHERE tenant_id=$1 AND user_id=$2 AND created_at>now()-interval '1 hour'",
     [tenantId,userId]);
    if(Number(rows[0]?.requests??0)>=4)return false;
-   await client.query('INSERT INTO md_password_reset_challenges(tenant_id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval \\'15 minutes\\')',
+   await client.query('INSERT INTO md_password_reset_challenges(tenant_id,user_id,token_hash,expires_at) VALUES($1,$2,$3,now()+interval \'15 minutes\')',
     [tenantId,userId,digest(token)]);
    return true;
   });
@@ -50,7 +50,7 @@ export class PasswordResetService {
     url.searchParams.set('resetToken',token);
     verification=url.toString();
    }
-   const rendered=(text.includes('{!Verification.Value}')?text:text+'\\n{!Verification.Value}')
+   const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
     .replaceAll('{!Verification.Value}',verification)
     .replaceAll('{!Verification.ExpiryMinutes}','15');
    await this.send(tenantId,'','',email,subject,rendered);
