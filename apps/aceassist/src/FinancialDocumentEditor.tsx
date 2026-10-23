@@ -61,7 +61,7 @@ export function FinancialDocumentEditor({
 }){
  const [header,setHeader]=useState<Record<string,string>>(()=>
   Object.fromEntries(metadataFields.map(field=>[
-   field.apiName,String(document?.[field.apiName]??(field.apiName==='CurrencyCode'?'GBP':''))])));
+   field.apiName,String(document?.[field.apiName]??field.defaultValue??'')])));
  const [lines,setLines]=useState<Line[]>(()=>storedLines.length?storedLines.map(draft):[draft()]);
  const [localError,setLocalError]=useState('');
  const isQuote=type==='Quotation';
