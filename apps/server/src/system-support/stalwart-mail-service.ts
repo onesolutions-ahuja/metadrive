@@ -122,7 +122,7 @@ export class StalwartMailService {
    .map(item=>({id:item.id as string,emailAddress:typeof item.emailAddress==='string'?item.emailAddress:'',
     name:typeof item.name==='string'?item.name:'',domainId:typeof item.domainId==='string'?item.domainId:'',
     description:typeof item.description==='string'?item.description:'',quotas:item.quotas??{},
-    usedDiskQuota:item.usedDiskQuota??0,createdAt:item.createdAt??null}));
+    usedDiskQuota:item.usedDiskQuota??0,quotas:item.quotas??{},createdAt:item.createdAt??null}));
  }
  async createMailbox(tenantId:string,raw:unknown){
   if(!uuid.test(tenantId))throw new Error('Invalid tenant identifier');
