@@ -278,6 +278,28 @@ export default function AceAssistRuntime({entry,onLogout}:{
   finally{setBusy(false);}
  };
  const startEdit=(operation:Operation,row?:Row)=>{
+  if(isFinancialDocument(current.object)&&operation!=='Delete'){
+   const object=current.object;
+   if(!actions.has(documentFlow(operation,object))){
+    setError('Authorised document saving Flow is not installed or accessible.');return;
+   }
+   if(operation==='Create'){
+    setDocumentLines([]);setChosen(null);setEditingObject(object);
+    setEditing('Create');setError('');setNotice('');return;
+   }
+   if(!row?.Id){setError('Select a document before editing.');return;}
+   if(!actions.has('AceAssistLoad'+object+'Line')){
+    setError('Authorised document line loading Flow is unavailable.');return;
+   }
+   setBusy(true);setError('');
+   void fetchRows('Load',object+'Line').then(data=>{
+    setDocumentLines(data.filter(line=>String(line[object]??'')===String(row.Id)));
+    setChosen(row);setEditingObject(object);setEditing('Update');
+    setNotice('');setError('');
+   }).catch(e=>setError(e instanceof Error?e.message:String(e)))
+    .finally(()=>setBusy(false));
+   return;
+  }
   const values:Record<string,string>={};
   for(const field of fields){
    const existing=row?.[field.apiName]??(operation==='Create'?field.defaultValue:undefined);
@@ -290,6 +312,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
   if(current.object==='Customer'&&operation==='Create'&&!values.Active)values.Active='true';
   setForm(values);setChosen(row??null);setEditingObject(current.object);
   setEditing(operation);setError('');setNotice('');
+ };
+ const saveDocument=async(changes:DocumentChanges)=>{
+  if(!editing||editing==='Delete'||!isFinancialDocument(editingObject)||busy)return;
+  const api=documentFlow(editing,editingObject);
+  if(!actions.has(api)){setError('Document Flow access is unavailable.');return;}
+  const id=String(chosen?.Id??'');
+  if(editing==='Update'&&!id){setError('Document ID is missing.');return;}
+  const input=editing==='Create'
+   ?{...changes.header,lineInputs:changes.newLines}
+   :{recordId:id,headerInput:[{Id:id,...changes.header}],
+     removedLines:changes.removedLines,updatedLines:changes.updatedLines,newLines:changes.newLines};
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',
+    {method:'POST',body:JSON.stringify(input)});
+   const documentId=response.outputs?.documentId??response.variables?.documentId;
+   if(response.interviewId||typeof documentId!=='string'||!documentId)
+    throw Error('Document Flow did not confirm saving. Check the Flow execution log.');
+   setEditing(null);setChosen(null);setDocumentLines([]);
+   setNotice(editingObject+' and line items saved together.');
+   setReload(count=>count+1);
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
