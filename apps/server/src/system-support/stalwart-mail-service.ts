@@ -1,7 +1,7 @@
 import type {Express,NextFunction,Request,Response} from 'express';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
-import {StalwartJmapClient, type StalwartJmapResponse, type StalwartJmapSession} from './stalwart-jmap-client.js';
+import {StalwartJmapClient, StalwartJmapError, type StalwartJmapResponse, type StalwartJmapSession} from './stalwart-jmap-client.js';
 
 type Actor={tenant_id:string;user_id:string};
 type MailRequest=Request<Record<string,string>>&{actor?:Actor};
@@ -23,6 +23,17 @@ const responseObject=(response:StalwartJmapResponse,method:string):MailObject=>{
  const result=response.methodResponses?.find(item=>item[0]===method);
  if(!result)throw new Error('Stalwart response omitted the requested result');
  return object(result[1]);
+};
+/** Keep actionable failure categories in server logs without disclosing provider payloads or credentials. */
+const logMailError=(operation:string,error:unknown)=>{
+ const pgCode=error&&typeof error==='object'&&'code' in error&&typeof error.code==='string'
+  &&/^[0-9A-Z]{5}$/.test(error.code)?error.code:undefined;
+ const httpStatus=error instanceof StalwartJmapError?error.status:undefined;
+ console.error('Mail administration request failed',JSON.stringify({
+  operation,kind:error instanceof Error?error.name:'unknown',
+  ...(pgCode?{sqlstate:pgCode}:{}),
+  ...(httpStatus?{providerHttpStatus:httpStatus}:{})
+ }));
 };
 const safeError=(error:unknown):string=>{
  if(error instanceof Error&&/not configured|unavailable|permission|invalid|already exists|not found|password|domain/i.test(error.message))
@@ -87,7 +98,9 @@ export class StalwartMailService {
    roles:{'@type':'Default'},permissions:{'@type':'Inherit'},quotas:{},aliases:{}
   }}}),'x:Account/set');
   const created=result.created&&typeof result.created==='object'&&!Array.isArray(result.created)?object(result.created):{};
-  const id=created.tenantGroup;
+  // JMAP Foo/set returns created.<clientId> as an object containing its id.
+  const id=created.tenantGroup&&typeof created.tenantGroup==='object'
+   ?object(created.tenantGroup).id:undefined;
   if(typeof id==='string')return id;
   const failures=result.notCreated&&typeof result.notCreated==='object'&&!Array.isArray(result.notCreated)?object(result.notCreated):{};
   const failure=failures.tenantGroup;
@@ -143,12 +156,13 @@ export class StalwartMailService {
   if(!groupId)throw new Error('Tenant mailbox isolation could not be established');
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
    '@type':'User',name,domainId,description,memberGroupIds:{[groupId]:true},
-   credentials:[{'@type':'Password',secret:password}],
+   credentials:{'0':{'@type':'Password',secret:password}},
    roles:{'@type':'User'},permissions:{'@type':'Inherit'},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
   }}}),'x:Account/set');
   const createdIds=created.created&&typeof created.created==='object'&&!Array.isArray(created.created)?object(created.created):{};
-  const id=createdIds.newMailbox;
+  const id=createdIds.newMailbox&&typeof createdIds.newMailbox==='object'
+   ?object(createdIds.newMailbox).id:undefined;
   if(typeof id!=='string'){
    const failures=created.notCreated&&typeof created.notCreated==='object'&&!Array.isArray(created.notCreated)?object(created.notCreated):{};
    const failure=failures.newMailbox;
@@ -193,10 +207,12 @@ export class StalwartMailService {
   const credentials=accounts[0]?.credentials;
   // Replacing credentials can revoke app passwords/API keys. Fail closed unless the account
   // has exactly one password credential; never silently destroy other credential types.
-  if(!Array.isArray(credentials)||credentials.length!==1||object(credentials[0])['@type']!=='Password')
+  const credentialValues=Array.isArray(credentials)?credentials:
+   credentials&&typeof credentials==='object'?Object.values(object(credentials)):[];
+  if(credentialValues.length!==1||object(credentialValues[0])['@type']!=='Password')
    throw new Error('Password reset is unavailable while this mailbox has additional credentials');
   const result=responseObject(await this.call('x:Account/set',{update:{[id]:{
-   credentials:[{'@type':'Password',secret:password}]
+   credentials:{'0':{'@type':'Password',secret:password}}
   }}}),'x:Account/set');
   if(result.notUpdated&&typeof result.notUpdated==='object'&&!Array.isArray(result.notUpdated)&&object(result.notUpdated)[id])throw new Error('Stalwart rejected password reset');
  }
@@ -221,7 +237,8 @@ export function registerStalwartMailRoutes(app:Express,db:SqlPersistence,rbac:Rb
   await db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
    [actor.tenant_id,actor.user_id,action,JSON.stringify({provider:'stalwart',...(mailboxId?{mailboxId}: {})})]);
  };
- const handleError=(res:Response,error:unknown)=>{
+ const handleError=(res:Response,error:unknown,operation:string)=>{
+  logMailError(operation,error);
   const message=safeError(error);
   const status=message==='Permission denied'?403:/not found/i.test(message)?404:
    /not configured|unavailable/i.test(message)?503:
@@ -230,30 +247,30 @@ export function registerStalwartMailRoutes(app:Express,db:SqlPersistence,rbac:Rb
  };
  app.get('/api/mail/domains',wrap(async(req,res)=>{
   try{await permission(req,'read');res.setHeader('Cache-Control','private, no-store');res.json({domains:await service.listDomains()});}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'domains.list');}
  }));
  app.get('/api/mail/mailboxes',wrap(async(req,res)=>{
   try{const actor=await permission(req,'read');res.setHeader('Cache-Control','private, no-store');res.json({mailboxes:await service.listMailboxes(actor.tenant_id)});}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'mailboxes.list');}
  }));
  app.post('/api/mail/mailboxes',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');const mailbox=await service.createMailbox(actor.tenant_id,req.body);
    await audit(actor,'mailbox_created',mailbox.id);res.status(201).json({mailbox});}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'mailboxes.create');}
  }));
  app.patch('/api/mail/mailboxes/:id',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');const mailbox=await service.updateMailbox(actor.tenant_id,req.params.id,req.body);
    await audit(actor,'mailbox_updated',req.params.id);res.json({mailbox});}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'mailboxes.update');}
  }));
  app.post('/api/mail/mailboxes/:id/reset-password',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');await service.resetPassword(actor.tenant_id,req.params.id,req.body);
    await audit(actor,'mailbox_password_reset',req.params.id);res.status(204).end();}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'mailboxes.resetPassword');}
  }));
  app.delete('/api/mail/mailboxes/:id',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');await service.deleteMailbox(actor.tenant_id,req.params.id);
    await audit(actor,'mailbox_deleted',req.params.id);res.status(204).end();}
-  catch(error){handleError(res,error);}
+  catch(error){handleError(res,error,'mailboxes.delete');}
  }));
 }
