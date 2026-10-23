@@ -16,47 +16,22 @@ The service creates a deterministic internal Stalwart Group per MetaDrive tenant
 
 ## GitHub Pages frontend and API-host proxy
 
-The frontend release is hosted by GitHub Pages and uses `https://api.unesolutions.co.uk/api` as its API base. Therefore **do not change apex DNS or try to proxy `/mail` on the apex Nginx server**. The `/mail` page is part of the SPA and is restored by the existing Pages fallback. JMAP calls are routed through the API hostname at `/api/mail-jmap/`, then Nginx strips that prefix before forwarding to Stalwart.
+The frontend is hosted by GitHub Pages and uses `https://api.unesolutions.co.uk/api` as its API base. The `/mail` page is part of the SPA and uses the existing Pages fallback for deep links. It must not require apex DNS changes or an Nginx route on the apex host.
 
-Merge the following location into the existing HTTPS server block for `api.unesolutions.co.uk`. Preserve existing API routes, certificates, headers and logging. Do not replace the whole server block.
+The server now registers `/api/mail-jmap/*` before Express body parsing and before the MetaDrive bearer-token authorization middleware. This lets the public webmail use the mailbox owner's own Basic credentials to access JMAP while the Stalwart management API key remains server-side and is never used by webmail.
 
-```nginx
-# Mailbox JMAP proxy: only user-authenticated JMAP traffic, no admin API key.
-location ^~ /api/mail-jmap/ {
-    if ($request_method = OPTIONS) {
-        add_header Access-Control-Allow-Origin "https://unesolutions.co.uk" always;
-        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept" always;
-        add_header Access-Control-Max-Age 600 always;
-        add_header Vary Origin always;
-        return 204;
-    }
+Configure these on the MetaDrive API process:
 
-    add_header Access-Control-Allow-Origin "https://unesolutions.co.uk" always;
-    add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "Authorization, Content-Type, Accept" always;
-    add_header Vary Origin always;
+- `STALWART_BASE_URL=http://127.0.0.1:8080` when Stalwart runs on the same VM with a loopback-bound listener.
+- `STALWART_API_KEY=<dedicated restricted server-side key>` for mailbox/domain management routes.
+- `STALWART_ALLOWED_DOMAINS=unesolutions.co.uk` (exact comma-separated domain allowlist).
+- Optional `METADRIVE_MAIL_WEB_ORIGINS=https://unesolutions.co.uk` to configure the exact allowed browser origins for JMAP. The default is the apex origin only.
 
-    proxy_pass http://127.0.0.1:8080/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_connect_timeout 5s;
-    proxy_read_timeout 60s;
-    client_max_body_size 25m;
-}
-```
+The JMAP bridge only permits discovery, JMAP API, upload and download paths. It only forwards HTTP Basic authorization, applies an upload size limit, and refuses non-loopback plaintext Stalwart URLs. It does not accept the MetaDrive management API key from browser requests.
 
-With the trailing slash on `proxy_pass`, this maps:
-- `/api/mail-jmap/.well-known/jmap` → Stalwart `/.well-known/jmap`
-- `/api/mail-jmap/jmap` → Stalwart `/jmap`
-- `/api/mail-jmap/jmap/upload/<accountId>` → Stalwart `/jmap/upload/<accountId>`
+**No extra Nginx location is required** if the existing `api.unesolutions.co.uk` HTTPS Nginx configuration already forwards `/api/*` requests to the MetaDrive Express API. Do not add a competing `/api/mail-jmap/` Nginx proxy that bypasses this middleware. Preserve the existing Nginx server block and TLS settings.
 
-This route forwards the mailbox user's own HTTP Authorization header. It does not expose or use the Stalwart management API key. The CORS origin is intentionally exact; if the production frontend is served from a different origin, change it only to that verified origin. Do not use wildcard CORS with authorization headers.
-
-Before reload, run `sudo nginx -t`; reload only after it passes. Verify the existing `https://unesolutions.co.uk` site and `https://api.unesolutions.co.uk/api/health` (or the repository's current health route) still work. Keep port 8080 private.
+If the API hostname has a restrictive Nginx body-size limit, allow at least 25 MB for `/api/mail-jmap/jmap/upload/` while preserving all other existing API limits. Test with `sudo nginx -t` before any reload. Keep Stalwart's port 8080 private.
 
 ## UI features
 
