@@ -49,6 +49,8 @@ export async function seedOneChatterInstalledPage(client:Pick<PoolClient,'query'
       {key:'inbox',type:'Custom:OneConversation',label:'Editable conversations',region:'main',
         props:{
           viewMode:'inbox',title:'Chats',searchPlaceholder:'Search chats',
+          placeholder:'Type a message',accentColor:'#128C7E',
+          fillRegion:true,standalonePresentation:true,
           objectApiName:'Communication',recordPresenterApiName:'ConversationThread',
           conversationAccessMode:'recordPermissions',conversationDefaultAccount:'WhatsApp',
           conversationDirectionFieldApiName:'Direction',conversationAccountFieldApiName:'Channel',
