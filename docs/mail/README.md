@@ -46,6 +46,8 @@ Saved drafts persist in Stalwart's Drafts folder. Editing a previously saved dra
 
 No DNS records are changed by this repository. Preserve existing apex GitHub Pages records, current MX, SPF, Brevo sending records, DKIM and DMARC until the live server has been checked and the owner approves an exact DNS diff. Do not create multiple SPF records or invent DKIM keys.
 
+For the owner-approved Stalwart-only mail architecture, use the staged [Oracle Stalwart cutover runbook](./ORACLE_STALWART_CUTOVER.md). It documents the observed Cloudflare mail records, preserves the apex/API records and persistent Stalwart volumes, and gates all mail DNS changes on external transport, TLS, relay, mailbox and rollback verification.
+
 Before changing MX, independently verify Stalwart listener bindings and TLS, OCI network rules, SMTP submission on 587/STARTTLS, inbound delivery, outbound delivery, SPF, DKIM and DMARC. The existing OCI Email Delivery setup does not by itself prove that this Stalwart host can send or receive mail.
 
 ## Live rollout checks

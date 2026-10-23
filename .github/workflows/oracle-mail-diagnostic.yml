@@ -25,3 +25,19 @@ jobs:
         run: |
           python3 -m py_compile scripts/oracle/check-mail-delivery.py
           sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-mail-delivery.py
+
+  public-mail-probe:
+    if: github.ref == 'refs/heads/main'
+    needs: diagnose
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test public DNS, SMTP TLS, submission and IMAPS from outside Oracle
+        run: |
+          python3 -m unittest scripts/oracle/test_check_mail_public.py
+          python3 scripts/oracle/check-mail-public.py \
+            --host mail.unesolutions.co.uk \
+            --expected-address 132.145.18.46
