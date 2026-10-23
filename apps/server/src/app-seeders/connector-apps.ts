@@ -50,8 +50,10 @@ export async function seedConnectorAppCatalog(db:Pick<SqlPersistence,'transactio
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['metadrive:connector-app-catalog']);
   for(const name of Object.keys(connectorApps) as ConnectorAppName[]){
    const d=await manifest(name);
-   await client.query(`INSERT INTO md_apps(api_name,label,enabled,tenant_owner_id)
-      VALUES($1,$2,true,NULL) ON CONFLICT(api_name) DO NOTHING`,[name,d.label]);
+   await client.query(`INSERT INTO md_apps(api_name,label,enabled,tenant_owner_id,app_type)
+      VALUES($1,$2,true,NULL,'ConnectorApp')
+      ON CONFLICT(api_name) DO UPDATE SET app_type='ConnectorApp'
+      WHERE md_apps.tenant_owner_id IS NULL`,[name,d.label]);
    const {rows}=await client.query<{id:string}>(`SELECT id FROM md_apps
       WHERE api_name=$1 AND enabled=true AND tenant_owner_id IS NULL`,[name]);
    if(!rows[0])throw Error('Connector catalogue registration conflict: '+name);

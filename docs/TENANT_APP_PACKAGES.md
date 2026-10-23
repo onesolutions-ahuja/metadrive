@@ -82,3 +82,9 @@ publishing, database-backed package archive/signature verification, or measured
 CPU/RAM quotas. These must be validated and completed before advertising
 arbitrary third-party packages as one-click installs. Do not mistake a package
 manifest for an operationally validated app.
+
+## App catalogue classification
+
+`md_apps.app_type` distinguishes launchable `Application` packages from non-visual `ConnectorApp` packages. `Application` is the default for existing and tenant-authored apps. Connector seeders register `ConnectorApp`; the idempotent migration backfills the six existing connector packages without changing installations, licences, credentials or customer records.
+
+AppExchange discovery and lifecycle management show both types and group them as **Applications** and **Connector Apps**. The app dropdown, App Manager and login bootstrap read only installed, entitled `Application` packages. Connectors stay available to shared Flows, HTTP callouts and Named Credentials through their existing installation lifecycle, but do not create a launchable navigation entry.

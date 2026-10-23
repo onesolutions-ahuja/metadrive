@@ -8,7 +8,8 @@ export async function loadTenantApps(db:SqlPersistence,tenantId:string){
  JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
  JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
  LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
- WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+ WHERE a.enabled=true AND a.app_type='Application'
+ AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
  AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
  ORDER BY COALESCE(m.label,a.label),COALESCE(m.api_name,a.api_name)`,[tenantId]);
  return rows;

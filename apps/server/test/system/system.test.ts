@@ -578,7 +578,8 @@ test('AppExchange catalog uses SQL tenant installations and entitlements',async(
  }} as unknown as SqlPersistence;
  const value=await new AppRuntime(db).marketplace('tenant');
  assert.deepEqual(value.records,[{Id:'app1',Name:'Custom App',AppKey__c:'CUSTOM_APP',
-   Description__c:'',CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
+   AppType__c:'Application',Category__c:'Applications',
+    Description__c:'',CredentialName__c:'',Installed__c:true,LicenceStatus__c:'ACTIVE'}]);
 });
 
 test('Flow deactivation changes SQL state only for caller tenant and requires OneEngine manage',async()=>{

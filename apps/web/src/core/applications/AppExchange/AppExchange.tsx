@@ -46,14 +46,14 @@ export default function AppExchange(props: Props) {
     let active = true;
     setLoading(true);
     void props.loadApps().then((rows) => { if (active) setApps(rows); })
-      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Cannot load connector app metadata'); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Cannot load AppExchange metadata'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [props.loadApps]);
-  const categories = useMemo(() => ['All apps', ...Array.from(new Set(apps.map((app) => app.Category__c || 'Integrations')))], [apps]);
+  const categories = useMemo(() => ['All apps', ...Array.from(new Set(apps.map((app) => app.Category__c || 'Applications')))], [apps]);
   const visible = useMemo(() => apps.filter((app) =>
     (view === 'discover' || app.Installed__c) &&
-    (category === 'All apps' || (app.Category__c || 'Integrations') === category) &&
+    (category === 'All apps' || (app.Category__c || 'Applications') === category) &&
     (app.Name + ' ' + (app.Description__c || '') + ' ' + (app.Category__c || '')).toLowerCase().includes(query.trim().toLowerCase())
   ), [apps, view, category, query]);
   const installed = apps.filter((app) => app.Installed__c).length;
@@ -108,11 +108,11 @@ export default function AppExchange(props: Props) {
     </div>
     <PlatformPageSlot slotKey="marketplace-search"><section className="exchange-hero">
       <div className="exchange-hero-copy">
-        <div className="exchange-eyebrow"><Puzzle size={13}/> CONNECTOR APP MARKETPLACE</div>
-        <h1>Connect your business apps</h1>
+        <div className="exchange-eyebrow"><Puzzle size={13}/> APP MARKETPLACE</div>
+        <h1>Discover applications and connectors</h1>
         <p>Install only the applications your tenant needs. App code remains shared; tenant metadata and installation status are stored in SQL.</p>
         <PlatformPageSlot slotKey="field-marketplaceSearch"><label className="exchange-search"><Search size={17}/>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search connector apps" aria-label="Search AppExchange"/>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search apps and connectors" aria-label="Search AppExchange"/>
           {query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}
         </label></PlatformPageSlot>
       </div>
@@ -123,7 +123,7 @@ export default function AppExchange(props: Props) {
         <button role="tab" aria-selected={view === 'discover'} className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>Discover apps</button>
         <button role="tab" aria-selected={view === 'installed'} className={view === 'installed' ? 'active' : ''} onClick={() => setView('installed')}>Installed apps <span>{installed}</span></button>
       </div>
-      <div className="exchange-section-heading"><div><h2>{view === 'installed' ? 'Installed connector apps' : 'Available connectors'}</h2>
+      <div className="exchange-section-heading"><div><h2>{view === 'installed' ? 'Installed packages' : 'Available packages'}</h2>
         <p>Published package versions, installation status and licences come from tenant-scoped SQL metadata.</p></div>
         <div className="exchange-trust-note"><ShieldCheck size={16}/> Permission-aware setup</div>
       </div>
@@ -131,21 +131,21 @@ export default function AppExchange(props: Props) {
         {categories.map((name) => <button key={name} className={category === name ? 'active' : ''} onClick={() => setCategory(name)}>{name}</button>)}
       </div>
       </PlatformPageSlot>
-      {loading && <div className="records-loading">Loading connector app metadata…</div>}
+      {loading && <div className="records-loading">Loading app metadata…</div>}
       <PlatformPageSlot slotKey="marketplace-catalog"><div className="exchange-app-grid">
         {visible.map((app) => <article className="exchange-app-card" key={app.AppKey__c}>
           <div className="exchange-card-top">
             <span className="exchange-app-mark teal"><Puzzle size={23}/></span>
-            <span className={app.Installed__c ? 'exchange-installed-tag' : 'exchange-price'}>{app.Installed__c ? 'Installed' : 'Connector'}</span>
+            <span className={app.Installed__c ? 'exchange-installed-tag' : 'exchange-price'}>{app.Installed__c ? 'Installed' : app.AppType__c === 'ConnectorApp' ? 'Connector App' : 'Application'}</span>
           </div>
           <button className="exchange-card-info" onClick={() => setSelected(app.AppKey__c)}>
-            <strong>{app.Name}</strong><span>Tenant connector <BadgeCheck size={12}/></span>
-            <p>{app.Description__c || 'Configurable metadata-driven API connector'}</p>
+            <strong>{app.Name}</strong><span>{app.AppType__c === 'ConnectorApp' ? 'Tenant connector' : 'Tenant application'} <BadgeCheck size={12}/></span>
+            <p>{app.Description__c || 'Metadata-driven application package'}</p>
           </button>
-          <div className="exchange-card-meta"><span>{app.Category__c || 'Integrations'}</span>
+          <div className="exchange-card-meta"><span>{app.Category__c || 'Applications'}</span>
             <span>{app.LicenceStatus__c === 'ACTIVE' ? 'Licence active' : 'Licence required'}{app.PackageVersion__c ? ' · v'+app.PackageVersion__c : ''}</span></div>
           <div className="exchange-card-footer">
-            <span className="exchange-category-label">{app.Category__c || 'Connector'}</span>
+            <span className="exchange-category-label">{app.Category__c || 'Applications'}</span>
             {app.Installed__c
               ? <div className="toolbar-actions">
                   <button className="btn btn-small btn-brand" disabled={busy} onClick={() => setSelected(app.AppKey__c)}>
@@ -162,32 +162,34 @@ export default function AppExchange(props: Props) {
         </article>)}
       </div>
       </PlatformPageSlot>
-      {!loading && !visible.length && <div className="exchange-empty"><strong>No matching connector apps.</strong>
+      {!loading && !visible.length && <div className="exchange-empty"><strong>No matching apps.</strong>
         <p>Check metadata permissions or adjust search filters.</p></div>}
-      <div className="exchange-safe-note"><LockKeyhole size={15}/> Uninstall disables callouts but preserves saved credentials and app records.</div>
+      <div className="exchange-safe-note"><LockKeyhole size={15}/> Uninstall deactivates package resources while preserving saved credentials and tenant records.</div>
     </div>
     {details && <PlatformPageSlot slotKey="marketplace-details"><div className="exchange-backdrop" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setSelected(null);}}>
       <section className="exchange-detail" role="dialog" aria-modal="true" aria-labelledby="app-detail-title">
         <button className="exchange-close" aria-label="Close" onClick={() => setSelected(null)}><X size={18}/></button>
         <div className="exchange-detail-head"><span className="exchange-app-mark green"><Puzzle size={25}/></span>
-          <div><div className="exchange-detail-category">{details.Category__c || 'Connector'}</div>
+          <div><div className="exchange-detail-category">{details.Category__c || 'Applications'}</div>
             <h2 id="app-detail-title">{details.Name}</h2><div className="exchange-detail-publisher">Configured through metadata and Flows</div></div></div>
         <p className="exchange-detail-description">{details.Description__c}</p>
         <div className="exchange-detail-columns">
-          <div><h3>Includes</h3><p>Settings, connection testing, app-filtered records, Flow dependencies and licence management.</p></div>
-          <div><h3>Access</h3><p>Uses existing object, field and Named Credential permissions within this tenant.</p></div>
+          <div><h3>Includes</h3><p>{details.AppType__c === 'ConnectorApp' ? 'HTTP callouts, credentials, connection settings and provider metadata.' : 'Published app metadata, navigation, pages and shared runtime components.'}</p></div>
+          <div><h3>Access</h3><p>Uses existing tenant licensing, OneEngine permissions and shared platform services.</p></div>
         </div>
         <div className="exchange-data-note"><ShieldCheck size={15}/><span>Installing or updating preserves existing tenant data and customisations. Licences are checked server-side.</span></div>
         {!details.Installed__c && <div className="exchange-data-note"><LockKeyhole size={15}/>
           <span>Access is granted through user profiles and permission sets. Installation does not grant credentials access to every user.</span>
         </div>}
-        <div className="exchange-detail-footer"><span><PackageCheck size={14}/> Connector</span>
+        <div className="exchange-detail-footer"><span><PackageCheck size={14}/> {details.AppType__c === 'ConnectorApp' ? 'Connector App' : 'Application'}</span>
           {details.Installed__c
             ? <>
                 {details.PackageVersion__c && details.PackageVersion__c > (details.InstalledPackageVersion__c ?? 0) &&
                   <button className="btn btn-brand" disabled={busy || !props.canInstall || details.LicenceStatus__c !== 'ACTIVE'}
                     onClick={() => void action(details,'install')}>{busy ? 'Updating…' : 'Update package'}</button>}
-                <button className="btn btn-brand" onClick={() => {setOpenedKey(details.AppKey__c);setSelected(null);}}>Open</button>
+                {details.AppType__c === 'ConnectorApp'
+                  ? <button className="btn btn-brand" onClick={() => {setOpenedKey(details.AppKey__c);setSelected(null);}}>Configure connector</button>
+                  : <span>Open this application using the app dropdown.</span>}
               </>
             : <button className="btn btn-brand" disabled={busy || !props.canInstall ||
                 (details.LicenceStatus__c !== 'ACTIVE' && !props.canManageLicences)}
