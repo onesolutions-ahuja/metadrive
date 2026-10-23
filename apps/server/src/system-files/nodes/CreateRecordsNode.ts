@@ -25,7 +25,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         }
         const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
           ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
-        const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
+      const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
         ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
@@ -34,7 +34,8 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
       await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
-        created.push({...fields,Id:id});
+      if(lineMutation)await recalculateDocumentLineTotals(context,config.documentLineTotals,lineMutation.newParent);
+      created.push({...fields,Id:id});
       }
       if(typeof config.resultVariable==='string'&&config.resultVariable)
         vars[config.resultVariable]=created;
