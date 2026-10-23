@@ -48,3 +48,31 @@ test('JMAP proxy requires mailbox Basic auth and does not proxy unknown paths',a
   assert.equal(unknown.status,404);
  });
 });
+
+test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint without adding a management key',async()=>{
+ const originalFetch=globalThis.fetch;
+ let capturedUrl='';let capturedAuthorization='';let capturedContentType='';let capturedBody='';
+ globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  capturedUrl=String(input);
+  const headers=new Headers(init?.headers);
+  capturedAuthorization=headers.get('authorization')??'';
+  capturedContentType=headers.get('content-type')??'';
+  if(init?.body)capturedBody=await new Response(init.body as BodyInit).text();
+  return new Response(JSON.stringify({methodResponses:[['Mailbox/get',{list:[]},'mb']]}),{
+   status:200,headers:{'content-type':'application/json'}
+  });
+ }) as typeof fetch;
+ try{
+  await withServer(async origin=>{
+   const response=await originalFetch(origin+'/api/mail-jmap/jmap',{
+    method:'POST',headers:{Origin:'https://unesolutions.co.uk',Authorization:'Basic dXNlcjpwYXNz',
+     'Content-Type':'application/json'},body:'{"methodCalls":[]}'
+   });
+   assert.equal(response.status,200);
+   assert.equal(capturedUrl,'http://127.0.0.1:8080/jmap');
+   assert.equal(capturedAuthorization,'Basic dXNlcjpwYXNz');
+   assert.equal(capturedContentType,'application/json');
+   assert.equal(capturedBody,'{"methodCalls":[]}');
+  });
+ }finally{globalThis.fetch=originalFetch;}
+});
