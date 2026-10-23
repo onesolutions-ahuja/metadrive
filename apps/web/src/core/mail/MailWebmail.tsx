@@ -102,6 +102,7 @@ export default function MailWebmail(){
  const send=async(event:React.FormEvent)=>{
   event.preventDefault();setBusy(true);setError('');setNotice('');
   try{
+   if(!session||!auth)throw new Error('Please sign in to your mailbox.');
    const recipient=to.trim();const sender=identities[0];
    if(!sender)throw new Error('No sending identity is configured for this mailbox.');
    if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(recipient))throw new Error('Enter a valid recipient email address.');
