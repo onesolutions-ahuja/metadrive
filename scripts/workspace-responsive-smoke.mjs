@@ -64,7 +64,14 @@ try {
         setupSidebar: box('.setup-sidebar'),
         flowWorkarea: box('.flow-workarea'),
         flowToolbox: box('.flow-toolbox'),
-        flowSettings: box('.flow-settings')
+        flowSettings: box('.flow-settings'),
+        overflowingElements: [...document.querySelectorAll('body *')].map(element => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return { tag: element.tagName, className: typeof element.className === 'string' ? element.className : '',
+            text: (element.textContent || '').trim().slice(0, 40), left: rect.left, right: rect.right,
+            width: rect.width, overflowX: style.overflowX, position: style.position };
+        }).filter(element => element.right > window.innerWidth + 2 && element.width > 0).slice(0, 12)
       };
     });
     assert.ok(metrics.documentWidth <= width + 2,
