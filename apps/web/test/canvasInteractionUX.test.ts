@@ -88,3 +88,19 @@ test('Free Canvas uses clean component objects and a compact icon-based palette'
   assert.match(styles, /\.page-builder-layout\.canvas-unified-builder \.component-grid \{\s*display:flex;\s*flex-direction:column;/);
   assert.match(styles, /\.page-builder-layout\.canvas-unified-builder \.component-library-card \{\s*position:relative;\s*display:flex;\s*flex-direction:row;/);
 });
+
+test('Page Builder property editors filter controls by selected component capabilities', async () => {
+  const builder = await readFile(new URL('../src/core/builders/PageBuilder/pageBuilderView.tsx', import.meta.url), 'utf8');
+  const visual = await readFile(new URL('../src/core/builders/ComponentStyleEditor/PageComponentVisualEditor.tsx', import.meta.url), 'utf8');
+  const advanced = await readFile(new URL('../src/core/builders/ComponentStyleEditor/PageComponentStyleEditor.tsx', import.meta.url), 'utf8');
+  const capabilities = await readFile(new URL('../src/core/builders/ComponentStyleEditor/componentAppearanceCapabilities.ts', import.meta.url), 'utf8');
+
+  assert.match(builder, /PageComponentVisualEditor componentType=\{selected\.type\}/);
+  assert.match(builder, /PageComponentStyleEditor componentType=\{selected\.type\}/);
+  assert.match(visual, /numericPresets\.filter\(preset => supportsAppearanceProperty\(componentType, preset\.key\)\)/);
+  assert.match(visual, /appearanceNumberFields\.filter\(\(\{key\}\) => supportsAppearanceProperty\(componentType, key\)\)/);
+  assert.match(advanced, /numeric\.filter\(\(\[key\]\) => supportsAppearanceProperty\(componentType, key\)\)/);
+  assert.match(advanced, /componentAppearanceCapabilities\(componentType\)\.container/);
+  assert.match(capabilities, /return capabilities\.container/);
+  assert.match(capabilities, /return capabilities\.text \|\| capabilities\.data/);
+});
