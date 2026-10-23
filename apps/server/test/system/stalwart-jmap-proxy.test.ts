@@ -77,7 +77,7 @@ test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint withou
    assert.equal(capturedUrl,'http://127.0.0.1:8080/jmap');
    assert.equal(capturedAuthorization,'Basic dXNlcjpwYXNz');
    assert.equal(capturedContentType,'application/json');
-   assert.equal(capturedBody,JSON.stringify({using:['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'],methodCalls:[['Email/query',{accountId:'acct',filter:{}},'q']}));
+   assert.equal(capturedBody,JSON.stringify({using:['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'],methodCalls:[['Email/query',{accountId:'acct',filter:{}},'q']]}));
   });
  }finally{
   globalThis.fetch=originalFetch;
