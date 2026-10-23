@@ -12,6 +12,12 @@ Company Settings → Business Settings now supports:
   action to copy Monday's times across the week; and
 - dated holidays.
 
+Calendar values are read-only until Edit is selected. For a tenant without a
+saved calendar, the suggested values remain local to the form and are not
+persisted until an administrator explicitly saves them. Cancel restores the
+saved settings or the suggestions. Validation and API errors are shown in the
+form rather than being silently blocked by browser-native validation.
+
 The tenant-scoped `GET` and `PUT /api/tenant/business-calendar` endpoints use
 the central `TenantSettings` read/manage permissions. Writes are validated,
 stored in SQL under the tenant, and audited. Hours are local to the configured

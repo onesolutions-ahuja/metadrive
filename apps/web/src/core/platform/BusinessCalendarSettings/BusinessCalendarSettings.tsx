@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Check, Pencil, RefreshCw, X } from 'lucide-react';
 import './BusinessCalendarSettings.css';
 
 type Day = { closed: boolean; open: string; close: string };
@@ -16,11 +16,18 @@ const weekdays = [
   ['sunday', 'Sunday']
 ] as const;
 const timeZoneOptions = Array.from(new Set([
+  'Europe/London',
   'UTC',
   ...(typeof Intl.supportedValuesOf === 'function'
     ? Intl.supportedValuesOf('timeZone')
     : ['Europe/London'])
-])).sort();
+])).sort((left, right) => {
+  if (left === 'Europe/London') return -1;
+  if (right === 'Europe/London') return 1;
+  if (left === 'UTC') return -1;
+  if (right === 'UTC') return 1;
+  return left.localeCompare(right);
+});
 const timeOptions = Array.from({ length: 48 }, (_, index) => {
   const hour = Math.floor(index / 2);
   const minute = index % 2 ? '30' : '00';
@@ -43,11 +50,15 @@ const parseTime = (value: string) => {
   return `${String(hour).padStart(2, '0')}:${match[2]}`;
 };
 const timePattern = '(?:0?[1-9]|1[0-2]):[0-5][0-9]\\s*[AaPp][Mm]|(?:[01]?[0-9]|2[0-3]):[0-5][0-9]';
-const blankCalendar = (): BusinessCalendar => ({
-  fiscalYearStart: { month: 0, day: 0 },
-  timezone: '',
+const suggestedCalendar = (): BusinessCalendar => ({
+  fiscalYearStart: { month: 4, day: 6 },
+  timezone: 'Europe/London',
   weeklyHours: Object.fromEntries(weekdays.map(([day]) =>
-    [day, { closed: false, open: '', close: '' }])) as Record<string, Day>,
+    [day, {
+      closed: day === 'saturday' || day === 'sunday',
+      open: '09:00',
+      close: '17:00'
+    }])) as Record<string, Day>,
   holidays: []
 });
 
@@ -63,6 +74,7 @@ function BusinessHoursTime({ day, label, value, disabled, onChange }: {
   useEffect(() => {
     if (lastValue.current === value) return;
     lastValue.current = value;
+    if (!value) return;
     if (parseTime(draft) !== value) setDraft(formatTime(value));
   }, [draft, value]);
   return <label className="business-calendar-time-field">{label}
@@ -74,7 +86,7 @@ function BusinessHoursTime({ day, label, value, disabled, onChange }: {
         const next = event.target.value;
         setDraft(next);
         const parsed = parseTime(next);
-        if (parsed) onChange(parsed);
+        onChange(parsed ?? '');
       }} />
   </label>;
 }
@@ -83,8 +95,11 @@ export default function BusinessCalendarSettings({ request, permitted }: {
   request: Request;
   permitted: boolean;
 }) {
-  const [calendar, setCalendar] = useState(blankCalendar);
+  const [calendar, setCalendar] = useState(suggestedCalendar);
+  const [savedCalendar, setSavedCalendar] = useState<BusinessCalendar | null>(null);
   const [configured, setConfigured] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayLabel, setHolidayLabel] = useState('');
   const [loading, setLoading] = useState(false);
@@ -97,11 +112,19 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     if (!permitted) return;
     let active = true;
     setLoading(true);
+    setLoaded(false);
     setError('');
     setNotice('');
     void request<{ calendar: BusinessCalendar | null }>('/tenant/business-calendar')
       .then(({ calendar: saved }) => {
-        if (active) { setCalendar(saved ?? blankCalendar()); setConfigured(Boolean(saved)); }
+        if (active) {
+          const next = saved ?? suggestedCalendar();
+          setCalendar(next);
+          setSavedCalendar(saved);
+          setConfigured(Boolean(saved));
+          setEditing(false);
+          setLoaded(true);
+        }
       })
       .catch((cause: unknown) => {
         if (active) setError(cause instanceof Error ? cause.message : 'Unable to load business calendar');
@@ -113,46 +136,86 @@ export default function BusinessCalendarSettings({ request, permitted }: {
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (saving) return;
-    if (!calendar.timezone.trim() || !calendar.fiscalYearStart.month || !calendar.fiscalYearStart.day ||
-      weekdays.some(([day]) => !calendar.weeklyHours[day].closed &&
-        (!calendar.weeklyHours[day].open || !calendar.weeklyHours[day].close))) {
-      setError('Set fiscal year, time zone and opening/closing times (or mark each day closed) before saving.');
+    const invalidDay = weekdays.find(([day]) => {
+      const hours = calendar.weeklyHours[day];
+      const open = parseTime(hours.open);
+      const close = parseTime(hours.close);
+      return !hours.closed && (!open || !close || open >= close);
+    });
+    const fiscalMaxDay = calendar.fiscalYearStart.month >= 1 && calendar.fiscalYearStart.month <= 12
+      ? new Date(Date.UTC(2000, calendar.fiscalYearStart.month, 0)).getUTCDate()
+      : 0;
+    if (!calendar.fiscalYearStart.month || calendar.fiscalYearStart.day < 1 ||
+      calendar.fiscalYearStart.day > fiscalMaxDay) {
+      setError('Enter a valid fiscal year start date.');
       return;
     }
+    if (!calendar.timezone.trim() || invalidDay) {
+      setError(invalidDay
+        ? `Enter valid opening and closing times for ${invalidDay[1]}; the closing time must be later.`
+        : 'Choose an organization time zone before saving.');
+      return;
+    }
+    const normalizedCalendar: BusinessCalendar = {
+      ...calendar,
+      weeklyHours: Object.fromEntries(weekdays.map(([day]) => {
+        const hours = calendar.weeklyHours[day];
+        return [day, {
+          ...hours,
+          open: parseTime(hours.open) ?? (hours.closed ? '09:00' : ''),
+          close: parseTime(hours.close) ?? (hours.closed ? '17:00' : '')
+        }];
+      }))
+    };
     setSaving(true);
     setError('');
     setNotice('');
     try {
       const result = await request<{ calendar: BusinessCalendar }>('/tenant/business-calendar', {
-        method: 'PUT', body: JSON.stringify(calendar)
+        method: 'PUT', body: JSON.stringify(normalizedCalendar)
       });
       setCalendar(result.calendar);
+      setSavedCalendar(result.calendar);
       setConfigured(true);
+      setEditing(false);
       setNotice('Fiscal year, business hours and holidays saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save business calendar');
     } finally { setSaving(false); }
   };
 
+  const cancelEdit = () => {
+    setCalendar(savedCalendar ?? suggestedCalendar());
+    setEditing(false);
+    setError('');
+    setNotice('');
+  };
+
   if (!permitted) return null;
   return <section className="business-calendar surface permission-section" aria-label="Business calendar">
     <header><div><h2>Fiscal year, business hours &amp; holidays</h2>
       <p>Shared organization calendar settings for scheduling, escalation and entitlement rules.</p></div>
-      <button type="button" className="btn" disabled={loading || saving}
-        onClick={() => setRevision(value => value + 1)}><RefreshCw size={14} /> Refresh</button>
+      <div className="business-calendar-actions">
+        {!editing && <button type="button" className="btn" disabled={loading || !loaded}
+          onClick={() => { setEditing(true); setError(''); setNotice(''); }}>
+          <Pencil size={14} /> Edit
+        </button>}
+        {!editing && <button type="button" className="btn" disabled={loading}
+          onClick={() => setRevision(value => value + 1)}><RefreshCw size={14} /> Refresh</button>}
+      </div>
     </header>
     {loading && <p role="status">Loading business calendar…</p>}
     {error && <p className="business-calendar-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {!loading && !error && !configured && <p role="status">Business calendar not configured. Enter and save your tenant settings.</p>}
-    <form onSubmit={(event) => void save(event)}>
+    {!loading && loaded && !configured &&
+      <p role="status">Suggested defaults are not saved yet. Edit and save to make them available to AceAssist.</p>}
+    <form noValidate onSubmit={(event) => void save(event)}>
       <div className="business-calendar-options">
         <label>Fiscal year starts
-          <span><select required aria-label="Fiscal year start month" value={calendar.fiscalYearStart.month}
+          {editing ? <span><select required aria-label="Fiscal year start month" value={calendar.fiscalYearStart.month}
             onChange={event => setCalendar(value => ({ ...value, fiscalYearStart: {
               ...value.fiscalYearStart, month: Number(event.target.value)
             } }))}>
-            <option value={0}>Select month</option>
             {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>
               {new Date(2000, index, 1).toLocaleString(undefined, { month: 'long' })}
             </option>)}
@@ -161,30 +224,35 @@ export default function BusinessCalendarSettings({ request, permitted }: {
             value={calendar.fiscalYearStart.day} onChange={event => setCalendar(value => ({
               ...value, fiscalYearStart: { ...value.fiscalYearStart, day: Number(event.target.value) }
             }))} /></span>
+            : <strong className="business-calendar-readonly-value">
+              {calendar.fiscalYearStart.day} {new Date(2000, calendar.fiscalYearStart.month - 1, 1)
+                .toLocaleString(undefined, { month: 'long' })}
+            </strong>}
         </label>
         <label>Organization time zone
-          <select required value={calendar.timezone}
-            onChange={event => setCalendar(value => ({ ...value, timezone: event.target.value }))}>
-            {!timeZoneOptions.includes(calendar.timezone) && calendar.timezone &&
-              <option value={calendar.timezone}>{calendar.timezone}</option>}
-            {timeZoneOptions.map(timeZone => <option key={timeZone} value={timeZone}>{timeZone}</option>)}
-          </select>
+          {editing ? <select required value={calendar.timezone}
+              onChange={event => setCalendar(value => ({ ...value, timezone: event.target.value }))}>
+              {!timeZoneOptions.includes(calendar.timezone) && calendar.timezone &&
+                <option value={calendar.timezone}>{calendar.timezone}</option>}
+              {timeZoneOptions.map(timeZone => <option key={timeZone} value={timeZone}>{timeZone}</option>)}
+            </select>
+            : <strong className="business-calendar-readonly-value">{calendar.timezone}</strong>}
         </label>
       </div>
       <div className="business-calendar-hours-heading">
         <div><h3>Weekly business hours</h3><p>Choose from 30-minute suggestions or type a custom time.</p></div>
-        <button type="button" className="btn" disabled={saving || loading}
+        {editing && <button type="button" className="btn" disabled={saving || loading}
           onClick={() => setCalendar(value => ({
             ...value,
             weeklyHours: Object.fromEntries(weekdays.map(([day]) => [
-              day, { ...value.weeklyHours.monday, closed: value.weeklyHours[day].closed }
+              day, { ...value.weeklyHours.monday }
             ])) as Record<string, Day>
-          }))}>Copy Monday hours to all days</button>
+          }))}>Copy Monday hours to all days</button>}
       </div>
       <div className="business-calendar-days">
         {weekdays.map(([day, label]) => <div className="business-calendar-day" key={day}>
           <strong>{label}</strong>
-          <label className="business-calendar-closed"><input type="checkbox" checked={calendar.weeklyHours[day].closed}
+          {editing ? <><label className="business-calendar-closed"><input type="checkbox" checked={calendar.weeklyHours[day].closed}
             onChange={event => setCalendar(value => ({ ...value, weeklyHours: {
               ...value.weeklyHours, [day]: { ...value.weeklyHours[day], closed: event.target.checked }
             } }))} /> Closed</label>
@@ -198,14 +266,18 @@ export default function BusinessCalendarSettings({ request, permitted }: {
             disabled={calendar.weeklyHours[day].closed}
             onChange={close => setCalendar(value => ({ ...value, weeklyHours: {
               ...value.weeklyHours, [day]: { ...value.weeklyHours[day], close }
-            } }))} />
+            } }))} /></>
+            : <span className="business-calendar-readonly-hours">
+              {calendar.weeklyHours[day].closed ? 'Closed'
+                : `${formatTime(calendar.weeklyHours[day].open)} – ${formatTime(calendar.weeklyHours[day].close)}`}
+            </span>}
         </div>)}
-        <datalist id="business-calendar-time-options">
+        {editing && <datalist id="business-calendar-time-options">
           {timeOptions.map(time => <option key={time} value={time} />)}
-        </datalist>
+        </datalist>}
       </div>
       <h3>Holidays</h3>
-      <div className="business-calendar-holiday-entry">
+      {editing && <div className="business-calendar-holiday-entry">
         <label>Date <input type="date" value={holidayDate} onChange={event => setHolidayDate(event.target.value)} /></label>
         <label>Name <input value={holidayLabel} maxLength={120} onChange={event => setHolidayLabel(event.target.value)} /></label>
         <button type="button" className="btn" disabled={!holidayDate || !holidayLabel.trim() || calendar.holidays.length >= 500}
@@ -218,18 +290,24 @@ export default function BusinessCalendarSettings({ request, permitted }: {
               { date: holidayDate, label: holidayLabel.trim() }].sort((a, b) => a.date.localeCompare(b.date)) }));
             setHolidayDate(''); setHolidayLabel(''); setError('');
           }}>Add holiday</button>
-      </div>
+      </div>}
       {calendar.holidays.length > 0 && <ul className="business-calendar-holidays">
         {calendar.holidays.map(holiday => <li key={holiday.date}>
           <span><strong>{holiday.date}</strong> {holiday.label}</span>
-          <button type="button" className="btn" aria-label={'Remove ' + holiday.label}
+          {editing && <button type="button" className="btn" aria-label={'Remove ' + holiday.label}
             onClick={() => setCalendar(value => ({ ...value,
-              holidays: value.holidays.filter(item => item.date !== holiday.date) }))}>Remove</button>
+              holidays: value.holidays.filter(item => item.date !== holiday.date) }))}>Remove</button>}
         </li>)}
       </ul>}
-      <button type="submit" className="btn btn-primary" disabled={saving || loading}>
-        {saving ? 'Saving…' : 'Save business calendar'}
-      </button>
+      {!editing && !calendar.holidays.length && <p className="business-calendar-empty-holidays">No holidays configured.</p>}
+      {editing && <div className="business-calendar-form-actions">
+        <button type="button" className="btn" disabled={saving} onClick={cancelEdit}>
+          <X size={14} /> Cancel
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={saving || loading}>
+          <Check size={14} /> {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>}
     </form>
   </section>;
 }

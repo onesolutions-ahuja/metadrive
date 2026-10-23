@@ -1,5 +1,6 @@
 .business-calendar{padding:16px;margin-bottom:16px}
 .business-calendar>header,.business-calendar-hours-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.business-calendar-actions,.business-calendar-form-actions{display:flex;align-items:center;gap:8px}
 .business-calendar h2{margin:0;font-size:16px}
 .business-calendar h3{margin:20px 0 5px;font-size:14px}
 .business-calendar p{color:var(--md-muted,#64748b);font-size:13px}
@@ -12,6 +13,10 @@
 .business-calendar-days{display:grid;margin-top:10px;border-top:1px solid var(--md-border,#e0e5eb)}
 .business-calendar-day{display:grid;grid-template-columns:minmax(105px,1fr) 90px minmax(140px,1fr) 22px minmax(140px,1fr);align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--md-border,#e0e5eb)}
 .business-calendar-day>strong{font-size:14px}
+.business-calendar-readonly-value{display:block;padding:8px 0;font-size:14px;font-weight:500}
+.business-calendar-readonly-hours{grid-column:2/-1;font-size:14px;color:var(--md-text,#344054)}
+.business-calendar-empty-holidays{margin-bottom:0}
+.business-calendar-form-actions{justify-content:flex-end;margin-top:20px}
 .business-calendar-closed{display:flex!important;align-items:center;gap:7px!important}
 .business-calendar-time-field{grid-template-columns:auto minmax(110px,1fr);align-items:center;gap:9px!important}
 .business-calendar-time-separator{text-align:center;color:var(--md-muted,#64748b);font-size:13px}
@@ -22,12 +27,15 @@
 .business-calendar-error{color:var(--md-danger,#b42318)}
 @media(max-width:700px){
  .business-calendar-day{grid-template-columns:minmax(0,1fr) auto;gap:9px 12px}
+ .business-calendar-readonly-hours{grid-column:1/-1}
  .business-calendar-closed{justify-self:end}
  .business-calendar-time-field{grid-template-columns:1fr;gap:4px!important}
  .business-calendar-time-separator{display:none}
 }
 @media(max-width:480px){
  .business-calendar>header,.business-calendar-hours-heading{flex-direction:column}
+ .business-calendar-actions{width:100%}
  .business-calendar-day{grid-template-columns:minmax(0,1fr) auto}
+ .business-calendar-day .business-calendar-readonly-hours{grid-column:1/-1}
  .business-calendar-day .business-calendar-time-field{grid-column:1/-1;grid-template-columns:74px minmax(0,1fr)}
 }
