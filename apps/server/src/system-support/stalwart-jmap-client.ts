@@ -94,7 +94,7 @@ export class StalwartJmapClient {
       || advertised.search || advertised.hash) {
       throw new StalwartJmapError('Stalwart advertised an unsupported JMAP endpoint');
     }
-    const apiUrl = new URL('/jmap/', this.baseUrl);
+    const apiUrl = new URL('/jmap', this.baseUrl);
     return { ...session, apiUrl: apiUrl.href };
   }
 
