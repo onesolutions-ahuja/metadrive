@@ -34,7 +34,7 @@ All loading Flows use tenant-scoped, actor-authorised **Get Records** nodes. `Ac
 
 **Outbound WhatsApp sending deliberately remains a Draft until a tenant administrator configures an appropriate Named Credential, authorised WhatsApp HTTP callout, provider delivery statuses and failure handling.** Activating a no-op send Flow would falsely imply delivery. Incoming WhatsApp webhooks and provider callbacks likewise require tenant-secured integration Flows. Confirm provider consent, conversation-window/template requirements and webhook authenticity before activation.
 
-Assign the `AceChatterUser` permission set explicitly to the intended users and configure their AceChatter landing app in MetaDrive. The policy includes OneEngine read permissions for inbox fields and explicit create permissions for outbound Communication fields written after a successful authorised send Flow. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
+The OneEngine permission set includes default execute access for `AceChatterLoadCommunications` and read access for the WhatsApp Communication fields it needs. Flow execution still runs in the signed-in user's context and obeys record/field access and explicit RBAC denies. Assign OneEngine explicitly only to users who should have its configurable full-access permission set. Alternatively, assign `AceChatterUser` for the app's scoped permissions. The seeders do not auto-assign users, grant provider access, or install the app on behalf of tenants.
 
 
 ## WhatsApp Cloud API send draft
