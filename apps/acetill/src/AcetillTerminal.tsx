@@ -58,6 +58,11 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const [message,setMessage]=React.useState('');
   const [loading,setLoading]=React.useState(true);
   const [receipt,setReceipt]=React.useState<Row|null>(null);
+  const [returnMode,setReturnMode]=React.useState(false);
+  const [originalInvoice,setOriginalInvoice]=React.useState('');
+  const [returnReason,setReturnReason]=React.useState('');
+  const [returnLines,setReturnLines]=React.useState<Item[]>([]);
+  const [returnConfirmed,setReturnConfirmed]=React.useState<Row|null>(null);
   const [tillLocked,setTillLocked]=React.useState(false);
   const [unlockPin,setUnlockPin]=React.useState('');
   const [unlockError,setUnlockError]=React.useState('');
@@ -122,6 +127,37 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const unlockTill=find('VerifyUserPin');
   const paymentCash=find('PaymentCash');
   const paymentCard=find('PaymentCard');
+  const loadReturn=find('LoadReturnInvoice');
+  const createReturn=find('CreateSalesReturn');
+  const printReturn=find('PrintReceipt');
+  const openReturn=()=>{setReturnMode(true);setReturnConfirmed(null);setReturnLines([]);setOriginalInvoice('');setReturnReason('');setError('');};
+  const searchReturn=async()=>{
+    if(!loadReturn||!originalInvoice.trim())return;
+    try{
+      const result=await execute(loadReturn,{invoiceNumber:originalInvoice.trim()});
+      const rows=extractRows(result);
+      const invoice=result.outputs?.invoice as Row|undefined;
+      if(!invoice||!rows.length)throw Error('No eligible invoice lines were returned.');
+      setReturnLines(rows.map(product).filter((x):x is Item=>!!x).map(x=>({...x,quantity:0})));
+      if(!rows.length)setError('No items available to return.');
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
+  const submitReturn=async()=>{
+    if(!createReturn||!originalInvoice||!returnReason.trim()||!returnLines.some(x=>x.quantity>0))return;
+    try{
+      const result=await execute(createReturn,{
+        originalInvoiceNumber:originalInvoice.trim(),reason:returnReason.trim(),
+        requestId:crypto.randomUUID(),
+        lines:returnLines.filter(x=>x.quantity>0).map(x=>({productId:x.id,quantity:x.quantity}))
+      });
+      const outputs=result.outputs??{};
+      if(result.interviewId||result.completed!==true||
+        !['complete','completed'].includes(asText(outputs.status).toLowerCase())||
+        !outputs.srnInvoiceId)throw Error('Return not confirmed by the server Flow.');
+      setReturnConfirmed(outputs);
+      setMessage('Sales return confirmed.');
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
   // Read-only catalogue flows may run simultaneously; checkout and write actions remain serialized.
   const executeRead=React.useCallback(async(action:Action,inputs:Row)=>{
     return apiRequest<Result>('/flows/'+encodeURIComponent(action.apiName)+'/execute',{
@@ -263,6 +299,30 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
       {!(paymentMode==='cash'?paymentCash:paymentCard)&&<p role="status">Configure and permit the {paymentMode==='cash'?'AcetillPaymentCash':'AcetillPaymentCard'} Flow.</p>}
     </section>
   </div>:null;
+  if(returnMode)return <>{visualStyles}{lockedOverlay}<main className="acetill-receipt-screen" aria-label="Sales return">
+    <section className="acetill-receipt-panel" style={{maxWidth:760}}>
+      <h1>Sales return (SRN)</h1><p>Find a completed sale and select items to return. The server Flow validates all return limits and writes a linked negative invoice.</p>
+      <label>Original invoice number <input aria-label="Original invoice number" value={originalInvoice} disabled={busy||!!returnConfirmed} onChange={e=>setOriginalInvoice(e.target.value)}/></label>
+      <button type="button" disabled={!loadReturn||busy||!!returnConfirmed||!originalInvoice.trim()} onClick={()=>void searchReturn()}>Find invoice</button>
+      {!loadReturn&&<p role="status">Configure and permit AcetillLoadReturnInvoice to load eligible invoice lines.</p>}
+      {returnLines.map(line=><div key={line.id} className="acetill-line">
+        <strong>{line.name}</strong><span>{amount(line.price)}</span>
+        <label>Return quantity<input aria-label={'Return quantity for '+line.name} type="number" min="0" max="99999" step="1" disabled={busy||!!returnConfirmed}
+          value={line.quantity} onChange={e=>setReturnLines(v=>v.map(x=>x.id===line.id?{...x,quantity:Math.max(0,Math.floor(Number(e.target.value)||0))}:x))}/></label>
+      </div>)}
+      <label>Return reason <input aria-label="Return reason" value={returnReason} disabled={busy||!!returnConfirmed} onChange={e=>setReturnReason(e.target.value)}/></label>
+      <p>Requested return: {amount(returnLines.reduce((n,x)=>n+x.quantity*x.price,0))}</p>
+      {!returnConfirmed?<button type="button" className="acetill-charge" disabled={busy||!createReturn||!returnReason.trim()||!returnLines.some(x=>x.quantity>0)}
+        onClick={()=>void submitReturn()}>Create SRN</button>:
+        <><p role="status">Confirmed SRN: {asText(returnConfirmed.srnInvoiceNumber??returnConfirmed.srnInvoiceId)}</p>
+        <button type="button" disabled={!printReturn||busy} onClick={()=>void execute(printReturn!,{
+          invoiceId:returnConfirmed.srnInvoiceId,documentType:'SRN',templateApiName:'AcetillSRNReceipt'
+        }).then(()=>setMessage('SRN print Flow submitted.')).catch(e=>setError(String(e)))}>Print SRN</button></>}
+      {!createReturn&&<p role="status">The AcetillCreateSalesReturn Flow must be published and permitted before returns can be saved.</p>}
+      {error&&<p role="alert">{error}</p>}{message&&<p role="status">{message}</p>}
+      <button type="button" onClick={()=>{setReturnMode(false);setError('');}}>Back to till</button>
+    </section>
+  </main></>;
   return receipt?<>{visualStyles}{lockedOverlay}{pinSetupDialog}<main className="acetill-receipt-screen" aria-label="Sale completed">
     <section className="acetill-receipt-panel"><div className="acetill-receipt-icon" aria-hidden="true">✓</div>
       <h1>Payment complete</h1>{lockButton}<p>Your OneEngine checkout Flow confirmed this transaction.</p>
@@ -280,7 +340,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
           <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
-        {lockButton}{settingsButton}{displayButton}
+        {lockButton}{settingsButton}{displayButton}<button type="button" onClick={openReturn}>Sales return</button>
         <label className="acetill-search" data-acetill-element="search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
