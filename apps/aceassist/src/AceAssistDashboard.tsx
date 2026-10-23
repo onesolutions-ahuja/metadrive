@@ -45,10 +45,10 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
  const outstanding=invoices.filter(row=>['Issued','PartPaid','Overdue'].includes(String(row.Status??'')))
   .map(row=>({...row,remaining:Math.max(0,Number(row.Total??0)-Number(row.AmountPaid??0))}))
   .filter(row=>Number.isFinite(row.remaining)&&row.remaining>0);
+ const outstandingCurrencies=new Set(outstanding.map(row=>String(row.CurrencyCode??'')));
  const next=todays.find(row=>statusLabel(row.Status)!=='Completed'&&statusLabel(row.Status)!=='Cancelled'
   &&statusLabel(row.Status)!=='No Show'&&businessClock(row.StartDateTime,timeZone).slice(11)>=
-   new Intl.DateTimeFormat('en-GB',{timeZone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()))
-  ??todays.find(row=>!['Completed','Cancelled','No Show'].includes(statusLabel(row.Status)));
+   new Intl.DateTimeFormat('en-GB',{timeZone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()));
  const customer=(row:Row)=>customers.find(c=>id(c)===String(row.Customer??''))?.Name
   ??row.CustomerName??row.Name??row.Subject??'Appointment';
  const service=(row:Row)=>String(row.ServiceName??row.Service??row.Description??'Scheduled service');
@@ -63,7 +63,8 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
   </section>
   <section className="assist-home-metrics" aria-label="Business overview">
    <button type="button" onClick={onCalendar} className="assist-metric">
-    <span className="assist-metric-icon" aria-hidden="true">▦</span><strong>{todays.length}</strong><small>Appointments today</small>
+    <span className="assist-metric-icon" aria-hidden="true">▦</span>
+    <strong>{actions.has('AceAssistLoadAppointment')?todays.length:'—'}</strong><small>Appointments today</small>
    </button>
    <button type="button" onClick={onBilling} className="assist-metric">
     <span className="assist-metric-icon" aria-hidden="true">▤</span><strong>{invoicesLoading?'…':actions.has('AceAssistLoadInvoice')?outstanding.length:'—'}</strong><small>Unpaid invoices</small>
@@ -71,6 +72,7 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
    <button type="button" onClick={onBilling} className="assist-metric">
     <span className="assist-metric-icon" aria-hidden="true">↗</span>
     <strong>{invoicesLoading?'…':actions.has('AceAssistLoadInvoice')?
+     outstandingCurrencies.size>1?'Multiple currencies':
      outstanding.length?money(outstanding.reduce((sum,row)=>sum+row.remaining,0),outstanding[0].CurrencyCode):'0.00':'—'}</strong>
     <small>Outstanding balance</small>
    </button>
@@ -84,7 +86,9 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
      <span><small>UP NEXT</small><strong>{String(customer(next))}</strong>
       <span>{service(next)}</span></span><span aria-hidden="true">→</span></button>}
     <div className="assist-home-list">
-     {todays.length===0?<p className="assist-home-empty">No appointments scheduled for today.</p>:
+     {!actions.has('AceAssistLoadAppointment')?
+      <p className="assist-home-empty">Appointment access is not enabled for this user.</p>:
+      todays.length===0?<p className="assist-home-empty">No appointments scheduled for today.</p>:
       todays.slice(0,7).map((row,index)=><button type="button" key={id(row)||index}
        className="assist-home-appointment" onClick={()=>onOpen('Appointment',row)}>
        <time>{businessClock(row.StartDateTime,timeZone).slice(11,16)||'—'}</time>
