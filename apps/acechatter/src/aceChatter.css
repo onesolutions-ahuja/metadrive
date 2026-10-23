@@ -176,8 +176,12 @@
 }
 @media (max-width: 760px) {
   .ace-chat {
-    height: 100vh;
-    height: 100dvh;
+    position: fixed;
+    top: var(--ace-chat-viewport-top, 0px);
+    right: 0;
+    left: 0;
+    width: 100%;
+    height: var(--ace-chat-viewport-height, 100dvh);
     min-height: 0;
     overflow: hidden;
   }

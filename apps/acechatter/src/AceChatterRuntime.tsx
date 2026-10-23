@@ -42,6 +42,7 @@ const contactPhone=(row:Row)=>normalizeChatNumber(
 const validChatPhone=(value:unknown)=>/^[1-9][0-9]{6,14}$/.test(normalizeChatNumber(value));
 
 export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
+  const chatRootRef=React.useRef<HTMLDivElement>(null);
   const [conversations,setConversations]=useState<Row[]>([]);
   const [communications,setCommunications]=useState<Row[]>([]);
   const [messages,setMessages]=useState<Row[]>([]);
@@ -74,6 +75,23 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const inboxConversations=buildCommunicationInbox(conversations,communications,submittedSearch);
   const selectedRow=inboxConversations.find(row=>identify(row)===selected);
   const selectedPhone=normalizeChatNumber(pick(selectedRow??{},'PhoneNumber'));
+
+  useEffect(()=>{
+    const root=chatRootRef.current;
+    const viewport=window.visualViewport;
+    if(!root||!viewport)return;
+    const syncViewport=()=>{
+      root.style.setProperty('--ace-chat-viewport-height',`${viewport.height}px`);
+      root.style.setProperty('--ace-chat-viewport-top',`${viewport.offsetTop}px`);
+    };
+    syncViewport();
+    viewport.addEventListener('resize',syncViewport);
+    viewport.addEventListener('scroll',syncViewport);
+    return()=>{
+      viewport.removeEventListener('resize',syncViewport);
+      viewport.removeEventListener('scroll',syncViewport);
+    };
+  },[]);
 
   useEffect(()=>{
     let live=true;
@@ -301,7 +319,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     onLogout();window.location.assign('/login');
   };
   const filtered=inboxConversations;
-  return <div className={'ace-chat'+(selectedRow?' has-selected-chat':'')+(showNewChat?' new-chat-open':'')}>
+  return <div ref={chatRootRef} className={'ace-chat'+(selectedRow?' has-selected-chat':'')+(showNewChat?' new-chat-open':'')}>
     <aside className="ace-chat-sidebar">
       <header className="ace-chat-brand">
         <div className="ace-chat-logo" aria-hidden="true">✦</div>
