@@ -164,6 +164,7 @@ export default function FlowBuilder({
   const flowTypeOptions = flowCreateOptions(capabilityCatalog);
   const flowElementMetadata = capabilityCatalog?.elements.filter(element => element.builderEnabled) ?? [];
   const [elementSearch, setElementSearch] = useState('');
+  const [toolboxExpanded, setToolboxExpanded] = useState(false);
   const [insertionConnectorId, setInsertionConnectorId] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
   const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType'] | null>(null);
@@ -1572,9 +1573,9 @@ export default function FlowBuilder({
         <button className="icon-button subtle" title="Flow Builder help" onClick={() => onNotify('Configure the Start node, build element paths, check, then save or activate.')}><CircleHelp size={16} /></button>
       </div>
     </div>
-    <div className="flow-workarea" ref={workareaRef} style={{ gridTemplateColumns: `240px minmax(0, 1fr) 8px ${clampPropertiesWidth(propertiesWidth)}px` }}>
+    <div className={`flow-workarea ${toolboxExpanded ? 'flow-toolbox-expanded' : 'flow-toolbox-collapsed'}`} ref={workareaRef} style={{ gridTemplateColumns: `240px minmax(0, 1fr) 8px ${clampPropertiesWidth(propertiesWidth)}px` }}>
       <aside className="flow-toolbox">
-        <div className="toolbox-heading"><h2>Toolbox</h2><button className="icon-button subtle" aria-label="Toolbox options" onClick={() => onNotify('Flow Builder toolbox')}><MoreHorizontal size={16} /></button></div>
+        <div className="toolbox-heading"><h2>Toolbox</h2><button className="icon-button subtle" aria-label={toolboxExpanded ? 'Collapse toolbox' : 'Expand toolbox'} aria-expanded={toolboxExpanded} title={toolboxExpanded ? 'Collapse toolbox' : 'Expand toolbox'} onClick={() => setToolboxExpanded((expanded) => !expanded)}><MoreHorizontal size={16} /></button></div>
         <div className="toolbox-tabs"><button className={toolTab === 'Elements' ? 'active' : ''} onClick={() => onToolTab('Elements')}>Elements</button><button className={toolTab === 'Manager' ? 'active' : ''} onClick={() => onToolTab('Manager')}>Manager</button></div>
         {toolTab === 'Elements' ? <>
           {capabilityError && <div className="info-callout" role="alert">{capabilityError}</div>}
@@ -1591,7 +1592,7 @@ export default function FlowBuilder({
           </label>}
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isToolboxElement(item.type));
-            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" draggable
+            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" title={element.type} draggable
               aria-label={`Click to add ${element.type}, or drag onto the canvas`}
               onDragStart={(event)=>{event.dataTransfer.effectAllowed='copy';
                 event.dataTransfer.setData('application/x-metadrive-flow-type',element.type);}}
