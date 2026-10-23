@@ -160,12 +160,19 @@ export default function AceAssistRuntime({entry,onLogout}:{
    ].filter(x=>x&&x!==lookupFor&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
-  void Promise.all(relations.map(async target=>{
-    const data=await fetchRows('Load',target);
-    return {target,data};
-  })).then(results=>{if(alive)setLookupRows(old=>Object.fromEntries([
-    ...Object.entries(old),...results.map(x=>[x.target,x.data])]));})
-   .catch(ex=>{if(alive)setError(ex instanceof Error?ex.message:String(ex));});
+  // Keep authorised choices available when another optional lookup fails.
+  void Promise.allSettled(relations.map(async target=>({
+   target,data:await fetchRows('Load',target)
+  }))).then(results=>{
+   if(!alive)return;
+   const succeeded=results.filter((result):result is PromiseFulfilledResult<{target:string;data:Row[]}>=>result.status==='fulfilled');
+   setLookupRows(previous=>({...previous,...Object.fromEntries(succeeded.map(result=>[
+    result.value.target,result.value.data
+   ]))}));
+   const failed=results.flatMap((result,index)=>result.status==='rejected'
+    ?[relations[index]+': '+(result.reason instanceof Error?result.reason.message:String(result.reason))]:[]);
+   if(failed.length)setError('Some lookup choices could not be loaded: '+failed.join('; '));
+  });
   return()=>{alive=false;};
  },[fields,current.object,editing,editingObject,objects,loaded,actions,reload]);
  useEffect(()=>{
