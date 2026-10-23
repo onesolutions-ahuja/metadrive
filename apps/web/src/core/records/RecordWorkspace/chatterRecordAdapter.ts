@@ -48,7 +48,7 @@ export function buildChatterView(rows:readonly CommunicationRow[],properties:Rec
     const chat=chats.get(key)!;
     if(occurred>=chat.lastMessageAt){
       chat.preview=body;chat.lastMessageAt=occurred;
-      chat.contactName=displayName||chat.contactName;
+      if(displayName!==phone || !chat.contactName)chat.contactName=displayName;
       chat.assignedUserId=field(row,'assignedUser')||null;
     }
     if(direction===incoming&&conversationField(properties,'readAt')&&!field(row,'readAt'))chat.unreadCount++;
