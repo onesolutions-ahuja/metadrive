@@ -49,7 +49,7 @@ try {
     if (width >= 821) {
       await page.locator('.flow-workarea').evaluate(element => element.classList.add('flow-toolbox-collapsed'));
     }
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(() => document.fonts.ready.then(() => true));
     const metrics = await page.evaluate(() => {
       const box = selector => {
         const element = document.querySelector(selector);
