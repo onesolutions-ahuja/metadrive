@@ -79,6 +79,8 @@ export function createIntegrationCommunicationWriter(
   const now=new Date().toISOString();
   const status=input.outcome==='success'
    ?input.direction==='Inbound'?'Received':'Sent':'Failed';
+  // normalized() strips query strings and fragments. Use only this sanitised value
+  // in every displayed/logged field; never rebuild a subject from the raw endpoint.
   const endpoint=clean(input.endpoint,2048);
   const metadata={
    type:'IntegrationApiCall',transport:input.transport??'HTTP',endpoint,
