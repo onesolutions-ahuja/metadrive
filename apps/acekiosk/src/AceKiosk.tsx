@@ -171,7 +171,7 @@ export default function AceKiosk({onLogout}:{onLogout:()=>void}){
   };
   const logout=async()=>{try{await apiRequest('/auth/logout',{method:'POST'});}catch{}onLogout();window.location.assign('/login');};
   return <div className="ak-shell">
-    <header className="ak-header"><button type="button" className="ak-logo" onClick={restart} aria-label="Kiosk home"><span className="ak-kfc-logo" aria-hidden="true">◆</span></button>
+    <header className="ak-header"><button type="button" className="ak-logo" onClick={restart} aria-label="Kiosk home"><span className="ak-kiosk-logo" aria-hidden="true">◆</span></button>
       <span className="ak-header-label">SELF-SERVICE KIOSK</span><button className="ak-signout" onClick={()=>void logout()}>Sign out</button></header>
     {error&&<div className="ak-error" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
     {screen==='welcome'&&<main className="ak-welcome"><div className="ak-welcome-copy"><p className="ak-overline">YOUR ORDER. YOUR WAY.</p><h1>WELCOME TO <em>YOUR KIOSK.</em></h1><p>How would you like to order?</p><div className="ak-modes"><button className="ak-primary" onClick={()=>void begin('Eat In')}>EAT IN →</button><button className="ak-primary" onClick={()=>void begin('Takeaway')}>TAKEAWAY →</button></div></div><div className="ak-hero-art" aria-hidden="true"><span>GOOD FOOD</span><strong>MADE FOR YOU.</strong><div className="ak-hero-disc">ENJOY<br/>EVERY<br/>BITE.</div></div></main>}
