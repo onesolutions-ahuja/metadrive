@@ -8,6 +8,8 @@ const installers:Readonly<Record<string,(client:PoolClient,tenantId:string)=>Pro
   Acetill:async(client,tenantId)=>{
     const {seedAcetillEditablePage}=await import('./acetill-editable-page.js');
     await seedAcetillEditablePage(client,tenantId);
+    const {seedAcetillDefaultLocation}=await import('./core-location-srn.js');
+    await seedAcetillDefaultLocation(client,tenantId);
   },
   AceChatter:async(client,tenantId)=>{
     const {seedAceChatterFlowsForTenant}=await import('./acechatter-flow.js');
