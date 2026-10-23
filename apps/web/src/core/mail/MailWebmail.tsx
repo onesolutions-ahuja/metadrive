@@ -81,7 +81,7 @@ export default function MailWebmail(){
    const id=discovered.primaryAccounts?.[mail]??Object.keys(discovered.accounts??{})[0];
    if(!id)throw new Error('This mailbox has no mail account access.');
    const advertisedUpload=new URL(discovered.uploadUrl.replace('{accountId}',encodeURIComponent(id)),discovery);
-   setSession({...discovered,apiUrl,uploadUrl:new URL('mail-jmap'+advertisedUpload.pathname,apiRoot).href});setAccountId(id);
+   const preparedSession={...discovered,apiUrl,uploadUrl:new URL('mail-jmap'+advertisedUpload.pathname,apiRoot).href};
    const response2=await fetch(apiUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json',Accept:'application/json'},
     body:JSON.stringify({using:[core,mail,submission],methodCalls:[
      ['Mailbox/get',{accountId:id,ids:null,properties:['id','name','role','totalEmails','unreadEmails']},'mb'],
@@ -92,9 +92,9 @@ export default function MailWebmail(){
    const mailboxResult=responseFor(payload,'Mailbox/get'),identityResult=responseFor(payload,'Identity/get');
    const folders=listOf<Mailbox>(mailboxResult).filter(x=>typeof x.id==='string'&&typeof x.name==='string');
    const ids=listOf<Identity>(identityResult).filter(x=>typeof x.id==='string'&&typeof x.email==='string');
-   setMailboxes(folders);setIdentities(ids);
    const inbox=folders.find(x=>x.role==='inbox')??folders[0];
    if(!inbox)throw new Error('No mail folders are available for this account.');
+   setSession(preparedSession);setAccountId(id);setMailboxes(folders);setIdentities(ids);
    setSelectedMailbox(inbox.id);setNotice('Signed in successfully.');
   }catch(e){setError(e instanceof Error?e.message:'Unable to connect to mailbox');}
   finally{setBusy(false);}
