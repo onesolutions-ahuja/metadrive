@@ -52,6 +52,60 @@ async function insertGraph(client:PoolClient,tenantId:string,graphValue:ReturnTy
   [tenantId,rows[0].id,property.path,property.kind,property.text]);
  return true;
 }
+/** Repair the known default inbox Flow on already-installed tenants.
+ * Older seeded versions omitted conditionLogic, which makes Get Records AND all
+ * three filters. That excludes inbound messages when searching by the sender's
+ * number because the business recipient is a different number. Only migrate the
+ * exact, uncustomised seeded graph; leave tenant-authored Flow changes untouched.
+ */
+export async function reconcileAceChatterLoadCommunicationsFlow(client:PoolClient,tenantId:string):Promise<boolean>{
+ const {rows:flows}=await client.query<{id:string}>(`
+  SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name='AceChatterLoadCommunications'
+   AND archived=false ORDER BY version DESC LIMIT 1 FOR UPDATE`,[tenantId]);
+ const flowId=flows[0]?.id;
+ if(!flowId)return false;
+ const {rows}=await client.query<MetadataValueRow>(`
+  SELECT property_path,value_kind,value_text FROM md_flow_editor_values
+   WHERE tenant_id=$1 AND flow_id=$2 ORDER BY property_path`,[tenantId,flowId]);
+ if(!rows.length)return false;
+ const source=decodeMetadataValues(rows).builder;
+ if(!source||typeof source!=='object'||Array.isArray(source))return false;
+ const graph=source as Record<string,unknown>;
+ if(!Array.isArray(graph.elements)||!Array.isArray(graph.connectors))return false;
+ const elements=graph.elements as Array<{id:number;type:string;config?:Record<string,unknown>}>;
+ const connectors=graph.connectors as Array<{from:number;to:number}>;
+ const get=elements.find(node=>node.id===2);
+ const expectedConditions=[
+  {field:'Channel',operator:'Equals',value:'WhatsApp'},
+  {field:'Sender',operator:'Contains',value:'@searchTerm'},
+  {field:'Recipient',operator:'Contains',value:'@searchTerm'}
+ ];
+ if(elements.length!==3||connectors.length!==2
+  ||elements.find(node=>node.id===1)?.type!=='Start'
+  ||get?.type!=='Get Records'||get.config?.object!=='Communication'
+  ||get.config?.outputVariable!=='communications'||get.config?.recordLimit!=='200'
+  ||elements.find(node=>node.id===3)?.type!=='End'
+  ||!connectors.some(edge=>edge.from===1&&edge.to===2)
+  ||!connectors.some(edge=>edge.from===2&&edge.to===3)
+  ||JSON.stringify(get.config.conditions)!==JSON.stringify(expectedConditions))return false;
+ const currentLogic=get.config.conditionLogic;
+ if(currentLogic==='1 AND (2 OR 3)')return false;
+ if(currentLogic!==undefined&&currentLogic!==null&&currentLogic!==''&&currentLogic!=='All'
+  &&currentLogic!=='1 AND 2 AND 3')return false;
+ get.config={...get.config,conditionLogic:'1 AND (2 OR 3)'};
+ const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',encoded);
+ await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,flowId]);
+ for(const item of encoded)await client.query(`
+  INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+  VALUES($1,$2,$3,$4,$5)`,[tenantId,flowId,item.path,item.kind,item.text]);
+ await client.query(`
+  INSERT INTO md_security_events(tenant_id,action,details)
+  VALUES($1,'AceChatterInboxFlowReconciled',
+   jsonb_build_object('flowId',$2::text,'conditionLogic','1 AND (2 OR 3)'))`,[tenantId,flowId]);
+ return true;
+}
+
 /** Migrate only the seeded, obsolete sender-settings lookup.
  * Do not reset published/customer-authored HTTP callouts or credential bindings. */
 export async function reconcileAceChatterCredentialFlow(client:PoolClient,tenantId:string):Promise<boolean>{
@@ -300,6 +354,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
   WHERE p.tenant_id=$1 AND p.api_name='AceChatterUser'
   ON CONFLICT DO NOTHING`,[tenantId,resource,action]);
+ await reconcileAceChatterLoadCommunicationsFlow(client,tenantId);
  await reconcileAceChatterCredentialFlow(client,tenantId);
  await reconcileAceChatterCommunicationFlow(client,tenantId);
  const definitions=[
