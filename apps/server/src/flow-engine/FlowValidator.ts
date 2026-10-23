@@ -402,7 +402,14 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
   if(type==='Action'){
    if(data.flowType==='Record-Triggered Flow'&&beforeSave)
     errors.push('Before-save Record-Triggered Flows cannot execute Actions');
-   if(properties.actionType==='Create Task'){
+   if(properties.actionType==='Generate 4-Digit Random OTP'||properties.actionType==='Generate 6-Digit Random OTP'){
+    if(typeof properties.outputVariable!=='string'||!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(properties.outputVariable))
+     errors.push('Generate Random OTP requires a valid output variable name');
+    if(Array.isArray(data.resources)&&typeof properties.outputVariable==='string'
+      &&!data.resources.some((resource:unknown)=>!!resource&&typeof resource==='object'
+       &&(resource as Record<string,unknown>).name===properties.outputVariable))
+     errors.push('Generate Random OTP output must be declared as a Flow resource');
+   }else if(properties.actionType==='Create Task'){
     if(typeof properties.objectApiName!=='string'
       ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.objectApiName))
      errors.push('Create Task requires a valid target Object');
