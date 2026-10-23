@@ -4,6 +4,7 @@ import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {AceAssistDashboard} from './AceAssistDashboard';
+import {FinancialDocumentEditor,type DocumentChanges,type DocumentType} from './FinancialDocumentEditor';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
 import {DocumentPrint} from '../../web/src/core/components/DocumentPrint/DocumentPrint';
@@ -22,9 +23,17 @@ const tabs:Tab[]=[
  {object:'Appointment',label:'Appointments'},
  {object:'Customer',label:'Customers'},
  {object:'Quotation',label:'Quotations'},
- {object:'Invoice',label:'Billing / Invoices'},
+ {object:'Invoice',label:'Invoices'},
  {object:'Payment',label:'Payments'}
 ];
+const isFinancialDocument=(name:string):name is DocumentType=>
+ name==='Quotation'||name==='Invoice';
+const documentHeaders:Record<DocumentType,readonly string[]>={
+ Quotation:['Name','Customer','IssueDate','ExpiryDate','CurrencyCode','TermsAndConditions','Notes','Status'],
+ Invoice:['Name','Customer','InvoiceDate','DueDate','CurrencyCode','Notes']
+};
+const documentFlow=(operation:'Create'|'Update',object:DocumentType)=>
+ 'AceAssist'+operation+'DocumentV1'+object;
 const inputFields:Record<string,string[]>={
  Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','Location','AssignedTo','Description','Notes'],
  Customer:['Name','Email','Phone','BillingAddress','ShippingAddress','Active'],
@@ -70,6 +79,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [dashboardLoading,setDashboardLoading]=useState(false);
  const [rows,setRows]=useState<Row[]>([]);
  const [relatedRows,setRelatedRows]=useState<Row[]>([]);
+ const [documentLines,setDocumentLines]=useState<Row[]>([]);
+ const [relatedLoading,setRelatedLoading]=useState(false);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
  const [activeTenant,setActiveTenant]=useState('');
@@ -85,7 +96,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [notice,setNotice]=useState('');
  const [weekOf,setWeekOf]=useState(()=>dateKey(new Date()));
  const [chosen,setChosen]=useState<Row|null>(null);
- const [editingTarget,setEditingTarget]=useState<Row|null>(null);
  const [editing,setEditing]=useState<Operation|null>(null);
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
@@ -100,31 +110,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [hoursLoading,setHoursLoading]=useState(true);
  const [hoursReload,setHoursReload]=useState(0);
  const current=tabs[selected];
- const financialLinesLocked=chosen!==null&&(
-  current.object==='Invoice'?Boolean(chosen.InvoiceNumber)||
-   ['Issued','PartPaid','Paid','PartiallyPaid'].includes(String(chosen.Status??'')):
-  current.object==='Quotation'&&['Accepted','Approved','Converted'].includes(String(chosen.Status??''))
- );
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
  const dynamicFlow=(operation:'Create'|'Update',object:string)=>
   'AceAssist'+operation+(object==='Appointment'?'V3':'V2')+object;
  const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
  const visibleFields=(object:string)=>{
   const definition=objects.find(x=>x.apiName===object);
-  const dynamic=canDynamic('Create',object)||canDynamic('Update',object);
+  const dynamic=canDynamic('Create',object)&&canDynamic('Update',object);
   return (definition?.fields??[]).filter(f=>f.apiName!=='Id'&&!readOnlyField(f)
-   &&!(['Quotation','Invoice'].includes(object)&&
-    ['Subtotal','DiscountAmount','TaxAmount','Total','AmountPaid','BalanceDue','DocumentNumber','InvoiceNumber'].includes(f.apiName))
-   &&!(['QuotationLine','InvoiceLine'].includes(object)&&f.apiName==='LineTotal')
    &&(dynamic||inputFields[object]?.includes(f.apiName))
    && !(object==='Appointment'&&
     ((f.apiName==='Service'&&definition?.fields?.some(x=>x.apiName==='ServiceProduct'))||
      (f.apiName==='AssignedTo'&&definition?.fields?.some(x=>x.apiName==='AssignedUser')))));
  };
  const fields=useMemo(()=>visibleFields(current.object),[objects,actions,current.object]);
+ const documentFields=(object:DocumentType,operation:'Create'|'Update')=>
+  (objects.find(x=>x.apiName===object)?.fields??[])
+   .filter(field=>documentHeaders[object].includes(field.apiName)
+    &&(operation==='Update'||field.apiName!=='Status')&&!readOnlyField(field));
  const flowName=(operation:'Load'|Operation)=>'AceAssist'+operation+current.object;
- const can=(operation:'Load'|Operation)=>current.object==='Appointment'
-  &&(operation==='Create'||operation==='Update')?false:actions.has(flowName(operation));
+ const can=(operation:'Load'|Operation)=>current.object==='Appointment'&&
+  (operation==='Create'||operation==='Update')?false:actions.has(flowName(operation));
  const loaded=useMemo(()=>new Set(objects.map(x=>x.apiName.toLowerCase())),[objects]);
  useEffect(()=>{
   let alive=true;
@@ -192,10 +198,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
   if(screen!=='home'||!actions.has('AceAssistLoadInvoice'))return;
   setDashboardLoading(true);
   void fetchRows('Load','Invoice').then(data=>{if(alive)setDashboardInvoices(data);})
-   .catch(cause=>{if(alive){
-    setDashboardInvoices([]);
-    setError(cause instanceof Error?cause.message:String(cause));
-   }})
+   .catch(cause=>{if(alive){setDashboardInvoices([]);
+    setError(cause instanceof Error?cause.message:String(cause));}})
    .finally(()=>{if(alive)setDashboardLoading(false);});
   return()=>{alive=false;};
  },[screen,actions,reload]);
@@ -211,7 +215,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
   const relations=[...new Set([...lookupFields
     .map(field=>targetObject(field)??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
     ...(lookupFor==='Appointment'?['User','Product','Customer']:[]),
-    ...(['QuotationLine','InvoiceLine'].includes(lookupFor)?['Product']:[])
+    ...(['QuotationLine','InvoiceLine'].includes(lookupFor)?['Product']:[]),
+    ...(isFinancialDocument(lookupFor)?['Product','Customer']:[])
    ].filter(x=>x&&x!==lookupFor&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
@@ -232,13 +237,15 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[fields,current.object,editing,editingObject,objects,loaded,actions,reload]);
  useEffect(()=>{
   let alive=true;
-  setRelatedRows([]);
-  if(!chosen||!['Quotation','Invoice'].includes(current.object))return;
+  setRelatedRows([]);setRelatedLoading(false);
+  if(!chosen||!isFinancialDocument(current.object))return;
   const child=current.object+'Line';
   if(!actions.has('AceAssistLoad'+child))return;
+  setRelatedLoading(true);
   void fetchRows('Load',child).then(data=>{
    if(alive)setRelatedRows(data.filter(x=>String(x[current.object]??'')===String(chosen.Id??'')));
-  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));})
+   .finally(()=>{if(alive)setRelatedLoading(false);});
   return()=>{alive=false;};
  },[current.object,chosen?.Id,actions,reload]);
  const runRecordAction=async(apiName:string,record:Row)=>{
@@ -250,7 +257,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    if(response.interviewId)throw Error('The Flow requires additional input');
    setNotice('Workflow completed: '+apiName);
    if(apiName==='AceAssistInvoiceFromAppointment'||apiName==='AceAssistConvertQuoteToInvoice'){
-    setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setChosen(null);
+    setScreen('records');setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setChosen(null);
    }
    setReload(x=>x+1);
   }catch(e){setError(e instanceof Error?e.message:String(e));}
@@ -290,7 +297,28 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
   finally{setBusy(false);}
  };
- const startEdit=(operation:Operation,row?:Row,object=current.object,preserveParent=false)=>{
+ const startEdit=(operation:Operation,row?:Row,object=current.object)=>{
+  if(isFinancialDocument(object)&&operation!=='Delete'){
+   if(!actions.has(documentFlow(operation,object))){
+    setError('Authorised document saving Flow is not installed or accessible.');return;
+   }
+   if(operation==='Create'){
+    setDocumentLines([]);setChosen(null);setEditingObject(object);
+    setEditing('Create');setError('');setNotice('');return;
+   }
+   if(!row?.Id){setError('Select a document before editing.');return;}
+   if(!actions.has('AceAssistLoad'+object+'Line')){
+    setError('Authorised document line loading Flow is unavailable.');return;
+   }
+   setBusy(true);setError('');
+   void fetchRows('Load',object+'Line').then(data=>{
+    setDocumentLines(data.filter(line=>String(line[object]??'')===String(row.Id)));
+    setChosen(row);setEditingObject(object);setEditing('Update');
+    setNotice('');setError('');
+   }).catch(e=>setError(e instanceof Error?e.message:String(e)))
+    .finally(()=>setBusy(false));
+   return;
+  }
   const values:Record<string,string>={};
   for(const field of visibleFields(object)){
    const existing=row?.[field.apiName]??(operation==='Create'?field.defaultValue:undefined);
@@ -301,10 +329,31 @@ export default function AceAssistRuntime({entry,onLogout}:{
    else values.AssignedTo=selfId;
   }
   if(object==='Customer'&&operation==='Create'&&!values.Active)values.Active='true';
-  setForm(values);setEditingTarget(row??null);
-  if(!preserveParent)setChosen(row??null);
-  setEditingObject(object);
+  setForm(values);setChosen(row??null);setEditingObject(object);
   setEditing(operation);setError('');setNotice('');
+ };
+ const saveDocument=async(changes:DocumentChanges)=>{
+  if(!editing||editing==='Delete'||!isFinancialDocument(editingObject)||busy)return;
+  const api=documentFlow(editing,editingObject);
+  if(!actions.has(api)){setError('Document Flow access is unavailable.');return;}
+  const id=String(chosen?.Id??'');
+  if(editing==='Update'&&!id){setError('Document ID is missing.');return;}
+  const input=editing==='Create'
+   ?{...changes.header,lineInputs:changes.newLines}
+   :{recordId:id,...changes.header,
+     removedLines:changes.removedLines,updatedLines:changes.updatedLines,newLines:changes.newLines};
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',
+    {method:'POST',body:JSON.stringify(input)});
+   const documentId=response.outputs?.documentId??response.variables?.documentId;
+   if(response.interviewId||typeof documentId!=='string'||!documentId)
+    throw Error('Document Flow did not confirm saving. Check the Flow execution log.');
+   setEditing(null);setChosen(null);setDocumentLines([]);
+   setNotice(editingObject+' and line items saved together.');
+   setReload(count=>count+1);
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
@@ -316,13 +365,13 @@ export default function AceAssistRuntime({entry,onLogout}:{
   const mutationFlow=dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
    'AceAssist'+editing+editingObject;
  if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
-  if(editing==='Delete'&&!editingTarget?.Id)return;
+  if(editing==='Delete'&&!chosen?.Id)return;
   if(editing!=='Delete'&&editingObject==='Appointment'){
    const violation=checkBusinessHours(hours,form.StartDateTime??'',form.EndDateTime??'');
    if(violation){setError(violation);return;}
   }
   const payload:Record<string,unknown>={};
-  if(editing!=='Create')payload.recordId=editingTarget?.Id;
+  if(editing!=='Create')payload.recordId=chosen?.Id;
   if(editing!=='Delete'){
    for(const field of visibleFields(editingObject)){
     if(fieldKind(field)==='readonly')continue;
@@ -333,7 +382,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    }
   }
   const input=dynamic?{
-   recordsInput:[{...payload,...(editing==='Update'?{Id:String(editingTarget?.Id??'')}:{} )}]
+   recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
   }:payload;
   setBusy(true);setError('');
   try{
@@ -348,39 +397,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
     if(!addedId)throw Error('Customer was saved but the Flow did not return the new record ID');
     setSelected(0);setScreen('records');setEditing('Create');setEditingObject('Appointment');
     setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
-   }else{
-    if(editing==='Create'&&['Quotation','Invoice'].includes(editingObject)){
-     const returned=response.outputs?.createdRecords??response.variables?.createdRecords;
-     const created=Array.isArray(returned)?returned[0] as Row|undefined:undefined;
-     const createdId=String(created?.Id??response.outputs?.createdRecordId
-      ??response.variables?.createdRecordId??'');
-     if(createdId){
-      setChosen({...form,...(created??{}),Id:createdId});
-      setNotice('Document saved. Add line items below; totals will be recalculated by the financial Flow.');
-     }
-    }
-    setEditing(null);
-   }
+   }else setEditing(null);
    setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
   finally{setBusy(false);}
  };
+
  const openSection=(object:string,row?:Row)=>{
   const index=tabs.findIndex(tab=>tab.object===object);
-  if(index<0)return;
+  if(index<0||!actions.has('AceAssistLoad'+object))return;
   setScreen('records');setSelected(index);setChosen(row??null);
-  setEditing(null);setEditingTarget(null);setReturnToAppointment(false);
-  setNotice('');setError('');
+  setEditing(null);setReturnToAppointment(false);setNotice('');setError('');
  };
  const openHome=()=>{
   setScreen('home');setSelected(0);setChosen(null);setEditing(null);
-  setEditingTarget(null);setReturnToAppointment(false);setNotice('');setError('');
+  setReturnToAppointment(false);setNotice('');setError('');
  };
  const openMore=()=>{setScreen('more');setEditing(null);setChosen(null);setNotice('');};
  const openCreate=(object:'Appointment'|'Customer'|'Quotation'|'Invoice')=>{
   const index=tabs.findIndex(tab=>tab.object===object);
   if(index<0)return;
-  if(!actions.has('AceAssistCreate'+(object==='Appointment'?'V3':'V2')+object))return;
+  const authorised=isFinancialDocument(object)?actions.has(documentFlow('Create',object)):
+   actions.has('AceAssistCreate'+(object==='Appointment'?'V3':'V2')+object);
+  if(!authorised||!actions.has('AceAssistLoad'+object))return;
   setSelected(index);setScreen('records');
   startEdit('Create',undefined,object);
  };
@@ -388,6 +427,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
   if(!value)return '';
   try{return asBusinessLocal(String(value),hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone);}
   catch{return '';}
+ };
+ const calendarCustomer=(row:Row)=>{
+  const customer=lookupRows.Customer?.find(item=>idOf(item)===String(row.Customer??''));
+  return String(customer?.Name??row.CustomerName??row.Name??row.Subject??'Appointment');
  };
  const filteredAppointments=rows.filter(row=>{
   if(calendarStaffFilter&&String(row.AssignedUser??row.AssignedTo??'')!==calendarStaffFilter)return false;
@@ -408,10 +451,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
   try{setWeekOf(asBusinessLocal(new Date().toISOString(),
    hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone).slice(0,10));}
   catch{setWeekOf(dateKey(new Date()));}
- };
- const calendarCustomer=(row:Row)=>{
-  const customer=lookupRows.Customer?.find(item=>idOf(item)===String(row.Customer??''));
-  return String(customer?.Name??row.CustomerName??row.Name??row.Subject??'Appointment');
  };
  const monday=new Date(weekOf+'T12:00:00');
  monday.setDate(monday.getDate()-((monday.getDay()+6)%7));
@@ -439,8 +478,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
   </header>
   <main className="custom-assist">
    {screen==='records'&&<div className="custom-heading"><div><span className="custom-eyebrow">ACE ASSIST</span>
-    <h1>{current.object==='Appointment'?'Calendar':current.label}</h1>
-    <p>Live tenant Objects · OneEngine Flows</p></div>
+    <h1>{current.object==='Appointment'?'Calendar':current.label}</h1><p>Live tenant Objects · OneEngine Flows</p></div>
     <label className="custom-date">{calendarView==='day'?'Date':calendarView==='month'?'Month of':'Week of'}
       <input type="date" value={weekOf} onChange={e=>setWeekOf(e.target.value)}/></label>
    </div>}
@@ -479,16 +517,17 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </div>}
       <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
       <button type="button" onClick={()=>startEdit('Create')}
-       disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
+       disabled={isFinancialDocument(current.object)
+        ?!actions.has(documentFlow('Create',current.object))||busy:
+        !(can('Create')||canDynamic('Create',current.object))||busy}>
+       New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<div className="assist-calendar-filters">
-     <label>Staff
-      <select value={calendarStaffFilter} onChange={e=>setCalendarStaffFilter(e.target.value)}>
+     <label>Staff<select value={calendarStaffFilter} onChange={e=>setCalendarStaffFilter(e.target.value)}>
        <option value="">All staff</option>{(lookupRows.User??[]).map(user=>
         <option key={idOf(user)} value={idOf(user)}>{String(user.Name??user.Email??idOf(user))}</option>)}
       </select></label>
-     <label>Service
-      <select value={calendarServiceFilter} onChange={e=>setCalendarServiceFilter(e.target.value)}>
+     <label>Service<select value={calendarServiceFilter} onChange={e=>setCalendarServiceFilter(e.target.value)}>
        <option value="">All services</option>{(lookupRows.Product??[])
         .filter(product=>product.Active!==false&&product.Active!=='false'
          &&product.IsService!==false&&product.IsService!=='false')
@@ -525,48 +564,33 @@ export default function AceAssistRuntime({entry,onLogout}:{
     </div>}
     {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
      <p className="custom-empty">No appointments match the selected staff and service filters.</p>}
-    {busy&&<p role="status">Running OneEngine Flow…</p>}
+    {busy&&<p role="status">Running OneEngine Flow…</p>
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
    <aside className={'custom-visit-detail'+(!chosen?' custom-detail-empty':'')}>
-    <div className="custom-panel-title"><h2>{['Quotation','Invoice'].includes(current.object)
-     ?current.object+' details':'Record details'}</h2><span>OneEngine</span></div>
-    {chosen?<>{['Quotation','Invoice'].includes(current.object)&&
-     <div className="assist-document-header">
-      <strong>{String(chosen.DocumentNumber??chosen.InvoiceNumber??chosen.Name??current.object)}</strong>
-      <span className={'assist-status '+(String(chosen.Status??'').toLowerCase()==='paid'?'complete':'pending')}>
-       {String(chosen.Status??'Draft')}</span>
-     </div>}<dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
+    <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
+    {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
-      {['Quotation','Invoice'].includes(current.object)&&<section className="assist-related-list">
-       <h3>{current.object} lines</h3>
-       {!actions.has('AceAssistLoad'+current.object+'Line')?<p>No authorised line lookup Flow.</p>:
-        relatedRows.length?relatedRows.map(line=><div key={idOf(line)} className="assist-line-row">
-         <span><strong>{title(line)}</strong><small>{String(line.Description??'')}</small>
-          <small>{String(line.Quantity??'')} × {String(line.UnitPrice??'')} · {String(line.LineTotal??'')}</small></span>
-         <span className="assist-line-actions">
-          <button type="button" disabled={!actions.has('AceAssistUpdateV2'+current.object+'Line')||financialLinesLocked||busy}
-           onClick={()=>startEdit('Update',line,current.object+'Line',true)}>Edit</button>
-          <button type="button" disabled={!actions.has('AceAssistDelete'+current.object+'Line')||financialLinesLocked||busy}
-           onClick={()=>startEdit('Delete',line,current.object+'Line',true)}>Delete</button>
-         </span>
-        </div>):<p>No lines attached to this record.</p>}
-       <div className="assist-document-totals">
-        <div><span>Subtotal</span><strong>{show(chosen.Subtotal)}</strong></div>
-        <div><span>Discount</span><strong>{show(chosen.DiscountAmount)}</strong></div>
-        <div><span>Tax</span><strong>{show(chosen.TaxAmount)}</strong></div>
-        <div className="assist-document-grand"><span>Total</span><strong>{show(chosen.Total)}</strong></div>
-       </div>
-       <button type="button" disabled={!actions.has('AceAssistCreateV2'+current.object+'Line')||financialLinesLocked||busy}
-        onClick={()=>{
-         const object=current.object+'Line';
-         startEdit('Create',undefined,object,true);
-         setForm(previous=>({...previous,[current.object]:String(chosen.Id??'')}));
-        }}>+ Add line item</button>
+      {isFinancialDocument(current.object)&&<section className="assist-related-list">
+       <h3>Line items</h3>
+       {!actions.has('AceAssistLoad'+current.object+'Line')
+        ?<p>No authorised line lookup Flow.</p>
+        :relatedLoading?<p>Loading line items…</p>
+        :relatedRows.length?relatedRows.map(line=><div className="assist-related-item" key={idOf(line)}>
+         <strong>{title(line)}</strong>
+         <span>{String(line.Quantity??'')} × {Number(line.UnitPrice??0).toFixed(2)}
+          {' = '}{Number(line.LineTotal??0).toFixed(2)}</span>
+        </div>):<p>No line items attached to this document.</p>}
+       {chosen.Total!=null&&<p className="assist-related-total">Total: {String(chosen.CurrencyCode??'')}
+        {' '}{Number(chosen.Total).toFixed(2)}</p>}
       </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)}
-        disabled={!(can('Update')||canDynamic('Update',current.object))||busy}>Edit</button>
+        disabled={isFinancialDocument(current.object)
+         ?!actions.has(documentFlow('Update',current.object))||busy
+          ||!actions.has('AceAssistLoad'+current.object+'Line')
+         :!(can('Update')||canDynamic('Update',current.object))||busy}>
+        {isFinancialDocument(current.object)?'Edit document & items':'Edit'}</button>
        {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
         &&actions.has('AceAssistInvoiceFromAppointment')&&
         <button type="button" disabled={busy}
@@ -602,11 +626,14 @@ export default function AceAssistRuntime({entry,onLogout}:{
    <button type="button" aria-current={screen==='home'?'page':undefined}
     onClick={openHome}><span aria-hidden="true">⌂</span>Home</button>
    <button type="button" aria-current={screen==='records'&&current.object==='Appointment'?'page':undefined}
-    onClick={()=>openSection('Appointment')}><span aria-hidden="true">▦</span>Calendar</button>
+    disabled={!actions.has('AceAssistLoadAppointment')} onClick={()=>openSection('Appointment')}>
+    <span aria-hidden="true">▦</span>Calendar</button>
    <button type="button" aria-current={screen==='records'&&current.object==='Invoice'?'page':undefined}
-    onClick={()=>openSection('Invoice')}><span aria-hidden="true">▤</span>Billing</button>
+    disabled={!actions.has('AceAssistLoadInvoice')} onClick={()=>openSection('Invoice')}>
+    <span aria-hidden="true">▤</span>Billing</button>
    <button type="button" aria-current={screen==='records'&&current.object==='Customer'?'page':undefined}
-    onClick={()=>openSection('Customer')}><span aria-hidden="true">♙</span>Customers</button>
+    disabled={!actions.has('AceAssistLoadCustomer')} onClick={()=>openSection('Customer')}>
+    <span aria-hidden="true">♙</span>Customers</button>
    <button type="button" aria-current={screen==='more'||screen==='records'&&!['Appointment','Invoice','Customer'].includes(current.object)?'page':undefined}
     onClick={openMore}><span aria-hidden="true">☰</span>More</button>
   </nav>
@@ -635,7 +662,17 @@ export default function AceAssistRuntime({entry,onLogout}:{
     </form>
    </section>
   </div>}
-  {editing&&<div className="assist-modal-backdrop" role="presentation"
+  {editing&&editing!=='Delete'&&isFinancialDocument(editingObject)&&
+   <FinancialDocumentEditor
+    key={editingObject+':'+editing+':'+String(chosen?.Id??'new')}
+    type={editingObject} operation={editing}
+    document={editing==='Update'?chosen:null} storedLines={documentLines}
+    metadataFields={documentFields(editingObject,editing)}
+    customers={lookupRows.Customer??[]} products={lookupRows.Product??[]}
+    busy={busy} error={error}
+    onCancel={()=>setEditing(null)} onSave={saveDocument}/>}
+  {editing&&(!isFinancialDocument(editingObject)||editing==='Delete')&&
+   <div className="assist-modal-backdrop" role="presentation"
    onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>
    <section className="assist-modal" role="dialog" aria-modal="true"
     aria-label={editing+' '+editingObject}>
@@ -687,11 +724,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
             ||String(r.Name??'')===next.Service);
            return withServiceEnd(next,selectedProduct);
           })}/>:
-        (editingObject==='QuotationLine'&&field.apiName==='Quotation'||
-         editingObject==='InvoiceLine'&&field.apiName==='Invoice')&&chosen?
-         <label className="assist-fixed-parent">Parent {current.object}
-          <input type="text" readOnly value={String(chosen.DocumentNumber??chosen.InvoiceNumber??chosen.Name??chosen.Id??'')}/>
-         </label>:
         fieldKind(field)==='reference'?
          <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
           options={(lookupRows[targetObject(field)??'']??[]).filter(row=>

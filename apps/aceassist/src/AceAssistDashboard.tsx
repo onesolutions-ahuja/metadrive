@@ -52,8 +52,11 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
  const customer=(row:Row)=>customers.find(c=>id(c)===String(row.Customer??''))?.Name
   ??row.CustomerName??row.Name??row.Subject??'Appointment';
  const service=(row:Row)=>String(row.ServiceName??row.Service??row.Description??'Scheduled service');
- const canCreate=(object:ObjectName)=>actions.has('AceAssistCreate'+
-  (object==='Appointment'?'V3':'V2')+object);
+ const canCreate=(object:ObjectName)=>actions.has(
+  object==='Quotation'||object==='Invoice'
+   ?'AceAssistCreateDocumentV1'+object
+   :'AceAssistCreate'+(object==='Appointment'?'V3':'V2')+object
+ )&&actions.has('AceAssistLoad'+object);
  return <div className="assist-home">
   <section className="assist-home-hello">
    <div><span className="custom-eyebrow">YOUR WORKSPACE</span>

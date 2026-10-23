@@ -170,18 +170,19 @@ test('Ace Assist mobile home is backed by authorised Flow records, not demo valu
   assert.match(css,/grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
 });
 
-test('Ace Assist document lines edit under the parent with server-calculated totals',()=>{
-  const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
-  assert.match(runtime,/startEdit\('Create',undefined,object,true\)/);
-  assert.match(runtime,/startEdit\('Update',line,current\.object\+'Line',true\)/);
-  assert.match(runtime,/startEdit\('Delete',line,current\.object\+'Line',true\)/);
-  assert.match(runtime,/financialLinesLocked/);
-  const navigation=runtime.slice(runtime.indexOf('const tabs:'),runtime.indexOf('const inputFields:'));
-  assert.doesNotMatch(navigation,/QuotationLine|InvoiceLine/);
-  assert.match(runtime,/editingTarget\?\.Id/);
-  assert.match(runtime,/setChosen\(previous=>previous\?data\.find/);
-  assert.match(runtime,/AceAssistCreateV2/);
-  assert.match(runtime,/AceAssistUpdateV2/);
-  assert.match(runtime,/AceAssistDelete/);
-  assert.doesNotMatch(runtime,/\/records\//);
+test('Ace Assist mobile navigation preserves main atomic financial document editor',()=>{
+ const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ const editor=readFileSync(new URL('../../../aceassist/src/FinancialDocumentEditor.tsx',import.meta.url),'utf8');
+ const backend=readFileSync(new URL('../../../server/src/app-seeders/aceassist-document-flows.ts',import.meta.url),'utf8');
+ const navigation=runtime.slice(runtime.indexOf('const tabs:'),runtime.indexOf('const inputFields:'));
+ assert.doesNotMatch(navigation,/label:'Quotation lines'|label:'Invoice lines'/);
+ assert.match(runtime,/FinancialDocumentEditor/);
+ assert.match(runtime,/documentFlow\(editing,editingObject\)/);
+ assert.match(runtime,/onSave={saveDocument}/);
+ assert.match(runtime,/AceAssistCreateDocumentV1|documentFlow\('Create'/);
+ assert.match(runtime,/startEdit\('Create',undefined,object\)/);
+ assert.match(editor,/newLines:lines.filter/);
+ assert.match(editor,/removedLines:storedLines.filter/);
+ assert.match(backend,/expectedParentId/);
+ assert.doesNotMatch(runtime,/\/records\//);
 });

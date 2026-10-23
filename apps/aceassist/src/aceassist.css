@@ -157,6 +157,58 @@
  .custom-aceassist .custom-record-list button small{overflow-wrap:anywhere}
 }
 
+/* Unified quotation / invoice editor; on phones each line becomes a card. */
+.assist-document-modal{width:min(1030px,100%);box-sizing:border-box;max-height:94dvh}
+.assist-document-form{display:grid;gap:18px}
+.assist-document-form h3{font-size:17px;margin:0}
+.assist-document-header-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.assist-document-header-fields>label,.assist-document-line label{display:flex;flex-direction:column;
+ gap:6px;min-width:0;font-size:13px;font-weight:600;color:#31445a}
+.assist-document-header-fields input,.assist-document-header-fields select,
+.assist-document-line input{box-sizing:border-box;width:100%;min-width:0;border:1px solid #cddbe6;
+ border-radius:9px;padding:10px;font:inherit;background:#fff;color:#152b40}
+.assist-document-line-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.assist-document-line-heading p{margin:5px 0 0;color:#66778a;font-size:12px}
+.assist-document-line-heading button{flex-shrink:0;border:1px solid var(--product-accent);
+ background:#ecf8f5;color:#087367;padding:10px 14px;border-radius:9px;font-weight:700;cursor:pointer}
+.assist-document-line-list{display:grid;gap:13px}
+.assist-document-line{min-width:0;border:1px solid #d7e2ec;border-radius:12px;padding:14px;
+ background:#fafdff;display:grid;gap:11px}
+.assist-document-line legend{font-size:13px;font-weight:750;padding:0 6px}
+.assist-document-line-main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.assist-document-line-numbers{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;align-items:end}
+.assist-document-line-total{display:grid;gap:4px;align-self:stretch;align-content:center;
+ text-align:right;font-size:13px}
+.assist-document-line-total span{color:#607183}
+.assist-document-line-total strong{font-size:15px;white-space:nowrap}
+.assist-document-remove{justify-self:start;background:none;border:0;padding:4px 0;
+ cursor:pointer;color:#a63d42;font-size:12px;font-weight:650}
+.assist-document-remove:disabled{opacity:.35;cursor:not-allowed}
+.assist-document-totals{justify-self:end;width:min(340px,100%);display:grid;gap:8px;
+ background:#f5f9fc;border-radius:12px;padding:17px;box-sizing:border-box;margin:0}
+.assist-document-totals div{display:flex;justify-content:space-between;gap:12px}
+.assist-document-totals dt{color:#576a7c}
+.assist-document-totals dd{margin:0;font-variant-numeric:tabular-nums}
+.assist-document-totals .assist-document-grand-total{border-top:1px solid #cbd9e4;
+ padding-top:12px;font-weight:800;font-size:18px}
+.assist-document-error,.assist-document-lock{margin:0;padding:10px 12px;
+ background:#fff6f3;color:#843c2d;border-radius:9px;font-size:13px}
+.assist-document-form .assist-modal-footer{margin-top:3px}
+.assist-related-item{display:grid;gap:4px;padding:9px 0;border-bottom:1px solid #e8eef3}
+.assist-related-item span{font-size:12px;color:#53667b;font-variant-numeric:tabular-nums}
+.assist-related-total{font-weight:800;text-align:right}
+@media(max-width:680px){
+ .assist-document-modal{width:100%;max-height:96dvh;padding:15px;border-radius:14px}
+ .assist-document-header-fields,.assist-document-line-main{grid-template-columns:minmax(0,1fr)}
+ .assist-document-line-numbers{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .assist-document-line-total{grid-column:1/-1;justify-self:stretch;display:flex;
+ justify-content:space-between;align-items:center;border-top:1px solid #dbe5ed;padding-top:10px}
+ .assist-document-line-heading{align-items:flex-start;flex-wrap:wrap}
+ .assist-document-line-heading button{width:100%}
+ .assist-document-totals{width:100%}
+ .assist-document-form .assist-modal-footer{display:grid;grid-template-columns:1fr 1fr}
+}
+
 
 /* Ace Assist responsive workspace: live Flow data, not mock appointments. */
 .custom-aceassist{--assist-ink:#172a43;--assist-muted:#67788d;--assist-line:#e4edf3;
@@ -298,20 +350,6 @@
  .assist-quick-grid button strong{font-size:9px}
  .assist-home-appointment .assist-status{max-width:68px;overflow:hidden;text-overflow:ellipsis}
 }
-
-
-/* Parent quotation/invoice details and financial totals remain read-only. */
-.assist-document-header{display:flex;align-items:center;justify-content:space-between;gap:10px;
- margin-top:17px;padding:13px 14px;border-radius:12px;background:#edf8fa}
-.assist-document-header>strong{font-size:14px;overflow-wrap:anywhere}
-.assist-document-totals{display:grid;gap:10px;margin:16px 0;padding:14px;
- border:1px solid #e2ebf2;border-radius:12px;background:#fcfefe}
-.assist-document-totals>div{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:#62758a}
-.assist-document-totals strong{font-size:13px;color:#20374f}
-.assist-document-totals .assist-document-grand{border-top:1px solid #e2ebf2;padding-top:11px;
- font-size:14px;font-weight:800;color:#173a53}
-.assist-document-totals .assist-document-grand strong{font-size:18px;color:var(--product-accent)}
-.assist-fixed-parent input[readonly]{background:#f0f5f7!important;color:#526779!important}
 
 
 /* Appointments filter only Flow-loaded records; changing periods never mutates data. */
