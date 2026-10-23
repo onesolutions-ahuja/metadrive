@@ -77,3 +77,52 @@ test('password recovery works without tenant SMTP settings',async()=>{
  assert.deepEqual(result,{message:'If this account exists, recovery instructions have been sent.'});
  assert.match(sentBody,/[A-Za-z0-9_-]{43}/);
 });
+
+test('tenant recovery settings never select tenant credentials or sender identity',async()=>{
+ const calls:Array<{tenant:string;credential:string;from:string;recipient:string}>=[];
+ const db={
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_password_recovery_settings'))return {rows:[{
+    smtp_credential_id:'tenant-secret-credential',from_email:'attacker-controlled@example.test',
+    policy:{method:'OTP',templates:{email:{subject:'Account recovery',body:'Code {!Verification.Value}'}}}
+   }]};
+   if(sql.includes('FROM md_users'))return {rows:[{id:'user-a'}]};
+   return {rows:[],rowCount:1};
+  },
+  transaction:async(run:(client:{query:(sql:string)=>Promise<unknown>})=>Promise<unknown>)=>run({
+   query:async(sql:string)=>sql.includes('count(*)')?{rows:[{requests:'0'}]}:{rows:[],rowCount:1}
+  })
+ } as unknown as SqlPersistence;
+ const service=new PasswordResetService(db,{} as AuthenticationService,
+  async(tenant,credential,from,recipient)=>{
+   calls.push({tenant,credential,from,recipient});
+  });
+ await service.request('tenant-a','same@example.test');
+ assert.deepEqual(calls,[{tenant:'tenant-a',credential:'',from:'',recipient:'same@example.test'}]);
+});
+
+test('missing platform transport preserves account privacy and deletes issued token',async()=>{
+ const deleted:Array<unknown[]|undefined>=[];
+ const db={
+  query:async(sql:string,args?:unknown[])=>{
+   if(sql.includes('FROM md_password_recovery_settings'))return {rows:[]};
+   if(sql.includes('FROM md_users'))return {rows:[{id:'existing-user'}]};
+   if(sql.includes('DELETE FROM md_password_reset_challenges'))deleted.push(args);
+   return {rows:[],rowCount:1};
+  },
+  transaction:async(run:(client:{query:(sql:string)=>Promise<unknown>})=>Promise<unknown>)=>run({
+   query:async(sql:string)=>sql.includes('count(*)')?{rows:[{requests:'0'}]}:{rows:[],rowCount:1}
+  })
+ } as unknown as SqlPersistence;
+ const service=new PasswordResetService(db,{} as AuthenticationService,
+  async()=>{throw new Error('SMTP unavailable');});
+ const oldError=console.error;
+ console.error=()=>{};
+ try{
+  assert.deepEqual(await service.request('tenant-a','existing@example.test'),
+   {message:'If this account exists, recovery instructions have been sent.'});
+ }finally{console.error=oldError;}
+ assert.equal(deleted.length,1);
+ assert.equal(deleted[0]?.[0],'tenant-a');
+ assert.match(String(deleted[0]?.[1]),/^[a-f0-9]{64}$/);
+});
