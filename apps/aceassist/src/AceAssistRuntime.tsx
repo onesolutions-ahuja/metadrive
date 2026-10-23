@@ -22,9 +22,7 @@ const tabs:Tab[]=[
  {object:'Appointment',label:'Appointments'},
  {object:'Customer',label:'Customers'},
  {object:'Quotation',label:'Quotations'},
- {object:'QuotationLine',label:'Quotation lines'},
  {object:'Invoice',label:'Billing / Invoices'},
- {object:'InvoiceLine',label:'Invoice lines'},
  {object:'Payment',label:'Payments'}
 ];
 const inputFields:Record<string,string[]>={
