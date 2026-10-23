@@ -6,7 +6,7 @@ import {acetillStyleCss,type AcetillVisualStyles} from './visual-styles';
 
 type Row=Record<string,unknown>;
 type Action={apiName:string;label:string};
-type Item={id:string;name:string;price:number;image:string;category:string;categoryId:string;quantity:number};
+type Item={id:string;name:string;price:number;image:string;category:string;categoryId:string;quantity:number;ageRestricted:boolean};
 type Category={id:string;name:string;order:number};
 type Result={outputs?:Row;records?:Row[];interviewId?:string;completed?:boolean};
 const asText=(v:unknown)=>v==null?'':String(v);
@@ -16,7 +16,7 @@ function product(row:Row):Item|null {
   const name=asText(row.Name??row.name);
   const price=Number(row.Price??row.UnitPrice??row.SalePrice);
   if(!id||!name||!Number.isFinite(price)||price<0)return null;
-  return {id,name,price,image:asText(row.ImageUrl??row.Image??row.PhotoUrl??row.ProductImage),category:asText(row.CategoryName??row.Category??row.ProductCategory??''),categoryId:asText(row.MenuCategory??row.MenuCategoryId??row.CategoryId),quantity:1};
+  return {id,name,price,image:asText(row.ImageUrl??row.Image??row.PhotoUrl??row.ProductImage),category:asText(row.CategoryName??row.Category??row.ProductCategory??''),categoryId:asText(row.MenuCategory??row.MenuCategoryId??row.CategoryId),quantity:1,ageRestricted:row.AgeRestricted===true||row.AgeRestricted==='true'};
 }
 function parseCategory(row:Row):Category|null {
   const id=asText(row.Id??row.id??row.CategoryId);
@@ -167,7 +167,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
         throw Error('Resume Flow did not confirm cart ownership and release.');
       const restored=extractRows(result).map(product).filter((x):x is Item=>x!==null);
       if(!restored.length)throw Error('No cart lines were returned.');
-      setCart(restored);setHoldMode(false);paymentRequestId.current=crypto.randomUUID();
+      setCart(restored);setAgeApproved(false);setHoldMode(false);paymentRequestId.current=crypto.randomUUID();
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   };
   const scanBarcode=async(value:string)=>{
@@ -250,7 +250,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const count=cart.reduce((n,x)=>n+x.quantity,0);
   const subtotal=cart.reduce((n,x)=>n+x.quantity*x.price,0);
   const add=(item:Item)=>{paymentRequestId.current=crypto.randomUUID();setAgeApproved(false);setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});};
-  const change=(id:string,delta:number)=>{paymentRequestId.current=crypto.randomUUID();setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));};
+  const change=(id:string,delta:number)=>{paymentRequestId.current=crypto.randomUUID();setAgeApproved(false);setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));};
   const received=Number(cashReceived);
   const tenderValid=Number.isFinite(received)&&cashReceived.trim()!==''&&
     Math.round(received*100)>=Math.round(subtotal*100);
@@ -259,7 +259,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
     const method=paymentMode;
     const flow=method==='cash'?paymentCash:paymentCard;
     if(!method||!flow||!cart.length||busy||(method==='cash'&&!tenderValid))return;
-    if(!ageApproved&&ageCheck){setError('Age-restricted products must pass the age-verification Flow before payment.');return;}
+    if(cart.some(x=>x.ageRestricted)&&!ageApproved){setError('Age-restricted products require verified approval before payment.');return;}
     try {
       const result=await execute(flow,{
         cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity})),
