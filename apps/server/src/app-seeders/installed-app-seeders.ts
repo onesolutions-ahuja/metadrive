@@ -16,6 +16,10 @@ const installers:Readonly<Record<string,(client:PoolClient,tenantId:string)=>Pro
   AceChatter:async(client,tenantId)=>{
     const {seedAceChatterFlowsForTenant}=await import('./acechatter-flow.js');
     await seedAceChatterFlowsForTenant(client,tenantId);
+  },
+  OneChatter:async(client,tenantId)=>{
+    const {seedOneChatterInstalledPage}=await import('./onechatter-page.js');
+    await seedOneChatterInstalledPage(client,tenantId);
   }
 };
 

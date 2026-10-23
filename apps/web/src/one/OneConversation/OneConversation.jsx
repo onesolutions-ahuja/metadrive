@@ -34,9 +34,16 @@ function ConversationInbox({ props }) {
   const accounts = Array.isArray(props.channelAccounts)
     ? props.channelAccounts
     : [];
-  const contacts = Array.isArray(props.contactChoices)
-    ? props.contactChoices
-    : [];
+  const contacts = (Array.isArray(props.contactChoices) ? props.contactChoices : [])
+    .slice(0,200).map((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const nameField = String(props.contactNameFieldApiName || "Name");
+      const phoneField = String(props.contactPhoneFieldApiName || "Phone");
+      const name = row.name ?? row[nameField] ??
+        [row.FirstName, row.LastName].filter(Boolean).join(" ");
+      const phone = row.phone ?? row[phoneField] ?? row.Mobile ?? row.MobilePhone ?? "";
+      return {id:String(row.id ?? row.Id ?? ""),name:String(name ?? ""),phone:String(phone ?? "")};
+    }).filter((row) => row && row.id && row.phone);
   const allowed = Array.isArray(props.allowedAccountIds)
     ? props.allowedAccountIds.map(String)
     : [];
@@ -98,11 +105,40 @@ function ConversationInbox({ props }) {
     setError("");
     setNotice("");
     try {
+      const phone = String(selected?.phoneNumber ?? recipient.trim()).replace(/\D/g, "");
+      let conversationId = selected?.id ?? JSON.stringify([selectedAccount, phone]);
+      // Optional, reusable Flow chain for inbox models whose thread IDs are
+      // derived from communication records rather than Conversation object IDs.
+      // The original Flow definitions and permissions remain authoritative.
+      if (props.enableSendPreparation === true) {
+        if (!/^[1-9][0-9]{6,14}$/.test(phone))
+          throw Error("A valid international recipient number is required.");
+        const created = await sendAction(props, "create", {
+          chatName: selected?.contactName || phone, phoneNumber: phone,
+        });
+        if (created?.error || created?.interviewId)
+          throw Error(String(created.error || "Conversation setup Flow did not finish."));
+        const resolved = await sendAction(props, "resolve", { phoneNumber: phone });
+        if (resolved?.error || resolved?.interviewId)
+          throw Error(String(resolved.error || "Conversation lookup Flow did not finish."));
+        const outputs = resolved?.outputs ?? {};
+        const native = outputs.conversations ?? outputs.conversationsJson;
+        let rows = native;
+        if (typeof rows === "string") {
+          if (rows.length > 500000) throw Error("Conversation Flow output too large.");
+          rows = JSON.parse(rows);
+        }
+        if (!Array.isArray(rows) || rows.length > 200)
+          throw Error("Conversation lookup must return a record collection.");
+        const matching = rows.find((row) => row && typeof row === "object" &&
+          String(row.PhoneNumber ?? "").replace(/\D/g, "") === phone);
+        conversationId = String(matching?.Id ?? "");
+        if (!conversationId) throw Error("No authorised conversation found for this number.");
+      }
       const result = await sendAction(props, "send", {
-        conversationId:
-          selected?.id ?? JSON.stringify([selectedAccount, recipient.trim()]),
+        conversationId,
         channelAccountId: selected?.channelAccountId ?? selectedAccount,
-        recipientPhone: selected?.phoneNumber ?? recipient.trim(),
+        recipientPhone: phone,
         body,
       });
       if (result && result.error) throw Error(String(result.error));

@@ -613,7 +613,7 @@ function MetadataBoundPageComponent({
       loading: dataLoading, sessionId, stateChannel,
       ...(objectApiName ? { records: visibleRecords } : {}),
       ...presented,
-      contactChoices
+      ...(contactsObjectApiName ? {contactChoices} : {})
     }} />
   </div>;
 }

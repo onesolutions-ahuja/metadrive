@@ -31,7 +31,36 @@ export function needsMetadataComponentRuntime(properties: Record<string, unknown
  * permission-checked records. Invalid, missing or unreadable fields fail closed;
  * an empty/unset filter is intentionally equivalent to "all readable records".
  */
-/** Resolve scalar component properties from declared Flow output → page-state keys. */
+/** Resolve safe component properties from declared Flow outputs → page-state keys.
+ * Record collections are allowed only as explicit list bindings; they stay
+ * page-local and the originating Flow must be server-authorised. A Flow never
+ * acquires permission merely because its output is displayed here. */
+export function safePageStateRecordCollection(value:unknown):Record<string,unknown>[]|undefined {
+  let candidate=value;
+  if(typeof candidate==='string'){
+    if(candidate.length>500000)return undefined;
+    try{candidate=JSON.parse(candidate);}catch{return undefined;}
+  }
+  if(!Array.isArray(candidate)||candidate.length>200)return undefined;
+  let size=0;
+  const valid=(item:unknown,depth:number):boolean=>{
+    if(depth>3)return false;
+    if(item===null)return true;
+    if(typeof item==='string'){size+=item.length;return item.length<=20000&&size<=500000;}
+    if(typeof item==='boolean')return true;
+    if(typeof item==='number')return Number.isFinite(item);
+    if(Array.isArray(item))return item.length<=100&&item.every(v=>valid(v,depth+1));
+    if(item&&typeof item==='object'&&Object.getPrototypeOf(item)===Object.prototype)
+      return Object.keys(item).length<=100&&Object.entries(item).every(([k,v])=>
+        /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(k)&&
+        !['__proto__','prototype','constructor'].includes(k)&&valid(v,depth+1));
+    return false;
+  };
+  return candidate.every(item=>item&&typeof item==='object'&&!Array.isArray(item)&&valid(item,0))
+    ?candidate as Record<string,unknown>[]
+    :undefined;
+}
+
 export function bindPageStateProperties<T extends Record<string,unknown>>(
   properties:T,state:Readonly<Record<string,unknown>>
 ):T {
@@ -45,7 +74,12 @@ export function bindPageStateProperties<T extends Record<string,unknown>>(
     if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(target)||protectedKeys.has(target)
       ||typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))continue;
     const value=state[key];
-    if(value===null||['string','number','boolean'].includes(typeof value))
+    // Only explicitly declared list-shaped properties accept record collections.
+    // Other state-bound text values retain their original scalar behaviour.
+    if(Array.isArray(properties[target])){
+      const records=safePageStateRecordCollection(value);
+      if(records)next[target]=records;
+    }else if(value===null||['string','number','boolean'].includes(typeof value))
       next[target]=value;
   }
   return next as T;

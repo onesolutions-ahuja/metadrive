@@ -26,19 +26,29 @@ export function buildChatterView(rows:readonly CommunicationRow[],properties:Rec
     const direction=field(row,'direction');
     if(direction!==incoming&&direction!==outgoing)continue;
     const account=field(row,'account');
-    const phone=field(row,direction===incoming?'from':'to');
-    if(!account||!phone)continue;
+    const participant=field(row,direction===incoming?'from':'to');
+    const phone=properties.conversationNormalizePhoneNumbers===true
+      ?participant.replace(/\D/g,''):participant;
+    if(!account||!phone||properties.conversationNormalizePhoneNumbers===true
+      &&!/^[1-9][0-9]{6,14}$/.test(phone))continue;
     const key=JSON.stringify([account,phone]);
     const id=str(row.Id);if(!id)continue;
-    const occurred=field(row,'occurred'),body=field(row,'body');
+    const outgoingDateField=str(properties.conversationOutgoingOccurredFieldApiName);
+    const occurred=direction===outgoing&&outgoingDateField
+      ?str(row[outgoingDateField])||field(row,'occurred'):field(row,'occurred');
+    const body=field(row,'body');
+    const participantName=participant.match(/^(.*?)\s*\([^()]*\)\s*$/)?.[1]?.trim()||participant;
+    const displayName=properties.conversationNameFromParticipant===true
+      ?(participantName.replace(/\D/g,'')===phone?phone:participantName)
+      :field(row,'contactName')||phone;
     const prior=chats.get(key);
-    if(!prior)chats.set(key,{id:key,channelAccountId:account,contactName:field(row,'contactName')||phone,
+    if(!prior)chats.set(key,{id:key,channelAccountId:account,contactName:displayName,
       phoneNumber:phone,assignedUserId:field(row,'assignedUser')||null,preview:body,
       lastMessageAt:occurred,unreadCount:0});
     const chat=chats.get(key)!;
     if(occurred>=chat.lastMessageAt){
       chat.preview=body;chat.lastMessageAt=occurred;
-      chat.contactName=field(row,'contactName')||chat.contactName;
+      if(displayName!==phone || !chat.contactName)chat.contactName=displayName;
       chat.assignedUserId=field(row,'assignedUser')||null;
     }
     if(direction===incoming&&conversationField(properties,'readAt')&&!field(row,'readAt'))chat.unreadCount++;
