@@ -221,8 +221,9 @@ export function registerStalwartMailRoutes(app:Express,db:SqlPersistence,rbac:Rb
  };
  const handleError=(res:Response,error:unknown)=>{
   const message=safeError(error);
-  const status=/not found/i.test(message)?404:/not configured|unavailable/i.test(message)?503:
-   /permission|invalid|between|supplied|disabled|already exists/i.test(message)?400:502;
+  const status=message==='Permission denied'?403:/not found/i.test(message)?404:
+   /not configured|unavailable/i.test(message)?503:
+   /invalid|between|supplied|disabled|already exists/i.test(message)?400:502;
   res.status(status).json({error:message});
  };
  app.get('/api/mail/domains',wrap(async(req,res)=>{
