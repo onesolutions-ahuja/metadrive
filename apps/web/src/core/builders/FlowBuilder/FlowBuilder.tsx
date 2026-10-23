@@ -1190,7 +1190,7 @@ export default function FlowBuilder({
       <div className="settings-panel-copy">Create exactly two normal connectors labeled Approved and Rejected. Work items appear in the approvers' existing inbox, and Pending Work shows paused stages. Canceling the interview also cancels unfinished approval requests.</div>
     </>;
     if (selected.type === 'Action') return <>
-      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>External Service Action</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
+      <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Generate 4-Digit Random OTP</option><option>Generate 6-Digit Random OTP</option><option>Create Task</option><option>Quick Actions</option><option>Custom Notification</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>External Service Action</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
       {displayValue(selected.config.actionType) === 'External Service Action' && (() => {
         const service = externalServices.find((item) => item.apiName === selected.config.externalServiceApiName);
         const operation = service?.operations.find((item) => item.operationApi === selected.config.externalOperationApiName);
@@ -1282,7 +1282,12 @@ export default function FlowBuilder({
         <div className="info-callout">Protected verification variables: {'{!Tenant.Id}'}, {'{!Tenant.Name}'}, {'{!Verification.Value}'}, {'{!Verification.ExpiryMinutes}'}. Password verification and session revocation cannot be disabled.</div>
       </> : flow.apiName === 'SYSTEM_PASSWORD_RECOVERY' && ['Verify Verification','Reset Password'].includes(displayValue(selected.config.actionType)) ? <>
         <div className="info-callout">This protected platform action validates and updates only the account associated with the issued single-use recovery challenge. It cannot be bypassed or configured to change another user's password.</div>
-      </> : displayValue(selected.config.actionType) === 'Create Task' ? <>
+      </> : ['Generate 4-Digit Random OTP','Generate 6-Digit Random OTP'].includes(displayValue(selected.config.actionType)) ? <>
+        <label className="form-label">Output Variable<input className="form-control" maxLength={128}
+          value={displayValue(selected.config.outputVariable)} onChange={(event) => setConfig('outputVariable', event.target.value)}
+          placeholder="verificationOtp" /></label>
+        <div className="info-callout">Generates a cryptographically secure 4- or 6-digit numeric OTP as text, preserving leading zeroes. Store it securely and implement expiry, attempt limits and single-use verification in your Flow.</div>
+            </> : displayValue(selected.config.actionType) === 'Create Task' ? <>
         <label className="form-label">Target Object<select className="form-control" value={displayValue(selected.config.objectApiName)} onChange={(event) => setConfig('objectApiName', event.target.value)}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         <label className="form-label">Target Record ID<input className="form-control" maxLength={512} value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
         <label className="form-label">Subject<input className="form-control" maxLength={200} value={displayValue(selected.config.subject)} onChange={(event) => setConfig('subject', event.target.value)} /></label>

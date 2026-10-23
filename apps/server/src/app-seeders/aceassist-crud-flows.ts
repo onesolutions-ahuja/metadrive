@@ -258,6 +258,95 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
      [tenant_id,resource,action]);
    }
   }
+  // A tenant-owned email Flow is seeded as a draft because the tenant must
+  // choose its own verified sender and SMTP Named Credential before activation.
+  // Never fabricate provider credentials or overwrite an administrator's Flow.
+  const emailFlowApi='AceAssistSendEmail';
+  const priorEmailFlow=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',[tenant_id,emailFlowApi]);
+  if(!priorEmailFlow.rowCount){
+   const graph={
+    apiName:emailFlowApi,label:'Ace Assist - Send Email',appApiName:'AceAssist',
+    flowType:'Autolaunched Flow',status:'Draft',version:1,
+    resources:[
+     {name:'recipientEmail',type:'Variable',dataType:'Text',availableForInput:true},
+     {name:'fromEmail',type:'Variable',dataType:'Text',availableForInput:true},
+     {name:'emailSubject',type:'Variable',dataType:'Text',availableForInput:true},
+     {name:'emailBody',type:'Variable',dataType:'Text',availableForInput:true}
+    ],
+    elements:[
+     {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+     {id:2,type:'Action',label:'Send Email',config:{
+      actionType:'Send Email',namedCredentialId:'',fromEmail:'{!fromEmail}',
+      recipients:'{!recipientEmail}',subject:'{!emailSubject}',body:'{!emailBody}'
+     }},
+     {id:3,type:'End',label:'End',config:{}}
+    ],
+    connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Next'}],
+    tests:[]
+   };
+   const {rows:added}=await client.query<{id:string}>(`
+    INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+    VALUES($1,$2,$3,'Autolaunched Flow',1,false) RETURNING id`,
+    [tenant_id,graph.apiName,graph.label]);
+   const entries:Array<{path:string;kind:string;text:string|null}>=[];
+   encodeMetadataValue(graph,'/builder',entries);
+   for(const e of entries)await client.query(`
+    INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+    VALUES($1,$2,$3,$4,$5)`,[tenant_id,added[0].id,e.path,e.kind,e.text]);
+   created++;
+  }
+  for(const [resource,action] of [
+   ['Flow:'+emailFlowApi,'execute'],['Email','send'],['NamedCredential','read']
+  ])await client.query(`
+   INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+   WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser' ON CONFLICT DO NOTHING`,
+   [tenant_id,resource,action]);
+
+  // Generic HTTP email-provider template. The tenant supplies an HTTPS Named
+  // Credential, provider-specific relative path and JSON payload before activation.
+  // The seed intentionally contains no endpoint or secret from any provider.
+  const emailHttpFlowApi='AceAssistEmailHttpCallout';
+  const priorEmailHttpFlow=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',[tenant_id,emailHttpFlowApi]);
+  if(!priorEmailHttpFlow.rowCount){
+   const graph={
+    apiName:emailHttpFlowApi,label:'Ace Assist - Email Provider HTTP Callout',appApiName:'AceAssist',
+    flowType:'Autolaunched Flow',status:'Draft',version:1,
+    resources:[
+     {name:'emailPath',type:'Variable',dataType:'Text',availableForInput:true},
+     {name:'emailPayload',type:'Variable',dataType:'Text',availableForInput:true}
+    ],
+    elements:[
+     {id:1,type:'Start',label:'Start',config:{executionContext:'User'}},
+     {id:2,type:'HTTP Callout',label:'Send email through configured provider',config:{
+      method:'POST',namedCredentialId:'',path:'{!emailPath}',body:'{!emailPayload}',
+      deliveryMode:'DURABLE_ASYNC',onError:'FAULT_PATH'
+     }},
+     {id:3,type:'End',label:'End',config:{}}
+    ],
+    connectors:[{from:1,to:2,kind:'normal',label:'Next'},{from:2,to:3,kind:'normal',label:'Queued'},
+     {from:2,to:3,kind:'fault',label:'Callout fault'}],
+    tests:[]
+   };
+   const {rows:added}=await client.query<{id:string}>(`
+    INSERT INTO md_flow_definitions(tenant_id,api_name,label,flow_type,version,active)
+    VALUES($1,$2,$3,'Autolaunched Flow',1,false) RETURNING id`,
+    [tenant_id,graph.apiName,graph.label]);
+   const entries:Array<{path:string;kind:string;text:string|null}>=[];
+   encodeMetadataValue(graph,'/builder',entries);
+   for(const e of entries)await client.query(`
+    INSERT INTO md_flow_editor_values(tenant_id,flow_id,property_path,value_kind,value_text)
+    VALUES($1,$2,$3,$4,$5)`,[tenant_id,added[0].id,e.path,e.kind,e.text]);
+   created++;
+  }
+  for(const [resource,action] of [
+   ['Flow:'+emailHttpFlowApi,'execute'],['NamedCredential','read']
+  ])await client.query(`
+   INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+   WHERE p.tenant_id=$1 AND p.api_name='AceAssistUser' ON CONFLICT DO NOTHING`,
+   [tenant_id,resource,action]);
+
   // App-owned record trigger: no frontend notification business logic.
   // Recipient is the authenticated operator; delivery failure follows the fault connector
   // and never rolls back the business record. Tenant-authored definitions are preserved.
