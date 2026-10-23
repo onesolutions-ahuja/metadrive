@@ -179,14 +179,15 @@ export default function BusinessCalendarSettings({ request, permitted }: {
       const readback = await request<{calendar:BusinessCalendar|null}>('/tenant/business-calendar', {cache:'no-store'});
       const verified = readback.calendar;
       if (!verified) throw new Error('Save succeeded but the business calendar could not be read back.');
-      if (verified.timezone !== normalizedCalendar.timezone ||
-          verified.fiscalYearStart.month !== normalizedCalendar.fiscalYearStart.month ||
-          verified.fiscalYearStart.day !== normalizedCalendar.fiscalYearStart.day ||
+      // Compare with the server's canonical response (which sorts holidays).
+      if (verified.timezone !== result.calendar.timezone ||
+          verified.fiscalYearStart.month !== result.calendar.fiscalYearStart.month ||
+          verified.fiscalYearStart.day !== result.calendar.fiscalYearStart.day ||
           weekdays.some(([day]) =>
-            verified.weeklyHours[day]?.closed !== normalizedCalendar.weeklyHours[day].closed ||
-            verified.weeklyHours[day]?.open !== normalizedCalendar.weeklyHours[day].open ||
-            verified.weeklyHours[day]?.close !== normalizedCalendar.weeklyHours[day].close) ||
-          JSON.stringify(verified.holidays) !== JSON.stringify(normalizedCalendar.holidays))
+            verified.weeklyHours[day]?.closed !== result.calendar.weeklyHours[day].closed ||
+            verified.weeklyHours[day]?.open !== result.calendar.weeklyHours[day].open ||
+            verified.weeklyHours[day]?.close !== result.calendar.weeklyHours[day].close) ||
+          JSON.stringify(verified.holidays) !== JSON.stringify(result.calendar.holidays))
         throw new Error('Saved calendar differs from the requested business hours, holidays or fiscal settings.');
       setCalendar(verified);
       setSavedCalendar(verified);
