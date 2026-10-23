@@ -4,6 +4,7 @@ import {AuthenticationService} from './authentication.js';
 import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
 import {seedCartObjects} from '../app-seeders/cart-objects.js';
 import {seedQuotationObjects} from '../app-seeders/core-quotation-objects.js';
+import {seedLocationSrnMetadata} from '../app-seeders/core-location-srn.js';
 import {seedAppointmentObjects} from '../app-seeders/core-appointment-objects.js';
 import {seedFreshBundledComponents} from '../app-seeders/bundled-components.js';
 import {seedFreshProductImageField} from '../app-seeders/product-image-field.js';
@@ -99,6 +100,7 @@ export class TenantProvisioning {
       await seedFreshCoreObjects(client,tenantId);
       await seedCommunicationObjects(client,tenantId);
       await seedQuotationObjects(client,tenantId);
+      await seedLocationSrnMetadata(client,tenantId);
       await seedAppointmentObjects(client,tenantId);
       await seedCartObjects(client,tenantId);
       await seedFreshBundledComponents(client,tenantId);

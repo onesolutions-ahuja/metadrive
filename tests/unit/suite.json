@@ -3,7 +3,6 @@
   "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
   "command": "node scripts/run-test-suite.mjs unit",
   "tests": [
-    "apps/web/test/visiblePolling.test.ts",
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
     "apps/server/test/system/aceassist-booking-slot-preview.test.ts",
@@ -22,6 +21,7 @@
     "apps/server/test/system/business-calendar-settings.test.ts",
     "apps/server/test/system/cart-objects.test.ts",
     "apps/server/test/system/core-appointment-objects.test.ts",
+    "apps/server/test/system/core-location-srn.test.ts",
     "apps/server/test/system/core-object-defaults.test.ts",
     "apps/server/test/system/core-quotation-objects.test.ts",
     "apps/server/test/system/cors-if-match.test.ts",
@@ -35,10 +35,10 @@
     "apps/server/test/system/durable-recurrence.test.ts",
     "apps/server/test/system/encrypted-field.test.ts",
     "apps/server/test/system/external-http-transport.test.ts",
+    "apps/server/test/system/federation-named-credentials.test.ts",
     "apps/server/test/system/field-engine-registry.test.ts",
     "apps/server/test/system/field-recycle-bin.test.ts",
     "apps/server/test/system/field-type-migration.test.ts",
-    "apps/server/test/system/federation-named-credentials.test.ts",
     "apps/server/test/system/flow-action-runtime.test.ts",
     "apps/server/test/system/flow-assignment-runtime.test.ts",
     "apps/server/test/system/flow-async-callout.test.ts",
@@ -133,6 +133,7 @@
     "apps/web/test/recordCsvUtils.test.ts",
     "apps/web/test/recordCustomLinks.test.ts",
     "apps/web/test/setupMetadataDependencies.test.ts",
-    "apps/web/test/setupObjectActions.test.ts"
+    "apps/web/test/setupObjectActions.test.ts",
+    "apps/web/test/visiblePolling.test.ts"
   ]
 }
