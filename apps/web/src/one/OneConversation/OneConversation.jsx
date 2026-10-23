@@ -34,9 +34,16 @@ function ConversationInbox({ props }) {
   const accounts = Array.isArray(props.channelAccounts)
     ? props.channelAccounts
     : [];
-  const contacts = Array.isArray(props.contactChoices)
-    ? props.contactChoices
-    : [];
+  const contacts = (Array.isArray(props.contactChoices) ? props.contactChoices : [])
+    .slice(0,200).map((row) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+      const nameField = String(props.contactNameFieldApiName || "Name");
+      const phoneField = String(props.contactPhoneFieldApiName || "Phone");
+      const name = row.name ?? row[nameField] ??
+        [row.FirstName, row.LastName].filter(Boolean).join(" ");
+      const phone = row.phone ?? row[phoneField] ?? row.Mobile ?? row.MobilePhone ?? "";
+      return {id:String(row.id ?? row.Id ?? ""),name:String(name ?? ""),phone:String(phone ?? "")};
+    }).filter((row) => row && row.id && row.phone);
   const allowed = Array.isArray(props.allowedAccountIds)
     ? props.allowedAccountIds.map(String)
     : [];
