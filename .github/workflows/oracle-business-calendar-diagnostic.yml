@@ -1,0 +1,58 @@
+name: Oracle Business Calendar Diagnostic
+on:
+  pull_request:
+    paths:
+      - .github/workflows/oracle-business-calendar-diagnostic.yml
+      - scripts/oracle/check-business-calendar.py
+      - scripts/oracle/business-calendar-readonly.mjs
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/oracle-business-calendar-diagnostic.yml
+      - scripts/oracle/check-business-calendar.py
+      - scripts/oracle/business-calendar-readonly.mjs
+  workflow_dispatch:
+    inputs:
+      tenant_id:
+        description: Tenant UUID to inspect without changing data
+        type: string
+        required: true
+        default: 8e4f5288-3284-444c-93e6-f3665943afd5
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check diagnostic scripts without production credentials
+        run: |
+          python3 -m py_compile scripts/oracle/check-business-calendar.py
+          node --check scripts/oracle/business-calendar-readonly.mjs
+  diagnose:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: [self-hosted, linux, ARM64, metadrive-oracle]
+    environment: oracle-production
+    concurrency:
+      group: oracle-production-api
+      cancel-in-progress: false
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install read-only PostgreSQL client dependency
+        run: npm ci --ignore-scripts --omit=dev
+      - name: Diagnose business calendar in running Oracle API database
+        env:
+          MD_DIAG_TENANT_ID: ${{ github.event.inputs.tenant_id || '8e4f5288-3284-444c-93e6-f3665943afd5' }}
+        run: |
+          sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-business-calendar.py "$MD_DIAG_TENANT_ID"
