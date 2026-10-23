@@ -151,3 +151,35 @@ test('Ace Assist re-reads its tenant calendar and renders a phone-safe schedule'
     '.custom-aceassist .custom-calendar,.custom-aceassist .custom-visit-detail{padding:15px'])
     assert.ok(css.includes(token),token);
 });
+
+
+test('Ace Assist mobile home is backed by authorised Flow records, not demo values',()=>{
+  const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+  const home=readFileSync(new URL('../../../aceassist/src/AceAssistDashboard.tsx',import.meta.url),'utf8');
+  const css=readFileSync(new URL('../../../aceassist/src/aceassist.css',import.meta.url),'utf8');
+  assert.match(runtime,/AceAssistDashboard/);
+  assert.match(runtime,/fetchRows\('Load','Invoice'\)/);
+  assert.match(runtime,/fetchRows\('Load',current\.object\)/);
+  assert.match(runtime,/available-actions\?product=/);
+  assert.match(home,/appointments\.filter\(/);
+  assert.match(home,/invoices\.filter\(/);
+  assert.match(home,/AceAssistLoadAppointment/);
+  assert.match(home,/AceAssistLoadInvoice/);
+  assert.doesNotMatch(home,/dummyAppointments|mockInvoices|samplePatients/);
+  assert.match(css,/\.assist-mobile-nav\{position:fixed/);
+  assert.match(css,/grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
+});
+
+test('Ace Assist document lines edit under the parent with server-calculated totals',()=>{
+  const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+  assert.match(runtime,/startEdit\('Create',undefined,object,true\)/);
+  assert.match(runtime,/startEdit\('Update',line,current\.object\+'Line',true\)/);
+  assert.match(runtime,/startEdit\('Delete',line,current\.object\+'Line',true\)/);
+  assert.match(runtime,/financialLinesLocked/);
+  assert.match(runtime,/editingTarget\?\.Id/);
+  assert.match(runtime,/setChosen\(previous=>previous\?data\.find/);
+  assert.match(runtime,/AceAssistCreateV2/);
+  assert.match(runtime,/AceAssistUpdateV2/);
+  assert.match(runtime,/AceAssistDelete/);
+  assert.doesNotMatch(runtime,/\/records\//);
+});
