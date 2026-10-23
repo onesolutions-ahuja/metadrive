@@ -724,7 +724,7 @@ export class NamedCredentialService {
         throw new Error('Queued Quick Action email payload invalid');
       errorCode='DELIVERY_OUTCOME_UNKNOWN';
       await this.sendTenantEmail(job.tenant_id,job.credential_id,
-        payload.from,payload.to,payload.subject,payload.body);
+        payload.from,payload.to,payload.subject,payload.body,job.user_id);
       await this.db.query(`UPDATE md_quick_action_email_jobs SET status='completed',
         claimed_at=NULL,completed_at=now() WHERE tenant_id=$1 AND id=$2 AND status='sending'`,
         [job.tenant_id,job.id]);
@@ -868,7 +868,7 @@ export class NamedCredentialService {
    }
    try{
     await this.sendTenantEmail(job.tenant_id,job.credential_id,message.from,
-     message.recipients.join(','),message.subject,message.body);
+     message.recipients.join(','),message.subject,message.body,job.user_id);
    }catch{
     await markFailed('DELIVERY_OUTCOME_UNKNOWN');
     return true;
@@ -884,14 +884,15 @@ export class NamedCredentialService {
   }finally{this.emailDispatching=false;}
  }
 
- async sendTenantEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
+ async sendTenantEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string,
+  actorUserId?:string):Promise<void>{
   if(!/^[0-9a-f-]{36}$/i.test(id)||!from||!to||
     /[\r\n]/.test(from+to+subject)||subject.length>300||body.length>10000)
    throw new Error('Invalid recovery email');
   const {rows}=await this.db.query<{
-   base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
+   name:string;base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
    configuration_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
-  }>(`SELECT base_url,auth_type,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled
+  }>(`SELECT name,base_url,auth_type,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled
       FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP'`,[tenantId,id]);
   const row=rows[0];
   if(!row?.enabled||row.auth_type!=='Basic')throw new Error('SMTP credential unavailable');
@@ -926,7 +927,29 @@ export class NamedCredentialService {
    connectionTimeout:15000,greetingTimeout:15000,socketTimeout:15000,
    pool:false
   });
-  try {await transport.sendMail({from,to,subject,text:body});}
+  const startedAt=Date.now();
+  const endpointUrl=endpoint.protocol+'//'+endpoint.hostname+':'+port;
+  const requestBytes=Buffer.byteLength([from,to,subject,body].join('\n'));
+  try {
+   await transport.sendMail({from,to,subject,text:body});
+   await writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'SMTP',provider:row.name,
+    credentialId:id,actorUserId,endpoint:endpointUrl,method:'SMTP',outcome:'success',
+    durationMs:Date.now()-startedAt,requestBytes,
+     communication:{channel:'Email',name:'Outbound email',provider:row.name,
+      relatedObject:'NamedCredential',relatedRecordId:id}
+   },this.integrationActivityWriter);
+  }catch(error){
+   await writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'SMTP',provider:row.name,
+    credentialId:id,actorUserId,endpoint:endpointUrl,method:'SMTP',outcome:'network_error',
+    durationMs:Date.now()-startedAt,requestBytes,
+    errorCode:error instanceof Error?error.name:'SMTP_ERROR',
+    communication:{channel:'Email',name:'Outbound email',provider:row.name,
+     relatedObject:'NamedCredential',relatedRecordId:id}
+   },this.integrationActivityWriter);
+   throw error;
+  }
   finally{transport.close();}
  }
 
@@ -993,8 +1016,9 @@ export class NamedCredentialService {
   }
   let oauthClientSecret:string|undefined;
   if(item.auth_type==='OAuth Authorization Code'){
-   header.Authorization='Bearer '+await new OAuthAuthorizationService(this.db,this.rbac,this)
-    .bearerToken(tenantId,String(config.namedCredentialId));
+   header.Authorization='Bearer '+await new OAuthAuthorizationService(
+    this.db,this.rbac,this,this.integrationActivityWriter)
+    .bearerToken(tenantId,String(config.namedCredentialId),userId);
   }else if(item.auth_type!=='None'){
    const encrypted=item.secret_ciphertext;
    const key=this.keyFor(item.encryption_key_id);
@@ -1050,19 +1074,25 @@ export class NamedCredentialService {
    if(scope)form.set('scope',scope as string);
    const payload=form.toString();
    const authorization='Basic '+Buffer.from(clientId+':'+oauthClientSecret).toString('base64');
-   const tokenResponse=await new Promise<string>((resolve,reject)=>{
+   const tokenStartedAt=Date.now(),tokenRequestBytes=Buffer.byteLength(payload);
+   let tokenStatus:number|undefined,tokenResponseBytes=0;
+   let tokenResponse:string;
+   try{
+    tokenResponse=await new Promise<string>((resolve,reject)=>{
     const request=secureRequest(tokenUrl,{method:'POST',agent:false,
      lookup:(_host,options,cb)=>options.all
       ?cb(null,[{address:resolved[0].address,family:resolved[0].family}])
       :cb(null,resolved[0].address,resolved[0].family),
      timeout:15000,headers:{Authorization:authorization,'Content-Type':'application/x-www-form-urlencoded',
        Accept:'application/json','Content-Length':Buffer.byteLength(payload)}},response=>{
+      tokenStatus=response.statusCode;
       if((response.statusCode??0)<200||(response.statusCode??0)>=300){
        response.resume();reject(new Error('OAuth token endpoint rejected credentials'));return;
       }
       const chunks:Buffer[]=[];let length=0;
       response.on('data',(chunk:Buffer)=>{
        length+=chunk.length;
+       tokenResponseBytes=length;
        if(length>8192){request.destroy(new Error('OAuth token response too large'));return;}
        chunks.push(chunk);
       });
@@ -1071,7 +1101,31 @@ export class NamedCredentialService {
     request.on('timeout',()=>request.destroy(new Error('OAuth token timeout')));
     request.on('error',reject);
     request.end(payload);
-   });
+    });
+   }catch(error){
+    await writeIntegrationActivity(this.db,{
+     tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
+     credentialId:String(config.namedCredentialId),actorUserId:userId,
+     endpoint:tokenUrl.origin+tokenUrl.pathname,method:'POST',statusCode:tokenStatus,
+     outcome:tokenStatus===undefined?'network_error':'http_error',
+     durationMs:Date.now()-tokenStartedAt,requestBytes:tokenRequestBytes,
+     responseBytes:tokenResponseBytes,
+     errorCode:tokenStatus===undefined
+      ?error instanceof Error?error.name:'NETWORK_ERROR':'HTTP_STATUS_'+tokenStatus,
+     communication:{name:'OAuth client credentials token exchange',provider:item.name,
+      relatedObject:'NamedCredential',relatedRecordId:String(config.namedCredentialId)}
+    },this.integrationActivityWriter);
+    throw error;
+   }
+   await writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
+    credentialId:String(config.namedCredentialId),actorUserId:userId,
+    endpoint:tokenUrl.origin+tokenUrl.pathname,method:'POST',statusCode:tokenStatus,
+    outcome:'success',durationMs:Date.now()-tokenStartedAt,requestBytes:tokenRequestBytes,
+    responseBytes:tokenResponseBytes,
+    communication:{name:'OAuth client credentials token exchange',provider:item.name,
+     relatedObject:'NamedCredential',relatedRecordId:String(config.namedCredentialId)}
+   },this.integrationActivityWriter);
    let token:unknown;
    try{token=JSON.parse(tokenResponse);}catch{throw new Error('Invalid OAuth token response');}
    const result=token as {access_token?:unknown;token_type?:unknown};

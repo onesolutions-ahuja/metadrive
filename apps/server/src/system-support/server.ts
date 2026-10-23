@@ -79,7 +79,7 @@ import {registerVersionedApiRoutes} from './versioned-api-routes.js';
 import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
 import {registerInboundWebhookPublicRoutes,registerInboundWebhookAdminRoutes} from './inbound-webhook-service.js';
-import {createIntegrationCommunicationWriter} from './integration-api-log.js';
+import {createIntegrationCommunicationWriter,IntegrationCommunicationOutbox} from './integration-api-log.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
 import {registerDurableJobAdminRoutes} from './durable-job-admin-routes.js';
 import {registerSeederManagerRoutes} from './seeder-manager-routes.js';
@@ -206,7 +206,9 @@ export function createSystemServer(db:SqlPersistence) {
   const records=new RecordEngine(db,rbac,namedCredentials);
   // Use a dedicated RecordEngine without record-trigger callbacks for system-generated API logs.
   const integrationLogRecords=new RecordEngine(db,rbac,namedCredentials);
-  const integrationActivityWriter=createIntegrationCommunicationWriter(db,integrationLogRecords);
+  const integrationCommunicationOutbox=new IntegrationCommunicationOutbox(
+    db,createIntegrationCommunicationWriter(db,integrationLogRecords));
+  const integrationActivityWriter=integrationCommunicationOutbox.write;
   namedCredentials.setIntegrationActivityWriter(integrationActivityWriter);
   const externalIdUpsert=new ExternalIdUpsert(db,rbac,records);
   const recordListViews=new RecordListViewService(db,rbac);
@@ -219,9 +221,9 @@ export function createSystemServer(db:SqlPersistence) {
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
-  const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
+  const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials,integrationActivityWriter);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
-  const federation=new FederationService(db,rbac,namedCredentials);
+  const federation=new FederationService(db,rbac,namedCredentials,undefined,integrationActivityWriter);
   const passkeys=new WebAuthnService(db,auth);
   const backups=new MfaBackupService(db,auth,mfa,rbac);
   const sessionPolicies=new SessionPolicyService(db,rbac);
@@ -2290,9 +2292,12 @@ export async function startSystemServer() {
   const dispatcherRbac=new RbacEngine(db);
   const calloutDispatcher=new NamedCredentialService(db,dispatcherRbac);
   const dispatcherLogRecords=new RecordEngine(db,dispatcherRbac,calloutDispatcher);
-  calloutDispatcher.setIntegrationActivityWriter(createIntegrationCommunicationWriter(db,dispatcherLogRecords));
+  const dispatcherOutbox=new IntegrationCommunicationOutbox(
+   db,createIntegrationCommunicationWriter(db,dispatcherLogRecords));
+  calloutDispatcher.setIntegrationActivityWriter(dispatcherOutbox.write);
   const calloutTimer=setInterval(()=>{
-    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),calloutDispatcher.dispatchOneQuickActionEmail()])
+    void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),
+     calloutDispatcher.dispatchOneQuickActionEmail(),dispatcherOutbox.dispatchOne()])
       .catch(error=>console.error('Durable outbound dispatch failed:',error));
   },1000);
   calloutTimer.unref();

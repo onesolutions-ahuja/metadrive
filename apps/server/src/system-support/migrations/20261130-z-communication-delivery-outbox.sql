@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS md_communication_delivery_outbox (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id) ON DELETE CASCADE,
+ id uuid NOT NULL DEFAULT gen_random_uuid(),
+ direction text NOT NULL CHECK(direction IN ('Inbound','Outbound')),
+ transport text NOT NULL CHECK(transport IN ('HTTP','Webhook','SMTP')),
+ provider text NOT NULL CHECK(length(provider)<=500),
+ credential_id uuid,
+ actor_user_id uuid,
+ endpoint text NOT NULL CHECK(length(endpoint)<=2048),
+ method text NOT NULL CHECK(method IN ('GET','POST','PUT','PATCH','DELETE','SMTP','OTHER')),
+ status_code integer CHECK(status_code IS NULL OR status_code BETWEEN 100 AND 599),
+ outcome text NOT NULL CHECK(outcome IN ('success','http_error','network_error','rejected')),
+ duration_ms integer NOT NULL CHECK(duration_ms>=0),
+ request_bytes integer NOT NULL CHECK(request_bytes>=0),
+ response_bytes integer NOT NULL CHECK(response_bytes>=0),
+ error_code text CHECK(error_code IS NULL OR length(error_code)<=100),
+ channel text NOT NULL CHECK(channel IN ('Email','SMS','WhatsApp','Phone','WebChat','Push','Other')),
+ name text NOT NULL CHECK(length(name)<=500),
+ sender text NOT NULL CHECK(length(sender)<=500),
+ recipient text NOT NULL CHECK(length(recipient)<=500),
+ subject text CHECK(subject IS NULL OR length(subject)<=500),
+ body text CHECK(body IS NULL OR length(body)<=10000),
+ external_message_id text NOT NULL CHECK(length(external_message_id)<=500),
+ related_object text NOT NULL CHECK(length(related_object)<=120),
+ related_record_id text,
+ conversation_id text CHECK(conversation_id IS NULL OR length(conversation_id)<=500),
+ received_at timestamptz,
+ sent_at timestamptz,
+ occurred_at timestamptz NOT NULL,
+ status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing')),
+ attempt_count integer NOT NULL DEFAULT 0 CHECK(attempt_count>=0),
+ next_attempt_at timestamptz NOT NULL DEFAULT now(),
+ claimed_at timestamptz,
+ last_error text CHECK(last_error IS NULL OR length(last_error)<=100),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(tenant_id,id)
+);
+CREATE INDEX IF NOT EXISTS md_communication_delivery_outbox_pending
+ ON md_communication_delivery_outbox(next_attempt_at,created_at,id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS md_communication_delivery_outbox_claimed
+ ON md_communication_delivery_outbox(claimed_at) WHERE status='processing';

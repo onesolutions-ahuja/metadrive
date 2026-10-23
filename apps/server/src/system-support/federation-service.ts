@@ -7,6 +7,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
 import {safeUrl} from './oauth-authorization-service.js';
 import {federationJson} from './federation-http.js';
+import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const token=()=>randomBytes(32).toString('base64url');
 const schema=z.object({id:z.string().uuid().optional(),label:z.string().trim().min(1).max(100),protocol:z.enum(['oidc','saml']),
@@ -17,7 +18,8 @@ type Provider={id:string;tenant_id:string;label:string;protocol:'oidc'|'saml';en
 type Pending={tenant_id:string;provider_id:string;nonce:string;verifier_ciphertext:Buffer;key_id:string;origin:string};
 export class FederationService{
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,private readonly vault:NamedCredentialService,
-  private readonly http:typeof federationJson=federationJson){}
+  private readonly http:typeof federationJson=federationJson,
+  private readonly activityWriter?:IntegrationActivityWriter){}
  private callbackUri(){
   const raw=process.env.METADRIVE_AUTH_PUBLIC_ORIGIN;if(!raw)throw Error('Invalid federation: public HTTPS origin is not configured');
   const url=safeUrl(raw);if(url.origin!==raw)throw Error('Invalid federation origin');
@@ -92,34 +94,57 @@ export class FederationService{
    state,nonce,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256'}))auth.searchParams.set(key,value);
   return {url:auth.toString(),state};
  }
- async callback(state:unknown,browser:unknown,code:unknown,samlResponse:unknown){
+ async callback(state:unknown,browser:unknown,code:unknown,samlResponse:unknown,method:'GET'|'POST'='GET'){
   if(typeof state!=='string'||!/^[\w-]{43}$/.test(state)||typeof browser!=='string')throw Error('Invalid federation state');
   // Atomic claim before verification/network work prevents response replay across replicas.
   const claimed=await this.db.query<Pending>(`UPDATE md_federation_requests SET consumed_at=now()
    WHERE state_hash=$1 AND browser_hash=$2 AND consumed_at IS NULL AND expires_at>now()
    RETURNING tenant_id,provider_id,nonce,verifier_ciphertext,key_id,origin`,[hash(state),hash(browser)]);
   const request=claimed.rows[0];if(!request)throw Error('Invalid federation state');
-  const p=await this.provider(request.tenant_id,request.provider_id);let subject:string;
-  if(p.protocol==='saml'){
-   if(typeof samlResponse!=='string'||samlResponse.length>1000000)throw Error('Invalid SAML response');
-   const verified=await (await this.saml(p,request.nonce)).validatePostResponseAsync({SAMLResponse:samlResponse});
-   if(!verified.profile?.nameID||verified.loggedOut)throw Error('Invalid SAML identity');subject=verified.profile.nameID;
-  }else{
-   if(typeof code!=='string'||!code||code.length>4096)throw Error('Invalid OIDC code');
-   const body=new URLSearchParams({grant_type:'authorization_code',code,client_id:p.client_id,redirect_uri:this.callbackUri(),
-    code_verifier:this.vault.decryptOpaque(request.verifier_ciphertext,request.key_id)});
-   if(p.secret_ciphertext&&p.key_id)body.set('client_secret',this.vault.decryptOpaque(p.secret_ciphertext,p.key_id));
-   const response=await this.http(p.token_url,body);if(typeof response.id_token!=='string')throw Error('Invalid OIDC ID token');
-   const jwks=await this.http(p.jwks_url);
-   const {payload}=await jwtVerify(response.id_token,createLocalJWKSet(jwks as unknown as JSONWebKeySet),{issuer:p.issuer,audience:p.client_id,algorithms:['RS256','ES256','PS256'],requiredClaims:['exp','iat','sub','nonce']});
-   if(payload.nonce!==request.nonce||!payload.sub||payload.sub.length>2000)throw Error('Invalid OIDC nonce or subject');subject=payload.sub;
+  const startedAt=Date.now();
+  let provider:Provider|undefined;
+  const log=(outcome:'success'|'rejected',userId?:string)=>
+   writeIntegrationActivity(this.db,{
+    tenantId:request.tenant_id,direction:'Inbound',transport:'HTTP',
+    provider:provider?.label??'Identity Provider',credentialId:request.provider_id,
+    actorUserId:userId,endpoint:'/api/auth/federation/callback',method,
+    statusCode:outcome==='success'?303:400,outcome,
+    durationMs:Date.now()-startedAt,
+    requestBytes:Buffer.byteLength(String(code??''))+Buffer.byteLength(String(samlResponse??'')),
+    errorCode:outcome==='success'?null:'IDENTITY_CALLBACK_REJECTED',
+    communication:{name:'Identity provider callback',provider:provider?.label??'Identity Provider',
+     relatedObject:'IdentityProvider',relatedRecordId:request.provider_id}
+   },this.activityWriter);
+  try{
+   provider=await this.provider(request.tenant_id,request.provider_id);
+   let subject:string;
+   if(provider.protocol==='saml'){
+    if(typeof samlResponse!=='string'||samlResponse.length>1000000)throw Error('Invalid SAML response');
+    const verified=await (await this.saml(provider,request.nonce)).validatePostResponseAsync({SAMLResponse:samlResponse});
+    if(!verified.profile?.nameID||verified.loggedOut)throw Error('Invalid SAML identity');subject=verified.profile.nameID;
+   }else{
+    if(typeof code!=='string'||!code||code.length>4096)throw Error('Invalid OIDC code');
+    const body=new URLSearchParams({grant_type:'authorization_code',code,client_id:provider.client_id,redirect_uri:this.callbackUri(),
+     code_verifier:this.vault.decryptOpaque(request.verifier_ciphertext,request.key_id)});
+    if(provider.secret_ciphertext&&provider.key_id)body.set('client_secret',this.vault.decryptOpaque(provider.secret_ciphertext,provider.key_id));
+    const activity={db:this.db,writer:this.activityWriter,tenantId:request.tenant_id,
+     providerId:provider.id,provider:provider.label};
+    const response=await this.http(provider.token_url,body,activity);if(typeof response.id_token!=='string')throw Error('Invalid OIDC ID token');
+    const jwks=await this.http(provider.jwks_url,undefined,activity);
+    const {payload}=await jwtVerify(response.id_token,createLocalJWKSet(jwks as unknown as JSONWebKeySet),{issuer:provider.issuer,audience:provider.client_id,algorithms:['RS256','ES256','PS256'],requiredClaims:['exp','iat','sub','nonce']});
+    if(payload.nonce!==request.nonce||!payload.sub||payload.sub.length>2000)throw Error('Invalid OIDC nonce or subject');subject=payload.sub;
+   }
+   // No implicit email matching, provisioning or role assignment. Social providers use the same explicit subject links.
+   const linked=await this.db.query<{user_id:string}>(`SELECT i.user_id FROM md_federated_identities i JOIN md_users u ON u.tenant_id=i.tenant_id AND u.id=i.user_id
+    JOIN md_tenants t ON t.id=u.tenant_id AND t.status='ACTIVE' WHERE i.tenant_id=$1 AND i.provider_id=$2 AND i.subject=$3 AND u.enabled=true`,[request.tenant_id,provider.id,subject]);
+   if(!linked.rows[0])throw Error('Invalid federated identity: account is not linked');
+   const ticket=token();await this.db.query('INSERT INTO md_federation_tickets(token_hash,tenant_id,user_id,origin) VALUES($1,$2,$3,$4)',[hash(ticket),request.tenant_id,linked.rows[0].user_id,request.origin]);
+   await log('success',linked.rows[0].user_id);
+   return {ticket,origin:request.origin};
+  }catch(error){
+   await log('rejected');
+   throw error;
   }
-  // No implicit email matching, provisioning or role assignment. Social providers use the same explicit subject links.
-  const linked=await this.db.query<{user_id:string}>(`SELECT i.user_id FROM md_federated_identities i JOIN md_users u ON u.tenant_id=i.tenant_id AND u.id=i.user_id
-   JOIN md_tenants t ON t.id=u.tenant_id AND t.status='ACTIVE' WHERE i.tenant_id=$1 AND i.provider_id=$2 AND i.subject=$3 AND u.enabled=true`,[request.tenant_id,p.id,subject]);
-  if(!linked.rows[0])throw Error('Invalid federated identity: account is not linked');
-  const ticket=token();await this.db.query('INSERT INTO md_federation_tickets(token_hash,tenant_id,user_id,origin) VALUES($1,$2,$3,$4)',[hash(ticket),request.tenant_id,linked.rows[0].user_id,request.origin]);
-  return {ticket,origin:request.origin};
  }
  async complete(ticket:string,tenant:string){
   const {rows}=await this.db.query<{user_id:string}>(`UPDATE md_federation_tickets SET consumed_at=now() WHERE token_hash=$1 AND tenant_id=$2 AND consumed_at IS NULL AND expires_at>now() RETURNING user_id`,[hash(ticket),tenant]);
