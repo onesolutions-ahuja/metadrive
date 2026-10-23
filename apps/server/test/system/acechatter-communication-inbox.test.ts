@@ -34,7 +34,10 @@ test('AceChatter groups inbound and outbound Communication by the same customer 
       ReceivedAt:'2026-10-22T10:00:00.000Z'},
     {Id:'outgoing',Channel:'WhatsApp',Direction:'Outbound',Sender:'WhatsApp Business',
       Recipient:'447700900123',Body:'Hi there',ExternalMessageId:'wamid.out',
-      SentAt:'2026-10-22T10:01:00.000Z'}
+      SentAt:'2026-10-22T10:01:00.000Z'},
+    {Id:'sms',Channel:'SMS',Direction:'Inbound',Sender:'Customer Name (447700900123)',
+      Body:'This is not a WhatsApp message',ExternalMessageId:'sms.1',
+      ReceivedAt:'2026-10-22T10:02:00.000Z'}
   ];
   assert.equal(communicationSenderPhone(communications[0]),'447700900123');
   assert.equal(communicationSenderPhone(communications[1]),'447700900123');

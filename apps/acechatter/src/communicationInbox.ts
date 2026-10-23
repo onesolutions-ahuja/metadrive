@@ -12,6 +12,9 @@ export const normalizeChatNumber = (value: unknown): string =>
 const directionOf = (row: InboxRecord): string =>
   stringValue(pick(row, 'Direction', 'MessageDirection')).toLowerCase();
 
+const isWhatsAppCommunication = (row: InboxRecord): boolean =>
+  stringValue(pick(row, 'Channel')).toLowerCase() === 'whatsapp';
+
 /** Communication records describe the business as Sender on outbound rows, so the
  * customer thread key must come from Recipient for outbound and Sender for inbound. */
 export function communicationSenderPhone(row: InboxRecord): string {
@@ -66,6 +69,7 @@ export function buildCommunicationInbox(
   }
 
   for (const row of communications) {
+    if (!isWhatsAppCommunication(row)) continue;
     const phone = communicationSenderPhone(row);
     if (!phone) continue;
     const timestamp = occurredAt(row);
@@ -122,7 +126,8 @@ export function mergeCommunicationMessages(
   phoneNumber: unknown
 ): InboxRecord[] {
   const phone = normalizeChatNumber(phoneNumber);
-  const matching = communications.filter(row => communicationSenderPhone(row) === phone);
+  const matching = communications.filter(row =>
+    isWhatsAppCommunication(row) && communicationSenderPhone(row) === phone);
   const seen = new Set<string>();
   const unique: InboxRecord[] = [];
 
