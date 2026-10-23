@@ -34,6 +34,18 @@ with open(f'/proc/{pid}/environ','rb') as handle:
             k,v = item.split(b'=',1)
             if k in (b'STALWART_API_KEY',b'STALWART_BASE_URL',b'STALWART_ALLOWED_DOMAINS'):
                 env[k.decode()] = v.decode(errors='replace')
+# Drop elevated privileges immediately after reading the live process environment.
+# All JMAP network requests run as the original unprivileged runner identity.
+uid = int(os.environ.get('SUDO_UID', '-1'))
+gid = int(os.environ.get('SUDO_GID', '-1'))
+if uid <= 0 or gid <= 0:
+    raise SystemExit('Refusing to diagnose without an unprivileged invoking identity')
+os.setgroups([])
+os.setgid(gid)
+os.setuid(uid)
+if os.geteuid() != uid:
+    raise SystemExit('Failed to drop elevated privileges')
+
 key = env.get('STALWART_API_KEY', '')
 url = env.get('STALWART_BASE_URL', '')
 output('Running process key loaded', bool(key))
