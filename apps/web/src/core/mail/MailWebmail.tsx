@@ -1,4 +1,5 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
+import {apiBase} from '../authentication/Client/authClient';
 
 type JmapSession={apiUrl:string;uploadUrl:string;primaryAccounts?:Record<string,string>;accounts?:Record<string,{name?:string}>;capabilities?:Record<string,unknown>};
 type JmapResponse={methodResponses?:Array<[string,Record<string,unknown>,string]>};
@@ -44,7 +45,8 @@ export default function MailWebmail(){
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
  const [compose,setCompose]=useState(false);const [to,setTo]=useState('');const [subject,setSubject]=useState('');const [body,setBody]=useState('');const [files,setFiles]=useState<File[]>([]);
  const [search,setSearch]=useState('');
- const base=useMemo(()=>new URL('/mail/',window.location.origin),[]);
+ const apiRoot=useMemo(()=>new URL(`${apiBase.replace(/\/$/,'')}/`,window.location.origin),[]);
+ const base=useMemo(()=>new URL('mail-jmap/',apiRoot),[apiRoot]);
  const auth=useMemo(()=>email&&password?'Basic '+b64(email.trim()+':'+password):'', [email,password]);
  const apiUrl=useMemo(()=>new URL('jmap',base).href,[base]);
  const api=useCallback(async(methodCalls:Array<[string,Record<string,unknown>,string]>)=>{
@@ -79,7 +81,7 @@ export default function MailWebmail(){
    const id=discovered.primaryAccounts?.[mail]??Object.keys(discovered.accounts??{})[0];
    if(!id)throw new Error('This mailbox has no mail account access.');
    const advertisedUpload=new URL(discovered.uploadUrl.replace('{accountId}',encodeURIComponent(id)),discovery);
-   setSession({...discovered,apiUrl,uploadUrl:new URL('/mail'+advertisedUpload.pathname,window.location.origin).href});setAccountId(id);
+   setSession({...discovered,apiUrl,uploadUrl:new URL('mail-jmap'+advertisedUpload.pathname,apiRoot).href});setAccountId(id);
    const response2=await fetch(apiUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json',Accept:'application/json'},
     body:JSON.stringify({using:[core,mail,submission],methodCalls:[
      ['Mailbox/get',{accountId:id,ids:null,properties:['id','name','role','totalEmails','unreadEmails']},'mb'],
@@ -96,7 +98,7 @@ export default function MailWebmail(){
    setSelectedMailbox(inbox.id);setNotice('Signed in successfully.');
   }catch(e){setError(e instanceof Error?e.message:'Unable to connect to mailbox');}
   finally{setBusy(false);}
- },[auth,apiUrl,base]);
+ },[auth,apiUrl,base,apiRoot]);
  useEffect(()=>{if(session&&selectedMailbox)void loadMessages(selectedMailbox,'').catch(e=>setError(e instanceof Error?e.message:'Unable to load messages'));},[session,selectedMailbox,loadMessages]);
  const signOut=()=>{setSession(null);setAccountId('');setMailboxes([]);setMessages([]);setSelected(null);setIdentities([]);setPassword('');setError('');setNotice('');};
  const openMessage=async(message:Email)=>{
