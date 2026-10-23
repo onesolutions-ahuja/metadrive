@@ -186,3 +186,27 @@ test('Ace Assist mobile navigation preserves main atomic financial document edit
  assert.match(backend,/expectedParentId/);
  assert.doesNotMatch(runtime,/\/records\//);
 });
+
+
+test('Ace Assist phone calendar and billing render as dedicated screens, not desktop record lists',()=>{
+ const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ const phone=readFileSync(new URL('../../../aceassist/src/AceAssistMobileRecords.tsx',import.meta.url),'utf8');
+ const styles=readFileSync(new URL('../../../aceassist/src/aceassist.css',import.meta.url),'utf8');
+ assert.match(runtime,/AceAssistMobileRecords/);
+ assert.match(runtime,/onOpen={setChosen}/);
+ assert.match(runtime,/hours={hours} hoursLoading={hoursLoading} hoursError={hoursError}/);
+ assert.match(runtime,/FinancialDocumentEditor/);
+ assert.match(phone,/asBusinessLocal/);
+ assert.match(phone,/scheduleForDay/);
+ assert.match(phone,/Filter by staff/);
+ assert.match(phone,/Filter by service/);
+ assert.match(phone,/OUTSTANDING INVOICES/);
+ assert.match(phone,/InvoiceNumber/);
+ assert.match(phone,/customerName\(row\)/);
+ assert.match(phone,/onOpen\(row\)/);
+ assert.doesNotMatch(phone,/\/records\/|mockAppointments|demoInvoice|fakeCustomers/);
+ assert.match(styles,/\.assist-phone-workspace\{display:block/);
+ assert.match(styles,/\.custom-assist-layout>\.custom-calendar\{display:none/);
+ assert.match(styles,/\.custom-visit-detail:not\(\.custom-detail-empty\)/);
+ assert.match(styles,/\.assist-mobile-nav button\[aria-current=page\]/);
+});

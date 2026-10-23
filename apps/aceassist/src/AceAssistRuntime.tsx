@@ -4,6 +4,8 @@ import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {AceAssistDashboard} from './AceAssistDashboard';
+import {AceAssistMobileRecords} from './AceAssistMobileRecords';
+import {House,CalendarDays,ReceiptText,UsersRound,Grid2X2,LogOut,ArrowLeft} from 'lucide-react';
 import {FinancialDocumentEditor,type DocumentChanges,type DocumentType} from './FinancialDocumentEditor';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
@@ -497,12 +499,27 @@ export default function AceAssistRuntime({entry,onLogout}:{
     onCalendar={()=>openSection('Appointment')} onBilling={()=>openSection('Invoice')}
     onOpen={(object,row)=>openSection(object,row)} onCreate={openCreate}/>}
    {screen==='more'&&<section className="assist-more">
-    <h1>More tools</h1><p>Open a workspace you have access to.</p>
+    <div className="assist-more-heading"><span className="assist-phone-eyebrow">ACE ASSIST / WORKSPACE</span>
+     <h1>More</h1><p>Manage your business with OneEngine.</p></div>
     <div className="assist-more-links">{tabs.filter(tab=>!['Appointment','Customer','Invoice'].includes(tab.object))
      .map(tab=><button key={tab.object} type="button"
       disabled={!loaded.has(tab.object.toLowerCase())||!actions.has('AceAssistLoad'+tab.object)}
       onClick={()=>openSection(tab.object)}>{tab.label} <span aria-hidden="true">→</span></button>)}</div>
+    <button type="button" className="assist-more-signout" onClick={()=>void logout()}>
+     <LogOut size={18}/> Sign out</button>
    </section>}
+   {screen==='records'&&<AceAssistMobileRecords
+    object={current.object} rows={rows} customers={lookupRows.Customer??[]}
+    users={lookupRows.User??[]} products={lookupRows.Product??[]}
+    date={weekOf} timeZone={hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone}
+    hours={hours} hoursLoading={hoursLoading} hoursError={hoursError}
+    loading={busy} canLoad={can('Load')}
+    canCreate={isFinancialDocument(current.object)
+      ?actions.has(documentFlow('Create',current.object))
+      :can('Create')||canDynamic('Create',current.object)}
+    onDateChange={setWeekOf} onOpen={setChosen}
+    onCreate={()=>startEdit('Create')}
+    onRefresh={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}}/>}
    {screen==='records'&&<div className="custom-assist-layout"><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
      <div className="custom-panel-toolbar">
@@ -568,8 +585,38 @@ export default function AceAssistRuntime({entry,onLogout}:{
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
    <aside className={'custom-visit-detail'+(!chosen?' custom-detail-empty':'')}>
-    <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
-    {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
+    <button type="button" className="assist-detail-back" onClick={()=>setChosen(null)}>
+     <ArrowLeft size={19}/> Back to {current.label}</button>
+    <div className="custom-panel-title"><h2>{isFinancialDocument(current.object)?current.object:'Record'} details</h2>
+     <span>OneEngine</span></div>
+    {chosen?<><section className="assist-phone-detail-card" aria-label="Selected record">
+      <span className="assist-phone-eyebrow">{current.label} / DETAILS</span>
+      <div className="assist-phone-detail-title">
+       <h1>{current.object==='Appointment'?calendarCustomer(chosen):
+        current.object==='Customer'?String(chosen.Name??'Client'):
+        String(chosen.InvoiceNumber??chosen.QuotationNumber??chosen.Name??current.object)}</h1>
+       {chosen.Status!=null&&<span className="assist-phone-status">
+        {String(chosen.Status)}</span>}
+      </div>
+      <dl>
+       {current.object==='Appointment'&&<>
+        <div><dt>Service</dt><dd>{String(chosen.ServiceName??chosen.Service??'Appointment')}</dd></div>
+        <div><dt>Start</dt><dd>{displayStart(chosen.StartDateTime).replace('T',' · ')||'—'}</dd></div>
+        <div><dt>End</dt><dd>{displayStart(chosen.EndDateTime).replace('T',' · ')||'—'}</dd></div>
+       </>}
+       {current.object==='Customer'&&<>
+        <div><dt>Phone</dt><dd>{show(chosen.Phone)}</dd></div>
+        <div><dt>Email</dt><dd>{show(chosen.Email)}</dd></div>
+       </>}
+       {isFinancialDocument(current.object)&&<>
+        <div><dt>Customer</dt><dd>{String(lookupRows.Customer?.find(row=>
+         idOf(row)===String(chosen.Customer??''))?.Name??'—')}</dd></div>
+        <div><dt>Total</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.Total)}</dd></div>
+        {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
+       </>}
+      </dl>
+     </section>
+     <dl className="assist-raw-details">{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
       {isFinancialDocument(current.object)&&<section className="assist-related-list">
        <h3>Line items</h3>
@@ -624,18 +671,18 @@ export default function AceAssistRuntime({entry,onLogout}:{
   </main>
   <nav className="assist-mobile-nav" aria-label="Primary navigation">
    <button type="button" aria-current={screen==='home'?'page':undefined}
-    onClick={openHome}><span aria-hidden="true">⌂</span>Home</button>
+    onClick={openHome}><House size={21} strokeWidth={2}/><span>Home</span></button>
    <button type="button" aria-current={screen==='records'&&current.object==='Appointment'?'page':undefined}
     disabled={!actions.has('AceAssistLoadAppointment')} onClick={()=>openSection('Appointment')}>
-    <span aria-hidden="true">▦</span>Calendar</button>
+    <CalendarDays size={21} strokeWidth={2}/><span>Calendar</span></button>
    <button type="button" aria-current={screen==='records'&&current.object==='Invoice'?'page':undefined}
     disabled={!actions.has('AceAssistLoadInvoice')} onClick={()=>openSection('Invoice')}>
-    <span aria-hidden="true">▤</span>Billing</button>
+    <ReceiptText size={21} strokeWidth={2}/><span>Billing</span></button>
    <button type="button" aria-current={screen==='records'&&current.object==='Customer'?'page':undefined}
     disabled={!actions.has('AceAssistLoadCustomer')} onClick={()=>openSection('Customer')}>
-    <span aria-hidden="true">♙</span>Customers</button>
+    <UsersRound size={21} strokeWidth={2}/><span>Clients</span></button>
    <button type="button" aria-current={screen==='more'||screen==='records'&&!['Appointment','Invoice','Customer'].includes(current.object)?'page':undefined}
-    onClick={openMore}><span aria-hidden="true">☰</span>More</button>
+    onClick={openMore}><Grid2X2 size={21} strokeWidth={2}/><span>More</span></button>
   </nav>
 
   {printingDocument&&<DocumentPrint objectLabel={printingObject}
