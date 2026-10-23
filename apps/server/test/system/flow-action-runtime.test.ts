@@ -16,6 +16,28 @@ const context=(query: (sql:string,values?:unknown[])=>Promise<{rowCount?:number|
   :value==='{!$User.Name}'?'Flow user':value,variables:{},connectors,elementId:2
 });
 
+test('Generate 4-Digit Random OTP returns four numeric text digits',async()=>{
+ const actionContext=context(async()=>({rowCount:1}));
+ actionContext.config={actionType:'Generate 4-Digit Random OTP',outputVariable:'otp'};
+ const result=await executeFlowAction(actionContext);
+ assert.equal(result,undefined);
+ assert.match(String(actionContext.variables.otp),/^\\d{4}$/);
+});
+
+test('Generate 6-Digit Random OTP returns six numeric text digits',async()=>{
+ const actionContext=context(async()=>({rowCount:1}));
+ actionContext.config={actionType:'Generate 6-Digit Random OTP',outputVariable:'verificationCode'};
+ const result=await executeFlowAction(actionContext);
+ assert.equal(result,undefined);
+ assert.match(String(actionContext.variables.verificationCode),/^\\d{6}$/);
+});
+
+test('Generate Random OTP rejects an invalid output variable',async()=>{
+ const actionContext=context(async()=>({rowCount:1}));
+ actionContext.config={actionType:'Generate 4-Digit Random OTP',outputVariable:'not a variable'};
+ await assert.rejects(()=>executeFlowAction(actionContext),/valid output variable name/);
+});
+
 test('Flow formula context uses the execution user time zone and tenant currency rates',async()=>{
   const vars:Record<string,unknown>={};
   const context=await loadFlowUserResource({query:async(sql:string)=>{
