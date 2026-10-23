@@ -136,7 +136,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [quickFind, setQuickFind] = useState('');
   const [recordSearch, setRecordSearch] = useState('');
   const [launcherOpen, setLauncherOpen] = useState(false);
-  const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(false);
+  const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1024px)').matches
+  );
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState<ObjectMetadata[]>([]);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
