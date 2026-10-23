@@ -611,8 +611,8 @@ export class NamedCredentialService {
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
  
- /** Deliver tenant recovery mail using the saved encrypted SMTP credential.
-  * Public DNS and TLS certificate validation protect outbound platform traffic.
+ /** Deliver password recovery mail using the server-only platform SMTP configuration.
+  * Tenant Named Credentials and tenant-supplied sender addresses are deliberately ignored.
   */
  async sendRecoveryEmail(tenantId:string,_id:string,_from:string,to:string,subject:string,body:string):Promise<void>{
   const startedAt=Date.now();
