@@ -70,7 +70,6 @@ export function FinancialDocumentEditor({
   ?['Accepted','Approved','Converted'].includes(status):status!=='Draft');
  const canEdit=!busy&&!finalised;
  const currency=header.CurrencyCode?.trim()||String(document?.CurrencyCode??'');
- const updates=(line:Line)=>({key:line.key,Id:line.Id,...payload(line)});
  const setLine=(key:string,field:keyof Line,value:string)=>{
   setLines(all=>all.map(line=>line.key===key?{...line,[field]:value}:line));
   setLocalError('');
