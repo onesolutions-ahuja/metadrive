@@ -1,5 +1,7 @@
 import * as React from 'react';
 import {asBusinessLocal} from './businessDateTime';
+import {CalendarDays,ReceiptText,WalletCards,UserRound,FilePlus2,
+ ArrowRight,Clock3} from 'lucide-react';
 
 type Row=Record<string,unknown>;
 type ObjectName='Appointment'|'Customer'|'Quotation'|'Invoice';
@@ -62,18 +64,18 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
    <div><span className="custom-eyebrow">YOUR WORKSPACE</span>
     <h1>Good to see you</h1>
     <p>{new Date(today+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})} · Appointments and billing in one place</p></div>
-   <button type="button" onClick={onCalendar}>Open calendar <span aria-hidden="true">→</span></button>
+   <button type="button" onClick={onCalendar}>Open calendar <ArrowRight size={16} aria-hidden="true"/></button>
   </section>
   <section className="assist-home-metrics" aria-label="Business overview">
    <button type="button" onClick={onCalendar} className="assist-metric">
-    <span className="assist-metric-icon" aria-hidden="true">▦</span>
+    <span className="assist-metric-icon" aria-hidden="true"><CalendarDays size={21}/></span>
     <strong>{actions.has('AceAssistLoadAppointment')?todays.length:'—'}</strong><small>Appointments today</small>
    </button>
    <button type="button" onClick={onBilling} className="assist-metric">
-    <span className="assist-metric-icon" aria-hidden="true">▤</span><strong>{invoicesLoading?'…':actions.has('AceAssistLoadInvoice')?outstanding.length:'—'}</strong><small>Unpaid invoices</small>
+    <span className="assist-metric-icon" aria-hidden="true"><ReceiptText size={21}/></span><strong>{invoicesLoading?'…':actions.has('AceAssistLoadInvoice')?outstanding.length:'—'}</strong><small>Unpaid invoices</small>
    </button>
    <button type="button" onClick={onBilling} className="assist-metric">
-    <span className="assist-metric-icon" aria-hidden="true">↗</span>
+    <span className="assist-metric-icon" aria-hidden="true"><WalletCards size={21}/></span>
     <strong>{invoicesLoading?'…':actions.has('AceAssistLoadInvoice')?
      outstandingCurrencies.size>1?'Multiple currencies':
      outstanding.length?money(outstanding.reduce((sum,row)=>sum+row.remaining,0),outstanding[0].CurrencyCode):'0.00':'—'}</strong>
@@ -85,7 +87,7 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
     <div className="assist-home-panel-heading"><h2>Today's appointments</h2>
      <button type="button" onClick={onCalendar}>View all →</button></div>
     {next&&<button type="button" className="assist-next" onClick={()=>onOpen('Appointment',next)}>
-     <span className="assist-next-time">{businessClock(next.StartDateTime,timeZone).slice(11,16)}</span>
+     <span className="assist-next-time"><Clock3 size={13}/>{businessClock(next.StartDateTime,timeZone).slice(11,16)}</span>
      <span><small>UP NEXT</small><strong>{String(customer(next))}</strong>
       <span>{service(next)}</span></span><span aria-hidden="true">→</span></button>}
     <div className="assist-home-list">
@@ -117,11 +119,14 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
   </div>
   <section className="assist-home-panel assist-home-quick">
    <h2>Quick actions</h2><div className="assist-quick-grid">
-    {([['Appointment','New appointment','▦'],['Customer','Add customer','♙'],
-      ['Invoice','Create invoice','▤'],['Quotation','New quotation','☷']] as const)
+    {([['Appointment','New appointment','booking'],['Customer','Add customer','client'],
+      ['Invoice','Create invoice','invoice'],['Quotation','New quotation','quotation']] as const)
      .map(([object,label,icon])=><button type="button" key={object} disabled={!canCreate(object)}
       title={!canCreate(object)?'Not permitted: creation Flow unavailable':undefined}
-      onClick={()=>onCreate(object)}><span aria-hidden="true">{icon}</span><strong>{label}</strong></button>)}
+      onClick={()=>onCreate(object)}><span aria-hidden="true">
+       {icon==='booking'?<CalendarDays size={21}/>:icon==='client'?<UserRound size={21}/>:
+        icon==='invoice'?<ReceiptText size={21}/>:<FilePlus2 size={21}/>}
+      </span><strong>{label}</strong></button>)}
    </div>
   </section>
  </div>;
