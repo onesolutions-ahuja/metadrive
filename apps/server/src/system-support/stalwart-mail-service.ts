@@ -33,7 +33,8 @@ const safeError=(error:unknown):string=>{
 /**
  * Server-side adapter for Stalwart 0.16+ management JMAP.
  * The API key is process configuration only; it is never accepted from HTTP requests.
- * Stalwart's memberTenantId is set and filtered to MetaDrive's authenticated tenant id.
+ * Tenant membership is represented by a deterministic internal Group account. This uses
+ * standard Community-compatible Account/Group features rather than Enterprise-only tenant fields.
  */
 export class StalwartMailService {
  private readonly client:StalwartJmapClient;
