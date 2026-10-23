@@ -96,7 +96,7 @@ test('Flow line guard computes LineTotal and updates parent totals after mutatio
  const lineConfig={parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',
   unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',
   lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',
-  taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']};
+  taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],numberField:'InvoiceNumber'};
  const writes:Array<{object:string;id:string;values:Record<string,unknown>}>=[];
  const line={Id:'55555555-5555-4555-8555-555555555555',Invoice:invoiceId,
   Quantity:2,UnitPrice:30,DiscountAmount:5,TaxAmount:6,LineTotal:70};
@@ -133,6 +133,25 @@ test('Flow line guard prevents changes to issued invoices',async()=>{
   client:{query:async()=>({rows:[],rowCount:0})},
   records:{get:async(_tenant:string,_user:string,object:string)=>object==='InvoiceLine'?line:
    {Id:invoiceId,Status:'Issued'}},
+  recordQuery:{find:async()=>[line]}
+ } as never;
+ await assert.rejects(prepareDocumentLineMutation(context,lineConfig,line.Id,{Quantity:2}),
+  /cannot be changed after the financial document is issued/);
+});
+
+test('Flow line guard protects numbered invoices even if status later changes',async()=>{
+ const lineConfig={parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',
+  unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',
+  lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',
+  taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',
+  lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],numberField:'InvoiceNumber'};
+ const line={Id:'55555555-5555-4555-8555-555555555555',Invoice:invoiceId,
+  Quantity:1,UnitPrice:10,DiscountAmount:0,TaxAmount:0,LineTotal:10};
+ const context={tenantId:'tenant',userId:'operator',
+  node:{id:2,type:'Update Records',config:{object:'InvoiceLine'}},
+  client:{query:async()=>({rows:[],rowCount:0})},
+  records:{get:async(_tenant:string,_user:string,object:string)=>object==='InvoiceLine'?line:
+   {Id:invoiceId,Status:'Draft',InvoiceNumber:'INV-2026-000001'}},
   recordQuery:{find:async()=>[line]}
  } as never;
  await assert.rejects(prepareDocumentLineMutation(context,lineConfig,line.Id,{Quantity:2}),
