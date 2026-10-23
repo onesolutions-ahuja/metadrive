@@ -12,5 +12,6 @@ test('company business hours remain unconfigured until tenant settings are saved
  assert.match(src,/setCalendar\(saved \?\? blankCalendar\(\)\)/);
  assert.match(src,/setConfigured\(Boolean\(saved\)\)/);
  assert.match(src,/Business calendar not configured/);
- assert.match(src,/required=\{!calendar\.weeklyHours\[day\]\.closed\}/);
+ assert.match(src,/required=\{!disabled\}/);
+ assert.match(src,/disabled=\{calendar\.weeklyHours\[day\]\.closed\}/);
 });
