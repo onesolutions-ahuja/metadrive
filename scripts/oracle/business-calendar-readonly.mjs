@@ -4,7 +4,7 @@
  * Executes on the OCI runner using the *running* API process's SQL configuration.
  */
 import {createHash} from 'node:crypto';
-import pg from 'pg';
+import {pathToFileURL} from 'node:url';
 
 const tenantId=process.argv[2]??'';
 if(!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(tenantId))
@@ -38,6 +38,13 @@ try {
   url.searchParams.delete('sslrootcert');
   ssl={ca,rejectUnauthorized:true,servername:url.hostname};
  }
+ // Resolve the vetted pg client from the running API release. The bridge has
+ // already dropped to that systemd process's OS identity for peer auth.
+ const pgModule=process.env.MD_DIAG_PG_MODULE;
+ if(!pgModule||!pgModule.startsWith('/opt/metadrive/'))
+  throw Error('Trusted production PostgreSQL module unavailable');
+ const imported=await import(pathToFileURL(pgModule).href);
+ const pg=imported.default??imported;
  // Clone the same SQL connection selection as SqlPersistence without printing it.
  client=new pg.Client({connectionString:url.toString(),...(ssl?{ssl}:{}),
   connectionTimeoutMillis:10000});
