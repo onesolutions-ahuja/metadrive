@@ -19,10 +19,13 @@ const publicIp=(address:string)=>{
 
 export function isPlatformRecoveryMailConfigured(env:NodeJS.ProcessEnv=process.env){
  const port=Number(env.METADRIVE_PLATFORM_SMTP_PORT??587);
- return Boolean(env.METADRIVE_PLATFORM_SMTP_HOST?.trim()
+ const host=env.METADRIVE_PLATFORM_SMTP_HOST?.trim()??'';
+ const from=env.METADRIVE_PLATFORM_SMTP_FROM_EMAIL?.trim()??'';
+ return Boolean(host&&host!=='localhost'&&!host.endsWith('.local')
+  &&!isIP(host)&&!/[\s/@?#]/.test(host)
   &&env.METADRIVE_PLATFORM_SMTP_USERNAME?.trim()
   &&env.METADRIVE_PLATFORM_SMTP_PASSWORD
-  &&env.METADRIVE_PLATFORM_SMTP_FROM_EMAIL?.trim()
+  &&emailPattern.test(from)&&from.length<=254
   &&[465,587].includes(port));
 }
 

@@ -42,3 +42,38 @@ Changing a login restriction or requiring MFA can prevent the administrator's cu
 - Existing CRUD/record access, field-security, record-type, RBAC navigation, app-entitlement and Flow tests continue to pass; federation issues the same tenant/user sessions and does not add another authorization path.
 
 Inbound SSO is separate from the existing outbound Named Credential OAuth service and the OAuth authorization server/Connected Apps feature for external API clients. API-client consent, scopes and licensing are documented in [SECURITY_GOVERNANCE_PHASE3.md](SECURITY_GOVERNANCE_PHASE3.md).
+
+## Platform-owned recovery email isolation
+
+Password recovery is an essential Core security function, not a tenant mail app or an
+arbitrary tenant-configured HTTP callout. The existing `PasswordResetService` creates
+tenant/user-bound one-time challenges, and `NamedCredentialService.sendRecoveryEmail`
+intentionally ignores caller-provided Named Credential IDs and sender addresses.
+Only `sendPlatformRecoveryEmail` resolves the platform SMTP transport from deployment
+secrets. A tenant with no mail provider can therefore receive recovery messages
+without being granted platform email credentials or another tenant's data.
+
+Platform SMTP configuration is checked for a syntactically valid sender address,
+a non-local DNS hostname and an allowed TLS-enabled port (465 or 587) before
+password-recovery-dependent settings may be activated. Delivery still verifies
+public DNS resolution and certificate validity at send time. These deployment
+secrets must not be copied into SQL tenant settings, frontend metadata, Flow
+variables or Named Credentials accessible to tenants.
+
+The recovery endpoint resolves and scopes identity to the requesting tenant;
+the email transport receives only recipient and message details and never
+performs password mutations. If delivery fails, the issued challenge is removed,
+and the public acknowledgement does not disclose account existence. Password
+confirmation uses a transactional tenant-bound lookup, consumes outstanding
+challenges, revokes sessions and audits the event.
+
+**Scope boundary:** This existing recovery path always uses the platform
+provider. Tenant-supplied providers for ordinary business email, optional
+verified tenant-security senders and provider failover must be designed as
+separately authorised communication routes; do not enable an unverified tenant
+HTTP callout to receive password-reset secrets. There is no automatic tenant
+mail/marketing entitlement through platform SMTP.
+
+**Operations:** Set the five `METADRIVE_PLATFORM_SMTP_*` deployment variables
+listed above, configure SPF/DKIM/DMARC for the sender domain, and verify
+delivery and rate limits in an isolated tenant before production use.
