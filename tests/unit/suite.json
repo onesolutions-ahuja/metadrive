@@ -79,6 +79,7 @@
     "apps/server/test/system/offline-publication-contract.test.ts",
     "apps/server/test/system/parse-json-flow-node.test.ts",
     "apps/server/test/system/password-reset-service.test.ts",
+    "apps/server/test/system/platform-recovery-mailer.test.ts",
     "apps/server/test/system/product-image-field.test.ts",
     "apps/server/test/system/quick-action-email-queue.test.ts",
     "apps/server/test/system/record-availability-guard.test.ts",
