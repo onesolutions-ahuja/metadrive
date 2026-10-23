@@ -61,12 +61,10 @@ export function registerStalwartJmapProxyRoutes(app:Express){
    if(contentType)headers.set('content-type',contentType);
    const init:RequestInit&{duplex?:'half'}={method:req.method,headers,redirect:'error',signal:AbortSignal.timeout(60_000)};
    if(req.method==='POST'){
+    let bytesReceived=0;
     const limiter=new Transform({transform(chunk:Buffer,_encoding,callback){
-     if(tooLarge){callback(new Error('Mail upload too large'));return;}
-     if((this as Transform & {totalBytes?:number}).totalBytes===undefined)(this as Transform & {totalBytes?:number}).totalBytes=0;
-     const state=this as Transform & {totalBytes:number};
-     state.totalBytes+=chunk.length;
-     if(state.totalBytes>maxBodyBytes){tooLarge=true;callback(new Error('Mail upload too large'));return;}
+     bytesReceived+=chunk.length;
+     if(bytesReceived>maxBodyBytes){tooLarge=true;callback(new Error('Mail upload too large'));return;}
      callback(null,chunk);
     }});
     init.body=Readable.toWeb(req.pipe(limiter)) as unknown as BodyInit;
