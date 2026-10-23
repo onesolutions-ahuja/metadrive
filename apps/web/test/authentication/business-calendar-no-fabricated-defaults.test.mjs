@@ -45,3 +45,21 @@ test('AceAssist distinguishes a pending calendar request from missing tenant hou
  assert.match(aceAssist,/cache:'no-store'/);
  assert.match(aceAssist,/Promise\.allSettled\(relations\.map/);
 });
+
+test('first-time calendar entry provides a real save action without a separate edit step',()=>{
+ assert.match(source,/setEditing\(saved === null\)/);
+ assert.match(source,/No business hours have been saved for this organisation/);
+ assert.match(source,/form="business-calendar-form"/);
+ assert.match(source,/id="business-calendar-form"/);
+ assert.match(source,/Save business hours/);
+ assert.match(source,/Server did not confirm the business-hours save/);
+ assert.match(source,/metadrive:business-calendar-saved/);
+});
+
+test('Business Settings is not obscured by unrelated company and currency forms',()=>{
+ const workspace=readFileSync(
+  new URL('../../src/core/settings/CompanySettingsWorkspace/CompanySettingsWorkspace.tsx',import.meta.url),'utf8');
+ assert.doesNotMatch(workspace,/currentSection==='business'\|\|currentSection==='contacts'/);
+ assert.match(workspace,/currentSection==='business'&&<div className="company-workspace-secondary"/);
+ assert.match(workspace,/calendar\?\?<BusinessCalendarSettings request=\{apiRequest\} permitted/);
+});
