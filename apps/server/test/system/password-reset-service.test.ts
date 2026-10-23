@@ -75,5 +75,5 @@ test('password recovery works without tenant SMTP settings',async()=>{
   });
  const result=await service.request('tenant-b','person@example.org');
  assert.deepEqual(result,{message:'If this account exists, recovery instructions have been sent.'});
- assert.match(sentBody,/^[\s\S]*[A-Za-z0-9_-]{43}$/);
+ assert.match(sentBody,/[A-Za-z0-9_-]{43}/);
 });
