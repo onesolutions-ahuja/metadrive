@@ -90,4 +90,41 @@ for path in ('/jmap', '/jmap/'):
                                 output(f'{path} x:Domain/get method',res[0][0])
                                 if res[0][0]=='error' and isinstance(res[0][1],dict):
                                     output(f'{path} x:Domain/get error type',str(res[0][1].get('type','unknown'))[:100])
+
+# Validate the management methods exercised by MailboxAdmin without changing mailboxes.
+# Report only method names, counts, and protocol error types (never account data).
+def jmap_check(label, name, args):
+    payload = json.dumps({'using':['urn:ietf:params:jmap:core','urn:stalwart:jmap'],
+        'methodCalls':[[name,args,'diag-account']]}).encode()
+    http, data = request(base+'/jmap', key, 'POST', payload)
+    output(label+' HTTP', http)
+    if not isinstance(data, dict):
+        return None
+    responses = data.get('methodResponses')
+    if not isinstance(responses,list) or not responses or not isinstance(responses[0], list):
+        output(label+' response','invalid')
+        return None
+    actual, result, _ = responses[0]
+    output(label+' method', actual)
+    if actual == 'error':
+        output(label+' JMAP error type',str(result.get('type','unknown'))[:100] if isinstance(result,dict) else 'invalid')
+        return None
+    if actual != name or not isinstance(result,dict):
+        output(label+' response','unexpected')
+        return None
+    if isinstance(result.get('ids'),list):
+        output(label+' count',len(result['ids']))
+    if isinstance(result.get('list'),list):
+        output(label+' count',len(result['list']))
+    return result
+
+account_query = jmap_check('Account/query unfiltered','x:Account/query',{'filter':{},'limit':1})
+if isinstance(account_query,dict) and isinstance(account_query.get('ids'),list) and account_query['ids']:
+    jmap_check('Account/get minimum','x:Account/get',{'ids':account_query['ids'][:1],
+        'properties':['id','name','domainId','@type']})
+jmap_check('Account/query tenant group name filter','x:Account/query',
+    {'filter':{'name':'mdt00000000000000000000000000000000','domainId':'nonexistent'},'limit':1})
+jmap_check('Account/query group membership filter','x:Account/query',
+    {'filter':{'memberGroupIds':'nonexistent'},'position':0,'limit':1})
+
 output('Diagnostic', 'finished (read-only)')
