@@ -297,11 +297,11 @@ export class AppRuntime {
   }
   async marketplace(tenantId:string) {
     const {rows}=await this.db.query<{
-      id:string;api_name:string;label:string;description:string|null;installed:boolean;
+      id:string;api_name:string;label:string;app_type:'Application'|'ConnectorApp';description:string|null;installed:boolean;
       expires_at:Date|null;licensed:boolean;package_version:number|null;installed_version:number|null;
       credential_name:string|null;credential_base_url:string|null;credential_auth_type:string|null
     }>(`
-      SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,COALESCE(m.label,a.label) AS label,
+      SELECT a.id,a.app_type,COALESCE(m.api_name,a.api_name) AS api_name,COALESCE(m.label,a.label) AS label,
         COALESCE(m.description,p.description) AS description,
         (i.app_id IS NOT NULL) AS installed,iv.version AS installed_version,
         p.version AS package_version,e.expires_at,
@@ -324,6 +324,8 @@ export class AppRuntime {
     `,[tenantId]);
     return {records:rows.map(row=>({
       Id:row.id,Name:row.label,AppKey__c:row.api_name,
+      AppType__c:row.app_type??'Application',
+      Category__c:row.app_type==='ConnectorApp'?'Connector Apps':'Applications',
       Description__c:row.description??'',CredentialName__c:row.credential_name??'',
       ...(row.credential_name?{DefaultBaseUrl__c:row.credential_base_url??'',
         AuthType__c:row.credential_auth_type??'None'}:{}),
