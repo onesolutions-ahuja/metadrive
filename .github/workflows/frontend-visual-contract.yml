@@ -6,6 +6,7 @@ on:
       - 'apps/mobile/**'
       - 'scripts/check-ui-design-tokens.mjs'
       - 'scripts/marketing-visual-smoke.mjs'
+      - 'scripts/workspace-responsive-smoke.mjs'
       - 'scripts/accessibility-smoke.mjs'
       - '.github/workflows/frontend-visual-contract.yml'
       - 'package-lock.json'
@@ -64,12 +65,14 @@ jobs:
         run: nohup npm run dev --workspace apps/web -- --host 127.0.0.1 --port 4173 > /tmp/metadrive-vite.log 2>&1 &
       - name: Check marketing responsiveness and screenshots
         run: node scripts/marketing-visual-smoke.mjs
+      - name: Check workspace Flow Builder at phone and tablet widths
+        run: node scripts/workspace-responsive-smoke.mjs
       - name: Run axe-core accessibility scan
         run: node scripts/accessibility-smoke.mjs
       - name: Save visual evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: marketing-browser-screenshots
+          name: ui-responsive-screenshots
           path: artifacts/*.png
           if-no-files-found: ignore
