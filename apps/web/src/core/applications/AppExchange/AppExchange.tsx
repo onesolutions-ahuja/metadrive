@@ -46,14 +46,14 @@ export default function AppExchange(props: Props) {
     let active = true;
     setLoading(true);
     void props.loadApps().then((rows) => { if (active) setApps(rows); })
-      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Cannot load connector app metadata'); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : 'Cannot load AppExchange metadata'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [props.loadApps]);
-  const categories = useMemo(() => ['All apps', ...Array.from(new Set(apps.map((app) => app.Category__c || 'Integrations')))], [apps]);
+  const categories = useMemo(() => ['All apps', ...Array.from(new Set(apps.map((app) => app.Category__c || 'Applications')))], [apps]);
   const visible = useMemo(() => apps.filter((app) =>
     (view === 'discover' || app.Installed__c) &&
-    (category === 'All apps' || (app.Category__c || 'Integrations') === category) &&
+    (category === 'All apps' || (app.Category__c || 'Applications') === category) &&
     (app.Name + ' ' + (app.Description__c || '') + ' ' + (app.Category__c || '')).toLowerCase().includes(query.trim().toLowerCase())
   ), [apps, view, category, query]);
   const installed = apps.filter((app) => app.Installed__c).length;
@@ -170,7 +170,7 @@ export default function AppExchange(props: Props) {
       <section className="exchange-detail" role="dialog" aria-modal="true" aria-labelledby="app-detail-title">
         <button className="exchange-close" aria-label="Close" onClick={() => setSelected(null)}><X size={18}/></button>
         <div className="exchange-detail-head"><span className="exchange-app-mark green"><Puzzle size={25}/></span>
-          <div><div className="exchange-detail-category">{details.Category__c || 'Connector'}</div>
+          <div><div className="exchange-detail-category">{details.Category__c || 'Applications'}</div>
             <h2 id="app-detail-title">{details.Name}</h2><div className="exchange-detail-publisher">Configured through metadata and Flows</div></div></div>
         <p className="exchange-detail-description">{details.Description__c}</p>
         <div className="exchange-detail-columns">
