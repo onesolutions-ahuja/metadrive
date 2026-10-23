@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {seedOneChatterAppCatalog,ONECHATTER_APP} from '../../src/app-seeders/onechatter-app-catalog.js';
 import {seedOneChatterInstalledPage} from '../../src/app-seeders/onechatter-page.js';
 import {presentPageRecords} from '../../../web/src/core/records/RecordWorkspace/recordPresentationAdapters.js';
+import {bindPageStateProperties,safePageStateRecordCollection} from '../../../web/src/core/pages/PageRuntime/pageComponentBindings.js';
 
 const tenant='tenant-a';
 function fakeClient(mode:'new'|'existing'|'uninstalled'){
@@ -49,6 +50,19 @@ test('not installing the app cannot seed any tenant OneChatter page',async()=>{
   assert.equal(await seedOneChatterInstalledPage(client as never,tenant),false);
   assert.equal(calls.length,2);
 });
+test('safe Flow record collections populate declared component properties only',()=>{
+  const inputs={contactChoices:[],stateBindings:{contactChoices:'authorizedContacts',
+    records:'authorizedContacts'}};
+  const rows=[{Id:'contact-1',Name:'Customer',Phone:'447700900321'}];
+  assert.deepEqual(safePageStateRecordCollection(rows),rows);
+  assert.deepEqual(bindPageStateProperties(inputs,
+    {authorizedContacts:JSON.stringify(rows)}).contactChoices,rows);
+  assert.deepEqual(bindPageStateProperties(inputs,
+    {authorizedContacts:rows}).records,undefined);
+  assert.equal(safePageStateRecordCollection([{Id:'c',constructor:'oops'}]),undefined);
+  assert.equal(safePageStateRecordCollection(Array(201).fill({Name:'excess'})),undefined);
+});
+
 test('shared OneConversation maps tenant-RBAC-filtered Communication rows using component properties',()=>{
   const properties={
     conversationAccessMode:'recordPermissions',conversationDefaultAccount:'WhatsApp',
