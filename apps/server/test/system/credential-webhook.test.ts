@@ -80,7 +80,7 @@ test('credential-linked webhook accepts verified request, creates Communication,
   assert.equal(message.RelatedRecordId,endpoint);
   assert.equal(message.ConversationId,'447700900123');
   assert.match(String(message.Subject),/POST 200 · success/);
-  assert.match(String(message.Subject),/req \\d+B\\/resp \\d+B/);
+  assert.match(String(message.Subject),/req \d+B\/resp \d+B/);
   assert.equal(communications.filter(record=>record.RelatedObject==='IntegrationApiCall').length,3);
   assert.doesNotMatch(JSON.stringify(communications),/private/);
   assert.equal(flowsCalled,0);
