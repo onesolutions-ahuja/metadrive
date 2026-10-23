@@ -28,7 +28,7 @@ const timeOptions = Array.from({ length: 48 }, (_, index) => {
   return `${hour % 12 || 12}:${minute} ${period}`;
 });
 const formatTime = (value: string) => {
-  if (!/^([01]?\\d|2[0-3]):[0-5]\\d$/.test(value)) return '';
+  if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(value)) return '';
   const [hour, minute] = value.split(':').map(Number);
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
 };
