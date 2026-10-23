@@ -84,10 +84,17 @@ export class StalwartJmapClient {
     if (typeof session.apiUrl !== 'string' || !session.apiUrl) {
       throw new StalwartJmapError('Stalwart JMAP session has no apiUrl');
     }
-    const apiUrl = new URL(session.apiUrl, discoveryUrl);
-    if (apiUrl.origin !== this.baseUrl.origin || !['https:', 'http:'].includes(apiUrl.protocol)) {
-      throw new StalwartJmapError('Stalwart JMAP API URL origin does not match the configured server');
+    // Stalwart may advertise its public hostname even when MetaDrive uses its
+    // private loopback listener. Never send the management key to an advertised
+    // host; pin requests to the explicitly configured Stalwart origin.
+    const advertised = new URL(session.apiUrl, discoveryUrl);
+    if (!['https:', 'http:'].includes(advertised.protocol)
+      || advertised.username || advertised.password
+      || !/^\\/jmap\\/?$/.test(advertised.pathname)
+      || advertised.search || advertised.hash) {
+      throw new StalwartJmapError('Stalwart advertised an unsupported JMAP endpoint');
     }
+    const apiUrl = new URL('/jmap/', this.baseUrl);
     return { ...session, apiUrl: apiUrl.href };
   }
 
