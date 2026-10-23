@@ -79,6 +79,8 @@ export function createIntegrationCommunicationWriter(
   const now=new Date().toISOString();
   const status=input.outcome==='success'
    ?input.direction==='Inbound'?'Received':'Sent':'Failed';
+  // normalized() strips query strings and fragments. Use only this sanitised value
+  // in every displayed/logged field; never rebuild a subject from the raw endpoint.
   const endpoint=clean(input.endpoint,2048);
   const metadata={
    type:'IntegrationApiCall',transport:input.transport??'HTTP',endpoint,
@@ -116,13 +118,22 @@ export function createIntegrationCommunicationWriter(
  };
 }
 
-/** Best-effort shared entrypoint. It never changes the remote provider's actual result. */
+/** Best-effort audit writer: logging failure must never change the external provider result.
+ * Failures remain visible in sanitized server diagnostics for alerting and recovery.
+ */
 export async function writeIntegrationActivity(
  _db:SqlPersistence,input:IntegrationActivityInput,writer?:IntegrationActivityWriter
 ):Promise<void>{
- if(!writer)return;
- try{await writer(normalized(input));}
- catch(error){
+ if(!writer){
+  console.error('Integration Communication write failed',JSON.stringify({
+   direction:input.direction,transport:input.transport??'HTTP',error:'WriterNotConfigured'
+  }));
+  return;
+ }
+ try{
+  await writer(normalized(input));
+ }catch(error){
+  // Do not include endpoint, credentials, request data, or provider error text in diagnostics.
   console.error('Integration Communication write failed',JSON.stringify({
    direction:input.direction,transport:input.transport??'HTTP',
    error:error instanceof Error?error.name:'UnknownError'
