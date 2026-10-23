@@ -25,6 +25,8 @@ export function supportsAppearanceProperty(
   componentType: string,
   property: string
 ): boolean {
+  // Preserve the shared editor's existing full schema when no component type is supplied.
+  if (!componentType.trim()) return true;
   const capabilities = componentAppearanceCapabilities(componentType);
   const key = property.toLowerCase();
   if (['padding', 'margin', 'borderwidth', 'borderradius', 'backgroundcolor', 'bordercolor', 'opacity', 'hidden', 'zindex'].includes(key)) {
