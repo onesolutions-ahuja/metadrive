@@ -129,7 +129,7 @@ export function FinancialDocumentEditor({
    aria-label={(operation==='Create'?'New ':'Edit ')+type}>
    <header className="assist-modal-heading">
     <div><small>{operation==='Create'?'Create document':'Edit document'}</small>
-     <h2>{type} {document?.QuotationNumber??document?.InvoiceNumber??''}</h2></div>
+     <h2>{type} {String(document?.QuotationNumber??document?.InvoiceNumber??'')}</h2></div>
     <button type="button" disabled={busy} onClick={onCancel} aria-label="Close editor">✕</button>
    </header>
    <form className="assist-document-form" onSubmit={event=>void submit(event)}>
