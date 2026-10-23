@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 
-const emailPattern=/^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/;
+const emailPattern=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const publicIp=(address:string)=>{
  if(isIP(address)===4){
   const [a,b]=address.split('.').map(Number);
@@ -37,9 +37,9 @@ export async function sendPlatformRecoveryEmail(to:string,subject:string,body:st
  if(!isPlatformRecoveryMailConfigured(env)||!host||!username||!password||!from)
   throw new Error('Platform recovery mail is not configured');
  if(!emailPattern.test(to)||!emailPattern.test(from)||to.length>254||from.length>254||
-  /[\\r\\n]/.test(subject)||subject.length>300||body.length>10000)
+  /[\r\n]/.test(subject)||subject.length>300||body.length>10000)
   throw new Error('Invalid recovery email');
- if(isIP(host)||host==='localhost'||host.endsWith('.local')||/[\\s/@?#]/.test(host))
+ if(isIP(host)||host==='localhost'||host.endsWith('.local')||/[\s/@?#]/.test(host))
   throw new Error('Invalid platform SMTP host');
  const addresses=await lookup(host,{all:true,verbatim:true});
  if(!addresses.length||addresses.some(address=>!publicIp(address.address)))
