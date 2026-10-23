@@ -45,6 +45,77 @@ function validatedLines(lines:Record<string,unknown>[],m:{
  return Object.fromEntries(Object.entries(total).map(([k,v])=>[k,v/100])) as
   {subtotal:number;discount:number;tax:number;total:number};
 }
+
+type LineMutationMapping={parentObject:string;parentField:string;quantityField:string;
+ unitPriceField:string;discountField:string;taxField:string;lineTotalField:string;
+ subtotalField:string;discountTotalField:string;taxTotalField:string;totalField:string;
+ statusField?:string;lockedStatuses?:string[]};
+const lockParent=async(context:FlowNodeContext,object:string,id:string)=>{
+ await context.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+  [context.tenantId+':financial-line-parent:'+object+':'+id]);
+};
+function lineAmount(fields:Record<string,unknown>,m:LineMutationMapping){
+ const qty=Number(fields[m.quantityField]);
+ if(!Number.isFinite(qty)||qty<=0||qty>100000||Math.round(qty*10000)!==qty*10000)
+  throw Error('Financial line requires a valid positive quantity');
+ const price=cents(fields[m.unitPriceField],'Unit Price');
+ const discount=cents(fields[m.discountField],'Discount',true);
+ const tax=cents(fields[m.taxField],'Tax',true);
+ const subtotal=Math.round(price*qty);
+ if(!Number.isSafeInteger(subtotal)||subtotal>10000000000||discount>subtotal)
+  throw Error('Invalid financial line discount');
+ const total=subtotal-discount+tax;
+ if(!Number.isSafeInteger(total)||total>10000000000)
+  throw Error('Financial line exceeds supported amount');
+ return {subtotal:subtotal/100,discount:discount/100,tax:tax/100,total:total/100};
+}
+/** Normalize line totals and remember parent links before a line mutation. */
+export async function prepareDocumentLineMutation(context:FlowNodeContext,raw:unknown,
+ recordId:string|undefined,fields:Record<string,unknown>):Promise<{oldParent:string|null;newParent:string}>{
+ if(raw===null||raw===undefined)throw Error('Financial line Flow is missing its totals guard');
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid line totals Flow guard');
+ const m=raw as unknown as LineMutationMapping;
+ for(const key of ['parentObject','parentField','quantityField','unitPriceField','discountField',
+  'taxField','lineTotalField','subtotalField','discountTotalField','taxTotalField','totalField'] as const)
+  field(m[key]);
+ if(m.statusField!==undefined)field(m.statusField);
+ if(m.lockedStatuses!==undefined&&(!Array.isArray(m.lockedStatuses)||
+  m.lockedStatuses.some(x=>typeof x!=='string'||x.length>40)))
+  throw Error('Invalid locked financial document statuses');
+ const object=String(context.node.config.object??'');
+ let old:Record<string,unknown>|null=null;
+ if(recordId){
+  old=await context.records.get(context.tenantId,context.userId,object,recordId,context.client);
+ }
+ const merged={...(old??{}),...fields};
+ const parent=merged[m.parentField];
+ if(typeof parent!=='string'||!/^[0-9a-f-]{36}$/i.test(parent))
+  throw Error('Financial line requires a valid parent document');
+ const oldParent=old&&typeof old[m.parentField]==='string'?String(old[m.parentField]):null;
+ const parents=[...new Set([oldParent,parent].filter((x):x is string=>!!x))];
+ for(const parentId of parents){
+  await lockParent(context,m.parentObject,parentId);
+  const doc=await context.records.get(context.tenantId,context.userId,m.parentObject,parentId,context.client);
+  if(m.statusField&&Array.isArray(m.lockedStatuses)&&m.lockedStatuses.includes(String(doc[m.statusField]??'')))
+   throw Error('Lines cannot be changed after the financial document is issued');
+ }
+ const amount=lineAmount(merged,m);
+ fields[m.lineTotalField]=amount.total;
+ return {oldParent,newParent:parent};
+}
+/** Recompute parent totals through RecordEngine after every line create/update/delete. */
+export async function recalculateDocumentLineTotals(context:FlowNodeContext,raw:unknown,
+ parentId:string):Promise<void>{
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid line totals Flow guard');
+ const m=raw as unknown as LineMutationMapping;
+ const lines=await readLines(context,String(context.node.config.object),m.parentField,parentId);
+ const totals=lines.length?validatedLines(lines,m):{subtotal:0,discount:0,tax:0,total:0};
+ await context.records.update(context.tenantId,context.userId,m.parentObject,parentId,{
+  [m.subtotalField]:totals.subtotal,[m.discountTotalField]:totals.discount,
+  [m.taxTotalField]:totals.tax,[m.totalField]:totals.total
+ },undefined,context.client);
+}
+
 const readLines=async(context:FlowNodeContext,object:string,relation:string,id:string)=>{
  const rows=await context.recordQuery.find(context.tenantId,context.userId,object,
   [{field:relation,operator:'Equals',value:id}],undefined,{limit:200},context.client);
