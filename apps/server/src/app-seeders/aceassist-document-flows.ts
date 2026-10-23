@@ -72,8 +72,11 @@ export function buildAceAssistDocumentGraph(type:DocumentType,action:DocumentAct
    node(2,'Get Records','Load current document',{object:type,recordLimit:'1',
     outputVariable:'document',conditions:[{field:'Id',operator:'Equals',value:'{!recordId}'}]}),
    node(3,'Decision','Document is editable?',{outcomes:allowed}),
-   node(4,'Update Records','Save document header',{object:type,
-    recordSource:'collection',collection:'headerInput',fieldSource:'record'}),
+   node(4,'Update Records','Save selected document header',{object:type,
+    recordId:'{!recordId}',fieldValues:[
+     ...headerFields[type].map(field=>({field,value:'{!'+field+'}'})),
+     ...(type==='Quotation'?[{field:'Status',value:'{!Status}'}]:[])
+    ]}),
    node(5,'Delete Records','Remove deleted lines',{object:lineType,
     recordSource:'collection',collection:'removedLines',expectedParentId:'{!recordId}'}),
    node(6,'Update Records','Update existing lines',{object:lineType,
@@ -92,7 +95,9 @@ export function buildAceAssistDocumentGraph(type:DocumentType,action:DocumentAct
    connector(3,11,'Default'),connector(4,5),connector(5,6),connector(6,7),
    connector(7,8,'For Each'),connector(8,7),connector(7,9,'After Last'),
    connector(9,10),connector(11,10)];
-  resources=[resource('recordId','Text'),resource('headerInput',type,'Record Collection'),
+  resources=[resource('recordId','Text'),
+   ...headerFields[type].map(field=>resource(field,'Text')),
+   ...(type==='Quotation'?[resource('Status','Text')]:[]),
    resource('removedLines',lineType,'Record Collection'),
    resource('updatedLines',lineType,'Record Collection'),
    resource('newLines',lineType,'Record Collection'),
