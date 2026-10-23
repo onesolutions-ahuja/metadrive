@@ -11,6 +11,12 @@ export type IntegrationCommunicationDetails={
  body?:string;
  externalMessageId?:string;
  provider?:string;
+ /** Preserve message relationships when one Communication also represents an API attempt. */
+ relatedObject?:string;
+ relatedRecordId?:string;
+ conversationId?:string;
+ receivedAt?:string;
+ sentAt?:string;
 };
 
 export type IntegrationActivityInput={
@@ -100,10 +106,11 @@ export function createIntegrationCommunicationWriter(
    Recipient:clean(details.recipient||endpoint,500),Subject:subject,Body:body,
    ExternalMessageId:clean(details.externalMessageId||randomUUID(),500),
    Provider:clean(details.provider||input.provider,500),
-   RelatedObject:'IntegrationApiCall',
-   RelatedRecordId:input.credentialId??undefined,
-   SentAt:input.direction==='Outbound'&&input.outcome==='success'?now:undefined,
-   ReceivedAt:input.direction==='Inbound'&&input.outcome==='success'?now:undefined,
+   RelatedObject:clean(details.relatedObject||'IntegrationApiCall',120),
+   RelatedRecordId:details.relatedRecordId??input.credentialId??undefined,
+   ConversationId:details.conversationId,
+   SentAt:details.sentAt??(input.direction==='Outbound'&&input.outcome==='success'?now:undefined),
+   ReceivedAt:details.receivedAt??(input.direction==='Inbound'&&input.outcome==='success'?now:undefined),
    ErrorMessage:input.outcome==='success'?undefined:clean(input.errorCode||input.outcome,2000)
   });
  };
