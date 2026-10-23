@@ -115,14 +115,16 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     setLoaded(false);
     setError('');
     setNotice('');
-    void request<{ calendar: BusinessCalendar | null }>('/tenant/business-calendar')
+    void request<{ calendar: BusinessCalendar | null }>('/tenant/business-calendar', {cache:'no-store'})
       .then(({ calendar: saved }) => {
         if (active) {
           const next = saved ?? suggestedCalendar();
           setCalendar(next);
           setSavedCalendar(saved);
           setConfigured(Boolean(saved));
-          setEditing(false);
+          // When nothing has been saved, show the editable timetable with its own
+          // Save button immediately. Never present suggested hours as saved.
+          setEditing(saved === null);
           setLoaded(true);
         }
       })
@@ -176,6 +178,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
       });
       // A successful PUT is not enough: AceAssist reads this setting through GET.
       // Only show a save confirmation after a fresh read returns the saved hours.
+      if (!result?.calendar) throw new Error('Server did not confirm the business-hours save.');
       const readback = await request<{calendar:BusinessCalendar|null}>('/tenant/business-calendar', {cache:'no-store'});
       const verified = readback.calendar;
       if (!verified) throw new Error('Save succeeded but the business calendar could not be read back.');
@@ -193,7 +196,9 @@ export default function BusinessCalendarSettings({ request, permitted }: {
       setSavedCalendar(verified);
       setConfigured(true);
       setEditing(false);
-      setNotice('Fiscal year, business hours and holidays saved.');
+      setNotice('Business hours saved and verified in this tenant. Ace Assist will use these hours.');
+      // A running calendar in this browser can re-read the new tenant setting.
+      window.dispatchEvent(new Event('metadrive:business-calendar-saved'));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save business calendar');
     } finally { setSaving(false); }
@@ -223,7 +228,11 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     {error && <p className="business-calendar-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!loading && loaded && !configured &&
-      <p role="status">Suggested defaults are not saved yet. Edit and save to make them available to AceAssist.</p>}
+      <p role="status" className="business-calendar-unsaved">
+        No business hours have been saved for this organisation.
+        The times shown below are suggestions only. Select <strong>Save business hours</strong>
+        to store them for Ace Assist.
+      </p>}
     <form noValidate onSubmit={(event) => void save(event)}>
       <div className="business-calendar-options">
         <label>Fiscal year starts
@@ -320,7 +329,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
           <X size={14} /> Cancel
         </button>
         <button type="submit" className="btn btn-primary" disabled={saving || loading}>
-          <Check size={14} /> {saving ? 'Saving…' : 'Save changes'}
+          <Check size={14} /> {saving ? 'Saving business hours…' : 'Save business hours'}
         </button>
       </div>}
     </form>
