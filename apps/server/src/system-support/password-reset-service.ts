@@ -15,11 +15,11 @@ export class PasswordResetService {
  async request(tenantId:string,email:unknown){
   if(typeof email!=='string'||email.length>254||!emailPattern.test(email))
    throw new Error('Invalid recovery request');
-  const {rows:settings}=await this.db.query<{smtp_credential_id:string|null;from_email:string;policy:{method?:string;templates?:{email?:{subject?:string;body?:string}}}}>(
-   'SELECT smtp_credential_id,from_email,policy FROM md_password_recovery_settings WHERE tenant_id=$1',[tenantId]);
-  const setting=settings[0];
-  if(!setting?.smtp_credential_id||!emailPattern.test(setting.from_email))
-   throw new Error('Password recovery delivery is not configured');
+  const {rows:settings}=await this.db.query<{policy:{method?:string;templates?:{email?:{subject?:string;body?:string}}}}>(
+   'SELECT policy FROM md_password_recovery_settings WHERE tenant_id=$1',[tenantId]);
+  const policy=settings[0]?.policy??{method:'OTP',templates:{email:{
+   subject:'Password recovery',body:'Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.'
+  }}};
   const {rows:users}=await this.db.query<{id:string}>(
    'SELECT id FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND enabled=true',[tenantId,email]);
   const userId=users[0]?.id;
@@ -36,28 +36,30 @@ export class PasswordResetService {
    return true;
   });
   if(!inserted)return {message:acknowledgement};
-  const subject=setting.policy?.templates?.email?.subject||'Password recovery';
-  const text=setting.policy?.templates?.email?.body||'Your verification code is {!Verification.Value}.';
-  let verification=token;
-  if(setting.policy?.method==='LINK'){
-   const configured=process.env.METADRIVE_PASSWORD_RESET_ORIGIN;
-   if(!configured)throw new Error('Password recovery link origin is not configured');
-   const url=new URL(configured);
-   if(url.protocol!=='https:'||url.username||url.password||url.hash)
-    throw new Error('Invalid password recovery link origin');
-   url.searchParams.set('resetEmail',email);
-   url.searchParams.set('resetToken',token);
-   verification=url.toString();
-  }
-  const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
-   .replaceAll('{!Verification.Value}',verification)
-   .replaceAll('{!Verification.ExpiryMinutes}','15');
-  try {await this.send(tenantId,setting.smtp_credential_id,setting.from_email,email,
-    subject,rendered);}
-  catch(error){
+  const subject=policy.templates?.email?.subject||'Password recovery';
+  const text=policy.templates?.email?.body||'Your verification code is {!Verification.Value}.';
+  try{
+   let verification=token;
+   if(policy.method==='LINK'){
+    const configured=process.env.METADRIVE_PASSWORD_RESET_ORIGIN;
+    if(!configured)throw new Error('Password recovery link origin is not configured');
+    const url=new URL(configured);
+    if(url.protocol!=='https:'||url.username||url.password||url.hash)
+     throw new Error('Invalid password recovery link origin');
+    url.searchParams.set('resetEmail',email);
+    url.searchParams.set('resetToken',token);
+    verification=url.toString();
+   }
+   const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
+    .replaceAll('{!Verification.Value}',verification)
+    .replaceAll('{!Verification.ExpiryMinutes}','15');
+   await this.send(tenantId,'','',email,subject,rendered);
+  }catch{
    await this.db.query('DELETE FROM md_password_reset_challenges WHERE tenant_id=$1 AND token_hash=$2',
     [tenantId,digest(token)]);
-   throw new Error('Recovery email delivery failed');
+   // Keep account existence private when link configuration or platform SMTP fails.
+   console.error('Password recovery delivery failed for tenant',tenantId);
+   return {message:acknowledgement};
   }
   return {message:acknowledgement};
  }

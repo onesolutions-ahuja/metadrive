@@ -61,10 +61,12 @@ export async function verifyLoginPasswordSql(db,additionalChecks){
   await reset.confirm(tenant,'test@example.test',token,'ThirdPassword!2026');
   await assert.rejects(()=>reset.confirm(tenant,'test@example.test',token,'FourthPassword!2026'),/expired recovery token/);
   const policy=new PasswordPolicyService(db,{require:async()=>{}});
-  await assert.rejects(()=>policy.save(tenant,user,{max_age_days:30}),/configure password recovery/);
-  const credential=(await db.query('SELECT gen_random_uuid() AS id')).rows[0].id;
-  await db.query("INSERT INTO md_named_credentials(tenant_id,id,protocol,enabled) VALUES($1,$2,'SMTP',true)",[tenant,credential]);
-  await db.query("INSERT INTO md_password_recovery_settings(tenant_id,smtp_credential_id,from_email) VALUES($1,$2,'sender@example.test')",[tenant,credential]);
+  await assert.rejects(()=>policy.save(tenant,user,{max_age_days:30}),/platform SMTP recovery delivery is not configured/);
+  process.env.METADRIVE_PLATFORM_SMTP_HOST='smtp.example.test';
+  process.env.METADRIVE_PLATFORM_SMTP_PORT='587';
+  process.env.METADRIVE_PLATFORM_SMTP_USERNAME='test-user';
+  process.env.METADRIVE_PLATFORM_SMTP_PASSWORD='test-password';
+  process.env.METADRIVE_PLATFORM_SMTP_FROM_EMAIL='sender@example.test';
   await policy.save(tenant,user,{min_length:16,max_age_days:30,require_number:true});
   assert.equal((await policy.read(tenant,user)).max_age_days,30);
   const expiring=await auth.issuePasswordSession(tenant,user);

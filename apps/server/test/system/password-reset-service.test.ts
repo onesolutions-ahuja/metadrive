@@ -51,3 +51,29 @@ test('reset confirmation revokes both session types and audits inside one transa
  assert.ok(queries.some(sql=>sql.includes('consumed_at=now()')));
  assert.ok(queries.some(sql=>sql.includes('INSERT INTO md_security_events')));
 });
+
+test('password recovery works without tenant SMTP settings',async()=>{
+ let sentBody='';
+ const db={
+  query:async(sql:string)=>{
+   if(sql.includes('FROM md_password_recovery_settings'))return {rows:[]};
+   if(sql.includes('FROM md_users'))return {rows:[{id:'tenant-b-user'}]};
+   return {rows:[],rowCount:1};
+  },
+  transaction:async(run:(client:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>run({
+   query:async(sql:string)=>sql.includes('count(*)')
+    ?{rows:[{requests:'0'}]}:{rows:[],rowCount:1}
+  })
+ } as unknown as SqlPersistence;
+ const service=new PasswordResetService(db,{hashPassword:async()=>''} as unknown as AuthenticationService,
+  async(tenant,credential,from,to,subject,body)=>{
+   assert.equal(tenant,'tenant-b');
+   assert.equal(credential,'');
+   assert.equal(from,'');
+   assert.equal(to,'person@example.org');
+   sentBody=body;
+  });
+ const result=await service.request('tenant-b','person@example.org');
+ assert.deepEqual(result,{message:'If this account exists, recovery instructions have been sent.'});
+ assert.match(sentBody,/[A-Za-z0-9_-]{43}/);
+});
