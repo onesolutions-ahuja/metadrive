@@ -73,7 +73,9 @@ export function registerStalwartJmapProxyRoutes(app:Express){
    const headers=new Headers({authorization,accept:req.get('accept')??'application/json'});
    const contentType=req.get('content-type');
    if(contentType)headers.set('content-type',contentType);
-   const init:RequestInit&{duplex?:'half'}={method:req.method,headers,redirect:'error',signal:AbortSignal.timeout(60_000)};
+   const isDiscovery=req.method==='GET'&&/^\/\.well-known\/jmap\/?$/.test(targetPath);
+   const init:RequestInit&{duplex?:'half'}={method:req.method,headers,
+    redirect:isDiscovery?'manual':'error',signal:AbortSignal.timeout(60_000)};
    if(req.method==='POST'&&isJmapApi){
     const chunks:Buffer[]=[];let size=0;
     for await(const chunk of req){
@@ -112,7 +114,17 @@ export function registerStalwartJmapProxyRoutes(app:Express){
     init.body=Readable.toWeb(req.pipe(limiter)) as unknown as BodyInit;
     init.duplex='half';
    }
-   const upstream=await fetch(target,init);
+   let upstream=await fetch(target,init);
+   if(isDiscovery&&upstream.status===307){
+    const location=upstream.headers.get('location');
+    if(!location)throw new Error('Stalwart JMAP discovery redirect is missing its target');
+    const sessionUrl=new URL(location,target);
+    if(sessionUrl.origin!==configured.origin||sessionUrl.username||sessionUrl.password
+      ||sessionUrl.pathname!=='/jmap/session'||sessionUrl.search||sessionUrl.hash){
+     throw new Error('Stalwart JMAP discovery redirect target is not allowed');
+    }
+    upstream=await fetch(sessionUrl,{...init,redirect:'error'});
+   }
    res.status(upstream.status);
    for(const header of ['content-type','content-disposition','www-authenticate']){
     const value=upstream.headers.get(header);if(value)res.setHeader(header,value);

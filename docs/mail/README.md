@@ -29,7 +29,7 @@ Configure these on the MetaDrive API process:
 - `STALWART_ALLOWED_DOMAINS=unesolutions.co.uk` (exact comma-separated domain allowlist).
 - Optional `METADRIVE_MAIL_WEB_ORIGINS=https://unesolutions.co.uk` to configure the exact allowed browser origins for JMAP. The default is the apex origin only.
 
-The JMAP bridge only permits discovery, JMAP API, upload and download paths. On JMAP POSTs it allowlists the mail-only capabilities and the required user mailbox methods; Stalwart management methods such as `x:Account/set` are blocked at the bridge. It only forwards HTTP Basic authorization, applies request/upload size limits, and refuses non-loopback plaintext Stalwart URLs. It does not accept the MetaDrive management API key from browser requests.
+The JMAP bridge only permits discovery, JMAP API, upload and download paths. For discovery only, it follows Stalwart's same-origin `307` redirect to `/jmap/session`; other redirect targets are rejected. On JMAP POSTs it allowlists the mail-only capabilities and the required user mailbox methods; Stalwart management methods such as `x:Account/set` are blocked at the bridge. It only forwards HTTP Basic authorization, applies request/upload size limits, and refuses non-loopback plaintext Stalwart URLs. It does not accept the MetaDrive management API key from browser requests.
 
 **No extra Nginx location is required** if the existing `api.unesolutions.co.uk` HTTPS Nginx configuration already forwards `/api/*` requests to the MetaDrive Express API. Do not add a competing `/api/mail-jmap/` Nginx proxy that bypasses this middleware. Preserve the existing Nginx server block and TLS settings.
 

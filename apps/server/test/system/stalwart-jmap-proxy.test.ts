@@ -85,6 +85,63 @@ test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint withou
  }
 });
 
+test('JMAP proxy follows only Stalwart same-origin discovery redirects to the session endpoint',async()=>{
+ const originalFetch=globalThis.fetch;
+ const originalBase=process.env.STALWART_BASE_URL;
+ process.env.STALWART_BASE_URL='http://127.0.0.1:8080';
+ const calls:Array<{url:string;authorization:string;redirect:RequestRedirect|undefined}>=[];
+ globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{
+  const url=String(input);
+  const headers=new Headers(init?.headers);
+  calls.push({url,authorization:headers.get('authorization')??'',redirect:init?.redirect});
+  return calls.length===1
+   ?new Response(null,{status:307,headers:{location:'/jmap/session'}})
+   :new Response(JSON.stringify({apiUrl:'http://127.0.0.1:8080/jmap'}),{
+    status:200,headers:{'content-type':'application/json'}
+   });
+ }) as typeof fetch;
+ try{
+  await withServer(async origin=>{
+   const response=await originalFetch(origin+'/api/mail-jmap/.well-known/jmap',{
+    headers:{Origin:'https://unesolutions.co.uk',Authorization:'Basic dXNlcjpwYXNz'}
+   });
+   assert.equal(response.status,200);
+   assert.deepEqual(calls.map(call=>call.url),[
+    'http://127.0.0.1:8080/.well-known/jmap','http://127.0.0.1:8080/jmap/session'
+   ]);
+   assert.deepEqual(calls.map(call=>call.authorization),['Basic dXNlcjpwYXNz','Basic dXNlcjpwYXNz']);
+   assert.equal(calls[0].redirect,'manual');
+   assert.equal(calls[1].redirect,'error');
+  });
+ }finally{
+  globalThis.fetch=originalFetch;
+  if(originalBase===undefined)delete process.env.STALWART_BASE_URL;else process.env.STALWART_BASE_URL=originalBase;
+ }
+});
+
+test('JMAP proxy refuses cross-origin discovery redirects',async()=>{
+ const originalFetch=globalThis.fetch;
+ const originalBase=process.env.STALWART_BASE_URL;
+ process.env.STALWART_BASE_URL='http://127.0.0.1:8080';
+ let calls=0;
+ globalThis.fetch=(async()=>{
+  calls++;
+  return new Response(null,{status:307,headers:{location:'https://attacker.example/jmap/session'}});
+ }) as typeof fetch;
+ try{
+  await withServer(async origin=>{
+   const response=await originalFetch(origin+'/api/mail-jmap/.well-known/jmap',{
+    headers:{Origin:'https://unesolutions.co.uk',Authorization:'Basic dXNlcjpwYXNz'}
+   });
+   assert.equal(response.status,502);
+   assert.equal(calls,1);
+  });
+ }finally{
+  globalThis.fetch=originalFetch;
+  if(originalBase===undefined)delete process.env.STALWART_BASE_URL;else process.env.STALWART_BASE_URL=originalBase;
+ }
+});
+
 test('JMAP proxy blocks Stalwart management methods even when mailbox auth is supplied',async()=>{
  const originalFetch=globalThis.fetch;
  let upstreamCalled=false;
