@@ -38,10 +38,10 @@ test('business hours offer half-hour suggestions and accept custom minute values
 const aceAssist=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
 
 test('AceAssist distinguishes a pending calendar request from missing tenant hours',()=>{
- assert.match(aceAssist,/setHoursLoading\\(true\\)/);
- assert.match(aceAssist,/setHoursLoading\\(false\\)/);
- assert.match(aceAssist,/hoursLoading\\?'Loading business hours/);
- assert.match(aceAssist,/hoursLoading\\?'Loading…'/);
+ assert.match(aceAssist,/setHoursLoading\(true\)/);
+ assert.match(aceAssist,/setHoursLoading\(false\)/);
+ assert.match(aceAssist,/hoursLoading\?'Loading business hours/);
+ assert.match(aceAssist,/hoursLoading\?'Loading…'/);
  assert.match(aceAssist,/cache:'no-store'/);
- assert.match(aceAssist,/Promise\\.allSettled\\(relations\\.map/);
+ assert.match(aceAssist,/Promise\.allSettled\(relations\.map/);
 });
