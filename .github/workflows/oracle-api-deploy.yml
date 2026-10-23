@@ -1,0 +1,30 @@
+name: Oracle SQL API Deployment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oracle-production-api
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, ARM64, metadrive-oracle]
+    environment: oracle-production
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace apps/server
+      - name: Verify API build
+        run: |
+          test -f apps/server/dist-system/system-support/entrypoint.js
+          grep -q registerStalwartMailRoutes apps/server/dist-system/system-support/server.js
+      - name: Deploy immutable API release with rollback
+        run: sudo --non-interactive bash scripts/oracle/deploy-api.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
