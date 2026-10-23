@@ -63,7 +63,8 @@ export default function MailWebmail(){
    if(!discovered||typeof discovered.apiUrl!=='string'||typeof discovered.uploadUrl!=='string')throw new Error('Mail server session is incomplete.');
    const id=discovered.primaryAccounts?.[mail]??Object.keys(discovered.accounts??{})[0];
    if(!id)throw new Error('This mailbox has no mail account access.');
-   setSession({...discovered,apiUrl,uploadUrl:new URL('upload',base).href});setAccountId(id);
+   const advertisedUpload=new URL(discovered.uploadUrl.replace('{accountId}',encodeURIComponent(id)),discovery);
+   setSession({...discovered,apiUrl,uploadUrl:new URL('/mail'+advertisedUpload.pathname,window.location.origin).href});setAccountId(id);
    const response2=await fetch(apiUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json',Accept:'application/json'},
     body:JSON.stringify({using:[core,mail,submission],methodCalls:[
      ['Mailbox/get',{accountId:id,ids:null,properties:['id','name','role','totalEmails','unreadEmails']},'mb'],
@@ -107,8 +108,7 @@ export default function MailWebmail(){
    const sent=mailboxes.find(x=>x.role==='sent');
    if(!sent)throw new Error('A Sent folder is required before sending mail.');
    const raw='From: '+safeHeader(sender.name?sender.name+' <'+sender.email+'>':sender.email)+'\r\nTo: '+safeHeader(recipient)+'\r\nSubject: '+safeHeader(subject)+'\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+plainTextToHtml(body);
-   const uploadUrl=new URL('upload',base);
-   const upload=await fetch(uploadUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'message/rfc822'},body:raw,redirect:'error'});
+   const upload=await fetch(session.uploadUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'message/rfc822'},body:raw,redirect:'error'});
    if(!upload.ok)throw new Error(`Unable to prepare message (${upload.status}).`);
    const uploaded=await upload.json() as {blobId?:string};
    if(!uploaded.blobId)throw new Error('Mail server did not accept the message upload.');
