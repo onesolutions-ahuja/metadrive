@@ -89,6 +89,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>('week');
  const [hours,setHours]=useState<BusinessCalendar|null>(null);
  const [hoursError,setHoursError]=useState('');
+ const [hoursReload,setHoursReload]=useState(0);
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
  const dynamicFlow=(operation:'Create'|'Update',object:string)=>
@@ -117,11 +118,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
   void apiRequest<{user:{id:string}}>('/auth/me')
    .then(r=>{if(alive)setSelfId(r.user?.id??'');})
    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  setHoursError('');
   void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar')
    .then(r=>{if(alive)setHours(r.calendar??null);})
-   .catch(e=>{if(alive)setHoursError(e instanceof Error?e.message:String(e));});
+   .catch(e=>{if(alive){setHours(null);setHoursError(e instanceof Error?e.message:String(e));}});
   return()=>{alive=false;};
- },[entry.appId]);
+ },[entry.appId,hoursReload]);
  const fetchRows=async(operation:'Load',object:string)=>{
   const api='AceAssist'+operation+object;
   const res=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',
@@ -328,7 +330,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        View <select value={calendarView} onChange={e=>setCalendarView(e.target.value as 'day'|'week'|'month')}>
         <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
        </select></label>}
-      <button type="button" onClick={()=>setReload(n=>n+1)} disabled={busy}>Refresh</button>
+      <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
       <button type="button" onClick={()=>startEdit('Create')}
        disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
