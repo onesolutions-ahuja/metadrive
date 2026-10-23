@@ -155,7 +155,7 @@ export class StalwartMailService {
   const groupId=await this.tenantGroup(tenantId,true,domainId);
   if(!groupId)throw new Error('Tenant mailbox isolation could not be established');
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
-   '@type':'User',name,domainId,description,memberGroupIds:{[groupId]:true},
+   '@type':'User',name,domainId,...(description?{description}:{}),memberGroupIds:{[groupId]:true},
    credentials:{'0':{'@type':'Password',secret:password}},
    roles:{'@type':'User'},permissions:{'@type':'Replace',enabledPermissions:{
     authenticate:true,jmapEmailGet:true,jmapEmailQuery:true,jmapMailboxGet:true,

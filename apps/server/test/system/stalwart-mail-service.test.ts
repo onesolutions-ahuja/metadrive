@@ -29,6 +29,7 @@ test('Stalwart v0.16 Account/set created object IDs and credential maps work end
   else if(method==='x:Account/set'&&'newMailbox' in (args.create as Record<string,unknown>)){
    const create=(args.create as Record<string,Record<string,unknown>>).newMailbox;
    assert.deepEqual(create.memberGroupIds,{'group-1':true});
+   assert.equal(Object.hasOwn(create,'description'),false);
    assert.deepEqual(create.credentials,{'0':{'@type':'Password',secret:'strong-test-password'}});
    assert.deepEqual(create.permissions,{'@type':'Replace',enabledPermissions:{
     authenticate:true,jmapEmailGet:true,jmapEmailQuery:true,jmapMailboxGet:true,
