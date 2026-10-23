@@ -74,7 +74,10 @@ export function bindPageStateProperties<T extends Record<string,unknown>>(
     if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(target)||protectedKeys.has(target)
       ||typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))continue;
     const value=state[key];
-    if(value===null||['string','number','boolean'].includes(typeof value))
+    if(typeof value==='string'&&value.trimStart().startsWith('[')){
+      const records=safePageStateRecordCollection(value);
+      if(records)next[target]=records;
+    }else if(value===null||['string','number','boolean'].includes(typeof value))
       next[target]=value;
     else if(Array.isArray(value)){
       const records=safePageStateRecordCollection(value);
