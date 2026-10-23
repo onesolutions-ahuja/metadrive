@@ -192,13 +192,14 @@ export default function MailWebmail(){
    <label style={{display:'grid',gap:6,marginBottom:14}}>Email address<input style={input} type="email" autoComplete="username" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@unesolutions.co.uk"/></label>
    <label style={{display:'grid',gap:6,marginBottom:18}}>Password<input style={input} type="password" autoComplete="current-password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>
    <button style={{...button,background:'#183b60',color:'#fff',width:'100%'}} disabled={busy}>{busy?'Signing in…':'Sign in'}</button>
+   <p style={{margin:'14px 0 0',textAlign:'center',fontSize:13}}><a href="/mail-admin">Manage mail accounts (MetaDrive administrator sign-in)</a></p>
    <p style={{fontSize:12,color:'#60768b',lineHeight:1.5,margin:'18px 0 0'}}>Your password stays in this browser session and is sent only to the configured mail server. Sign out to clear it.</p>
   </form>
  </main>;
  return <main style={{minHeight:'100vh',background:'#f2f6fb',color:'#172b3f',fontFamily:'Inter,system-ui,sans-serif',padding:20,boxSizing:'border-box'}}>
   <header style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap',marginBottom:18}}>
    <div><p style={{margin:0,color:'#60768b',fontSize:12,fontWeight:700,letterSpacing:1}}>UNE SOLUTIONS</p><h1 style={{margin:'4px 0',fontSize:26}}>Mail</h1><span style={{color:'#60768b',fontSize:13}}>{email}</span></div>
-   <div style={{display:'flex',gap:8}}><button style={button} onClick={()=>void loadMessages(selectedMailbox,'').catch(e=>setError(String(e)))}>Refresh</button><button style={button} onClick={signOut}>Sign out</button></div>
+   <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><a href="/mail-admin" style={{...button,textDecoration:'none',color:'#172b3f'}}>Manage mail accounts</a><button style={button} onClick={()=>void loadMessages(selectedMailbox,'').catch(e=>setError(String(e)))}>Refresh</button><button style={button} onClick={signOut}>Sign out</button></div>
   </header>
   {(error||notice)&&<div role={error?'alert':'status'} style={{padding:12,marginBottom:12,borderRadius:8,background:error?'#fff1f1':'#e8f7ee',color:error?'#9b1c1c':'#17643b'}}>{error||notice}</div>}
   <div style={{display:'grid',gridTemplateColumns:'minmax(160px,220px) minmax(260px,390px) minmax(0,1fr)',gap:12,minHeight:'75vh'}}>
