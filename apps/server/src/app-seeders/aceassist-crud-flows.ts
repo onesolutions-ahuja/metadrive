@@ -25,11 +25,21 @@ export const ACEASSIST_EDITABLE_FIELDS:Record<string,readonly string[]>={
 type FlowGraph={apiName:string;label:string;appApiName:string;flowType:string;status:string;version:number;startConfig?:Record<string,unknown>;elements:Array<{id:number;type:string;label:string;config:Record<string,unknown>}>;connectors:Array<{from:number;to:number;kind:string;label:string}>;resources:Array<Record<string,unknown>>;tests:unknown[]};
 const start={id:1,type:'Start',label:'Start',config:{executionContext:'User'}};
 const end={id:3,type:'End',label:'End',config:{}};
+const lineTotals=(objectApi:'QuotationLine'|'InvoiceLine')=>({
+ parentObject:objectApi==='QuotationLine'?'Quotation':'Invoice',
+ parentField:objectApi==='QuotationLine'?'Quotation':'Invoice',
+ quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',
+ taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',
+ discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',
+ ...(objectApi==='InvoiceLine'?{statusField:'Status',lockedStatuses:['Issued']}:{})
+});
 function makeGraph(objectApi:string,operation:'Load'|'Create'|'Update'|'Delete',availableFields:string[]):FlowGraph {
  const apiName='AceAssist'+operation+objectApi;
  const name=operation+' '+objectApi;
  const resources:Array<Record<string,unknown>>=[];
- let config:Record<string,unknown>={object:objectApi};
+ let config:Record<string,unknown>={object:objectApi,
+  ...((objectApi==='QuotationLine'||objectApi==='InvoiceLine')&&operation!=='Load'
+   ?{documentLineTotals:lineTotals(objectApi)}:{})};
  if(operation==='Load'){
   const collection=objectApi.charAt(0).toLowerCase()+objectApi.slice(1)+'Records';
   config={...config,recordLimit:'all',outputVariable:collection};
@@ -72,6 +82,7 @@ function makeDynamicGraph(objectApi:string,operation:'Create'|'Update'):FlowGrap
  if(operation==='Create')resources.push({name:'createdRecords',type:'Record Collection',
   dataType:objectApi,isCollection:true,availableForOutput:true});
  const config:Record<string,unknown>={object:objectApi,recordSource:'collection',collection:input,
+  ...((objectApi==='QuotationLine'||objectApi==='InvoiceLine')?{documentLineTotals:lineTotals(objectApi)}:{}),
   ...(operation==='Create'?{resultVariable:'createdRecords'}:{fieldSource:'record'}),
   ...(objectApi==='Appointment'?{
    overlapGuard:ACEASSIST_BOOKING_OVERLAP,
