@@ -11,6 +11,7 @@ export type ConnectorApp = {
   AppKey__c: string;
   Description__c?: string;
   Category__c?: string;
+  AppType__c?: 'Application' | 'ConnectorApp';
   CredentialName__c: string;
   DefaultBaseUrl__c?: string;
   AuthType__c?: NamedCredentialMetadata['authType'];
