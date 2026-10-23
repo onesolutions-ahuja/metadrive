@@ -92,6 +92,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
  const [reload,setReload]=useState(0);
+ const [calendarStaffFilter,setCalendarStaffFilter]=useState('');
+ const [calendarServiceFilter,setCalendarServiceFilter]=useState('');
  const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>(()=>
   typeof window!=='undefined'&&typeof window.matchMedia==='function'
    &&window.matchMedia('(max-width: 650px)').matches?'day':'week');
@@ -389,6 +391,26 @@ export default function AceAssistRuntime({entry,onLogout}:{
   try{return asBusinessLocal(String(value),hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone);}
   catch{return '';}
  };
+ const filteredAppointments=rows.filter(row=>{
+  if(calendarStaffFilter&&String(row.AssignedUser??row.AssignedTo??'')!==calendarStaffFilter)return false;
+  if(calendarServiceFilter){
+   const service=lookupRows.Product?.find(product=>idOf(product)===calendarServiceFilter);
+   if(String(row.ServiceProduct??'')!==calendarServiceFilter&&
+    (!service||String(row.Service??'')!==String(service.Name??'')))return false;
+  }
+  return true;
+ });
+ const changeCalendarDate=(direction:-1|1)=>{
+  const day=new Date(weekOf+'T12:00:00');
+  if(calendarView==='month')day.setMonth(day.getMonth()+direction);
+  else day.setDate(day.getDate()+direction*(calendarView==='week'?7:1));
+  setWeekOf(dateKey(day));
+ };
+ const goToBusinessToday=()=>{
+  try{setWeekOf(asBusinessLocal(new Date().toISOString(),
+   hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone).slice(0,10));}
+  catch{setWeekOf(dateKey(new Date()));}
+ };
  const calendarCustomer=(row:Row)=>{
   const customer=lookupRows.Customer?.find(item=>idOf(item)===String(row.Customer??''));
   return String(customer?.Name??row.CustomerName??row.Name??row.Subject??'Appointment');
@@ -419,7 +441,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
   </header>
   <main className="custom-assist">
    {screen==='records'&&<div className="custom-heading"><div><span className="custom-eyebrow">ACE ASSIST</span>
-    <h1>Schedule &amp; visits</h1><p>Live tenant Objects · OneEngine Flows</p></div>
+    <h1>{current.object==='Appointment'?'Calendar':current.label}</h1>
+    <p>Live tenant Objects · OneEngine Flows</p></div>
     <label className="custom-date">{calendarView==='day'?'Date':calendarView==='month'?'Month of':'Week of'}
       <input type="date" value={weekOf} onChange={e=>setWeekOf(e.target.value)}/></label>
    </div>}
@@ -451,10 +474,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
        View <select value={calendarView} onChange={e=>setCalendarView(e.target.value as 'day'|'week'|'month')}>
         <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
        </select></label>}
+      {current.object==='Appointment'&&<div className="assist-date-navigation">
+       <button type="button" onClick={()=>changeCalendarDate(-1)} aria-label="Previous period">‹</button>
+       <button type="button" onClick={goToBusinessToday}>Today</button>
+       <button type="button" onClick={()=>changeCalendarDate(1)} aria-label="Next period">›</button>
+      </div>}
       <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
       <button type="button" onClick={()=>startEdit('Create')}
        disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
+    {current.object==='Appointment'&&<div className="assist-calendar-filters">
+     <label>Staff
+      <select value={calendarStaffFilter} onChange={e=>setCalendarStaffFilter(e.target.value)}>
+       <option value="">All staff</option>{(lookupRows.User??[]).map(user=>
+        <option key={idOf(user)} value={idOf(user)}>{String(user.Name??user.Email??idOf(user))}</option>)}
+      </select></label>
+     <label>Service
+      <select value={calendarServiceFilter} onChange={e=>setCalendarServiceFilter(e.target.value)}>
+       <option value="">All services</option>{(lookupRows.Product??[])
+        .filter(product=>product.Active!==false&&product.Active!=='false'
+         &&product.IsService!==false&&product.IsService!=='false')
+        .map(product=><option key={idOf(product)} value={idOf(product)}>{String(product.Name??idOf(product))}</option>)}
+      </select></label>
+    </div>}
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
      {hoursLoading?'Loading business hours…':hoursError?'Unable to load business hours: '+hoursError
       :hours?'Business hours · '+hours.timezone
@@ -472,7 +514,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong>
        <small>{date.slice(8)}</small>
        <small>{hoursLoading?'Loading…':!hours?'Hours unavailable':window?window.open+'–'+window.close:'Closed / holiday'}</small>
-       {rows.filter(row=>displayStart(row.StartDateTime).slice(0,10)===date)
+       {filteredAppointments.filter(row=>displayStart(row.StartDateTime).slice(0,10)===date)
         .map((row,i)=><button key={String(row.Id??i)} type="button" className="custom-visit"
         onClick={()=>setChosen(row)}><strong>{calendarCustomer(row)}</strong>
         <small>{displayStart(row.StartDateTime).slice(11,16)} · {String(row.ServiceName??row.Service??'Appointment')}</small>
@@ -483,6 +525,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
       <strong>{title(row)}</strong><small>{String(row.Status??row.Id??'')}</small>
      </button>)}
     </div>}
+    {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
+     <p className="custom-empty">No appointments match the selected staff and service filters.</p>}
     {busy&&<p role="status">Running OneEngine Flow…</p>}
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
