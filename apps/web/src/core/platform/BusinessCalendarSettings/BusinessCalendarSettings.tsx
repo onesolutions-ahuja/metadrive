@@ -28,6 +28,7 @@ const timeOptions = Array.from({ length: 48 }, (_, index) => {
   return `${hour % 12 || 12}:${minute} ${period}`;
 });
 const formatTime = (value: string) => {
+  if (!/^([01]?\\d|2[0-3]):[0-5]\\d$/.test(value)) return '';
   const [hour, minute] = value.split(':').map(Number);
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
 };
@@ -43,14 +44,10 @@ const parseTime = (value: string) => {
 };
 const timePattern = '(?:0?[1-9]|1[0-2]):[0-5][0-9]\\s*[AaPp][Mm]|(?:[01]?[0-9]|2[0-3]):[0-5][0-9]';
 const blankCalendar = (): BusinessCalendar => ({
-  fiscalYearStart: { month: 4, day: 6 },
-  timezone: 'Europe/London',
+  fiscalYearStart: { month: 0, day: 0 },
+  timezone: '',
   weeklyHours: Object.fromEntries(weekdays.map(([day]) =>
-    [day, {
-      closed: day === 'saturday' || day === 'sunday',
-      open: '09:00',
-      close: '17:00'
-    }])) as Record<string, Day>,
+    [day, { closed: false, open: '', close: '' }])) as Record<string, Day>,
   holidays: []
 });
 
@@ -147,7 +144,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
     {loading && <p role="status">Loading business calendar…</p>}
     {error && <p className="business-calendar-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {!loading && !error && !configured && <p role="status">Suggested defaults are ready. Save to make them available to scheduling apps.</p>}
+    {!loading && !error && !configured && <p role="status">Business calendar not configured. Enter and save your tenant settings.</p>}
     <form onSubmit={(event) => void save(event)}>
       <div className="business-calendar-options">
         <label>Fiscal year starts
