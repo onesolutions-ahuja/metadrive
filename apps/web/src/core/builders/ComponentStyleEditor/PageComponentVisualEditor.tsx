@@ -1,10 +1,11 @@
 import { appearanceNumberFields, appearanceColorFields, appearanceChoiceFields } from '../../metadata/Definitions/metadataAppearanceSchema';
 import { normalizeVisualProperties, type VisualProperties } from '../../pages/TemplatePageRuntime/pageComponentLayout';
+import { supportsAppearanceProperty } from './componentAppearanceCapabilities';
 
 /** Visual-first metadata editor used by the shared Page Builder inspector.
  * Presets and exact inputs update the same published visualStyle fields. */
-export default function PageComponentVisualEditor({ value, onChange }: {
-  value: unknown; onChange: (next: VisualProperties) => void;
+export default function PageComponentVisualEditor({ value, onChange, componentType = '' }: {
+  value: unknown; onChange: (next: VisualProperties) => void; componentType?: string;
 }) {
   const visual = normalizeVisualProperties(value);
   const set = <K extends keyof VisualProperties>(key: K, next: VisualProperties[K]) =>
@@ -41,7 +42,7 @@ export default function PageComponentVisualEditor({ value, onChange }: {
   return <fieldset className="metadata-component-visual-editor">
     <legend className="properties-section-title">Appearance & responsive layout</legend>
     <p className="properties-help">Choose a style visually. Use Advanced controls for exact measurements.</p>
-    {numericPresets.map(preset => <div className="visual-preset-section" key={preset.key}>
+    {numericPresets.filter(preset => supportsAppearanceProperty(componentType, preset.key)).map(preset => <div className="visual-preset-section" key={preset.key}>
       <div className="visual-preset-heading">{preset.label}<small>{visual[preset.key]} px</small></div>
       <div className="visual-preset-grid" role="group" aria-label={preset.label}>
         {preset.values.map((n,index) => <button type="button" key={n}
@@ -60,7 +61,7 @@ export default function PageComponentVisualEditor({ value, onChange }: {
         </button>)}
       </div>
     </div>)}
-    {alignmentPresets.map(preset => <div className="visual-preset-section" key={preset.key}>
+    {alignmentPresets.filter(preset => supportsAppearanceProperty(componentType, preset.key)).map(preset => <div className="visual-preset-section" key={preset.key}>
       <div className="visual-preset-heading">{preset.label}</div>
       <div className="visual-preset-grid" role="group" aria-label={preset.label}>
         {preset.values.map(alignment => <button type="button" key={alignment}
@@ -86,9 +87,9 @@ export default function PageComponentVisualEditor({ value, onChange }: {
     <details className="visual-advanced-properties">
       <summary>Advanced · Exact values and responsive layout</summary>
       <div className="visual-advanced-grid">
-        {appearanceNumberFields.map(({key,label,min,max}) => number(key,label,min,max))}
-        {appearanceColorFields.map(({key,label}) => color(key,label))}
-        {appearanceChoiceFields.map(({key,label,options}) =>
+        {appearanceNumberFields.filter(({key}) => supportsAppearanceProperty(componentType, key)).map(({key,label,min,max}) => number(key,label,min,max))}
+        {appearanceColorFields.filter(({key}) => supportsAppearanceProperty(componentType, key)).map(({key,label}) => color(key,label))}
+        {appearanceChoiceFields.filter(({key}) => supportsAppearanceProperty(componentType, key)).map(({key,label,options}) =>
           <label className="form-label" key={key}>{label}
             <select className="form-control" value={visual[key]}
               onChange={event => set(key,event.target.value as VisualProperties[typeof key])}>

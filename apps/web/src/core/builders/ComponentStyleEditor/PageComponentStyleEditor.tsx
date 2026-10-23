@@ -1,5 +1,6 @@
 import {responsiveNumberFields,responsiveOptionFields,responsiveColorFields} from '../../metadata/Definitions/metadataAppearanceSchema';
 import { useState } from 'react';
+import { componentAppearanceCapabilities, supportsAppearanceProperty } from './componentAppearanceCapabilities';
 import {
   layoutSettings,
   updateLayoutSettings,
@@ -19,11 +20,12 @@ const alignments: Array<[LayoutSettingKey,string,readonly string[]]> =
     .map(({key,label,options})=>[key,label,options]);
 
 export default function PageComponentStyleEditor({
-  properties, onChange, disabled = false
+  properties, onChange, disabled = false, componentType = ''
 }: {
   properties: Record<string, unknown>;
   onChange: (properties: Record<string, unknown>) => void;
   disabled?: boolean;
+  componentType?: string;
 }) {
   const [mode, setMode] = useState<Mode>('Base');
   const [error, setError] = useState('');
@@ -52,7 +54,7 @@ export default function PageComponentStyleEditor({
         <option value="Phone">Phone override</option>
       </select>
     </label>
-    {numeric.map(([key, label, min, max]) => <label className="form-label" key={key}>{label} (px{key === 'opacity' ? ' or %' : ''})
+    {numeric.filter(([key]) => supportsAppearanceProperty(componentType, key)).map(([key, label, min, max]) => <label className="form-label" key={key}>{label} (px{key === 'opacity' ? ' or %' : ''})
       <input className="form-control" type="number" disabled={disabled} min={min} max={max} step={1}
         aria-label={label}
         placeholder={String(inherited[key] ?? inheritedCaption)}
@@ -64,7 +66,7 @@ export default function PageComponentStyleEditor({
           if (Number.isFinite(value)) change(key, value);
         }} />
     </label>)}
-    {responsiveColorFields.map(({key,label}) => {
+    {responsiveColorFields.filter(({key}) => supportsAppearanceProperty(componentType, key)).map(({key,label}) => {
       const chosen = String(current[key] ?? inherited[key] ?? '#ffffff');
       const transparent = chosen === 'transparent';
       return <div className="metadata-array-property" key={key}>
@@ -80,14 +82,14 @@ export default function PageComponentStyleEditor({
           onClick={() => change(key, null)}>Inherit base colour</button>}
       </div>;
     })}
-    {alignments.map(([key, label, options]) => <label className="form-label" key={key}>{label}
+    {alignments.filter(([key]) => supportsAppearanceProperty(componentType, key)).map(([key, label, options]) => <label className="form-label" key={key}>{label}
       <select className="form-control" disabled={disabled} value={String(current[key] ?? '')}
         onChange={(event) => change(key, event.target.value || null)}>
         <option value="">{inheritedCaption}</option>
         {options.map((item) => <option key={item} value={item}>{item.replace('-', ' ')}</option>)}
       </select>
     </label>)}
-    {typography.map(([key, label, options]) => <label className="form-label" key={key}>{label}
+    {typography.filter(([key]) => supportsAppearanceProperty(componentType, key)).map(([key, label, options]) => <label className="form-label" key={key}>{label}
       <select className="form-control" aria-label={label} disabled={disabled}
         value={String(current[key] ?? '')}
         onChange={(event) => change(key, event.target.value || null)}>
@@ -104,12 +106,12 @@ export default function PageComponentStyleEditor({
         <option value="hidden">Hidden</option>
       </select>
     </label>
-    <label className="checkbox-row"><input type="checkbox" disabled={disabled}
+    {(!componentType || componentAppearanceCapabilities(componentType).container) && <label className="checkbox-row"><input type="checkbox" disabled={disabled}
       aria-label="Allow nested components"
       checked={properties.layoutContainer !== false}
       onChange={(event) => onChange({ ...properties, layoutContainer: event.target.checked })} />
       Allow child components (container capability)
-    </label>
+    </label>}
     {error && <div className="auth-error" role="alert">{error}</div>}
     <div className="properties-help">Reset a numeric field by clearing it. Values outside the accepted ranges cannot be saved.</div>
   </section>;

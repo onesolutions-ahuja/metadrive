@@ -50,8 +50,14 @@ import {
   Unlock,
   FileText,
   Filter,
-  GripVertical,
   Grid2X2,
+  Type,
+  Square,
+  Image as ImageIcon,
+  MousePointer2,
+  BarChart3,
+  FormInput,
+  List,
   ListFilter,
   Maximize2,
   Monitor,
@@ -432,6 +438,18 @@ function PageBuilder({
     const searchContent = `${component.label} ${component.id} ${component.description} ${component.categories.join(' ')}`.toLowerCase();
     return inCategory && searchContent.includes(paletteSearch.trim().toLowerCase());
   });
+  const renderPaletteIcon = (component: { type: string; label: string }) => {
+    const name = `${component.label} ${component.type}`.toLowerCase();
+    if (/\b(text|heading|paragraph|rich text|label)\b/.test(name)) return <Type size={15} />;
+    if (/\b(image|photo|picture|avatar|logo)\b/.test(name)) return <ImageIcon size={15} />;
+    if (/\b(shape|rectangle|square|circle|line|divider|spacer)\b/.test(name)
+      || layoutTypes.some((type) => type === component.type)) return <Square size={15} />;
+    if (/\b(button|link|navigation|action)\b/.test(name)) return <MousePointer2 size={15} />;
+    if (/\b(input|form|checkbox|select|field|date|toggle)\b/.test(name)) return <FormInput size={15} />;
+    if (/\b(chart|metric|dashboard|activity|report)\b/.test(name)) return <BarChart3 size={15} />;
+    if (/\b(table|list|related|record|database)\b/.test(name)) return <List size={15} />;
+    return <Puzzle size={15} />;
+  };
   const toggleFavourite = (componentId: string) => setFavouriteComponents((current) =>
     current.includes(componentId) ? current.filter((item) => item !== componentId) : [...current, componentId]);
   useEffect(() => {
@@ -1443,15 +1461,6 @@ function PageBuilder({
           <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={() => {removeSelected();setComponentMenuId('');}}>Delete <kbd>Delete</kbd></button>
         </div>}
       </div>}
-      {!previewMode && !libraryPreview && <div className="record-component-head"
-        data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
-        onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
-        onPointerMove={page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
-        onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
-        onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
-        <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
-        {isCanvasLocked(component) || component.properties.canvasLocked === true ? <Lock size={13} /> : <GripVertical size={16} />}
-      </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
           {directChildren(page.components, component.id).map((child) => renderPageComponent(child, page.components.indexOf(child), libraryPreview, interactivePreview))}
@@ -1559,14 +1568,6 @@ function PageBuilder({
     const parentId = selected && isLayoutContainer(selected) ? selected.id : selected ? rawLayoutParentId(selected) : null;
     addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion, undefined, parentId);
   };
-  const renderPaletteComponentPreview = (component: typeof paletteComponents[number]) => renderPageComponent({
-    id: `palette-preview-${component.id}`,
-    type: component.type,
-    label: component.label,
-    properties: {},
-    visible: true,
-    region: 'main'
-  }, -1, true);
   return (
     <div className={`builder-page ${editorMode ? "builder-editor-mode" : "builder-list-mode"}`}>
       {externalPreviewTarget && createPortal(
@@ -1681,7 +1682,6 @@ function PageBuilder({
             <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
             {page.pageType === 'Record Page' && <button className={paletteTab === 'Fields' ? 'active' : ''} onClick={() => setPaletteTab('Fields')}>Fields</button>}
           </div>
-          {paletteTab === 'Components' && <p className="palette-note" role="note">Select a component to add it, or drag it onto the canvas.</p>}
           <div className="component-search"><Search size={14} /><input value={paletteSearch} onChange={(event) => setPaletteSearch(event.target.value)} placeholder={`Search ${paletteTab.toLowerCase()}…`} aria-label={`Search ${paletteTab.toLowerCase()}`} /></div>
           {paletteTab === 'Layers' ? <nav className="page-layer-tree" aria-label="Page component layers">
             {page.components.filter(component => !paletteSearch || (component.label + ' ' + component.type).toLowerCase().includes(paletteSearch.toLowerCase())).map(component => {
@@ -1702,7 +1702,6 @@ function PageBuilder({
             })}
             {!page.components.length && <p className="properties-help">Add a component to see its layer.</p>}
           </nav> : paletteTab === 'Components' ? <>
-            {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses registered components from the shared library.</div>}
             <nav className="component-category-list" aria-label="Component categories">
               {pageBuilderPaletteCategories.map((category) => {
                 const count = category === 'All Components' ? paletteComponents.length
@@ -1723,10 +1722,7 @@ function PageBuilder({
                   draggable={!previewMode}
                   title={`${component.label}: ${component.description}`}
                   onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}>
-                  <div className="component-card-preview" aria-hidden="true"
-                    ref={(element) => { if (element) element.inert = true; }}>
-                    {renderPaletteComponentPreview(component)}
-                  </div>
+                  <span className="component-card-icon" aria-hidden="true">{renderPaletteIcon(component)}</span>
                   <div className="component-card-copy">
                     <strong>{component.label}</strong>
                     <span>{component.description}</span>
@@ -1736,6 +1732,7 @@ function PageBuilder({
                     aria-label={`Add ${component.label} to canvas`}
                     onClick={() => addPaletteComponent(component.type)}
                     onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}>
+                    <Plus size={14}/>
                   </button>
                   <button type="button" className={isFavourite ? 'component-favourite active' : 'component-favourite'}
                     aria-label={`${isFavourite ? 'Remove' : 'Add'} ${component.label} ${isFavourite ? 'from' : 'to'} favourites`}
@@ -1869,11 +1866,11 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
+            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor componentType={selected.type} value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <details className="visual-advanced-properties">
               <summary>Advanced styles and responsive settings</summary>
-              <PageComponentStyleEditor properties={selected.properties}
+              <PageComponentStyleEditor componentType={selected.type} properties={selected.properties}
                 onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />
             </details>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
