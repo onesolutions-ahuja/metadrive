@@ -117,3 +117,42 @@
 .assist-note-unread{background:#eaf7f3}.assist-note button,.assist-notice-toast button{cursor:pointer;
  border:0;background:transparent;color:var(--product-accent);font-weight:650}
 @media(max-width:650px){.assist-view-month .custom-day{min-width:105px}}
+
+/* Ace Assist responsive containment: nothing on a small screen expands the page. */
+.custom-aceassist .custom-assist{box-sizing:border-box;min-width:0;max-width:100%}
+.custom-aceassist .custom-assist-layout{min-width:0;max-width:100%}
+.custom-aceassist .custom-calendar,.custom-aceassist .custom-visit-detail{
+ box-sizing:border-box;min-width:0;max-width:100%}
+.custom-aceassist .custom-week{min-width:0;max-width:100%}
+.custom-aceassist .custom-heading>div{min-width:0}
+.custom-aceassist .custom-panel-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+.custom-aceassist .custom-calendar-tenant{overflow-wrap:anywhere}
+@media(max-width:1000px){
+ .custom-aceassist .custom-assist-layout{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:650px){
+ .custom-aceassist .custom-assist{padding:14px 12px 30px}
+ .custom-aceassist .custom-heading{gap:12px;margin-bottom:16px}
+ .custom-aceassist .custom-heading h1{font-size:26px}
+ .custom-aceassist .custom-heading p{font-size:13px}
+ .custom-aceassist .custom-date{display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:8px;font-size:13px}
+ .custom-aceassist .custom-date input{box-sizing:border-box;min-width:0;max-width:100%;padding:9px 10px}
+ .custom-aceassist .custom-tabs{flex-wrap:nowrap;gap:7px;overflow-x:auto;
+  scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;margin-bottom:16px;padding-bottom:8px}
+ .custom-aceassist .custom-tabs button{flex:0 0 auto;scroll-snap-align:start;font-size:13px;padding:10px 12px}
+ .custom-aceassist .custom-assist-layout{gap:14px}
+ .custom-aceassist .custom-calendar,.custom-aceassist .custom-visit-detail{padding:15px;border-radius:16px}
+ .custom-aceassist .custom-panel-title{align-items:flex-start;flex-wrap:wrap}
+ .custom-aceassist .custom-panel-toolbar{width:100%;justify-content:flex-start}
+ .custom-aceassist .custom-panel-toolbar button{padding:9px 10px;min-height:38px}
+ .custom-aceassist .custom-week{overflow-x:auto;-webkit-overflow-scrolling:touch}
+ .custom-aceassist .assist-view-week,.custom-aceassist .assist-view-month{
+  grid-template-columns:repeat(7,116px)}
+ .custom-aceassist .assist-view-day{grid-template-columns:minmax(0,1fr);overflow-x:hidden}
+ .custom-aceassist .assist-view-day .custom-day{min-width:0;min-height:210px}
+ .custom-aceassist .custom-detail-empty{display:none}
+ .custom-aceassist .custom-record-list button{min-width:0;gap:10px}
+ .custom-aceassist .custom-record-list button strong,
+ .custom-aceassist .custom-record-list button small{overflow-wrap:anywhere}
+}
