@@ -144,7 +144,7 @@ export class StalwartMailService {
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
    '@type':'User',name,domainId,description,memberGroupIds:{[groupId]:true},
    credentials:[{'@type':'Password',secret:password}],
-   memberGroupIds:{},roles:{'@type':'User'},permissions:{'@type':'Inherit'},
+   roles:{'@type':'User'},permissions:{'@type':'Inherit'},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
   }}}),'x:Account/set');
   const createdIds=created.created&&typeof created.created==='object'&&!Array.isArray(created.created)?object(created.created):{};
