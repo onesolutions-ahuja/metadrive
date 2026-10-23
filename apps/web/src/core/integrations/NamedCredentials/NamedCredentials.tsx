@@ -251,7 +251,7 @@ export default function NamedCredentials({
 
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
-      <div><h1 className="audit-page-heading">{embedded ? 'Connection Settings' : 'Named Credentials'}</h1><p>{embedded ? 'Tenant-specific connection configuration. Secrets remain encrypted and masked.' : 'Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts and delivery features.'}</p></div>
+      <div><h1 className="audit-page-heading">{embedded ? 'Connection Settings' : 'Named Credentials'}</h1><p>{embedded ? 'Tenant-specific HTTPS connection configuration. Secrets remain encrypted and masked.' : 'Manage tenant-wide HTTPS credentials used by HTTP Callouts and webhook integrations.'}</p></div>
       <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires namedCredentials:manage permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />{embedded ? 'Configure Connection' : 'New Named Credential'}</button>
     </div>
     {!embedded && <div className="record-type-create">
@@ -311,18 +311,14 @@ export default function NamedCredentials({
         <div className="named-credential-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(min(100%, 320px), 1fr))",gap:16,alignItems:"start"}}>
         <PlatformPageSlot slotKey="field-credentials-01"><label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} aria-invalid={Boolean(touched.name && fieldErrors.name)} onBlur={() => blurField('name')} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" />{touched.name && fieldErrors.name && <small role="alert" className="field-error">{fieldErrors.name}</small>}</label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-credentials-02"><label className="form-label">Label<input className="form-control" value={draft.label} aria-invalid={Boolean(touched.label && fieldErrors.label)} onBlur={() => blurField('label')} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" />{touched.label && fieldErrors.label && <small role="alert" className="field-error">{fieldErrors.label}</small>}</label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-credentials-03"><label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
-          const protocol = event.target.value as NamedCredentialMetadata['protocol'];
-          updateDraft({ protocol, authType: protocol === 'SMTP' && !['None', 'Basic'].includes(draft.authType) ? 'Basic' : draft.authType });
-        }}><option>HTTPS</option><option>SMTP</option></select></label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-credentials-04"><label className="form-label">{draft.protocol === 'SMTP' ? 'SMTP Server URL' : 'Base URL'}<input className="form-control" type="url" value={draft.baseUrl} aria-invalid={Boolean(touched.baseUrl && fieldErrors.baseUrl)} onBlur={() => blurField('baseUrl')} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder={draft.protocol === 'SMTP' ? 'smtp://smtp.example.com:587' : 'https://api.example.com/'} />{touched.baseUrl && fieldErrors.baseUrl && <small role="alert" className="field-error">{fieldErrors.baseUrl}</small>}</label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-credentials-04"><label className="form-label">Base URL<input className="form-control" type="url" value={draft.baseUrl} aria-invalid={Boolean(touched.baseUrl && fieldErrors.baseUrl)} onBlur={() => blurField('baseUrl')} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder="https://api.example.com/" />{touched.baseUrl && fieldErrors.baseUrl && <small role="alert" className="field-error">{fieldErrors.baseUrl}</small>}</label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-credentials-05"><label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => {
           const authType = event.target.value as NamedCredentialMetadata['authType'];
           updateDraft({ authType, configuration: ['OAuth Client Credentials','OAuth Authorization Code'].includes(authType)
             ? { clientId: '', ...(authType==='OAuth Authorization Code'?{authorizationUrl:'',tokenUrl:''}:{tokenPath:''}), scope: '', ...draft.configuration }
             : draft.configuration });
         }}>
-          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code', 'Authorization Scheme']).map((authType) => <option key={authType}>{authType}</option>)}
+          {['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code', 'Authorization Scheme'].map((authType) => <option key={authType}>{authType}</option>)}
         </select></label></PlatformPageSlot>
         <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0',gridColumn:"1 / -1" }}>
           <legend>Configuration variables</legend>

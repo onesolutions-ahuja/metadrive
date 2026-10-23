@@ -1,4 +1,4 @@
-import {createHash,randomBytes} from 'node:crypto';
+import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {createLocalJWKSet,jwtVerify,type JSONWebKeySet} from 'jose';
 import type {CacheProvider} from '@node-saml/node-saml';
 import {z} from 'zod';
@@ -6,7 +6,6 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
 import {safeUrl} from './oauth-authorization-service.js';
-import {federationJson} from './federation-http.js';
 import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const token=()=>randomBytes(32).toString('base64url');
@@ -14,11 +13,11 @@ const schema=z.object({id:z.string().uuid().optional(),label:z.string().trim().m
  enabled:z.boolean(),issuer:z.string().min(1).max(2000),authorization_url:z.string().max(2000),token_url:z.string().max(2000).default(''),
  jwks_url:z.string().max(2000).default(''),client_id:z.string().max(500).default(''),secret:z.string().max(4000).optional(),certificate:z.string().max(20000).default('')}).strict();
 type Provider={id:string;tenant_id:string;label:string;protocol:'oidc'|'saml';enabled:boolean;issuer:string;authorization_url:string;token_url:string;
- jwks_url:string;client_id:string;certificate:string;secret_ciphertext:Buffer|null;key_id:string|null};
+ jwks_url:string;client_id:string;certificate:string;secret_ciphertext:Buffer|null;key_id:string|null;
+ token_credential_id:string|null;jwks_credential_id:string|null};
 type Pending={tenant_id:string;provider_id:string;nonce:string;verifier_ciphertext:Buffer;key_id:string;origin:string};
 export class FederationService{
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,private readonly vault:NamedCredentialService,
-  private readonly http:typeof federationJson=federationJson,
   private readonly activityWriter?:IntegrationActivityWriter){}
  private callbackUri(){
   const raw=process.env.METADRIVE_AUTH_PUBLIC_ORIGIN;if(!raw)throw Error('Invalid federation: public HTTPS origin is not configured');
@@ -39,20 +38,39 @@ export class FederationService{
  async save(tenant:string,user:string,input:unknown){
   await this.rbac.require(tenant,user,'Security','manage');
   const parsed=schema.safeParse(input);if(!parsed.success)throw Error('Invalid identity provider settings');
-  const p=parsed.data;safeUrl(p.authorization_url);
-  if(p.protocol==='oidc'){safeUrl(p.issuer);safeUrl(p.token_url);safeUrl(p.jwks_url);if(!p.client_id)throw Error('Invalid OIDC client');}
+  const p=parsed.data,authorizationUrl=safeUrl(p.authorization_url).href;
+  let tokenUrl=p.token_url,jwksUrl=p.jwks_url;
+  if(p.protocol==='oidc'){
+   safeUrl(p.issuer);tokenUrl=safeUrl(p.token_url).href;jwksUrl=safeUrl(p.jwks_url).href;
+   if(!p.client_id)throw Error('Invalid OIDC client');
+   await this.rbac.require(tenant,user,'NamedCredential','manage');
+   await this.rbac.require(tenant,user,'HTTPCallout','execute');
+  }
   else if(!p.certificate.includes('-----BEGIN CERTIFICATE-----'))throw Error('Invalid SAML certificate');
-  const secret=p.secret?this.vault.encryptOpaque(p.secret):null;
+  const providerId=p.id??randomUUID();
   await this.db.transaction(async c=>{
+   let migratedSecret:string|undefined=p.secret||undefined;
    if(p.id){
-    const found=await c.query(`UPDATE md_identity_providers SET label=$3,protocol=$4,enabled=$5,issuer=$6,authorization_url=$7,
-     token_url=$8,jwks_url=$9,client_id=$10,certificate=$11,secret_ciphertext=COALESCE($12,secret_ciphertext),key_id=COALESCE($13,key_id)
-     WHERE tenant_id=$1 AND id=$2 RETURNING id`,[tenant,p.id,p.label,p.protocol,p.enabled,p.issuer,p.authorization_url,p.token_url,p.jwks_url,p.client_id,p.certificate,secret?.ciphertext??null,secret?.keyId??null]);
-    if(!found.rows[0])throw Error('Identity provider not found');
+    const previous=await c.query<Pick<Provider,'secret_ciphertext'|'key_id'|'token_credential_id'>>(
+     `SELECT secret_ciphertext,key_id,token_credential_id FROM md_identity_providers
+       WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,[tenant,providerId]);
+    if(!previous.rows[0])throw Error('Identity provider not found');
+    if(!migratedSecret&&!previous.rows[0].token_credential_id&&previous.rows[0].secret_ciphertext){
+     if(!previous.rows[0].key_id)throw Error('Legacy identity provider secret key is unavailable');
+     migratedSecret=this.vault.decryptOpaque(previous.rows[0].secret_ciphertext,previous.rows[0].key_id);
+    }
+    await c.query(`UPDATE md_identity_providers SET label=$3,protocol=$4,enabled=$5,issuer=$6,authorization_url=$7,
+     token_url=$8,jwks_url=$9,client_id=$10,certificate=$11,secret_ciphertext=NULL,key_id=NULL
+     WHERE tenant_id=$1 AND id=$2`,[tenant,providerId,p.label,p.protocol,p.enabled,p.issuer,authorizationUrl,tokenUrl,jwksUrl,p.client_id,p.certificate]);
     // Configuration changes invalidate outstanding authorization requests.
-    await c.query('UPDATE md_federation_requests SET consumed_at=now() WHERE tenant_id=$1 AND provider_id=$2',[tenant,p.id]);
-   }else await c.query(`INSERT INTO md_identity_providers(tenant_id,label,protocol,enabled,issuer,authorization_url,token_url,jwks_url,client_id,certificate,secret_ciphertext,key_id)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[tenant,p.label,p.protocol,p.enabled,p.issuer,p.authorization_url,p.token_url,p.jwks_url,p.client_id,p.certificate,secret?.ciphertext??null,secret?.keyId??null]);
+    await c.query('UPDATE md_federation_requests SET consumed_at=now() WHERE tenant_id=$1 AND provider_id=$2',[tenant,providerId]);
+   }else await c.query(`INSERT INTO md_identity_providers
+     (id,tenant_id,label,protocol,enabled,issuer,authorization_url,token_url,jwks_url,
+      client_id,certificate,secret_ciphertext,key_id)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,NULL)`,
+     [providerId,tenant,p.label,p.protocol,p.enabled,p.issuer,authorizationUrl,tokenUrl,jwksUrl,p.client_id,p.certificate]);
+   if(p.protocol==='oidc')
+    await this.vault.manageFederationCredentials(c,tenant,providerId,tokenUrl,jwksUrl,migratedSecret);
    await c.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'IdentityProviderUpdated')",[tenant,user]);
   });return this.list(tenant,user);
  }
@@ -126,11 +144,9 @@ export class FederationService{
     if(typeof code!=='string'||!code||code.length>4096)throw Error('Invalid OIDC code');
     const body=new URLSearchParams({grant_type:'authorization_code',code,client_id:provider.client_id,redirect_uri:this.callbackUri(),
      code_verifier:this.vault.decryptOpaque(request.verifier_ciphertext,request.key_id)});
-    if(provider.secret_ciphertext&&provider.key_id)body.set('client_secret',this.vault.decryptOpaque(provider.secret_ciphertext,provider.key_id));
-    const activity={db:this.db,writer:this.activityWriter,tenantId:request.tenant_id,
-     providerId:provider.id,provider:provider.label};
-    const response=await this.http(provider.token_url,body,activity);if(typeof response.id_token!=='string')throw Error('Invalid OIDC ID token');
-    const jwks=await this.http(provider.jwks_url,undefined,activity);
+    const response=await this.vault.identityProviderJson(request.tenant_id,provider.id,'token',body);
+    if(typeof response.id_token!=='string')throw Error('Invalid OIDC ID token');
+    const jwks=await this.vault.identityProviderJson(request.tenant_id,provider.id,'jwks');
     const {payload}=await jwtVerify(response.id_token,createLocalJWKSet(jwks as unknown as JSONWebKeySet),{issuer:provider.issuer,audience:provider.client_id,algorithms:['RS256','ES256','PS256'],requiredClaims:['exp','iat','sub','nonce']});
     if(payload.nonce!==request.nonce||!payload.sub||payload.sub.length>2000)throw Error('Invalid OIDC nonce or subject');subject=payload.sub;
    }

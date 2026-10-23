@@ -444,61 +444,8 @@ export async function validateFlowDraft(rbac:RbacEngine|undefined,tenantId:strin
     catch{errors.push('Outbound Message request body must be a structured mapping');}
     if(properties.integrationConnectionResource||properties.namedCredentialResource)
      errors.push('Outbound Message does not allow dynamic credential overrides');
-   }else if(properties.actionType==='Send Email'){
-    if(typeof properties.namedCredentialId!=='string'
-      ||!/^[0-9a-f-]{36}$/i.test(properties.namedCredentialId))
-     errors.push('Send Email requires an SMTP Named Credential');
-    if(typeof properties.fromEmail!=='string'||!properties.fromEmail.trim()
-      ||properties.fromEmail.length>512)
-     errors.push('Send Email requires a From email address or resource');
-    if(typeof properties.recipients!=='string'||!properties.recipients.trim()
-      ||properties.recipients.length>4096)
-     errors.push('Send Email requires at least one recipient or resource');
-    if(typeof properties.subject!=='string'||!properties.subject.trim()
-      ||properties.subject.length>300)
-     errors.push('Send Email requires a subject of at most 300 characters');
-    if(typeof properties.body!=='string'||properties.body.length>10000)
-     errors.push('Send Email body must be text of at most 10000 characters');
-    if(typeof properties.namedCredentialId==='string'
-      &&/^[0-9a-f-]{36}$/i.test(properties.namedCredentialId)&&db){
-     await rbac.require(tenantId,userId,'NamedCredential','read');
-     await rbac.require(tenantId,userId,'Email','send');
-     const {rows}=await db.query(`
-      SELECT 1 FROM md_named_credentials
-      WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true`,
-      [tenantId,properties.namedCredentialId]);
-     if(!rows.length)errors.push('Send Email SMTP credential is unavailable');
-    }
-   }else if(properties.actionType==='Email Alert'){
-    if(data.flowType!=='Record-Triggered Flow')
-     errors.push('Email Alerts are supported only in Record-Triggered Flows');
-    if(typeof properties.emailAlertId!=='string'
-      ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.emailAlertId))
-     errors.push('Email Alert requires a valid saved alert');
-    if(typeof properties.emailAlertId==='string'
-      &&/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.emailAlertId)&&db){
-     await rbac.require(tenantId,userId,'SystemDefinition:email-alerts','read');
-     await rbac.require(tenantId,userId,'NamedCredential','read');
-     await rbac.require(tenantId,userId,'Email','send');
-     const {rows}=await db.query<{object_api:string;credential_id:string}>(`
-      SELECT a.object_api,a.credential_id FROM md_email_alert_details a
-      JOIN md_system_definitions d ON d.tenant_id=a.tenant_id
-       AND d.kind='email-alerts' AND d.api_name=a.alert_api_name AND d.enabled=true
-      WHERE a.tenant_id=$1 AND a.alert_api_name=$2`,
-      [tenantId,properties.emailAlertId]);
-     const alert=rows[0];
-     if(!alert||alert.object_api!==startConfig.object)
-      errors.push('Email Alert is unavailable or does not match the trigger Object');
-     if(!alert||!/^[0-9a-f-]{36}$/i.test(alert.credential_id))
-      errors.push('Email Alert SMTP credential is invalid');
-     else{
-      const {rows:credentials}=await db.query(`
-       SELECT 1 FROM md_named_credentials
-       WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true`,
-       [tenantId,alert.credential_id]);
-      if(!credentials.length)errors.push('Email Alert SMTP credential is unavailable');
-     }
-    }
+   }else if(properties.actionType==='Send Email'||properties.actionType==='Email Alert'){
+    errors.push('SMTP-based email actions are disabled; configure email delivery with an HTTPS Named Credential and HTTP Callout Flow');
    }else if(properties.actionType==='Post to Chatter'){
     if(typeof properties.objectApiName!=='string'
       ||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.objectApiName))

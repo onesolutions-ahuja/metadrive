@@ -106,8 +106,7 @@ test('Publish Platform Event writes typed event data inside the Flow action save
  assert(statements.some(sql=>sql.includes('INSERT INTO md_platform_event_messages')));
 });
 
-test('Send Email queues encrypted content transactionally after resolving recipients',async()=>{
- const queued:Array<Record<string,unknown>>=[];
+test('SMTP-based Send Email fails before SQL or queue activity',async()=>{
  const statements:string[]=[];
  const actionContext=context(async(sql)=>{
   statements.push(sql.trim());return {rows:[],rowCount:1};
@@ -115,37 +114,21 @@ test('Send Email queues encrypted content transactionally after resolving recipi
  actionContext.config={actionType:'Send Email',namedCredentialId:recipient,
   fromEmail:'sales@example.com',recipients:'{!$Record.Email}; second@example.com',
   subject:'Order {!$Record.Id}',body:'Hello {!$Record.Name}'};
- const record={Id:'record-id',Email:'first@example.com',Name:'Ada'};
- actionContext.variables.$Record=record;
- actionContext.resolve=(value:unknown)=>{
-  if(typeof value==='string'&&value.startsWith('{!$Record.'))
-   return record[value.slice(10,-1) as keyof typeof record];
-  return value;
- };
- actionContext.enqueueEmail=async message=>{queued.push(message);};
- assert.equal(await executeFlowAction(actionContext),undefined);
- assert.deepEqual(queued,[{credentialId:recipient,from:'sales@example.com',
-  recipients:['first@example.com','second@example.com'],subject:'Order record-id',body:'Hello Ada'}]);
- assert.deepEqual(statements,['SAVEPOINT flow_action_2','RELEASE SAVEPOINT flow_action_2']);
+ await assert.rejects(()=>executeFlowAction(actionContext),/SMTP-based Flow email actions are disabled/);
+ assert.deepEqual(statements,['SAVEPOINT flow_action_2','ROLLBACK TO SAVEPOINT flow_action_2',
+  'RELEASE SAVEPOINT flow_action_2']);
 });
 
-test('Email Alert uses the saved tenant definition and matching trigger object',async()=>{
- const queued:Array<Record<string,unknown>>=[];
+test('Email Alert fails before querying stored SMTP settings',async()=>{
+ const statements:string[]=[];
  const actionContext=context(async(sql)=>{
-  if(sql.includes('FROM md_email_alert_details'))return {rows:[{
-   object_api:'Account',credential_id:recipient,from_email:'sales@example.com',
-   recipients:'{!$Record.Email}',subject:'Hello {!$Record.Name}',body:'Account update'
-  }]};
-  if(sql.includes('FROM md_flow_interview_records'))return {rows:[{object_api:'Account'}]};
+  statements.push(sql);
   return {rows:[],rowCount:1};
  });
  actionContext.config={actionType:'Email Alert',emailAlertId:'Account_Changed'};
- actionContext.resolve=(value:unknown)=>value==='{!$Record.Email}'?'person@example.com'
-  :value==='{!$Record.Name}'?'Ada':value;
- actionContext.enqueueEmail=async message=>{queued.push(message);};
- assert.equal(await executeFlowAction(actionContext),undefined);
- assert.deepEqual(queued,[{credentialId:recipient,from:'sales@example.com',
-  recipients:['person@example.com'],subject:'Hello Ada',body:'Account update'}]);
+ await assert.rejects(()=>executeFlowAction(actionContext),/SMTP-based Flow email actions are disabled/);
+ assert.deepEqual(statements,['SAVEPOINT flow_action_2','ROLLBACK TO SAVEPOINT flow_action_2',
+  'RELEASE SAVEPOINT flow_action_2']);
 });
 
 test('Custom Notification action routes recipient failures through a savepoint fault connector',async()=>{

@@ -16,39 +16,16 @@ const toMail=(service:NamedCredentialService)=>service as unknown as {
  sendTenantEmail:(...args:unknown[])=>Promise<void>;
 };
 
-test('Quick Action SMTP persists encrypted job and deduplicates repeated request keys',async()=>{
- const inserts:unknown[][]=[];
- const audit:string[]=[];
- const hashes=new Map<string,string>();
- const client={query:async(sql:string,args:unknown[]=[])=>{
-  if(sql.includes('FROM md_named_credentials'))return {rows:[{id:credential}],rowCount:1};
-  if(sql.includes('INSERT INTO md_quick_action_email_jobs')){
-   inserts.push(args);
-   const key=String(args[8]),digest=String(args[9]);
-   if(!hashes.has(key))hashes.set(key,digest);
-   return {rows:[{id:jobId,payload_digest:hashes.get(key),status:'queued'}],rowCount:1};
-  }
-  if(sql.includes('INSERT INTO md_security_events'))audit.push(sql);
-  return {rows:[],rowCount:1};
- }};
- const db={transaction:async(fn:(c:typeof client)=>Promise<unknown>)=>fn(client)} as unknown as SqlPersistence;
+test('Legacy Quick Action SMTP fails closed before queuing',async()=>{
+ let transaction=false;
+ const db={transaction:async()=>{transaction=true;}} as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  const svc=new NamedCredentialService(db,rbac);
- const internals=toMail(svc);
- internals.encryptValue=()=>Buffer.from('encrypted');
- internals.activeKeyId=()=> 'key-1';
  const args=[tenant,user,'Global','','Notify',credential,
   'sender@example.com','recipient@example.com','Subject','Body',requestKey] as const;
- const first=await svc.sendQuickActionEmail(...args);
- const second=await svc.sendQuickActionEmail(...args);
- assert.deepEqual(first,{status:'queued',jobId});
- assert.deepEqual(second,first);
- assert.equal(inserts.length,2);
- assert.ok(inserts.every(a=>a[6] instanceof Buffer && a[8]===requestKey));
- assert.equal(audit.length,2);
- await assert.rejects(()=>svc.sendQuickActionEmail(tenant,user,'Global','','Notify',
-  credential,'sender@example.com','recipient@example.com','Changed','Body',requestKey),
-  /request key already belongs/);
+ await assert.rejects(()=>svc.sendQuickActionEmail(...args),
+  /SMTP email delivery has been removed/);
+ assert.equal(transaction,false);
 });
 
 test('Quick Action SMTP dispatch fails closed if permissions changed, before SMTP',async()=>{

@@ -15,6 +15,7 @@ export default function TenantFederationControls({request,canManage}:{request:Re
  const saveLink=(value:typeof link,remove=false)=>run(async()=>{await request('/auth/federated-identities',{method:'PUT',body:JSON.stringify({...value,remove})});setMessage(remove?'Link removed.':'Identity linked.');});
  return <section className="surface permission-section"><h2>Single sign-on and social identity</h2>
   <p>Configure an OIDC or SAML identity provider, then explicitly link its subject to a tenant user. Email matches never create accounts or permissions.</p>
+  <p>OIDC token and JWKS requests use tenant-linked HTTPS Named Credentials. Saving OIDC settings requires Named Credential management and HTTP Callout execution permissions.</p>
   <p>{deployment.configured?<>Callback URL: <code>{deployment.callbackUrl}</code></>:'The deployment administrator must configure the public HTTPS authentication origin before SSO can run.'}</p>
   {providers.map(p=><div key={p.id}>{p.label} · {p.protocol.toUpperCase()} · {p.enabled?'Enabled':'Disabled'} {canManage&&<button type="button" className="btn" onClick={()=>setDraft({...p})}>Edit provider</button>}
    {p.protocol==='saml'&&deployment.configured&&<p>Service-provider Entity ID: <code>{deployment.callbackUrl}/{p.id}</code></p>}</div>)}

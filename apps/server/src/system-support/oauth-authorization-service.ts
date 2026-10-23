@@ -1,7 +1,6 @@
 import {createHash,randomBytes} from 'node:crypto';
-import {lookup} from 'node:dns/promises';
-import {isIP} from 'node:net';
-import {request as httpsRequest} from 'node:https';
+import {publicHttpsUrl,publicIp,requestExternalHttps} from './external-http-transport.js';
+export {publicIp} from './external-http-transport.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
@@ -13,28 +12,7 @@ const idPattern=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 type Config={clientId:string;authorizationUrl:string;tokenUrl:string;scope?:string};
 type StoredCredential={id:string;enabled:boolean;auth_type:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;encryption_key_id:string};
 export function safeUrl(raw:string):URL{
- const parsed=new URL(raw);
- if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.hash||
-   (parsed.port&&parsed.port!=='443')||isIP(parsed.hostname)||
-   parsed.hostname==='localhost'||parsed.hostname.endsWith('.local'))
-  throw new Error('OAuth endpoints require a public HTTPS origin');
- return parsed;
-}
-// Use one vetted public-address rule for all token calls; DNS pinning prevents rebinding.
-export function publicIp(ip:string){
- if(isIP(ip)===4){
-  const [a,b,c]=ip.split('.').map(Number);
-  return !(a===0||a===10||a===127||a>=224||a===169&&b===254||
-    a===172&&b>=16&&b<=31||a===192&&b===168||a===100&&b>=64&&b<=127||
-    a===198&&b>=18&&b<=19||a===192&&b===0||a===192&&b===88||
-    a===198&&b===51||a===203&&b===0||a===192&&b===0&&c===0);
- }
- if(isIP(ip)===6){
-  const normalized=ip.toLowerCase();
-  return !(normalized.startsWith('::')||/^(ff|fc|fd|fe8|fe9|fea|feb)/.test(normalized)||
-    normalized.includes(':ffff:'));
- }
- return false;
+ return publicHttpsUrl(raw);
 }
 type TokenActivity={
  db:SqlPersistence;writer?:IntegrationActivityWriter;tenantId:string;
@@ -54,36 +32,18 @@ async function postToken(url:URL,clientId:string,clientSecret:string,parameters:
    communication:{name:'OAuth token exchange',provider:'OAuth',
     relatedObject:'NamedCredential',relatedRecordId:activity.credentialId}
   },activity.writer);
- const addresses=await lookup(url.hostname,{all:true,verbatim:true});
- if(!addresses.length||addresses.some(a=>!publicIp(a.address)))
-  throw new Error('OAuth token endpoint resolves to a restricted network');
- const chosen=addresses[0],body=parameters.toString();
+ const body=parameters.toString();
  const auth=Buffer.from(clientId+':'+clientSecret).toString('base64');
  let payload:string;
  try{
- payload=await new Promise<string>((resolve,reject)=>{
-  const req=httpsRequest(url,{method:'POST',agent:false,
-   lookup:(_host,_options,cb)=>cb(null,chosen.address,chosen.family),
-   timeout:15000,headers:{Authorization:'Basic '+auth,
+  const response=await requestExternalHttps(url,{method:'POST',timeoutMs:15000,
+   maxResponseBytes:8192,body,headers:{Authorization:'Basic '+auth,
     'Content-Type':'application/x-www-form-urlencoded',
-    'Content-Length':Buffer.byteLength(body),Accept:'application/json'}},response=>{
-   statusCode=response.statusCode;
-   if((response.statusCode??0)<200||(response.statusCode??0)>=300){
-    response.resume();reject(new Error('OAuth token exchange failed'));return;
-   }
-   const chunks:Buffer[]=[];let size=0;
-   response.on('data',(piece:Buffer)=>{
-    size+=piece.length;
-    responseBytes=size;
-    if(size>8192){req.destroy(new Error('OAuth token response too large'));return;}
-    chunks.push(piece);
-   });
-   response.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));
-  });
-  req.on('timeout',()=>req.destroy(new Error('OAuth token exchange timed out')));
-  req.on('error',reject);
-  req.end(body);
- });
+    'Content-Length':String(Buffer.byteLength(body)),Accept:'application/json'}});
+  statusCode=response.status;
+  responseBytes=response.responseBytes;
+  if(statusCode<200||statusCode>=300)throw new Error('OAuth token exchange failed');
+  payload=response.body;
  }catch(error){
   await log(statusCode!==undefined?'http_error':'network_error',
    statusCode!==undefined?'HTTP_STATUS_'+statusCode:error instanceof Error?error.name:'NETWORK_ERROR');

@@ -1,11 +1,10 @@
 /** Flow-backed automation recipes. Drafts reuse the shared Flow runtime without app-specific services. */
-export type AutomationKind='Assignment'|'Auto Response'|'Escalation';
+export type AutomationKind='Assignment'|'Escalation';
 export type RecipeInput={
  kind:AutomationKind;objectApi:string;apiName:string;label:string;
  trigger:'created'|'updated'|'created-or-updated';
  conditions:Array<{field:string;operator:string;value:string}>;
- assigneeId?:string;namedCredentialId?:string;fromEmail?:string;recipientField?:string;
- subject?:string;body?:string;dueField?:string;offsetAmount?:number;offsetUnit?:string;
+ assigneeId?:string;dueField?:string;offsetAmount?:number;offsetUnit?:string;
  taskSubject?:string;
 };
 const identifier=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
@@ -30,16 +29,6 @@ export function buildAutomationFlow(input:RecipeInput){
      config:{object:input.objectApi,recordId:'{!$Record.Id}',
        fieldValues:[{field:'OwnerId',value:input.assigneeId}]}});
    connectors.push({id:'assignment-start',from:1,to:2,label:'',kind:'normal'});
- }else if(input.kind==='Auto Response'){
-   if(!input.namedCredentialId||!/^[0-9a-f-]{36}$/i.test(input.namedCredentialId)
-     ||!input.fromEmail||!input.recipientField||!identifier.test(input.recipientField)
-     ||!input.subject?.trim()||input.body===undefined)
-    throw Error('Complete the SMTP credential, sender, recipient field and message');
-   steps.push({id:2,type:'Action',label:'Send automatic response',
-     config:{actionType:'Send Email',namedCredentialId:input.namedCredentialId,
-       fromEmail:input.fromEmail,recipients:'{!$Record.'+input.recipientField+'}',
-       subject:input.subject,body:input.body}});
-   connectors.push({id:'email-start',from:1,to:2,label:'',kind:'normal'});
  }else{
    if(!input.dueField||!identifier.test(input.dueField)
      ||!Number.isInteger(input.offsetAmount)||Math.abs(input.offsetAmount!)>3650

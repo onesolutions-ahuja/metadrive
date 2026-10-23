@@ -1,5 +1,6 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+import {isPlatformRecoveryMailConfigured} from './platform-recovery-mailer.js';
 type Policy={method:'OTP'|'LINK';defaultChannel:'email';allowedChannels:['email'];
  templates:{email:{subject:string;body:string}}};
 const defaults:Policy={method:'OTP',defaultChannel:'email',allowedChannels:['email'],
@@ -13,7 +14,7 @@ export class PasswordRecoverySettingsService{
    'SELECT policy FROM md_password_recovery_settings WHERE tenant_id=$1',[tenantId]);
   return {smtpCredentialId:'',fromEmail:process.env.METADRIVE_PLATFORM_SMTP_FROM_EMAIL??'',
    policy:rows[0]?.policy??defaults,linkReady:Boolean(process.env.METADRIVE_PASSWORD_RESET_ORIGIN),
-   deliveryManagedByPlatform:true};
+   deliveryManagedByPlatform:true,deliveryReady:isPlatformRecoveryMailConfigured()};
  }
  async save(tenantId:string,userId:string,input:unknown){
   await this.rbac.require(tenantId,userId,'Security','manage');
