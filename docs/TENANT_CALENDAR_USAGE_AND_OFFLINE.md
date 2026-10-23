@@ -4,17 +4,20 @@
 
 Company Settings → Business Settings now supports:
 
-- fiscal-year start month and day;
-- organization IANA time zone;
-- weekly opening/closing times, including closed days; and
+- fiscal-year start month and day, suggested as 6 April;
+- organization IANA time zone, suggested as `Europe/London`, with the runtime's
+  supported time-zone list;
+- a seven-day opening-hours list, initially set to 09:00–17:00 on weekdays and
+  closed on weekends, with half-hour suggestions, editable custom times, and an
+  action to copy Monday's times across the week; and
 - dated holidays.
 
 The tenant-scoped `GET` and `PUT /api/tenant/business-calendar` endpoints use
 the central `TenantSettings` read/manage permissions. Writes are validated,
 stored in SQL under the tenant, and audited. Hours are local to the configured
 time zone; overnight shifts are not supported. This configuration is available
-for shared scheduling and escalation features; it does not itself create or
-change entitlement rules.
+to AceAssist and other shared scheduling and escalation features; it does not
+itself create or change entitlement rules.
 
 ## Usage and limits
 
