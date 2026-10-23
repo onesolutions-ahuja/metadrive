@@ -4,6 +4,7 @@ import {syncFlowTriggerSubscription} from '../flow-engine/FlowVersionManager.js'
 import {seedAceAssistCommunicationTemplates} from './aceassist-communication-templates.js';
 import {seedAceAssistDocumentSeries} from './aceassist-document-series.js';
 import {seedAceAssistFinancialFlows} from './aceassist-financial-flows.js';
+import {seedAceAssistDocumentFlows} from './aceassist-document-flows.js';
 import {seedAceAssistReminderFlows} from './aceassist-reminder-flows.js';
 import {seedAceAssistPaymentFlows} from './aceassist-payment-flows.js';
 import {ACEASSIST_BOOKING_OVERLAP,ACEASSIST_BOOKING_AVAILABILITY} from './aceassist-booking-guards.js';
@@ -114,6 +115,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
   await seedAceAssistSchedulingObjects(client,tenant_id);
   await seedAceAssistDocumentSeries(client,tenant_id);
   created+=await seedAceAssistFinancialFlows(client,tenant_id);
+  created+=await seedAceAssistDocumentFlows(client,tenant_id);
   created+=await seedAceAssistPaymentFlows(client,tenant_id);
   created+=await seedAceAssistWhatsAppBookingFlow(client,tenant_id);
   created+=await seedAceAssistReminderFlows(client,tenant_id);

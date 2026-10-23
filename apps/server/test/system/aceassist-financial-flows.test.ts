@@ -157,3 +157,27 @@ test('Flow line guard protects numbered invoices even if status later changes',a
  await assert.rejects(prepareDocumentLineMutation(context,lineConfig,line.Id,{Quantity:2}),
   /cannot be changed after the financial document is issued/);
 });
+
+test('composite document guard rejects another parent line before mutation',async()=>{
+ const lineConfig={parentObject:'Invoice',parentField:'Invoice',
+  quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',
+  taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',
+  discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total'};
+ const line={Id:'55555555-5555-4555-8555-555555555555',Invoice:invoiceId,
+  Quantity:1,UnitPrice:10,DiscountAmount:0,TaxAmount:0,LineTotal:10};
+ const base={tenantId:'tenant',userId:'operator',
+  node:{id:3,type:'Update Records',config:{
+   object:'InvoiceLine',expectedParentId:'{!recordId}'}},
+  client:{query:async()=>({rows:[],rowCount:0})},
+  records:{get:async(_tenant:string,_user:string,object:string)=>
+   object==='InvoiceLine'?line:{Id:invoiceId,Status:'Draft'}}};
+ const forged={...base,evaluate:()=>id} as never;
+ await assert.rejects(
+  prepareDocumentLineMutation(forged,lineConfig,line.Id,{Quantity:2}),
+  /does not belong to the selected document/);
+ const authentic={...base,evaluate:()=>invoiceId} as never;
+ const patch:Record<string,unknown>={Quantity:2};
+ const updated=await prepareDocumentLineMutation(authentic,lineConfig,line.Id,patch);
+ assert.equal(updated.newParent,invoiceId);
+ assert.equal(patch.LineTotal,20);
+});
