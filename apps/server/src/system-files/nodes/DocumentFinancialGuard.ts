@@ -49,7 +49,7 @@ function validatedLines(lines:Record<string,unknown>[],m:{
 type LineMutationMapping={parentObject:string;parentField:string;quantityField:string;
  unitPriceField:string;discountField:string;taxField:string;lineTotalField:string;
  subtotalField:string;discountTotalField:string;taxTotalField:string;totalField:string;
- statusField?:string;lockedStatuses?:string[]};
+ statusField?:string;lockedStatuses?:string[];numberField?:string};
 const lockParent=async(context:FlowNodeContext,object:string,id:string)=>{
  await context.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
   [context.tenantId+':financial-line-parent:'+object+':'+id]);
@@ -79,6 +79,7 @@ export async function prepareDocumentLineMutation(context:FlowNodeContext,raw:un
   'taxField','lineTotalField','subtotalField','discountTotalField','taxTotalField','totalField'] as const)
   field(m[key]);
  if(m.statusField!==undefined)field(m.statusField);
+ if(m.numberField!==undefined)field(m.numberField);
  if(m.lockedStatuses!==undefined&&(!Array.isArray(m.lockedStatuses)||
   m.lockedStatuses.some(x=>typeof x!=='string'||x.length>40)))
   throw Error('Invalid locked financial document statuses');
@@ -96,7 +97,8 @@ export async function prepareDocumentLineMutation(context:FlowNodeContext,raw:un
  for(const parentId of parents){
   await lockParent(context,m.parentObject,parentId);
   const doc=await context.records.get(context.tenantId,context.userId,m.parentObject,parentId,context.client);
-  if(m.statusField&&Array.isArray(m.lockedStatuses)&&m.lockedStatuses.includes(String(doc[m.statusField]??'')))
+  if((m.statusField&&Array.isArray(m.lockedStatuses)&&m.lockedStatuses.includes(String(doc[m.statusField]??'')))
+   ||(m.numberField&&doc[m.numberField]!==null&&doc[m.numberField]!==undefined&&String(doc[m.numberField])!==''))
    throw Error('Lines cannot be changed after the financial document is issued');
  }
  const amount=lineAmount(merged,m);
