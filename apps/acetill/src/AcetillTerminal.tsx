@@ -47,6 +47,15 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const customCss=acetillStyleCss(editorStyles??savedStyles);
   const visualStyles=customCss?<style data-acetill-visual-overrides>{customCss}</style>:null;
   const [actions,setActions]=React.useState<Action[]>([]);
+  const [actionAccess,setActionAccess]=React.useState<Record<string,boolean>>({});
+  React.useEffect(()=>{
+    let active=true;
+    void apiRequest<{access:Record<string,boolean>}>('/acetill/action-access')
+      .then(result=>{if(active)setActionAccess(result.access??{});})
+      .catch(()=>{if(active)setActionAccess({});});
+    return()=>{active=false;};
+  },[]);
+  const canAction=(name:string)=>actionAccess[name]===true;
   const [products,setProducts]=React.useState<Item[]>([]);
   const [categories,setCategories]=React.useState<Category[]>([]);
   const [catalogueLoading,setCatalogueLoading]=React.useState(false);
@@ -141,7 +150,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const scanProduct=find('ScanProduct');
   const ageCheck=find('VerifyAgeRestriction');
   const holdSale=async()=>{
-    if(!holdCart||!cart.length)return;
+    if(!canAction('HoldSale')||!holdCart||!cart.length)return;
     try{
       const result=await execute(holdCart,{
         requestId:crypto.randomUUID(),label:holdLabel.trim(),
@@ -160,7 +169,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
     catch(e){setError(e instanceof Error?e.message:String(e));}
   };
   const resumeCart=async(holdReference:string)=>{
-    if(!resumeHeld||cart.length)return;
+    if(!canAction('RetrieveSale')||!resumeHeld||cart.length)return;
     try{
       const result=await execute(resumeHeld,{holdReference,requestId:crypto.randomUUID()});
       if(result.interviewId||result.completed!==true||result.outputs?.status!=='completed')
@@ -192,7 +201,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
     }catch(e){setError(e instanceof Error?e.message:String(e));}
   };
   const submitReturn=async()=>{
-    if(!createReturn||!originalInvoice||!returnReason.trim()||!returnLines.some(x=>x.quantity>0))return;
+    if(!canAction('SalesReturn')||!createReturn||!originalInvoice||!returnReason.trim()||!returnLines.some(x=>x.quantity>0))return;
     try{
       const result=await execute(createReturn,{
         originalInvoiceNumber:originalInvoice.trim(),reason:returnReason.trim(),
@@ -402,8 +411,8 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
         {lockButton}{settingsButton}{displayButton}
-        <button type="button" disabled={!listHeld||busy} onClick={()=>void showHeld()}>Held sales</button>
-        <button type="button" onClick={openReturn}>Sales return</button>
+        <button type="button" disabled={!listHeld||busy||!canAction('RetrieveSale')} onClick={()=>void showHeld()}>Held sales</button>
+        <button type="button" disabled={!canAction('SalesReturn')} onClick={openReturn}>Sales return</button>
         <label className="acetill-search" data-acetill-element="search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
@@ -424,14 +433,14 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
         <label>Barcode <input aria-label="Barcode scanner input" value={barcode} onChange={e=>setBarcode(e.target.value)}
           onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void scanBarcode(barcode);}}}/></label>
         <input aria-label="Hold sale label" placeholder="Hold sale label" value={holdLabel} onChange={e=>setHoldLabel(e.target.value)}/>
-        <button type="button" disabled={!cart.length||!holdCart||busy} onClick={()=>void holdSale()}>Hold sale</button>
+        <button type="button" disabled={!cart.length||!holdCart||busy||!canAction('HoldSale')} onClick={()=>void holdSale()}>Hold sale</button>
         <button type="button" disabled={!ageCheck||busy||!cart.length} onClick={()=>void execute(ageCheck!,{
           cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity}))
         }).then(result=>{if(result.completed===true&&result.outputs?.verified===true)setAgeApproved(true);
           else setError('Age verification was not approved.');}).catch(e=>setError(String(e))}>Verify age</button>
         {['Discount','Rewards','GiftCards','More'].map(label=>{
           const action=find(label);
-          return <button key={label} type="button" disabled={!action||busy} title={!action?'Configure Acetill'+label+' Flow':undefined}
+          return <button key={label} type="button" disabled={!action||busy||(label==='Discount'&&!canAction('Discount'))} title={!action?'Configure Acetill'+label+' Flow':undefined}
             onClick={()=>action&&void execute(action,{cartItems:cart.map(x=>({productId:x.id,quantity:x.quantity}))}).then(()=>setMessage(label+' workflow started')).catch(e=>setError(String(e)))}>
             {label==='Discount'?'◇':label==='Rewards'?'♧':label==='GiftCards'?'▣':'•••'} &nbsp;{label==='GiftCards'?'Gift cards':label}
           </button>;
