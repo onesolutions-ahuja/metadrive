@@ -39,9 +39,9 @@ test('document edits mutate only selected parent and preserve server line-total 
 });
 
 test('Ace Assist financial documents show inline items instead of separate navigation',()=>{
- const runtime=readFileSync(new URL('../../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
- const editor=readFileSync(new URL('../../../../aceassist/src/FinancialDocumentEditor.tsx',import.meta.url),'utf8');
- const css=readFileSync(new URL('../../../../aceassist/src/aceassist.css',import.meta.url),'utf8');
+ const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ const editor=readFileSync(new URL('../../../aceassist/src/FinancialDocumentEditor.tsx',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../../../aceassist/src/aceassist.css',import.meta.url),'utf8');
  assert.doesNotMatch(runtime,/label:'Quotation lines'|label:'Invoice lines'/);
  assert.match(runtime,/FinancialDocumentEditor/);
  assert.match(runtime,/documentFlow\(editing,editingObject\)/);
