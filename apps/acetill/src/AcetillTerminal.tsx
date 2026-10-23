@@ -58,6 +58,11 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const [message,setMessage]=React.useState('');
   const [loading,setLoading]=React.useState(true);
   const [receipt,setReceipt]=React.useState<Row|null>(null);
+  const [holdMode,setHoldMode]=React.useState(false);
+  const [heldCarts,setHeldCarts]=React.useState<Row[]>([]);
+  const [holdLabel,setHoldLabel]=React.useState('');
+  const [barcode,setBarcode]=React.useState('');
+  const [ageApproved,setAgeApproved]=React.useState(false);
   const [returnMode,setReturnMode]=React.useState(false);
   const [originalInvoice,setOriginalInvoice]=React.useState('');
   const [returnReason,setReturnReason]=React.useState('');
@@ -130,6 +135,50 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const loadReturn=find('LoadReturnInvoice');
   const createReturn=find('CreateSalesReturn');
   const printReturn=find('PrintReceipt');
+  const holdCart=find('HoldCart');
+  const listHeld=find('ListHeldCarts');
+  const resumeHeld=find('ResumeHeldCart');
+  const scanProduct=find('ScanProduct');
+  const ageCheck=find('VerifyAgeRestriction');
+  const holdSale=async()=>{
+    if(!holdCart||!cart.length)return;
+    try{
+      const result=await execute(holdCart,{
+        requestId:crypto.randomUUID(),label:holdLabel.trim(),
+        cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity}))
+      });
+      if(result.interviewId||result.completed!==true||!result.outputs?.holdReference)
+        throw Error('Hold Flow did not confirm a saved cart.');
+      setCart([]);setHoldLabel('');setMessage('Cart held as '+asText(result.outputs.holdReference));
+      paymentRequestId.current=crypto.randomUUID();
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
+  const showHeld=async()=>{
+    setHoldMode(true);setError('');
+    if(!listHeld)return;
+    try{setHeldCarts(extractRows(await execute(listHeld,{})));}
+    catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
+  const resumeCart=async(holdReference:string)=>{
+    if(!resumeHeld||cart.length)return;
+    try{
+      const result=await execute(resumeHeld,{holdReference,requestId:crypto.randomUUID()});
+      if(result.interviewId||result.completed!==true||result.outputs?.status!=='completed')
+        throw Error('Resume Flow did not confirm cart ownership and release.');
+      const restored=extractRows(result).map(product).filter((x):x is Item=>x!==null);
+      if(!restored.length)throw Error('No cart lines were returned.');
+      setCart(restored);setHoldMode(false);paymentRequestId.current=crypto.randomUUID();
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
+  const scanBarcode=async(value:string)=>{
+    if(!scanProduct||!value.trim())return;
+    try{
+      const result=await execute(scanProduct,{barcode:value.trim()});
+      const found=extractRows(result).map(product).find((x):x is Item=>x!==null);
+      if(!found)throw Error('Barcode not found or product is unavailable.');
+      add(found);setBarcode('');
+    }catch(e){setError(e instanceof Error?e.message:String(e));}
+  };
   const openReturn=()=>{setReturnMode(true);setReturnConfirmed(null);setReturnLines([]);setOriginalInvoice('');setReturnReason('');setError('');};
   const searchReturn=async()=>{
     if(!loadReturn||!originalInvoice.trim())return;
@@ -200,7 +249,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
   const shown=products;
   const count=cart.reduce((n,x)=>n+x.quantity,0);
   const subtotal=cart.reduce((n,x)=>n+x.quantity*x.price,0);
-  const add=(item:Item)=>{paymentRequestId.current=crypto.randomUUID();setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});};
+  const add=(item:Item)=>{paymentRequestId.current=crypto.randomUUID();setAgeApproved(false);setCart(v=>{const exists=v.some(x=>x.id===item.id);return exists?v.map(x=>x.id===item.id?{...x,quantity:x.quantity+1}:x):[...v,{...item}];});};
   const change=(id:string,delta:number)=>{paymentRequestId.current=crypto.randomUUID();setCart(v=>v.map(x=>x.id===id?{...x,quantity:x.quantity+delta}:x).filter(x=>x.quantity>0));};
   const received=Number(cashReceived);
   const tenderValid=Number.isFinite(received)&&cashReceived.trim()!==''&&
@@ -210,6 +259,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
     const method=paymentMode;
     const flow=method==='cash'?paymentCash:paymentCard;
     if(!method||!flow||!cart.length||busy||(method==='cash'&&!tenderValid))return;
+    if(!ageApproved&&ageCheck){setError('Age-restricted products must pass the age-verification Flow before payment.');return;}
     try {
       const result=await execute(flow,{
         cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity})),
@@ -299,6 +349,17 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
       {!(paymentMode==='cash'?paymentCash:paymentCard)&&<p role="status">Configure and permit the {paymentMode==='cash'?'AcetillPaymentCash':'AcetillPaymentCard'} Flow.</p>}
     </section>
   </div>:null;
+  if(holdMode)return <>{visualStyles}{lockedOverlay}<main className="acetill-receipt-screen" aria-label="Held sales">
+    <section className="acetill-receipt-panel"><h1>Held sales</h1>
+    {cart.length>0&&<p role="alert">Clear or hold the current sale before retrieving another.</p>}
+    {!listHeld&&<p role="status">Configure and permit AcetillListHeldCarts.</p>}
+    {heldCarts.map((entry,i)=><div key={asText(entry.HoldReference??i)}>
+      <strong>{asText(entry.Name??entry.HoldReference)}</strong>
+      <button type="button" disabled={busy||!!cart.length||!resumeHeld}
+        onClick={()=>void resumeCart(asText(entry.HoldReference))}>Resume</button></div>)}
+    {error&&<p role="alert">{error}</p>}
+    <button type="button" onClick={()=>setHoldMode(false)}>Back to till</button>
+    </section></main></>;
   if(returnMode)return <>{visualStyles}{lockedOverlay}<main className="acetill-receipt-screen" aria-label="Sales return">
     <section className="acetill-receipt-panel" style={{maxWidth:760}}>
       <h1>Sales return (SRN)</h1><p>Find a completed sale and select items to return. The server Flow validates all return limits and writes a linked negative invoice.</p>
@@ -340,7 +401,9 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
           <button type="button" className={!category?'selected':''} aria-pressed={!category} onClick={()=>setCategory('')}>All items</button>
           {categories.map(c=><button key={c.id} type="button" className={c.id===category?'selected':''} aria-pressed={c.id===category} onClick={()=>setCategory(c.id)}>{c.name}</button>)}
         </nav>
-        {lockButton}{settingsButton}{displayButton}<button type="button" onClick={openReturn}>Sales return</button>
+        {lockButton}{settingsButton}{displayButton}
+        <button type="button" disabled={!listHeld||busy} onClick={()=>void showHeld()}>Held sales</button>
+        <button type="button" onClick={openReturn}>Sales return</button>
         <label className="acetill-search" data-acetill-element="search"><span aria-hidden="true">⌕</span><input aria-label="Find products" placeholder="Search products" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       </div>
       {loading?<p role="status">Loading permitted workflows…</p>:!getProducts?<p className="acetill-state" role="status">Configure and activate the AcetillGetProducts Flow to populate your catalogue using Get Records.</p>:null}
@@ -358,6 +421,14 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
       {getProducts&&!catalogueLoading&&!shown.length&&<p className="acetill-state">No matching products returned by your Flow.</p>}
       </div>
       <div className="acetill-quick-actions" data-acetill-element="quickActions">
+        <label>Barcode <input aria-label="Barcode scanner input" value={barcode} onChange={e=>setBarcode(e.target.value)}
+          onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void scanBarcode(barcode);}}}/></label>
+        <input aria-label="Hold sale label" placeholder="Hold sale label" value={holdLabel} onChange={e=>setHoldLabel(e.target.value)}/>
+        <button type="button" disabled={!cart.length||!holdCart||busy} onClick={()=>void holdSale()}>Hold sale</button>
+        <button type="button" disabled={!ageCheck||busy||!cart.length} onClick={()=>void execute(ageCheck!,{
+          cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity}))
+        }).then(result=>{if(result.completed===true&&result.outputs?.verified===true)setAgeApproved(true);
+          else setError('Age verification was not approved.');}).catch(e=>setError(String(e))}>Verify age</button>
         {['Discount','Rewards','GiftCards','More'].map(label=>{
           const action=find(label);
           return <button key={label} type="button" disabled={!action||busy} title={!action?'Configure Acetill'+label+' Flow':undefined}
@@ -368,7 +439,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
       </div>
     </section>
     <aside className="acetill-current-order" data-acetill-element="order" aria-label="Current order">
-      <div className="acetill-order-heading" data-acetill-element="orderHeading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>{paymentRequestId.current=crypto.randomUUID();setCart([]);}}>⌫</button></div>
+      <div className="acetill-order-heading" data-acetill-element="orderHeading"><strong>Current order ({count})</strong><button type="button" aria-label="Clear order" disabled={!count||busy} onClick={()=>{paymentRequestId.current=crypto.randomUUID();setAgeApproved(false);setCart([]);}}>⌫</button></div>
       <div className="acetill-lines">{cart.length?cart.map(p=><div className="acetill-line" key={p.id}>
         <div className="acetill-line-art">{p.image?<img src={p.image} alt=""/>:<span aria-hidden="true">◻</span>}</div>
         <div className="acetill-line-details"><strong>{p.name}</strong><div className="acetill-qty">
