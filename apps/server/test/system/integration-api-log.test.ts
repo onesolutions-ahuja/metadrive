@@ -55,7 +55,7 @@ test('metadata mapping records one business Communication with the provider mess
  assert.match(String(values?.Subject),/POST 200/);
 });
 
-test('communication logging failures do not replace the provider result or leak secrets',async()=>{
+test('communication logging failures are surfaced without leaking secrets',async()=>{
  const original=console.error;
  let logged=false;
  console.error=(...args:unknown[])=>{
@@ -63,11 +63,19 @@ test('communication logging failures do not replace the provider result or leak 
   assert.doesNotMatch(args.map(String).join(' '),/secret|token|body/i);
  };
  try{
-  await writeIntegrationActivity({query:async()=>{throw new Error('database failed with secret token');}} as never,{
-   tenantId:'tenant-a',direction:'Inbound',transport:'Webhook',
-   endpoint:'/api/inbound-webhooks/example?verify_token=secret',method:'POST',
-   statusCode:503,outcome:'http_error',errorCode:'FLOW_UNAVAILABLE'
-  },async()=>{throw new Error('database failure with secret token');});
+  await assert.rejects(()=>writeIntegrationActivity(
+   {query:async()=>{throw new Error('database failed with secret token');}} as never,{
+    tenantId:'tenant-a',direction:'Outbound',transport:'HTTP',
+    endpoint:'https://provider.example/messages?access_token=secret',method:'POST',
+    statusCode:200,outcome:'success'
+   },async()=>{throw new Error('database failure with secret token');}
+  ),/could not be persisted/);
   assert.equal(logged,true);
+  await assert.rejects(()=>writeIntegrationActivity(
+   {query:async()=>({rows:[]})} as never,{
+    tenantId:'tenant-a',direction:'Outbound',transport:'HTTP',
+    endpoint:'https://provider.example/messages',method:'POST',outcome:'success'
+   }
+  ),/writer is not configured/);
  }finally{console.error=original;}
 });
