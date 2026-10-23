@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'apps/web/**'
+      - 'apps/mobile/**'
       - 'scripts/check-ui-design-tokens.mjs'
       - 'scripts/marketing-visual-smoke.mjs'
       - 'scripts/accessibility-smoke.mjs'
@@ -31,6 +32,20 @@ jobs:
         run: npm run test:components
       - name: Build frontend
         run: npm run build --workspace apps/web
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type-check native mobile app
+        run: npx tsc --noEmit --project apps/mobile/tsconfig.json
 
   marketing-browser-smoke:
     runs-on: ubuntu-latest

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,6 +50,10 @@ export default function HomeScreen() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const tenantApiUrlRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const tenantSlugRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const emailRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const passwordRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [challengeToken, setChallengeToken] = useState('');
   const [records, setRecords] = useState<CachedRecord[]>([]);
@@ -190,6 +198,16 @@ export default function HomeScreen() {
     setLoading(false);
   };
 
+  const confirmSignOut = () => {
+    const message = connection === 'offline'
+      ? 'You are offline. Clearing this device cache means records cannot be downloaded again until the connection is restored.'
+      : 'This removes the locally cached offline records from this device.';
+    Alert.alert('Sign out and clear offline data?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out and clear', style: 'destructive', onPress: () => { void signOut(); } }
+    ]);
+  };
+
   const refreshIdentity = async () => {
     if (!session) return;
     setError('');
@@ -213,6 +231,7 @@ export default function HomeScreen() {
 
   if (!session) {
     return <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardAvoiding}>
       <ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled">
         <View style={styles.brand}>
           <Text style={styles.brandMark}>M</Text>
@@ -230,6 +249,8 @@ export default function HomeScreen() {
               placeholder="Verification code"
               autoComplete="one-time-code"
               autoCapitalize="characters"
+              returnKeyType="done"
+              onSubmitEditing={() => void submitMfa()}
               accessibilityLabel="MFA verification code"
             />
             <PrimaryButton title="Verify and continue" onPress={() => void submitMfa()}
@@ -239,13 +260,19 @@ export default function HomeScreen() {
             </Pressable>
           </> : <>
             <Field label="Tenant API URL" value={apiUrl} onChangeText={setApiUrl}
+              inputRef={tenantApiUrlRef} returnKeyType="next" onSubmitEditing={() => tenantSlugRef.current?.focus()}
               placeholder="https://tenant.example.com" autoCapitalize="none" keyboardType="url" />
             <Field label="Tenant slug" value={tenantSlug} onChangeText={setTenantSlug}
+              inputRef={tenantSlugRef} returnKeyType="next" onSubmitEditing={() => emailRef.current?.focus()}
               placeholder="your-tenant" autoCapitalize="none" />
             <Field label="Email" value={email} onChangeText={setEmail}
-              placeholder="name@example.com" autoCapitalize="none" keyboardType="email-address" />
+              inputRef={emailRef} returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()}
+              placeholder="name@example.com" autoCapitalize="none" keyboardType="email-address"
+              autoComplete="email" textContentType="emailAddress" />
             <Field label="Password" value={password} onChangeText={setPassword}
-              placeholder="Password" secureTextEntry />
+              inputRef={passwordRef} placeholder="Password" secureTextEntry
+              autoComplete="current-password" textContentType="password"
+              returnKeyType="done" onSubmitEditing={() => void submitPassword()} />
             <PrimaryButton title={loading ? 'Signing in…' : 'Sign in'}
               onPress={() => void submitPassword()} disabled={loading || !apiUrl.trim() || !email.trim() || !password} />
           </>}
@@ -254,11 +281,18 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.footer}>Offline records are encrypted on this device and available read-only.</Text>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>;
   }
 
   return <SafeAreaView style={styles.safe}>
-    <ScrollView contentContainerStyle={styles.content}>
+    <FlatList
+      data={visibleRecords}
+      keyExtractor={item => `${item.objectApi}:${item.recordId}`}
+      initialNumToRender={10}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={styles.content}
+      ListHeaderComponent={<View style={styles.listHeader}>
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>METADRIVE MOBILE</Text>
@@ -273,18 +307,24 @@ export default function HomeScreen() {
       <View style={styles.actions}>
         <PrimaryButton title={syncing ? 'Syncing…' : 'Sync now'} onPress={() => void synchronize()} disabled={syncing} />
         {connection === 'offline' ? <SecondaryButton title="Retry connection" onPress={() => void refreshIdentity()} /> : null}
-        <SecondaryButton title="Sign out and clear data" onPress={() => void signOut()} disabled={syncing || loading} />
+        <SecondaryButton title="Sign out and clear data" onPress={confirmSignOut} disabled={syncing || loading} />
       </View>
 
       {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
       {notice ? <Text style={styles.notice} accessibilityRole="status">{notice}</Text> : null}
       <Text style={styles.sectionTitle}>Cached records ({records.length})</Text>
       {records.length > 0 && <TextInput style={styles.input} placeholder="Search cached records…" value={recordQuery} onChangeText={setRecordQuery} accessibilityLabel="Search offline records" autoCorrect={false} clearButtonMode="while-editing" />}
-      {records.length > 0 && visibleRecords.length === 0 && <View style={styles.empty}><Text style={styles.emptyTitle}>No matching records</Text><Text style={styles.muted}>Try another search term.</Text></View>}
-      {records.length === 0 ? <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>No offline records yet</Text>
-        <Text style={styles.muted}>Ask your administrator to configure your briefcase, then sync while online.</Text>
-      </View> : visibleRecords.map(item => <View key={`${item.objectApi}:${item.recordId}`} style={styles.recordCard}>
+      </View>}
+      ListEmptyComponent={<View style={styles.empty}>
+        {records.length === 0 ? <>
+          <Text style={styles.emptyTitle}>No offline records yet</Text>
+          <Text style={styles.muted}>Ask your administrator to configure your briefcase, then sync while online.</Text>
+        </> : <>
+          <Text style={styles.emptyTitle}>No matching records</Text>
+          <Text style={styles.muted}>Try another search term.</Text>
+        </>}
+      </View>}
+      renderItem={({ item }) => <View style={styles.recordCard}>
         <View style={styles.recordHeading}>
           <View style={styles.recordTitleBlock}>
             <Text style={styles.recordName}>{recordTitle(item)}</Text>
@@ -297,20 +337,21 @@ export default function HomeScreen() {
             <Text style={styles.recordLabel}>{name}</Text>
             <Text style={styles.recordValue}>{displayValue(value)}</Text>
           </View>)}
-      </View>)}
-      {records.length > 0 ? <Text style={styles.footer}>
+      </View>}
+      ListFooterComponent={records.length > 0 ? <Text style={styles.footer}>
         Last synced {new Date(records[0].syncedAt).toLocaleString()}. Changes are not available offline.
-      </Text> : null}
-    </ScrollView>
+      </Text> : undefined}
+    />
   </SafeAreaView>;
 }
 
-function Field({ label, ...props }: {
+function Field({ label, inputRef, ...props }: {
   label: string;
+  inputRef?: React.Ref<React.ElementRef<typeof TextInput>>;
 } & React.ComponentProps<typeof TextInput>) {
   return <View style={styles.field}>
     <Text style={styles.fieldLabel}>{label}</Text>
-    <TextInput style={styles.input} autoCorrect={false} {...props} />
+    <TextInput ref={inputRef} style={styles.input} autoCorrect={false} {...props} />
   </View>;
 }
 
@@ -338,6 +379,8 @@ function SecondaryButton({ title, onPress, disabled }: {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f4f7fb' },
+  keyboardAvoiding: { flex: 1 },
+  listHeader: { gap: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: '#f4f7fb' },
   content: { width: '100%', maxWidth: 900, alignSelf: 'center', padding: 20, paddingBottom: 40, gap: 16 },
   loginContent: { width: '100%', maxWidth: 520, alignSelf: 'center', padding: 20, paddingBottom: 40, gap: 20 },
@@ -365,7 +408,7 @@ const styles = StyleSheet.create({
   footer: { color: '#64748b', fontSize: 12, lineHeight: 18, textAlign: 'center', padding: 8 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
     paddingVertical: 10 },
-  eyebrow: { color: '#587199', fontSize: 10, letterSpacing: 1.2, fontWeight: '800' },
+  eyebrow: { color: '#587199', fontSize: 12, letterSpacing: 1.2, fontWeight: '800' },
   title: { color: '#14213d', fontSize: 25, fontWeight: '800', marginVertical: 4 },
   connectionBadge: { borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
   onlineBadge: { backgroundColor: '#e5f5eb' },
@@ -380,9 +423,9 @@ const styles = StyleSheet.create({
   recordHeading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   recordTitleBlock: { flex: 1, gap: 4 },
   recordName: { color: '#14213d', fontSize: 16, fontWeight: '700' },
-  recordMeta: { color: '#64748b', fontSize: 11 },
-  readOnly: { color: '#46618c', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
+  recordMeta: { color: '#64748b', fontSize: 12 },
+  readOnly: { color: '#46618c', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
   recordField: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#e6ebf2', paddingTop: 8, gap: 3 },
-  recordLabel: { color: '#64748b', fontSize: 11, fontWeight: '600' },
+  recordLabel: { color: '#64748b', fontSize: 12, fontWeight: '600' },
   recordValue: { color: '#25344b', fontSize: 13, lineHeight: 18 }
 });
