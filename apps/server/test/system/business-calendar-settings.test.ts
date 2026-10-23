@@ -70,3 +70,26 @@ test('business calendar rejects invalid timezone, hours and holiday dates before
  }),/holiday/);
  assert.equal(transactions,0);
 });
+
+test('saved business hours read back only under the same authenticated tenant',async()=>{
+ const settings=new Map<string,unknown>();
+ const query=async(sql:string,args:unknown[]=[]):Promise<{rows:Array<{properties:unknown}>;rowCount:number}>=>{
+  if(sql.includes('INSERT INTO md_tenant_settings')){
+   const properties=JSON.parse(String(args[1])) as unknown;
+   settings.set(String(args[0]),properties);
+   return {rows:[{properties}],rowCount:1};
+  }
+  if(sql.includes('SELECT properties FROM md_tenant_settings')){
+   const value=settings.get(String(args[0]));
+   return {rows:value?[{properties:value}]:[],rowCount:value?1:0};
+  }
+  return {rows:[],rowCount:0};
+ };
+ const db={query,transaction:async<T>(run:(client:{query:typeof query})=>Promise<T>)=>run({query})}
+  as unknown as SqlPersistence;
+ const rbac={allowed:async()=>true,require:async()=>undefined} as unknown as RbacEngine;
+ const service=new PlatformTenantService(db,rbac);
+ assert.deepEqual(await service.saveSetting('tenant-one','user-one','business-calendar',calendar),calendar);
+ assert.deepEqual(await service.getBusinessCalendar('tenant-one','user-one'),calendar);
+ assert.equal(await service.getBusinessCalendar('tenant-two','user-two'),null);
+});
