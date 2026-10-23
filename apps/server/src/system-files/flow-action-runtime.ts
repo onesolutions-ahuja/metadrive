@@ -1,3 +1,4 @@
+import {randomInt} from 'node:crypto';
 import {executeCustomActionBridgeNode} from './nodes/CustomActionBridgeNode.js';
 import {template,uuid,scalar,type ActionContext} from './nodes/ActionNodeShared.js';
 import type {PoolClient} from 'pg';
@@ -176,11 +177,22 @@ export async function submitFlowStageApproval(context:ActionContext):Promise<str
  return submitForApproval(context);
 }
 
+function generateFlowOtp(context:ActionContext,digits:4|6):void {
+ const outputVariable=context.config.outputVariable;
+ if(typeof outputVariable!=='string'||!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(outputVariable))
+  throw new Error('Generate Random OTP requires a valid output variable name');
+ // randomInt uses Node's cryptographically secure system RNG. Keep the OTP as
+ // text so leading zeroes survive Flow assignment, templates and email delivery.
+ context.variables[outputVariable]=randomInt(0,10**digits).toString().padStart(digits,'0');
+}
+
 export async function executeFlowAction(context:ActionContext):Promise<number|undefined> {
  const savepoint='flow_action_'+context.elementId;
  await context.client.query('SAVEPOINT '+savepoint);
  try {
-  if(context.config.actionType==='Custom Notification')await sendCustomNotification(context);
+  if(context.config.actionType==='Generate 4-Digit Random OTP')generateFlowOtp(context,4);
+  else if(context.config.actionType==='Generate 6-Digit Random OTP')generateFlowOtp(context,6);
+  else if(context.config.actionType==='Custom Notification')await sendCustomNotification(context);
   else if(context.config.actionType==='Create Task')await createTask(context);
   else if(context.config.actionType==='Post to Chatter')await postToChatter(context);
   else if(context.config.actionType==='Quick Actions')await executeQuickActionNode(context);
