@@ -176,6 +176,8 @@ test('Ace Assist document lines edit under the parent with server-calculated tot
   assert.match(runtime,/startEdit\('Update',line,current\.object\+'Line',true\)/);
   assert.match(runtime,/startEdit\('Delete',line,current\.object\+'Line',true\)/);
   assert.match(runtime,/financialLinesLocked/);
+  const navigation=runtime.slice(runtime.indexOf('const tabs:'),runtime.indexOf('const inputFields:'));
+  assert.doesNotMatch(navigation,/QuotationLine|InvoiceLine/);
   assert.match(runtime,/editingTarget\?\.Id/);
   assert.match(runtime,/setChosen\(previous=>previous\?data\.find/);
   assert.match(runtime,/AceAssistCreateV2/);
