@@ -63,7 +63,7 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
    {currentSection && <div className={"company-workspace-body company-workspace-section-"+currentSection}>
      {/* CompanySettings currently contains both company details and currency sections.
          Render it once, avoiding duplicate state and network requests. */}
-     {(currentSection==='general'||currentSection==='currency'||currentSection==='business'||currentSection==='contacts'||currentSection==='branding')&&company}
+     {(currentSection==='general'||currentSection==='currency'||currentSection==='contacts'||currentSection==='branding')&&company}
      {currentSection==='integrations'&&<section className="company-workspace-stack">{domains}{developer}</section>}
      {currentSection==='security'&&<section className="company-workspace-stack">{mfa}{emailRecovery}{locks}{sessions}{recovery}{audit}</section>}
      {currentSection==='business'&&<div className="company-workspace-secondary">
