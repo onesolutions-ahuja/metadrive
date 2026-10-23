@@ -335,7 +335,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
-     {hours?'Business hours · '+hours.timezone:'Business hours unavailable'}
+     {hours?'Business hours · '+hours.timezone:hoursError?'Business hours request failed':'Business hours not configured'}
      {hoursError&&' · '+hoursError}
     </p>}
     {!loaded.has(current.object.toLowerCase())&&<p className="custom-empty">Object unavailable to this user.</p>}
@@ -347,7 +347,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
       return <div className="custom-day" key={date} aria-label={date}>
        <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong>
        <small>{date.slice(8)}</small>
-       <small>{window?window.open+'–'+window.close:'Closed / holiday'}</small>
+       <small>{!hours?'Hours unavailable':window?window.open+'–'+window.close:'Closed / holiday'}</small>
        {rows.filter(row=>String(row.StartDateTime??'').slice(0,10)===date)
         .map((row,i)=><button key={String(row.Id??i)} type="button" className="custom-visit"
         onClick={()=>setChosen(row)}>{title(row)}
