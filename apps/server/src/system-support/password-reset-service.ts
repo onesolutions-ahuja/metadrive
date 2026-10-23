@@ -52,9 +52,8 @@ export class PasswordResetService {
   const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
    .replaceAll('{!Verification.Value}',verification)
    .replaceAll('{!Verification.ExpiryMinutes}','15');
-  try {await this.send(tenantId,setting.smtp_credential_id,setting.from_email,email,
-    subject,rendered);}
-  catch(error){
+  try {await this.send(tenantId,'','',email,subject,rendered);}
+  catch{
    await this.db.query('DELETE FROM md_password_reset_challenges WHERE tenant_id=$1 AND token_hash=$2',
     [tenantId,digest(token)]);
    // Keep account existence private even when platform SMTP is unavailable.
