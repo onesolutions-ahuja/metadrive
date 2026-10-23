@@ -222,6 +222,10 @@ export default function BusinessCalendarSettings({ request, permitted }: {
         </button>}
         {!editing && <button type="button" className="btn" disabled={loading}
           onClick={() => setRevision(value => value + 1)}><RefreshCw size={14} /> Refresh</button>}
+        {editing && <button type="submit" form="business-calendar-form" className="btn btn-primary"
+          disabled={saving || loading || !loaded}>
+          <Check size={14} /> {saving ? 'Saving…' : 'Save business hours'}
+        </button>}
       </div>
     </header>
     {loading && <p role="status">Loading business calendar…</p>}
@@ -233,7 +237,7 @@ export default function BusinessCalendarSettings({ request, permitted }: {
         The times shown below are suggestions only. Select <strong>Save business hours</strong>
         to store them for Ace Assist.
       </p>}
-    <form noValidate onSubmit={(event) => void save(event)}>
+    <form noValidate onSubmit={(event) => void save(event)} id="business-calendar-form">
       <div className="business-calendar-options">
         <label>Fiscal year starts
           {editing ? <span><select required aria-label="Fiscal year start month" value={calendar.fiscalYearStart.month}
