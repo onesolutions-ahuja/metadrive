@@ -170,7 +170,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
   // Re-fetch the authenticated tenant's settings when the app is revisited.
   const onVisible=()=>{if(document.visibilityState==='visible')setHoursReload(n=>n+1);};
   document.addEventListener('visibilitychange',onVisible);
-  return()=>document.removeEventListener('visibilitychange',onVisible);
+  const onCalendarSaved=()=>setHoursReload(n=>n+1);
+  window.addEventListener('metadrive:business-calendar-saved',onCalendarSaved);
+  return()=>{
+   document.removeEventListener('visibilitychange',onVisible);
+   window.removeEventListener('metadrive:business-calendar-saved',onCalendarSaved);
+  };
  },[]);
  const fetchRows=async(operation:'Load',object:string)=>{
   const api='AceAssist'+operation+object;

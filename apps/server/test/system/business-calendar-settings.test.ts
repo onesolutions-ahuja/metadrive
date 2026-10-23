@@ -24,7 +24,12 @@ test('business calendar is validated, tenant-scoped, and audited transactionally
   rows:sql.includes('RETURNING properties')?[{properties:JSON.parse(String(args[1]))}]:[],rowCount:1
  })};
  const db={
-  transaction:async<T>(run:(client:typeof txClient)=>Promise<T>)=>run(txClient)
+  transaction:async<T>(run:(client:typeof txClient)=>Promise<T>)=>run(txClient),
+  query:async(sql:string,args:unknown[]=[])=>{
+   assert.match(sql,/SELECT properties FROM md_tenant_settings/);
+   assert.deepEqual(args,['tenant-1']);
+   return {rows:[{properties:calendar}],rowCount:1};
+  }
  } as unknown as SqlPersistence;
  const grants:Array<string>=[];
  const rbac={require:async(_tenant:string,_user:string,resource:string,action:string)=>{
@@ -91,4 +96,34 @@ test('saved business hours read back only under the same authenticated tenant',a
  assert.deepEqual(await service.saveSetting('tenant-one','user-one','business-calendar',calendar),calendar);
  assert.deepEqual(await service.getBusinessCalendar('tenant-one','user-one'),calendar);
  assert.equal(await service.getBusinessCalendar('tenant-two','user-two'),null);
+});
+
+test('calendar save never claims success when the committed tenant row is missing',async()=>{
+ const query=async(sql:string,args:unknown[]=[])=>({
+  rows:sql.includes('RETURNING properties')?[{properties:JSON.parse(String(args[1]))}]:[],
+  rowCount:sql.includes('RETURNING properties')?1:0
+ });
+ const db={
+  transaction:async<T>(run:(client:{query:typeof query})=>Promise<T>)=>run({query}),
+  query:async()=>({rows:[],rowCount:0})
+ } as unknown as SqlPersistence;
+ const service=new PlatformTenantService(db,{
+  require:async()=>undefined
+ } as unknown as RbacEngine);
+ await assert.rejects(()=>service.saveSetting('tenant-1','user-1','business-calendar',calendar),
+  /not confirmed after commit/);
+});
+
+test('calendar save rejects a changed result before falsely confirming',async()=>{
+ const query=async(sql:string,args:unknown[]=[])=>({
+  rows:sql.includes('RETURNING properties')?
+   [{properties:{...calendar,timezone:'UTC'}}]:[],rowCount:1
+ });
+ const db={
+  transaction:async<T>(run:(client:{query:typeof query})=>Promise<T>)=>run({query}),
+  query:async()=>({rows:[{properties:calendar}],rowCount:1})
+ } as unknown as SqlPersistence;
+ const service=new PlatformTenantService(db,{require:async()=>undefined} as unknown as RbacEngine);
+ await assert.rejects(()=>service.saveSetting('tenant-1','user-1','business-calendar',calendar),
+  /unexpected settings/);
 });
