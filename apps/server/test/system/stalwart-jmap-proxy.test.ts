@@ -51,6 +51,8 @@ test('JMAP proxy requires mailbox Basic auth and does not proxy unknown paths',a
 
 test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint without adding a management key',async()=>{
  const originalFetch=globalThis.fetch;
+ const originalBase=process.env.STALWART_BASE_URL;
+ process.env.STALWART_BASE_URL='http://127.0.0.1:8080';
  let capturedUrl='';let capturedAuthorization='';let capturedContentType='';let capturedBody='';
  globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{
   capturedUrl=String(input);
@@ -74,5 +76,8 @@ test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint withou
    assert.equal(capturedContentType,'application/json');
    assert.equal(capturedBody,'{"methodCalls":[]}');
   });
- }finally{globalThis.fetch=originalFetch;}
+ }finally{
+  globalThis.fetch=originalFetch;
+  if(originalBase===undefined)delete process.env.STALWART_BASE_URL;else process.env.STALWART_BASE_URL=originalBase;
+ }
 });
