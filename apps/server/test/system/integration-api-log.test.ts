@@ -55,27 +55,29 @@ test('metadata mapping records one business Communication with the provider mess
  assert.match(String(values?.Subject),/POST 200/);
 });
 
-test('communication logging failures are surfaced without leaking secrets',async()=>{
+test('communication logging failures do not replace provider results or leak secrets',async()=>{
  const original=console.error;
- let logged=false;
+ const diagnostics:string[]=[];
  console.error=(...args:unknown[])=>{
-  logged=true;
-  assert.doesNotMatch(args.map(String).join(' '),/secret|token|body/i);
+  const message=args.map(String).join(' ');
+  diagnostics.push(message);
+  assert.doesNotMatch(message,/secret|token|access_token|database failure/i);
  };
  try{
-  await assert.rejects(()=>writeIntegrationActivity(
+  await assert.doesNotReject(()=>writeIntegrationActivity(
    {query:async()=>{throw new Error('database failed with secret token');}} as never,{
     tenantId:'tenant-a',direction:'Outbound',transport:'HTTP',
     endpoint:'https://provider.example/messages?access_token=secret',method:'POST',
     statusCode:200,outcome:'success'
    },async()=>{throw new Error('database failure with secret token');}
-  ),/could not be persisted/);
-  assert.equal(logged,true);
-  await assert.rejects(()=>writeIntegrationActivity(
+  ));
+  assert.match(diagnostics.join(' '),/Integration Communication write failed/);
+  await assert.doesNotReject(()=>writeIntegrationActivity(
    {query:async()=>({rows:[]})} as never,{
     tenantId:'tenant-a',direction:'Outbound',transport:'HTTP',
     endpoint:'https://provider.example/messages',method:'POST',outcome:'success'
    }
-  ),/writer is not configured/);
+  ));
+  assert.match(diagnostics.join(' '),/WriterNotConfigured/);
  }finally{console.error=original;}
 });
