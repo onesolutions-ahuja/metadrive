@@ -108,11 +108,28 @@ export async function recalculateDocumentLineTotals(context:FlowNodeContext,raw:
  parentId:string):Promise<void>{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Invalid line totals Flow guard');
  const m=raw as unknown as LineMutationMapping;
- const lines=await readLines(context,String(context.node.config.object),m.parentField,parentId);
- const totals=lines.length?validatedLines(lines,m):{subtotal:0,discount:0,tax:0,total:0};
+ const lineObject=String(context.node.config.object);
+ const lines=await readLines(context,lineObject,m.parentField,parentId);
+ if(lines.length>200)throw Error('Financial document exceeds 200 lines');
+ const totals={subtotal:0,discount:0,tax:0,total:0};
+ for(const row of lines){
+  const amount=lineAmount(row,m);
+  totals.subtotal+=Math.round(amount.subtotal*100);
+  totals.discount+=Math.round(amount.discount*100);
+  totals.tax+=Math.round(amount.tax*100);
+  totals.total+=Math.round(amount.total*100);
+  if(Object.values(totals).some(n=>!Number.isSafeInteger(n)||n>100000000000))
+   throw Error('Financial document exceeds supported amount');
+  const stored=cents(row[m.lineTotalField],'Line Total',true);
+  if(stored!==Math.round(amount.total*100)){
+   if(typeof row.Id!=='string')throw Error('Financial line has no record ID');
+   await context.records.update(context.tenantId,context.userId,lineObject,row.Id,
+    {[m.lineTotalField]:amount.total},undefined,context.client);
+  }
+ }
  await context.records.update(context.tenantId,context.userId,m.parentObject,parentId,{
-  [m.subtotalField]:totals.subtotal,[m.discountTotalField]:totals.discount,
-  [m.taxTotalField]:totals.tax,[m.totalField]:totals.total
+  [m.subtotalField]:totals.subtotal/100,[m.discountTotalField]:totals.discount/100,
+  [m.taxTotalField]:totals.tax/100,[m.totalField]:totals.total/100
  },undefined,context.client);
 }
 
