@@ -1,0 +1,19 @@
+name: Mail public DNS diagnostics (read-only)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/oracle/public-mail-dns-check.mjs
+      - .github/workflows/mail-public-dns-check.yml
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/oracle/public-mail-dns-check.mjs
