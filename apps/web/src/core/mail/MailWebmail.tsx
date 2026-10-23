@@ -148,8 +148,8 @@ export default function MailWebmail(){
   }catch(e){setError(e instanceof Error?e.message:'Message could not be sent');}
   finally{setBusy(false);}
  };
- const saveDraft=async(event:React.FormEvent)=>{
-  event.preventDefault();setBusy(true);setError('');setNotice('');
+ const saveDraft=async()=>{
+  setBusy(true);setError('');setNotice('');
   try{
    if(!session||!auth)throw new Error('Please sign in to your mailbox.');
    const sender=identities[0];if(!sender)throw new Error('No sending identity is configured for this mailbox.');
@@ -204,7 +204,7 @@ export default function MailWebmail(){
       <label style={{display:'grid',gap:6,marginBottom:12}}>Message<textarea style={{...input,minHeight:220,resize:'vertical'}} required value={body} onChange={e=>setBody(e.target.value)}/></label>
       <label style={{display:'grid',gap:6,marginBottom:12}}>Attachments (20 MB total maximum)<input style={input} type="file" multiple onChange={e=>setFiles(Array.from(e.target.files??[]))}/></label>
       {files.length>0&&<ul>{files.map((file,index)=><li key={file.name+index}>{file.name} ({Math.ceil(file.size/1024)} KB)</li>)}</ul>}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button style={{...button,background:'#183b60',color:'#fff'}} disabled={busy}>{busy?'Sending…':'Send'}</button><button type="button" style={button} disabled={busy} onClick={e=>void saveDraft(e as unknown as React.FormEvent)}>Save draft</button><button type="button" style={button} onClick={()=>{setCompose(false);setFiles([]);}}>Cancel</button></div>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button style={{...button,background:'#183b60',color:'#fff'}} disabled={busy}>{busy?'Sending…':'Send'}</button><button type="button" style={button} disabled={busy} onClick={()=>void saveDraft()}>Save draft</button><button type="button" style={button} onClick={()=>{setCompose(false);setFiles([]);}}>Cancel</button></div>
     </form>:selected?<article><div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><h2 style={{margin:'0 0 12px',overflowWrap:'anywhere'}}>{selected.subject||'(no subject)'}</h2><div style={{display:'flex',gap:6,flexWrap:'wrap'}}><button style={button} onClick={()=>reply(selected)}>Reply</button><button style={button} onClick={()=>forward(selected)}>Forward</button></div></div>
       <p style={{fontSize:13,color:'#60768b',overflowWrap:'anywhere'}}>From: {selected.from?.map(x=>x.name?x.name+' <'+x.email+'>':x.email).join(', ')||'Unknown sender'}</p>
       <p style={{fontSize:13,color:'#60768b',overflowWrap:'anywhere'}}>To: {selected.to?.map(x=>x.email).join(', ')||email}</p>
