@@ -117,6 +117,17 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
  assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
   &&call.params[1]==='Communication.Sender'&&call.params[2]==='read'),true,
   'the Flow needs field-level read permission for sender-number filtering');
+ assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
+  &&call.sql.includes("p.api_name='OneEngine'")
+  &&call.params[1]==='Flow:AceChatterLoadCommunications'&&call.params[2]==='execute'),true,
+  'OneEngine should have the default execute grant for the Communication inbox Flow');
+ assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_rules')
+  &&call.sql.includes("p.api_name='OneEngine'")
+  &&call.params[1]==='Communication'&&call.params[2]==='read'),true,
+  'OneEngine should have the default read grant for Communication records');
+ assert.equal(seen.some(call=>call.sql.includes('INSERT INTO md_permission_assignments')
+  ||call.sql.includes('INSERT INTO md_role_permission_sets')),false,
+  'the app seeder must not assign OneEngine to users or roles');
 });
 
 test('reconcile known AceChatter send Flow to central Communication logging without changing its callout',async()=>{

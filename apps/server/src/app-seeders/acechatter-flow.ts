@@ -354,6 +354,17 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
   SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
   WHERE p.tenant_id=$1 AND p.api_name='AceChatterUser'
   ON CONFLICT DO NOTHING`,[tenantId,resource,action]);
+ const oneEngineCommunicationRights=[
+  ['Flow:AceChatterLoadCommunications','execute'],
+  ['Communication','read'],
+  ...['Name','Channel','Direction','Status','Sender','Recipient','Body','ExternalMessageId',
+   'ReceivedAt','SentAt','Provider'].map(field=>['Communication.'+field,'read'])
+ ];
+ for(const [resource,action] of oneEngineCommunicationRights)await client.query(`
+  INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect)
+  SELECT $1,p.id,$2,$3,'allow' FROM md_permission_sets p
+  WHERE p.tenant_id=$1 AND p.api_name='OneEngine'
+  ON CONFLICT DO NOTHING`,[tenantId,resource,action]);
  await reconcileAceChatterLoadCommunicationsFlow(client,tenantId);
  await reconcileAceChatterCredentialFlow(client,tenantId);
  await reconcileAceChatterCommunicationFlow(client,tenantId);
