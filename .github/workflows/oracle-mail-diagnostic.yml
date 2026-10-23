@@ -20,3 +20,8 @@ jobs:
         run: |
           python3 -m py_compile scripts/oracle/check-mail-runtime.py
           sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-mail-runtime.py
+
+      - name: Check inbound SMTP and outgoing delivery prerequisites (read-only)
+        run: |
+          python3 -m py_compile scripts/oracle/check-mail-delivery.py
+          sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-mail-delivery.py
