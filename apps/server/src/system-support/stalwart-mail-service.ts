@@ -63,12 +63,33 @@ export class StalwartMailService {
  }
  async listMailboxes(tenantId:string){
   if(!uuid.test(tenantId))throw new Error('Invalid tenant identifier');
-  const query=responseObject(await this.call('x:Account/query',{filter:{memberTenantId:tenantId},limit:200}),'x:Account/query');
-  const ids=Array.isArray(query.ids)?query.ids.filter((id):id is string=>typeof id==='string'):[];
-  if(!ids.length)return [];
-  const get=responseObject(await this.call('x:Account/get',{ids}),'x:Account/get');
-  const list=Array.isArray(get.list)?get.list:[];
-  return list.map(object).filter(item=>item.memberTenantId===tenantId&&typeof item.id==='string')
+  const domains=await this.listDomains();
+  const ids:string[]=[];
+  const pageSize=500;
+  for(const domain of domains){
+   let position=0;
+   for(let page=0;page<20;page++){
+    const query=responseObject(await this.call('x:Account/query',{
+     filter:{domainId:domain.id},position,limit:pageSize
+    }),'x:Account/query');
+    const pageIds=Array.isArray(query.ids)?query.ids.filter((id):id is string=>typeof id==='string'):[];
+    ids.push(...pageIds);
+    if(pageIds.length<pageSize)break;
+    position+=pageIds.length;
+    if(page===19)throw new Error('Mailbox listing exceeded the safe pagination limit');
+   }
+  }
+  const rows:MailObject[]=[];
+  // Keep each get request bounded. The account query is domain-scoped and the final
+  // ownership check uses an integration-owned externalId marker, not a user-supplied filter.
+  for(let offset=0;offset<ids.length;offset+=100){
+   const get=responseObject(await this.call('x:Account/get',{
+    ids:ids.slice(offset,offset+100),
+    properties:['id','name','domainId','emailAddress','description','quotas','usedDiskQuota','createdAt','externalId','credentials']
+   }),'x:Account/get');
+   rows.push(...(Array.isArray(get.list)?get.list.map(object):[]));
+  }
+  return rows.filter(item=>item.externalId==='metadrive:'+tenantId&&typeof item.id==='string')
    .map(item=>({id:item.id as string,emailAddress:typeof item.emailAddress==='string'?item.emailAddress:'',
     name:typeof item.name==='string'?item.name:'',domainId:typeof item.domainId==='string'?item.domainId:'',
     description:typeof item.description==='string'?item.description:'',quotas:item.quotas??{},
@@ -90,7 +111,7 @@ export class StalwartMailService {
   if(!domains.some(domain=>domain.id===domainId&&domain.isEnabled))
    throw new Error('Mail domain not found or disabled');
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
-   '@type':'User',name,domainId,description,memberTenantId:tenantId,
+   '@type':'User',name,domainId,description,externalId:'metadrive:'+tenantId,
    credentials:[{'@type':'Password',secret:password}],
    memberGroupIds:{},roles:{'@type':'User'},permissions:{'@type':'Inherit'},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
