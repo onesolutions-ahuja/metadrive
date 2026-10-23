@@ -50,7 +50,7 @@ function conversionGraph(){
     {field:'Total',value:'{!quotation.Total}'}]}),
   node(8,'Loop','Copy authorised quotation lines',{
    collection:'quotationLines',loopVariable:'quotationLine',direction:'First to last'}),
-  node(9,'Create Records','Create invoice line',{object:'InvoiceLine',recordSource:'fields',
+  node(9,'Create Records','Create invoice line',{object:'InvoiceLine',recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']},
    fieldValues:[
     {field:'Name',value:'{!quotationLine.Name}'},
     {field:'Invoice',value:'{!record7.Id}'},
@@ -129,7 +129,7 @@ function appointmentInvoiceGraph(){
     {field:'Subtotal',value:'{!service.Price}'},
     {field:'Total',value:'{!service.Price}'}]}),
   node(6,'Create Records','Create billed service line',{object:'InvoiceLine',
-   recordSource:'fields',fieldValues:[
+   recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']},fieldValues:[
     {field:'Name',value:'{!service.Name}'},
     {field:'Invoice',value:'{!record5.Id}'},
     {field:'Product',value:'{!service.Id}'},
