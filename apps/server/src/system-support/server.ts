@@ -16,6 +16,7 @@ import {finishFlowOrchestrationDecision} from '../system-files/flow-orchestratio
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
 import {seedCartObjectsForExistingTenants} from '../app-seeders/cart-objects.js';
 import {seedQuotationObjectsForExistingTenants} from '../app-seeders/core-quotation-objects.js';
+import {seedLocationSrnForExistingTenants} from '../app-seeders/core-location-srn.js';
 import {seedAppointmentObjectsForExistingTenants} from '../app-seeders/core-appointment-objects.js';
 import {seedCommunicationObjectsForExistingTenants} from '../app-seeders/core-communication-objects.js';
 import {seedAcetillLockFlows} from '../app-seeders/acetill-lock-flow.js';
@@ -2262,6 +2263,7 @@ export async function startSystemServer() {
     await seedAcetillLockFlows(db);
     await seedAceChatterFlows(db); // Installed, licensed tenants only; preserve custom Flows.
     await seedQuotationObjectsForExistingTenants(db);
+    await seedLocationSrnForExistingTenants(db);
     await seedAppointmentObjectsForExistingTenants(db);
     await seedAceAssistCrudFlows(db); // Installed tenants only; preserves edited Flow metadata.
     await seedCommunicationObjectsForExistingTenants(db);
