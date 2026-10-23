@@ -24,7 +24,7 @@ function plainTextToHtml(value:string){return value.replace(/[&<>"]/g,ch=>({'&':
 function bytesToB64(bytes:Uint8Array){let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(binary);}
 function safeFilename(value:string){return value.replace(/[\\\"\r\n]/g,'_').replace(/[^\x20-\x7E]/g,'_').slice(0,180)||'attachment';}
 async function buildRawMessage(sender:Identity,recipient:string,subject:string,body:string,files:File[]){
- const headers='From: '+safeHeader(sender.name?sender.name+' <'+sender.email+'>':sender.email)+'\r\nTo: '+safeHeader(recipient)+'\r\nSubject: =?UTF-8?B?'+b64(safeHeader(subject))+'?=\r\nMIME-Version: 1.0\r\n';
+ const headers='From: '+safeHeader(sender.name?sender.name+' <'+sender.email+'>':sender.email)+'\r\n'+(recipient.trim()?'To: '+safeHeader(recipient)+'\r\n':'')+'Subject: =?UTF-8?B?'+b64(safeHeader(subject))+'?=\r\nMIME-Version: 1.0\r\n';
  if(!files.length)return headers+'Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+plainTextToHtml(body);
  const boundary='----MetaDrive-'+Date.now().toString(16);
  let raw=headers+'Content-Type: multipart/mixed; boundary="'+boundary+'"\r\n\r\n--'+boundary+'\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+body+'\r\n';
