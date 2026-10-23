@@ -116,16 +116,19 @@ export function createIntegrationCommunicationWriter(
  };
 }
 
-/** Best-effort shared entrypoint. It never changes the remote provider's actual result. */
+/** Required central writer. Missing configuration or failed persistence must be visible to the caller. */
 export async function writeIntegrationActivity(
  _db:SqlPersistence,input:IntegrationActivityInput,writer?:IntegrationActivityWriter
 ):Promise<void>{
- if(!writer)return;
- try{await writer(normalized(input));}
- catch(error){
+ if(!writer)throw new Error('Central Communication writer is not configured');
+ try{
+  await writer(normalized(input));
+ }catch(error){
+  // Do not include endpoint, credentials, request data, or provider error text in diagnostics.
   console.error('Integration Communication write failed',JSON.stringify({
    direction:input.direction,transport:input.transport??'HTTP',
    error:error instanceof Error?error.name:'UnknownError'
   }));
+  throw new Error('Integration Communication record could not be persisted');
  }
 }
