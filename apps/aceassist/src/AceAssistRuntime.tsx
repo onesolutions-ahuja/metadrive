@@ -589,7 +589,34 @@ export default function AceAssistRuntime({entry,onLogout}:{
      <ArrowLeft size={19}/> Back to {current.label}</button>
     <div className="custom-panel-title"><h2>{isFinancialDocument(current.object)?current.object:'Record'} details</h2>
      <span>OneEngine</span></div>
-    {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
+    {chosen?<><section className="assist-phone-detail-card" aria-label="Selected record">
+      <span className="assist-phone-eyebrow">{current.label} / DETAILS</span>
+      <div className="assist-phone-detail-title">
+       <h1>{current.object==='Appointment'?calendarCustomer(chosen):
+        current.object==='Customer'?String(chosen.Name??'Client'):
+        String(chosen.InvoiceNumber??chosen.QuotationNumber??chosen.Name??current.object)}</h1>
+       {chosen.Status!=null&&<span className="assist-phone-status">
+        {String(chosen.Status)}</span>}
+      </div>
+      <dl>
+       {current.object==='Appointment'&&<>
+        <div><dt>Service</dt><dd>{String(chosen.ServiceName??chosen.Service??'Appointment')}</dd></div>
+        <div><dt>Start</dt><dd>{displayStart(chosen.StartDateTime).replace('T',' · ')||'—'}</dd></div>
+        <div><dt>End</dt><dd>{displayStart(chosen.EndDateTime).replace('T',' · ')||'—'}</dd></div>
+       </>}
+       {current.object==='Customer'&&<>
+        <div><dt>Phone</dt><dd>{show(chosen.Phone)}</dd></div>
+        <div><dt>Email</dt><dd>{show(chosen.Email)}</dd></div>
+       </>}
+       {isFinancialDocument(current.object)&&<>
+        <div><dt>Customer</dt><dd>{String(lookupRows.Customer?.find(row=>
+         idOf(row)===String(chosen.Customer??''))?.Name??'—')}</dd></div>
+        <div><dt>Total</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.Total)}</dd></div>
+        {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
+       </>}
+      </dl>
+     </section>
+     <dl className="assist-raw-details">{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
       {isFinancialDocument(current.object)&&<section className="assist-related-list">
        <h3>Line items</h3>
