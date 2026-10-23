@@ -29,7 +29,7 @@ async function buildRawMessage(sender:Identity,recipient:string,subject:string,b
  let raw=headers+'Content-Type: multipart/mixed; boundary="'+boundary+'"\r\n\r\n--'+boundary+'\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+body+'\r\n';
  for(const file of files){
   const encoded=bytesToB64(new Uint8Array(await file.arrayBuffer())).replace(/.{1,76}/g,'$&\r\n');
-  const filename=safeFilename(file.name);const type=/^[\w!#export default function MailWebmail(){^_.+-]+\/[\w!#export default function MailWebmail(){^_.+-]+$/.test(file.type)?file.type:'application/octet-stream';
+  const filename=safeFilename(file.name);const type=/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+$/.test(file.type)?file.type:'application/octet-stream';
   raw+='--'+boundary+'\r\nContent-Type: '+type+'; name="'+filename+'"\r\nContent-Disposition: attachment; filename="'+filename+'"\r\nContent-Transfer-Encoding: base64\r\n\r\n'+encoded+'\r\n';
  }
  return raw+'--'+boundary+'--\r\n';
