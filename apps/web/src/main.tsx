@@ -19,9 +19,7 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 // Keep the authenticated workspace, including its large builder code and CSS,
 // out of the initial public marketing bundle.
 const Workspace = lazy(async () => {
-  await Promise.all([
-    import('./core/workspace/WorkspaceTheme/styles.css'), import('./core/workspace/WorkspaceTheme/styles-part2.css'), import('./core/workspace/WorkspaceTheme/styles-audit.css')
-  ]);
+  await import('./core/workspace/WorkspaceTheme/styles.css');
   return import('./core/workspace/App/App');
 });
 
