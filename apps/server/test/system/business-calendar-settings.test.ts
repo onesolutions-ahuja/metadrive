@@ -85,7 +85,7 @@ test('saved business hours read back only under the same authenticated tenant',a
   }
   return {rows:[],rowCount:0};
  };
- const db={query,transaction:async<T>(run:(client:{query:typeof query})=>Promise<T>)=>run({query})}
+ const db=({query,transaction:async<T>(run:(client:{query:typeof query})=>Promise<T>)=>run({query})})
   as unknown as SqlPersistence;
  const rbac={allowed:async()=>true,require:async()=>undefined} as unknown as RbacEngine;
  const service=new PlatformTenantService(db,rbac);
