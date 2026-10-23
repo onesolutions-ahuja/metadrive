@@ -28,6 +28,7 @@ import {seedAceChatterAppCatalog} from '../app-seeders/acechatter-app-catalog.js
 import {seedConnectorAppCatalog} from '../app-seeders/connector-apps.js';
 import {seedAceChatterFlows} from '../app-seeders/acechatter-flow.js';
 import {seedAceAssistCrudFlows} from '../app-seeders/aceassist-crud-flows.js';
+import {seedStalwartMailPermissions} from '../app-seeders/stalwart-mail.js';
 import {reconcileCoreObjectDefaults} from '../app-seeders/core-object-defaults.js';
 import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
 import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
@@ -2247,6 +2248,8 @@ export async function startSystemServer() {
     await seedAceChatterAppCatalog(db); // Catalog only; app installation is explicit.
     await seedConnectorAppCatalog(db); // Headless connector apps. No auto licence or install.
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
+    const mailPermissionTenants=await seedStalwartMailPermissions(db);
+    console.info('MailAdmin permission set seeded for tenants:',mailPermissionTenants);
     await seedCartObjectsForExistingTenants(db);
     await seedAceKioskMenuFlows(db);
     await seedAceKioskProductOptions(db);
