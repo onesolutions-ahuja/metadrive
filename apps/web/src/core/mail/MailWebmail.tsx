@@ -83,9 +83,9 @@ export default function MailWebmail(){
    const id=discovered.primaryAccounts?.[mail]??Object.keys(discovered.accounts??{})[0];
    if(!id)throw new Error('This mailbox has no mail account access.');
    const advertisedUpload=new URL(discovered.uploadUrl.replace('{accountId}',encodeURIComponent(id)),discovery);
-   const advertisedDownload=new URL(discovered.downloadUrl.replace('{accountId}',encodeURIComponent(id)).replace('{blobId}','MD_BLOB_PLACEHOLDER').replace('{name}','MD_NAME_PLACEHOLDER'),discovery);
+   const advertisedDownload=new URL(discovered.downloadUrl.replace('{accountId}',encodeURIComponent(id)).replace('{blobId}','MD_BLOB_PLACEHOLDER').replace('{name}','MD_NAME_PLACEHOLDER').replace('{type}','MD_TYPE_PLACEHOLDER'),discovery);
    const preparedSession={...discovered,apiUrl,uploadUrl:new URL('mail-jmap'+advertisedUpload.pathname,apiRoot).href,
-    downloadUrl:(new URL('mail-jmap'+advertisedDownload.pathname,apiRoot).href+advertisedDownload.search).replace('MD_BLOB_PLACEHOLDER','{blobId}').replace('MD_NAME_PLACEHOLDER','{name}')};
+    downloadUrl:(new URL('mail-jmap'+advertisedDownload.pathname,apiRoot).href+advertisedDownload.search).replace('MD_BLOB_PLACEHOLDER','{blobId}').replace('MD_NAME_PLACEHOLDER','{name}').replace('MD_TYPE_PLACEHOLDER','{type}')};
    const response2=await fetch(apiUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json',Accept:'application/json'},
     body:JSON.stringify({using:[core,mail,submission],methodCalls:[
      ['Mailbox/get',{accountId:id,ids:null,properties:['id','name','role','totalEmails','unreadEmails']},'mb'],
@@ -119,7 +119,7 @@ export default function MailWebmail(){
   if(!session||!auth||!part.blobId)return;
   try{
    const name=part.name||'attachment';
-   const url=session.downloadUrl.replace('{blobId}',encodeURIComponent(part.blobId)).replace('{name}',encodeURIComponent(name));
+   const url=session.downloadUrl.replace('{blobId}',encodeURIComponent(part.blobId)).replace('{name}',encodeURIComponent(name)).replace('{type}',encodeURIComponent(part.type??'application/octet-stream'));
    const response=await fetch(url,{headers:{Authorization:auth},redirect:'error'});
    if(!response.ok)throw new Error('Unable to download attachment ('+response.status+').');
    const blob=await response.blob();const objectUrl=URL.createObjectURL(blob);const link=document.createElement('a');
