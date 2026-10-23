@@ -97,6 +97,7 @@
     "apps/server/test/system/sql-pool-sizing.test.ts",
     "apps/server/test/system/sql-transaction-reuse.test.ts",
     "apps/server/test/system/stalwart-jmap-client.test.ts",
+    "apps/server/test/system/stalwart-jmap-proxy.test.ts",
     "apps/server/test/system/system-definition-service.test.ts",
     "apps/server/test/system/system-migrations.test.ts",
     "apps/server/test/system/system.test.ts",
