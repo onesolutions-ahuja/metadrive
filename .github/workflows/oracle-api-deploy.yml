@@ -9,7 +9,7 @@ concurrency:
 jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64, metadrive-oracle]
+    runs-on: [self-hosted, linux, ARM64, metadrive-oracle]
     environment: oracle-production
     timeout-minutes: 25
     steps:
