@@ -40,14 +40,14 @@ cat > "$OVERRIDE" <<EOF
 [Service]
 WorkingDirectory=$RELEASE
 ExecStart=
-ExecStart=/usr/local/bin/node $RELEASE/apps/server/dist-system/system-support/entrypoint.js
+ExecStart=$(command -v node) $RELEASE/apps/server/dist-system/system-support/entrypoint.js
 EOF
 SWITCHED=1
 systemctl daemon-reload
 systemctl restart "$SERVICE"
 OK=0
 for attempt in $(seq 1 20); do
-  if curl --silent --show-error --fail --max-time 4 http://127.0.0.1:3001/api/health | grep -q '"status":"ok"'; then
+  if curl --silent --show-error --fail --max-time 4 https://api.unesolutions.co.uk/api/health | grep -q '"status":"ok"'; then
     OK=1
     break
   fi
