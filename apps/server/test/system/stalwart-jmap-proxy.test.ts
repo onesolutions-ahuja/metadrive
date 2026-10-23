@@ -68,16 +68,37 @@ test('JMAP proxy forwards mailbox Basic auth to the private JMAP endpoint withou
   await withServer(async origin=>{
    const response=await originalFetch(origin+'/api/mail-jmap/jmap',{
     method:'POST',headers:{Origin:'https://unesolutions.co.uk',Authorization:'Basic dXNlcjpwYXNz',
-     'Content-Type':'application/json'},body:'{"methodCalls":[]}'
+     'Content-Type':'application/json'},body:JSON.stringify({
+     using:['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'],
+     methodCalls:[['Email/query',{accountId:'acct',filter:{}},'q']]
+    })
    });
    assert.equal(response.status,200);
    assert.equal(capturedUrl,'http://127.0.0.1:8080/jmap');
    assert.equal(capturedAuthorization,'Basic dXNlcjpwYXNz');
    assert.equal(capturedContentType,'application/json');
-   assert.equal(capturedBody,'{"methodCalls":[]}');
+   assert.equal(capturedBody,JSON.stringify({using:['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'],methodCalls:[['Email/query',{accountId:'acct',filter:{}},'q']}));
   });
  }finally{
   globalThis.fetch=originalFetch;
   if(originalBase===undefined)delete process.env.STALWART_BASE_URL;else process.env.STALWART_BASE_URL=originalBase;
  }
+});
+
+test('JMAP proxy blocks Stalwart management methods even when mailbox auth is supplied',async()=>{
+ const originalFetch=globalThis.fetch;
+ let upstreamCalled=false;
+ globalThis.fetch=(async()=>{upstreamCalled=true;return new Response('{}',{status:200});}) as typeof fetch;
+ try{
+  await withServer(async origin=>{
+   const response=await originalFetch(origin+'/api/mail-jmap/jmap',{
+    method:'POST',headers:{Origin:'https://unesolutions.co.uk',Authorization:'Basic dXNlcjpwYXNz',
+     'Content-Type':'application/json'},
+    body:JSON.stringify({using:['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'],
+     methodCalls:[['x:Account/set',{create:{}},'admin']]})
+   });
+   assert.equal(response.status,403);
+   assert.equal(upstreamCalled,false);
+  });
+ }finally{globalThis.fetch=originalFetch;}
 });
