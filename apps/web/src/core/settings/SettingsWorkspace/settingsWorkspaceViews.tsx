@@ -163,13 +163,115 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
-  void canManage;
+  const defaultSubject = '{!Tenant.Name} — password recovery';
+  const defaultBody = 'Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.';
+  const [method, setMethod] = useState<'OTP' | 'LINK'>('OTP');
+  const [subject, setSubject] = useState(defaultSubject);
+  const [body, setBody] = useState(defaultBody);
+  const [deliveryReady, setDeliveryReady] = useState(false);
+  const [linkReady, setLinkReady] = useState(false);
+  const [permitted, setPermitted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const original = useRef<{ method: 'OTP' | 'LINK'; subject: string; body: string } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{
+      deliveryReady: boolean;
+      linkReady: boolean;
+      policy?: { method: 'OTP' | 'LINK'; templates?: { email?: { subject: string; body: string } } };
+    }>('/auth/password-recovery/settings')
+      .then((value) => {
+        if (!active) return;
+        setPermitted(true);
+        setDeliveryReady(value.deliveryReady);
+        setLinkReady(value.linkReady);
+        setMethod(value.policy?.method ?? 'OTP');
+        setSubject(value.policy?.templates?.email?.subject ?? defaultSubject);
+        setBody(value.policy?.templates?.email?.body ?? defaultBody);
+      })
+      .catch(() => { if (active) setPermitted(false); });
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  const beginEdit = () => {
+    if (!canManage || busy) return;
+    original.current = { method, subject, body };
+    setEditing(true);
+    setMessage('');
+  };
+  const cancelEdit = () => {
+    if (busy) return;
+    if (original.current) {
+      setMethod(original.current.method);
+      setSubject(original.current.subject);
+      setBody(original.current.body);
+    }
+    original.current = null;
+    setEditing(false);
+    setMessage('');
+  };
+  const save = async () => {
+    if (!canManage || !editing || busy) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      await apiRequest('/auth/password-recovery/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          policy: { method, defaultChannel: 'email', allowedChannels: ['email'], templates: { email: { subject, body } } }
+        })
+      });
+      original.current = null;
+      setEditing(false);
+      setMessage('Password recovery configuration saved.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings');
+    } finally {
+      setBusy(false);
+    }
+  };
   return <section className="surface permission-section">
     <TenantPasswordPolicy request={apiRequest} canManage={canManage} />
     <h2>Tenant password recovery</h2>
-    <p role="alert" className="permission-help">
-      Email delivery is disabled because the legacy SMTP sender has been removed. Password reset emails will not be sent until a replacement HTTPS Named Credential and HTTP Callout Flow are configured.
-    </p>
+    <p>Email delivery is managed by the platform mail configuration. Tenant SMTP credentials and sender addresses are not used here.</p>
+    {!deliveryReady && <p role="alert" className="permission-help">
+      Platform email delivery is not configured. Ask a platform administrator to configure the server mail settings.
+    </p>}
+    {method === 'LINK' && !linkReady && <p role="alert" className="permission-help">
+      Configure a trusted HTTPS password-reset origin on the server before using reset links.
+    </p>}
+    <div className="settings-read-first-section">
+      {editing ? <div className="settings-edit-row">
+        <PlatformPageSlot slotKey="field-settings-05"><label className="form-label" htmlFor="recovery-method">Verification method
+          <select className="form-control" id="recovery-method" value={method}
+            onChange={(event) => setMethod(event.target.value as 'OTP' | 'LINK')}>
+            <option value="OTP">6-digit email OTP</option><option value="LINK">Email reset link</option>
+          </select>
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-06"><label className="form-label" htmlFor="recovery-subject">Email subject template
+          <input className="form-control" id="recovery-subject" value={subject}
+            onChange={(event) => setSubject(event.target.value)} />
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-07"><label className="form-label" htmlFor="recovery-body">Email body template
+          <textarea className="form-control" id="recovery-body" rows={5} value={body}
+            onChange={(event) => setBody(event.target.value)} />
+        </label></PlatformPageSlot>
+      </div> : <>
+        <SettingsViewRow label="Platform email delivery" value={deliveryReady ? 'Configured' : 'Not configured'}
+          canEdit={false} onEdit={() => undefined} />
+        <SettingsViewRow label="Verification method" value={method} canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Email template" value={subject} canEdit={canManage} onEdit={beginEdit} />
+      </>}
+    </div>
+    {editing && canManage && <div className="settings-read-first-toolbar">
+      <button type="button" className="btn" disabled={busy} onClick={cancelEdit}>Cancel</button>
+      <button type="button" className="btn btn-brand" onClick={() => void save()} disabled={busy}>
+        <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+      </button>
+    </div>}
+    {message && <p role="status" className="settings-view-row-help">{message}</p>}
   </section>;
 }
 
