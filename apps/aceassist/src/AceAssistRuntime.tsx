@@ -427,7 +427,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
        </select></label>}
       <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
       <button type="button" onClick={()=>startEdit('Create')}
-       disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
+       disabled={isFinancialDocument(current.object)
+        ?!actions.has(documentFlow('Create',current.object))||busy:
+        !(can('Create')||canDynamic('Create',current.object))||busy}>
+       New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
      {hoursLoading?'Loading business hours…':hoursError?'Unable to load business hours: '+hoursError
@@ -463,22 +466,26 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
     {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
-      {['Quotation','Invoice'].includes(current.object)&&<section className="assist-related-list">
-       <h3>{current.object} lines</h3>
-       {!actions.has('AceAssistLoad'+current.object+'Line')?<p>No authorised line lookup Flow.</p>:
-        relatedRows.length?relatedRows.map(line=><div key={idOf(line)}>
-         <strong>{title(line)}</strong><span>{String(line.Quantity??'')} × {String(line.UnitPrice??'')}</span>
-        </div>):<p>No lines attached to this record.</p>}
-       {actions.has('AceAssistCreateV2'+current.object+'Line')&&
-        <button type="button" onClick={()=>{
-         const object=current.object+'Line';
-         setEditing('Create');setEditingObject(object);setForm({[current.object]:String(chosen.Id??'')});
-         setError('');
-        }}>Add line</button>}
+      {isFinancialDocument(current.object)&&<section className="assist-related-list">
+       <h3>Line items</h3>
+       {!actions.has('AceAssistLoad'+current.object+'Line')
+        ?<p>No authorised line lookup Flow.</p>
+        :relatedLoading?<p>Loading line items…</p>
+        :relatedRows.length?relatedRows.map(line=><div className="assist-related-item" key={idOf(line)}>
+         <strong>{title(line)}</strong>
+         <span>{String(line.Quantity??'')} × {Number(line.UnitPrice??0).toFixed(2)}
+          {' = '}{Number(line.LineTotal??0).toFixed(2)}</span>
+        </div>):<p>No line items attached to this document.</p>}
+       {chosen.Total!=null&&<p className="assist-related-total">Total: {String(chosen.CurrencyCode??'')}
+        {' '}{Number(chosen.Total).toFixed(2)}</p>}
       </section>}
       <div className="custom-action-buttons">
        <button type="button" onClick={()=>startEdit('Update',chosen)}
-        disabled={!(can('Update')||canDynamic('Update',current.object))||busy}>Edit</button>
+        disabled={isFinancialDocument(current.object)
+         ?!actions.has(documentFlow('Update',current.object))||busy
+          ||!actions.has('AceAssistLoad'+current.object+'Line')
+         :!(can('Update')||canDynamic('Update',current.object))||busy}>
+        {isFinancialDocument(current.object)?'Edit document & items':'Edit'}</button>
        {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
         &&actions.has('AceAssistInvoiceFromAppointment')&&
         <button type="button" disabled={busy}
@@ -535,7 +542,17 @@ export default function AceAssistRuntime({entry,onLogout}:{
     </form>
    </section>
   </div>}
-  {editing&&<div className="assist-modal-backdrop" role="presentation"
+  {editing&&editing!=='Delete'&&isFinancialDocument(editingObject)&&
+   <FinancialDocumentEditor
+    key={editingObject+':'+editing+':'+String(chosen?.Id??'new')}
+    type={editingObject} operation={editing}
+    document={editing==='Update'?chosen:null} storedLines={documentLines}
+    metadataFields={documentFields(editingObject,editing)}
+    customers={lookupRows.Customer??[]} products={lookupRows.Product??[]}
+    busy={busy} error={error}
+    onCancel={()=>setEditing(null)} onSave={saveDocument}/>}
+  {editing&&(!isFinancialDocument(editingObject)||editing==='Delete')&&
+   <div className="assist-modal-backdrop" role="presentation"
    onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>
    <section className="assist-modal" role="dialog" aria-modal="true"
     aria-label={editing+' '+editingObject}>
