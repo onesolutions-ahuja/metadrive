@@ -1,6 +1,5 @@
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Policy={method:'OTP'|'LINK';defaultChannel:'email';allowedChannels:['email'];
  templates:{email:{subject:string;body:string}}};
 const defaults:Policy={method:'OTP',defaultChannel:'email',allowedChannels:['email'],
