@@ -9,7 +9,7 @@ function fakeClient(mode:'new'|'existing'|'uninstalled'){
   const calls:Array<{sql:string;params:unknown[]}>=[];
   const client={query:async(sql:string,params:unknown[]=[])=>{
     calls.push({sql,params});
-    if(sql.includes('SELECT a.id FROM md_apps'))return {rows:mode==='uninstalled'?[]:[{id:'app-a'}]};
+    if(sql.includes('SELECT a.id FROM md_apps')||sql.includes('SELECT id FROM md_apps'))return {rows:mode==='uninstalled'?[]:[{id:'app-a'}]};
     if(sql.includes('INSERT INTO md_page_definitions'))return {rows:mode==='existing'?[]:[{id:'page-a'}]};
     if(sql.includes('SELECT id FROM md_page_definitions'))return {rows:[{id:'page-a'}]};
     if(sql.includes('SELECT api_name')&&sql.includes('md_component_definitions'))
