@@ -111,8 +111,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const canDynamic=(operation:'Create'|'Update',object:string)=>actions.has(dynamicFlow(operation,object));
  const visibleFields=(object:string)=>{
   const definition=objects.find(x=>x.apiName===object);
-  const dynamic=canDynamic('Create',object)&&canDynamic('Update',object);
+  const dynamic=canDynamic('Create',object)||canDynamic('Update',object);
   return (definition?.fields??[]).filter(f=>f.apiName!=='Id'&&!readOnlyField(f)
+   &&!(['Quotation','Invoice'].includes(object)&&
+    ['Subtotal','DiscountAmount','TaxAmount','Total','AmountPaid','BalanceDue','DocumentNumber','InvoiceNumber'].includes(f.apiName))
+   &&!(['QuotationLine','InvoiceLine'].includes(object)&&f.apiName==='LineTotal')
    &&(dynamic||inputFields[object]?.includes(f.apiName))
    && !(object==='Appointment'&&
     ((f.apiName==='Service'&&definition?.fields?.some(x=>x.apiName==='ServiceProduct'))||
@@ -345,7 +348,19 @@ export default function AceAssistRuntime({entry,onLogout}:{
     if(!addedId)throw Error('Customer was saved but the Flow did not return the new record ID');
     setSelected(0);setScreen('records');setEditing('Create');setEditingObject('Appointment');
     setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
-   }else setEditing(null);
+   }else{
+    if(editing==='Create'&&['Quotation','Invoice'].includes(editingObject)){
+     const returned=response.outputs?.createdRecords??response.variables?.createdRecords;
+     const created=Array.isArray(returned)?returned[0] as Row|undefined:undefined;
+     const createdId=String(created?.Id??response.outputs?.createdRecordId
+      ??response.variables?.createdRecordId??'');
+     if(createdId){
+      setChosen({...form,...(created??{}),Id:createdId});
+      setNotice('Document saved. Add line items below; totals will be recalculated by the financial Flow.');
+     }
+    }
+    setEditing(null);
+   }
    setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
   finally{setBusy(false);}
@@ -472,8 +487,14 @@ export default function AceAssistRuntime({entry,onLogout}:{
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
    <aside className={'custom-visit-detail'+(!chosen?' custom-detail-empty':'')}>
-    <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
-    {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
+    <div className="custom-panel-title"><h2>{['Quotation','Invoice'].includes(current.object)
+     ?current.object+' details':'Record details'}</h2><span>OneEngine</span></div>
+    {chosen?<>{['Quotation','Invoice'].includes(current.object)&&
+     <div className="assist-document-header">
+      <strong>{String(chosen.DocumentNumber??chosen.InvoiceNumber??chosen.Name??current.object)}</strong>
+      <span className={'assist-status '+(String(chosen.Status??'').toLowerCase()==='paid'?'complete':'pending')}>
+       {String(chosen.Status??'Draft')}</span>
+     </div>}<dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>
       {['Quotation','Invoice'].includes(current.object)&&<section className="assist-related-list">
        <h3>{current.object} lines</h3>
@@ -488,6 +509,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
            onClick={()=>startEdit('Delete',line,current.object+'Line',true)}>Delete</button>
          </span>
         </div>):<p>No lines attached to this record.</p>}
+       <div className="assist-document-totals">
+        <div><span>Subtotal</span><strong>{show(chosen.Subtotal)}</strong></div>
+        <div><span>Discount</span><strong>{show(chosen.DiscountAmount)}</strong></div>
+        <div><span>Tax</span><strong>{show(chosen.TaxAmount)}</strong></div>
+        <div className="assist-document-grand"><span>Total</span><strong>{show(chosen.Total)}</strong></div>
+       </div>
        <button type="button" disabled={!actions.has('AceAssistCreateV2'+current.object+'Line')||financialLinesLocked||busy}
         onClick={()=>{
          const object=current.object+'Line';
@@ -618,6 +645,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
             ||String(r.Name??'')===next.Service);
            return withServiceEnd(next,selectedProduct);
           })}/>:
+        (editingObject==='QuotationLine'&&field.apiName==='Quotation'||
+         editingObject==='InvoiceLine'&&field.apiName==='Invoice')&&chosen?
+         <label className="assist-fixed-parent">Parent {current.object}
+          <input type="text" readOnly value={String(chosen.DocumentNumber??chosen.InvoiceNumber??chosen.Name??chosen.Id??'')}/>
+         </label>:
         fieldKind(field)==='reference'?
          <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
           options={(lookupRows[targetObject(field)??'']??[]).filter(row=>
