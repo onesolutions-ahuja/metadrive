@@ -3,6 +3,7 @@ import {createHash,createHmac} from 'node:crypto';
 import {test} from 'node:test';
 import express from 'express';
 import {registerInboundWebhookPublicRoutes} from '../../src/system-support/inbound-webhook-service.js';
+import {createIntegrationCommunicationWriter} from '../../src/system-support/integration-api-log.js';
 
 test('credential-linked webhook accepts verified request, creates Communication, and does not execute a Flow',async()=>{
  const tenant='22222222-2222-4222-8222-222222222222';
@@ -13,6 +14,8 @@ test('credential-linked webhook accepts verified request, creates Communication,
  let flowsCalled=0;
  let state='received';
  const db={query:async(sql:string)=>{
+  if(sql.includes('md_tenant_developer_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+  if(sql.includes('FROM md_records r'))return {rows:[]};
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
    execution_user_id:null,created_by:'33333333-3333-4333-8333-333333333333',
@@ -29,13 +32,14 @@ test('credential-linked webhook accepts verified request, creates Communication,
  app.use(express.json({verify:(req,_res,raw)=>{
   (req as typeof req&{rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(raw);
  }}));
+ const recordEngine={create:async(_tenant:string,_actor:string,object:string,values:Record<string,unknown>)=>{
+  assert.equal(object,'Communication');communications.push(values);
+ }};
+ const activityWriter=createIntegrationCommunicationWriter(db as never,recordEngine as never);
  registerInboundWebhookPublicRoutes(app,db as never,
   {decryptOpaque:()=>secret} as never,
   {execute:async()=>{flowsCalled++;}} as never,
-  {allowed:async()=>true} as never,
-  {create:async(_tenant:string,_actor:string,object:string,values:Record<string,unknown>)=>{
-   assert.equal(object,'Communication');communications.push(values);
-  }} as never);
+  {allowed:async()=>true} as never,recordEngine as never,activityWriter);
  const server=app.listen(0);
  try{
   const address=server.address();
@@ -54,21 +58,31 @@ test('credential-linked webhook accepts verified request, creates Communication,
   const invalid=await fetch(base,{method:'POST',headers:{'content-type':'application/json',
    'x-hub-signature-256':'sha256='+'0'.repeat(64)},body:raw});
   assert.equal(invalid.status,401);
-  assert.equal(communications.length,0);
+  // Verification and rejected attempts each get one generic activity record.
+  assert.equal(communications.length,2);
   for(let attempt=0;attempt<2;attempt++){
    const received=await fetch(base,{method:'POST',
     headers:{'content-type':'application/json','x-hub-signature-256':signature},body:raw});
    assert.equal(received.status,200);
   }
-  assert.equal(communications.length,1);
-  assert.equal(communications[0].Direction,'Inbound');
-  assert.equal(communications[0].Channel,'WhatsApp');
-  assert.equal(communications[0].Provider,'WhatsApp');
-  assert.equal(communications[0].Body,'hello');
-  assert.equal(communications[0].Sender,'Test Sender (447700900123)');
-  assert.equal(communications[0].Recipient,'15551234567');
-  assert.equal(communications[0].ExternalMessageId,'wamid.test-message');
-  assert.doesNotMatch(JSON.stringify(communications[0]),/private/);
+  // The first successful message itself carries the attempt metadata; the retry is
+  // a distinct HTTP attempt and therefore gets one generic activity record.
+  assert.equal(communications.length,4);
+  const message=communications.find(record=>record.ExternalMessageId==='wamid.test-message');
+  assert.ok(message);
+  assert.equal(message.Direction,'Inbound');
+  assert.equal(message.Channel,'WhatsApp');
+  assert.equal(message.Provider,'WhatsApp');
+  assert.equal(message.Body,'hello');
+  assert.equal(message.Sender,'Test Sender (447700900123)');
+  assert.equal(message.Recipient,'15551234567');
+  assert.equal(message.RelatedObject,'InboundWebhookEndpoint');
+  assert.equal(message.RelatedRecordId,endpoint);
+  assert.equal(message.ConversationId,'447700900123');
+  assert.match(String(message.Subject),/POST 200 · success/);
+  assert.match(String(message.Subject),/req \\d+B\\/resp \\d+B/);
+  assert.equal(communications.filter(record=>record.RelatedObject==='IntegrationApiCall').length,3);
+  assert.doesNotMatch(JSON.stringify(communications),/private/);
   assert.equal(flowsCalled,0);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
