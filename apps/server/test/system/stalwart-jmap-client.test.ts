@@ -32,9 +32,9 @@ test('Stalwart discovery pins public advertised JMAP URL to the configured priva
  try{
   const client=new StalwartJmapClient('http://127.0.0.1:8080','secret');
   const session=await client.discoverSession();
-  assert.equal(session.apiUrl,'http://127.0.0.1:8080/jmap/');
+  assert.equal(session.apiUrl,'http://127.0.0.1:8080/jmap');
   await client.call(session,'x:Domain/query',{filter:{},limit:1});
-  assert.deepEqual(urls,['http://127.0.0.1:8080/.well-known/jmap','http://127.0.0.1:8080/jmap/']);
+  assert.deepEqual(urls,['http://127.0.0.1:8080/.well-known/jmap','http://127.0.0.1:8080/jmap']);
  }finally{globalThis.fetch=original;}
 });
 
