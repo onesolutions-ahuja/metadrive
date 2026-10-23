@@ -736,6 +736,7 @@
     padding: 0;
     font-size: 0;
   }
+  .lightning .header-installed-apps select option { font-size: 14px; }
   .lightning .header-installed-apps::after {
     content: "▦";
     position: absolute;
