@@ -1578,14 +1578,6 @@ function PageBuilder({
     const parentId = selected && isLayoutContainer(selected) ? selected.id : selected ? rawLayoutParentId(selected) : null;
     addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion, undefined, parentId);
   };
-  const renderPaletteComponentPreview = (component: typeof paletteComponents[number]) => renderPageComponent({
-    id: `palette-preview-${component.id}`,
-    type: component.type,
-    label: component.label,
-    properties: {},
-    visible: true,
-    region: 'main'
-  }, -1, true);
   return (
     <div className={`builder-page ${editorMode ? "builder-editor-mode" : "builder-list-mode"}`}>
       {externalPreviewTarget && createPortal(
