@@ -616,7 +616,7 @@ export class NamedCredentialService {
   */
  async sendRecoveryEmail(tenantId:string,_id:string,_from:string,to:string,subject:string,body:string):Promise<void>{
   const startedAt=Date.now();
-  const requestBytes=Buffer.byteLength([to,subject,body].join('\\n'));
+  const requestBytes=Buffer.byteLength([to,subject,body].join('\n'));
   try{
    const result=await sendPlatformRecoveryEmail(to,subject,body);
    await writeIntegrationActivity(this.db,{
