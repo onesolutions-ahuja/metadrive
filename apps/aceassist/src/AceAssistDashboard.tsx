@@ -43,7 +43,7 @@ export function AceAssistDashboard({appointments,invoices,customers,actions,time
  const todays=appointments.filter(row=>businessClock(row.StartDateTime,timeZone).slice(0,10)===today)
   .sort((a,b)=>businessClock(a.StartDateTime,timeZone).localeCompare(businessClock(b.StartDateTime,timeZone)));
  const outstanding=invoices.filter(row=>['Issued','PartPaid','Overdue'].includes(String(row.Status??'')))
-  .map(row=>({...row,remaining:Math.max(0,Number(row.Total??0)-Number(row.AmountPaid??0))}))
+  .map(row=>({...row,remaining:Math.max(0,Number(row.Total??0)-Number(row.AmountPaid??0))}) as Row&{remaining:number})
   .filter(row=>Number.isFinite(row.remaining)&&row.remaining>0);
  const outstandingCurrencies=new Set(outstanding.map(row=>String(row.CurrencyCode??'')));
  const next=todays.find(row=>statusLabel(row.Status)!=='Completed'&&statusLabel(row.Status)!=='Cancelled'
