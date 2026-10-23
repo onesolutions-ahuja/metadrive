@@ -95,11 +95,12 @@ export class StalwartMailService {
    memberGroupIds:{},roles:{'@type':'User'},permissions:{'@type':'Inherit'},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
   }}}),'x:Account/set');
-  const createdIds=object(created.created);
+  const createdIds=created.created&&typeof created.created==='object'&&!Array.isArray(created.created)?object(created.created):{};
   const id=createdIds.newMailbox;
   if(typeof id!=='string'){
-   const failures=object(created.notCreated);
-   const detail=object(failures.newMailbox);
+   const failures=created.notCreated&&typeof created.notCreated==='object'&&!Array.isArray(created.notCreated)?object(created.notCreated):{};
+   const failure=failures.newMailbox;
+   const detail=failure&&typeof failure==='object'&&!Array.isArray(failure)?object(failure):{};
    const type=typeof detail.type==='string'?detail.type:'unknown';
    throw new Error('Stalwart could not create mailbox ('+type+')');
   }
@@ -124,7 +125,7 @@ export class StalwartMailService {
   }
   if(!Object.keys(update).length)throw new Error('No supported mailbox changes supplied');
   const result=responseObject(await this.call('x:Account/set',{update:{[id]:update}}),'x:Account/set');
-  const notUpdated=object(result.notUpdated);
+  const notUpdated=result.notUpdated&&typeof result.notUpdated==='object'&&!Array.isArray(result.notUpdated)?object(result.notUpdated):{};
   if(notUpdated[id])throw new Error('Stalwart rejected mailbox update');
   return (await this.listMailboxes(tenantId)).find(item=>item.id===id);
  }
@@ -145,14 +146,14 @@ export class StalwartMailService {
   const result=responseObject(await this.call('x:Account/set',{update:{[id]:{
    credentials:[{'@type':'Password',secret:password}]
   }}}),'x:Account/set');
-  if(object(result.notUpdated)[id])throw new Error('Stalwart rejected password reset');
+  if(result.notUpdated&&typeof result.notUpdated==='object'&&!Array.isArray(result.notUpdated)&&object(result.notUpdated)[id])throw new Error('Stalwart rejected password reset');
  }
  async deleteMailbox(tenantId:string,id:string){
   if(!uuid.test(tenantId)||typeof id!=='string'||id.length>128)throw new Error('Invalid mailbox identifier');
   const current=(await this.listMailboxes(tenantId)).find(item=>item.id===id);
   if(!current)throw new Error('Mailbox not found');
   const result=responseObject(await this.call('x:Account/set',{destroy:[id]}),'x:Account/set');
-  const failures=object(result.notDestroyed);
+  const failures=result.notDestroyed&&typeof result.notDestroyed==='object'&&!Array.isArray(result.notDestroyed)?object(result.notDestroyed):{};
   if(failures[id])throw new Error('Stalwart rejected mailbox deletion');
  }
 }
