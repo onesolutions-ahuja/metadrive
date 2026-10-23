@@ -26,6 +26,7 @@ import {seedAceKioskMenuFlows,seedAceKioskProductOptions} from '../app-seeders/a
 import {seedAceKioskNavigationFlows} from '../app-seeders/acekiosk-navigation-flows.js';
 import {seedAceKioskPaymentFlows} from '../app-seeders/acekiosk-payment-flows.js';
 import {seedAceChatterAppCatalog} from '../app-seeders/acechatter-app-catalog.js';
+import {seedOneChatterAppCatalog} from '../app-seeders/onechatter-app-catalog.js';
 import {seedConnectorAppCatalog} from '../app-seeders/connector-apps.js';
 import {seedAceChatterFlows} from '../app-seeders/acechatter-flow.js';
 import {seedAceAssistCrudFlows} from '../app-seeders/aceassist-crud-flows.js';
@@ -2266,6 +2267,7 @@ export async function startSystemServer() {
     await seedAcetillAppCatalog(db); // Catalog only: tenant installation/RBAC stay in AppExchange.
     await seedAceKioskAppCatalog(db); // Custom frontend discovery; no automatic tenant licence/install.
     await seedAceChatterAppCatalog(db); // Catalog only; app installation is explicit.
+    await seedOneChatterAppCatalog(db); // Independent, catalog only. Never auto-install.
     await seedConnectorAppCatalog(db); // Headless connector apps. No auto licence or install.
     const seededTenants=await seedCoreObjectsForExistingTenants(db);
     const mailPermissionTenants=await seedStalwartMailPermissions(db);
