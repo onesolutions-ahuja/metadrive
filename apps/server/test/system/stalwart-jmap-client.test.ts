@@ -40,3 +40,9 @@ test('Stalwart client does not follow redirects for authenticated requests',asyn
   await assert.rejects(client.discoverSession());
  }finally{globalThis.fetch=original;}
 });
+
+import {StalwartMailService} from '../../src/system-support/stalwart-mail-service.js';
+
+test('mail integration remains optional when server configuration is absent',()=>{
+ assert.doesNotThrow(()=>new StalwartMailService('http://127.0.0.1:8080',''));
+});
