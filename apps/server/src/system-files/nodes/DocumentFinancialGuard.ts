@@ -108,6 +108,15 @@ export async function prepareDocumentLineMutation(context:FlowNodeContext,raw:un
  if(typeof parent!=='string'||!/^[0-9a-f-]{36}$/i.test(parent))
   throw Error('Financial line requires a valid parent document');
  const oldParent=old&&typeof old[m.parentField]==='string'?String(old[m.parentField]):null;
+ // Composite document Flows must never mutate a line belonging to another
+ // parent, even when the caller has generic Line edit rights in this tenant.
+ const expectedExpression=context.node.config.expectedParentId;
+ if(expectedExpression!==undefined){
+  const expected=context.evaluate(expectedExpression);
+  if(typeof expected!=='string'||!/^[0-9a-f-]{36}$/i.test(expected)
+   ||parent!==expected||(oldParent!==null&&oldParent!==expected))
+   throw Error('Financial line does not belong to the selected document');
+ }
  const parents=[...new Set([oldParent,parent].filter((x):x is string=>!!x))];
  for(const parentId of parents){
   await lockParent(context,m.parentObject,parentId);
