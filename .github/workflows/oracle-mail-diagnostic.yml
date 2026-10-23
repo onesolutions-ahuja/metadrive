@@ -17,4 +17,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Diagnose running Stalwart transport (no secret logging)
-        run: sudo --non-interactive python3 scripts/oracle/check-mail-runtime.py
+        run: |
+          python3 -m py_compile scripts/oracle/check-mail-runtime.py
+          sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-mail-runtime.py
