@@ -118,11 +118,18 @@ export function createIntegrationCommunicationWriter(
  };
 }
 
-/** Required central writer. Missing configuration or failed persistence must be visible to the caller. */
+/** Best-effort audit writer: logging failure must never change the external provider result.
+ * Failures remain visible in sanitized server diagnostics for alerting and recovery.
+ */
 export async function writeIntegrationActivity(
  _db:SqlPersistence,input:IntegrationActivityInput,writer?:IntegrationActivityWriter
 ):Promise<void>{
- if(!writer)throw new Error('Central Communication writer is not configured');
+ if(!writer){
+  console.error('Integration Communication write failed',JSON.stringify({
+   direction:input.direction,transport:input.transport??'HTTP',error:'WriterNotConfigured'
+  }));
+  return;
+ }
  try{
   await writer(normalized(input));
  }catch(error){
@@ -131,6 +138,5 @@ export async function writeIntegrationActivity(
    direction:input.direction,transport:input.transport??'HTTP',
    error:error instanceof Error?error.name:'UnknownError'
   }));
-  throw new Error('Integration Communication record could not be persisted');
  }
 }
