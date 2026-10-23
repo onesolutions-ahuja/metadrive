@@ -12,6 +12,7 @@ import {flowAppIsEntitled} from '../system-files/flow-validation.js';
 import {prepareFlowHttpRequest,bindPublicHttpCredentialVariables} from '../system-files/flow-http-mapping.js';
 import {resolveFlowIntegrationCallout} from '../system-files/flow-integration-connection.js';
 import {writeIntegrationActivity,type IntegrationActivityWriter,type IntegrationCommunicationDetails} from './integration-api-log.js';
+import {sendPlatformRecoveryEmail} from './platform-recovery-mailer.js';
 
 type CalloutJob={
  id:string;tenant_id:string;run_id:string;user_id:string;credential_id:string;method:string;
@@ -613,8 +614,27 @@ export class NamedCredentialService {
  /** Deliver tenant recovery mail using the saved encrypted SMTP credential.
   * Public DNS and TLS certificate validation protect outbound platform traffic.
   */
- async sendRecoveryEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string):Promise<void>{
-  return this.sendTenantEmail(tenantId,id,from,to,subject,body);
+ async sendRecoveryEmail(tenantId:string,_id:string,_from:string,to:string,subject:string,body:string):Promise<void>{
+  const startedAt=Date.now();
+  const requestBytes=Buffer.byteLength([to,subject,body].join('\\n'));
+  try{
+   const result=await sendPlatformRecoveryEmail(to,subject,body);
+   await writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'SMTP',provider:'Platform SMTP',
+    endpoint:result.endpoint,method:'SMTP',outcome:'success',
+    durationMs:Date.now()-startedAt,requestBytes,
+    communication:{channel:'Email',name:'Password recovery',provider:'Platform SMTP'}
+   },this.integrationActivityWriter);
+  }catch(error){
+   await writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'SMTP',provider:'Platform SMTP',
+    endpoint:'smtp://platform-configured',method:'SMTP',outcome:'network_error',
+    durationMs:Date.now()-startedAt,requestBytes,
+    errorCode:error instanceof Error?error.name:'SMTP_ERROR',
+    communication:{channel:'Email',name:'Password recovery',provider:'Platform SMTP'}
+   },this.integrationActivityWriter);
+   throw error;
+  }
  }
  /** Queue encrypted SMTP delivery; duplicate request keys never enqueue twice. */
  async sendQuickActionEmail(tenantId:string,userId:string,objectApi:string,recordId:string,
