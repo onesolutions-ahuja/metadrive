@@ -20,8 +20,12 @@ test('Stalwart v0.16 Account/set created object IDs and credential maps work end
   if(method==='x:Domain/query')result={ids:['domain-1']};
   else if(method==='x:Domain/get')result={list:[{id:'domain-1',name:'unesolutions.co.uk',isEnabled:true}]};
   else if(method==='x:Account/query')result={ids:[]};
-  else if(method==='x:Account/set'&&'tenantGroup' in (args.create as Record<string,unknown>))
+  else if(method==='x:Account/set'&&'tenantGroup' in (args.create as Record<string,unknown>)){
+   const create=(args.create as Record<string,Record<string,unknown>>).tenantGroup;
+   assert.deepEqual(create.roles,{'@type':'Custom',roleIds:[]});
+   assert.deepEqual(create.permissions,{'@type':'Inherit'});
    result={created:{tenantGroup:{id:'group-1'}}};
+  }
   else if(method==='x:Account/set'&&'newMailbox' in (args.create as Record<string,unknown>)){
    const create=(args.create as Record<string,Record<string,unknown>>).newMailbox;
    assert.deepEqual(create.memberGroupIds,{'group-1':true});
