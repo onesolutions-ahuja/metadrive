@@ -144,9 +144,18 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[current.object,loaded,actions,reload]);
  useEffect(()=>{
   let alive=true;
-  const relations=[...new Set([...fields
+  // Lookups must follow the record currently being edited, not only the active
+  // navigation tab. A QuotationLine/InvoiceLine editor needs Product and its
+  // parent document even when the user opened it from a different tab.
+  const lookupFor=editing?editingObject:current.object;
+  const lookupDefinition=objects.find(x=>x.apiName.toLowerCase()===lookupFor.toLowerCase());
+  const lookupFields=(lookupDefinition?.fields??[]).filter(field=>
+   field.apiName!=='Id'&&!readOnlyField(field));
+  const relations=[...new Set([...lookupFields
     .map(field=>targetObject(field)??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
-    ...(current.object==='Appointment'?['User','Product','Customer']:[])].filter(x=>x&&x!==current.object&&loaded.has(x.toLowerCase())
+    ...(lookupFor==='Appointment'?['User','Product','Customer']:[]),
+    ...(['QuotationLine','InvoiceLine'].includes(lookupFor)?['Product']:[])
+   ].filter(x=>x&&x!==lookupFor&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
   void Promise.all(relations.map(async target=>{
@@ -156,7 +165,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     ...Object.entries(old),...results.map(x=>[x.target,x.data])]));})
    .catch(ex=>{if(alive)setError(ex instanceof Error?ex.message:String(ex));});
   return()=>{alive=false;};
- },[fields,current.object,loaded,actions,reload]);
+ },[fields,current.object,editing,editingObject,objects,loaded,actions,reload]);
  useEffect(()=>{
   let alive=true;
   setRelatedRows([]);
@@ -320,7 +329,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
         <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
        </select></label>}
       <button type="button" onClick={()=>setReload(n=>n+1)} disabled={busy}>Refresh</button>
-      <button type="button" onClick={()=>startEdit('Create')} disabled={!can('Create')||busy}>New {current.object}</button>
+      <button type="button" onClick={()=>startEdit('Create')}
+       disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
      {hours?'Business hours · '+hours.timezone:'Business hours unavailable'}
@@ -367,7 +377,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
         }}>Add line</button>}
       </section>}
       <div className="custom-action-buttons">
-       <button type="button" onClick={()=>startEdit('Update',chosen)} disabled={!can('Update')||busy}>Edit</button>
+       <button type="button" onClick={()=>startEdit('Update',chosen)}
+        disabled={!(can('Update')||canDynamic('Update',current.object))||busy}>Edit</button>
        {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
         &&actions.has('AceAssistInvoiceFromAppointment')&&
         <button type="button" disabled={busy}
