@@ -174,8 +174,23 @@ export default function BusinessCalendarSettings({ request, permitted }: {
       const result = await request<{ calendar: BusinessCalendar }>('/tenant/business-calendar', {
         method: 'PUT', body: JSON.stringify(normalizedCalendar)
       });
-      setCalendar(result.calendar);
-      setSavedCalendar(result.calendar);
+      // A successful PUT is not enough: AceAssist reads this setting through GET.
+      // Only show a save confirmation after a fresh read returns the saved hours.
+      const readback = await request<{calendar:BusinessCalendar|null}>('/tenant/business-calendar', {cache:'no-store'});
+      const verified = readback.calendar;
+      if (!verified) throw new Error('Save succeeded but the business calendar could not be read back.');
+      // Compare with the server's canonical response (which sorts holidays).
+      if (verified.timezone !== result.calendar.timezone ||
+          verified.fiscalYearStart.month !== result.calendar.fiscalYearStart.month ||
+          verified.fiscalYearStart.day !== result.calendar.fiscalYearStart.day ||
+          weekdays.some(([day]) =>
+            verified.weeklyHours[day]?.closed !== result.calendar.weeklyHours[day].closed ||
+            verified.weeklyHours[day]?.open !== result.calendar.weeklyHours[day].open ||
+            verified.weeklyHours[day]?.close !== result.calendar.weeklyHours[day].close) ||
+          JSON.stringify(verified.holidays) !== JSON.stringify(result.calendar.holidays))
+        throw new Error('Saved calendar differs from the requested business hours, holidays or fiscal settings.');
+      setCalendar(verified);
+      setSavedCalendar(verified);
       setConfigured(true);
       setEditing(false);
       setNotice('Fiscal year, business hours and holidays saved.');

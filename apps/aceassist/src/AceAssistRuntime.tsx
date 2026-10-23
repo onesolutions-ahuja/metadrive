@@ -89,6 +89,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>('week');
  const [hours,setHours]=useState<BusinessCalendar|null>(null);
  const [hoursError,setHoursError]=useState('');
+ const [hoursLoading,setHoursLoading]=useState(true);
  const [hoursReload,setHoursReload]=useState(0);
  const current=tabs[selected];
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
@@ -119,9 +120,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
    .then(r=>{if(alive)setSelfId(r.user?.id??'');})
    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
   setHoursError('');
-  void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar')
+  setHoursLoading(true);
+  void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar',{cache:'no-store'})
    .then(r=>{if(alive)setHours(r.calendar??null);})
-   .catch(e=>{if(alive){setHours(null);setHoursError(e instanceof Error?e.message:String(e));}});
+   .catch(e=>{if(alive){setHours(null);setHoursError(e instanceof Error?e.message:String(e));}})
+   .finally(()=>{if(alive)setHoursLoading(false);});
   return()=>{alive=false;};
  },[entry.appId,hoursReload]);
  const fetchRows=async(operation:'Load',object:string)=>{
@@ -342,7 +345,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
-     {hours?'Business hours · '+hours.timezone:hoursError?'Business hours request failed':'Business hours not configured'}
+     {hoursLoading?'Loading business hours…':hours?'Business hours · '+hours.timezone:hoursError?'Unable to load business hours':'Business hours not configured for this tenant'}
      {hoursError&&' · '+hoursError}
     </p>}
     {!loaded.has(current.object.toLowerCase())&&<p className="custom-empty">Object unavailable to this user.</p>}
@@ -354,7 +357,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
       return <div className="custom-day" key={date} aria-label={date}>
        <strong>{new Date(date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short'})}</strong>
        <small>{date.slice(8)}</small>
-       <small>{!hours?'Hours unavailable':window?window.open+'–'+window.close:'Closed / holiday'}</small>
+       <small>{hoursLoading?'Loading…':!hours?'Hours unavailable':window?window.open+'–'+window.close:'Closed / holiday'}</small>
        {rows.filter(row=>String(row.StartDateTime??'').slice(0,10)===date)
         .map((row,i)=><button key={String(row.Id??i)} type="button" className="custom-visit"
         onClick={()=>setChosen(row)}>{title(row)}
