@@ -298,3 +298,17 @@
  .assist-quick-grid button strong{font-size:9px}
  .assist-home-appointment .assist-status{max-width:68px;overflow:hidden;text-overflow:ellipsis}
 }
+
+
+/* Parent quotation/invoice details and financial totals remain read-only. */
+.assist-document-header{display:flex;align-items:center;justify-content:space-between;gap:10px;
+ margin-top:17px;padding:13px 14px;border-radius:12px;background:#edf8fa}
+.assist-document-header>strong{font-size:14px;overflow-wrap:anywhere}
+.assist-document-totals{display:grid;gap:10px;margin:16px 0;padding:14px;
+ border:1px solid #e2ebf2;border-radius:12px;background:#fcfefe}
+.assist-document-totals>div{display:flex;justify-content:space-between;gap:14px;font-size:12px;color:#62758a}
+.assist-document-totals strong{font-size:13px;color:#20374f}
+.assist-document-totals .assist-document-grand{border-top:1px solid #e2ebf2;padding-top:11px;
+ font-size:14px;font-weight:800;color:#173a53}
+.assist-document-totals .assist-document-grand strong{font-size:18px;color:var(--product-accent)}
+.assist-fixed-parent input[readonly]{background:#f0f5f7!important;color:#526779!important}
