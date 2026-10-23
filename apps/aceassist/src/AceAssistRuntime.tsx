@@ -564,7 +564,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     </div>}
     {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
      <p className="custom-empty">No appointments match the selected staff and service filters.</p>}
-    {busy&&<p role="status">Running OneEngine Flow…</p>
+    {busy&&<p role="status">Running OneEngine Flow…</p>}
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
    <aside className={'custom-visit-detail'+(!chosen?' custom-detail-empty':'')}>
