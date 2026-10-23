@@ -90,8 +90,11 @@ export function registerStalwartJmapProxyRoutes(app:Express){
      res.status(400).json({error:'Invalid JMAP request'});return;
     }
     const request=payload as {using?:unknown;methodCalls?:unknown};
-    if(!Array.isArray(request.using)||request.using.some(value=>typeof value!=='string'||!allowedCapabilities.has(value))
-      ||!['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'].every(value=>request.using!.includes(value))){
+    const using=request.using;
+    if(!Array.isArray(using)||using.some((value:unknown)=>typeof value!=='string'||!allowedCapabilities.has(value))){
+     res.status(403).json({error:'JMAP capability is not allowed through the webmail proxy'});return;
+    }
+    if(!['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'].every(capability=>using.includes(capability))){
      res.status(403).json({error:'JMAP capability is not allowed through the webmail proxy'});return;
     }
     if(!Array.isArray(request.methodCalls)||request.methodCalls.length<1||request.methodCalls.length>20
