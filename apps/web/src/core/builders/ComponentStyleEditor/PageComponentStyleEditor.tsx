@@ -106,7 +106,7 @@ export default function PageComponentStyleEditor({
         <option value="hidden">Hidden</option>
       </select>
     </label>
-    {componentType && componentAppearanceCapabilities(componentType).container && <label className="checkbox-row"><input type="checkbox" disabled={disabled}
+    {(!componentType || componentAppearanceCapabilities(componentType).container) && <label className="checkbox-row"><input type="checkbox" disabled={disabled}
       aria-label="Allow nested components"
       checked={properties.layoutContainer !== false}
       onChange={(event) => onChange({ ...properties, layoutContainer: event.target.checked })} />
