@@ -312,3 +312,22 @@
  font-size:14px;font-weight:800;color:#173a53}
 .assist-document-totals .assist-document-grand strong{font-size:18px;color:var(--product-accent)}
 .assist-fixed-parent input[readonly]{background:#f0f5f7!important;color:#526779!important}
+
+
+/* Appointments filter only Flow-loaded records; changing periods never mutates data. */
+.assist-calendar-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0 2px}
+.assist-calendar-filters label{display:flex;align-items:center;gap:8px;font-size:12px;
+ font-weight:750;color:#456278}
+.assist-calendar-filters select{max-width:230px;min-width:125px;border:1px solid #d9e5ee;
+ background:#fff;border-radius:11px;padding:10px;color:#1c334b;font:inherit}
+.assist-date-navigation{display:flex;align-items:center;gap:4px;border:1px solid #e1e9f0;
+ border-radius:11px;background:#f7fafc}
+.assist-date-navigation button{border:0;background:transparent;padding:9px 11px;cursor:pointer;
+ color:var(--assist-ink);font-weight:750}
+.assist-date-navigation button:first-child,.assist-date-navigation button:last-child{font-size:20px;line-height:1}
+@media(max-width:700px){
+ .assist-calendar-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .assist-calendar-filters label{display:flex;flex-direction:column;align-items:stretch;gap:5px}
+ .assist-calendar-filters select{min-width:0;width:100%;max-width:none}
+ .assist-date-navigation button{padding:8px 10px}
+}
