@@ -72,6 +72,7 @@ type NewFieldLookupFilterDraft = {
 const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthConsent'));
 const LazyStandaloneRuntime=React.lazy(()=>import('../Standalone/StandaloneRuntime'));
 const LazyAceKiosk=React.lazy(()=>import('../../../../../acekiosk/src/AceKiosk'));
+const LazyMailboxAdmin=React.lazy(()=>import('../../mail/MailboxAdmin'));
 function AceKioskAccessGate({onLogout}:{onLogout:()=>void}){
  type AppAccess={installed:boolean;licensed:boolean;enabled:boolean;permitted:boolean};
  const [access,setAccess]=React.useState<AppAccess|null>(null);
@@ -210,8 +211,9 @@ function App() {
   // Do not render Setup Home while resolving the authenticated landing destination.
   // The preference arrives with login/refresh; no second /auth/me round trip.
   const route=parseAppRoute(window.location.pathname,window.location.search);
-  const entryIsHome=window.location.pathname==='/login'
-    ||(route.kind==='setup'&&route.workspace==='home');
+  const isMailboxAdminRoute=window.location.pathname==='/mail-admin'||window.location.pathname==='/mail-admin/';
+  const entryIsHome=!isMailboxAdminRoute&&(window.location.pathname==='/login'
+    ||(route.kind==='setup'&&route.workspace==='home'));
   const landingApp=entryTiming?.landingAppApi??entryTiming?.landing?.user?.landingAppApi??'Setup';
   const needsLandingRedirect=authState==='authenticated'&&!standaloneEntry&&entryIsHome
     &&(landingApp.toLowerCase()!=='setup'||window.location.pathname==='/login');
@@ -253,6 +255,7 @@ function App() {
   };
   if(needsLandingRedirect)return <div className="auth-loading" role="status">Opening assigned application…</div>;
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}>{standaloneEntry.slug==='acekiosk'?<AceKioskAccessGate onLogout={onLogout}/>:<LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/>}</React.Suspense>;
+  if(isMailboxAdminRoute)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening mailbox administration…</div>}><LazyMailboxAdmin onLogout={onLogout}/></React.Suspense>;
   return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
 }
 
