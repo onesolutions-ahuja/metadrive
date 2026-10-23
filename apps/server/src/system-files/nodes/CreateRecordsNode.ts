@@ -25,8 +25,6 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         }
         const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
           ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
-      const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
-        ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
@@ -51,6 +49,8 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         if(!scalar(value))throw new Error('Create Records values must be scalar');
         fields[field]=value;
       }
+      const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
+        ?await prepareDocumentLineMutation(context,config.documentLineTotals,undefined,fields):null;
       await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,fields);
       await enforceUniqueRecordInput(client,tenantId,objectApi,config.uniqueInputGuard,fields);
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,fields);
