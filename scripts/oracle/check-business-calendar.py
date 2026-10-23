@@ -13,7 +13,11 @@ import sys
 from pathlib import Path
 
 TARGET_PATTERN = re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$", re.I)
-ALLOWED_KEYS = ("DATABASE_URL", "METADRIVE_DB_NAME_OVERRIDE", "METADRIVE_DB_CA_CERT")
+# pg also honours PG* fallback variables when DATABASE_URL omits those settings.
+# Preserve the running API's client configuration; values are never logged.
+ALLOWED_KEYS = ("DATABASE_URL", "METADRIVE_DB_NAME_OVERRIDE", "METADRIVE_DB_CA_CERT",
+                "PGSSLMODE", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY",
+                "PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PGPASSWORD")
 
 def main():
     if len(sys.argv) != 2 or not TARGET_PATTERN.fullmatch(sys.argv[1]):
