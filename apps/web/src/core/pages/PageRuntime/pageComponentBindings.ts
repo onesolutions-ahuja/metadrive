@@ -74,15 +74,13 @@ export function bindPageStateProperties<T extends Record<string,unknown>>(
     if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(target)||protectedKeys.has(target)
       ||typeof key!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))continue;
     const value=state[key];
-    if(typeof value==='string'&&value.trimStart().startsWith('[')){
+    // Only explicitly declared list-shaped properties accept record collections.
+    // Other state-bound text values retain their original scalar behaviour.
+    if(Array.isArray(properties[target])){
       const records=safePageStateRecordCollection(value);
       if(records)next[target]=records;
     }else if(value===null||['string','number','boolean'].includes(typeof value))
       next[target]=value;
-    else if(Array.isArray(value)){
-      const records=safePageStateRecordCollection(value);
-      if(records)next[target]=records;
-    }
   }
   return next as T;
 }
