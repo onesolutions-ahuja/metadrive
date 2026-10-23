@@ -92,6 +92,25 @@ function AceKioskAccessGate({onLogout}:{onLogout:()=>void}){
  if(!access.permitted)return <main role="alert">AceKiosk is installed and licensed, but your user lacks App:AceKiosk → read permission. Assign that permission through OneEngine RBAC. Setting Default landing page does not grant access.</main>;
  return <React.Suspense fallback={<main role="status">Opening AceKiosk…</main>}><LazyAceKiosk onLogout={onLogout}/></React.Suspense>;
 }
+function MailboxAdminAccessGate({onLogout}:{onLogout:()=>void}){
+ const [access,setAccess]=React.useState<'checking'|'allowed'|'denied'|'error'>('checking');
+ React.useEffect(()=>{
+  let active=true;
+  // The existing server endpoint enforces OneEngine Mailbox:read for the signed-in tenant.
+  // Never mount the administration page before this server-side permission check succeeds.
+  void apiRequest<{mailboxes:unknown[]}>('/mail/mailboxes')
+   .then(()=>{if(active)setAccess('allowed');})
+   .catch(error=>{
+    if(!active)return;
+    setAccess(error instanceof ApiRequestError && error.status===403?'denied':'error');
+   });
+  return()=>{active=false;};
+ },[]);
+ if(access==='checking')return <main role="status">Checking mailbox administration permission…</main>;
+ if(access==='denied')return <main role="alert">Access denied. OneEngine Mailbox:read permission is required to access Mail Administration.</main>;
+ if(access==='error')return <main role="alert">Unable to verify Mail Administration access. Please sign in again or contact your administrator.</main>;
+ return <React.Suspense fallback={<main role="status">Opening mailbox administration…</main>}><LazyMailboxAdmin onLogout={onLogout}/></React.Suspense>;
+}
 type AuthState = 'restoring' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -255,7 +274,7 @@ function App() {
   };
   if(needsLandingRedirect)return <div className="auth-loading" role="status">Opening assigned application…</div>;
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}>{standaloneEntry.slug==='acekiosk'?<AceKioskAccessGate onLogout={onLogout}/>:<LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/>}</React.Suspense>;
-  if(isMailboxAdminRoute)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening mailbox administration…</div>}><LazyMailboxAdmin onLogout={onLogout}/></React.Suspense>;
+  if(isMailboxAdminRoute)return <MailboxAdminAccessGate onLogout={onLogout}/>;
   return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
 }
 
