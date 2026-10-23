@@ -890,6 +890,21 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
   }));
+  // Action permissions control till buttons. No Flow-specific RBAC grants are required.
+  // The caller cannot request arbitrary permission resources.
+  app.get('/api/acetill/action-access',route(async(req,res)=>{
+    const actor=req.actor!;
+    const installed=await db.query(`SELECT 1 FROM md_app_installations i
+      JOIN md_apps a ON a.id=i.app_id AND a.api_name='Acetill' AND a.enabled=true
+      JOIN md_app_entitlements e ON e.tenant_id=i.tenant_id AND e.app_id=i.app_id
+      WHERE i.tenant_id=$1 AND e.active=true
+        AND (e.expires_at IS NULL OR e.expires_at>now()) LIMIT 1`,[actor.tenant_id]);
+    if(!installed.rowCount){res.status(403).json({error:'Acetill unavailable'});return;}
+    const keys=['Discount','PriceOverride','SalesReturn','QuickAddProduct','CashDrawer','HoldSale','RetrieveSale'];
+    const granted=await rbac.allowedMany(actor.tenant_id,actor.user_id,
+      keys.map(key=>({resource:'Action:Acetill'+key,action:'execute'})));
+    res.json({access:Object.fromEntries(keys.map((key,index)=>[key,granted[index]]))});
+  }));
   app.get('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await rbac.describe(actor.tenant_id,actor.user_id));
