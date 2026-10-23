@@ -19,15 +19,6 @@ test('assignment recipe uses shared record update engine and remains a draft',()
  assert.throws(()=>buildAutomationFlow({...common,kind:'Assignment',
   trigger:'created-or-updated',assigneeId:user}),/record creation/);
 });
-test('automatic response recipe reuses durable Send Email Action',()=>{
- const flow=buildAutomationFlow({...common,kind:'Auto Response',
-  namedCredentialId:user,fromEmail:'service@example.org',recipientField:'CustomerEmail__c',
-  subject:'Acknowledged',body:'We have received your request'});
- assert.equal(flow.elements[1].type,'Action');
- assert.equal(flow.elements[1].config.actionType,'Send Email');
- assert.equal(flow.elements[1].config.recipients,'{!$Record.CustomerEmail__c}');
- assert.equal(flow.status,'Draft');
-});
 test('escalation recipe has an immediate path and a durable scheduled task',()=>{
  const flow=buildAutomationFlow({...common,kind:'Escalation',dueField:'DueDate__c',
   offsetAmount:1,offsetUnit:'Days',taskSubject:'Follow up'});

@@ -7,8 +7,8 @@ import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 test('credential listing is tenant-scoped and secrets never returned',async()=>{
  const reads:unknown[][]=[];
  const db={query:async(_sql:string,args:unknown[])=>{
-  reads.push(args);return {rows:[{id:'abc',name:'SMTP',label:'SMTP',protocol:'SMTP',
-    base_url:'smtp.example',auth_type:'Basic',header_name:'',
+  reads.push(args);return {rows:[{id:'abc',name:'Partner',label:'Partner',protocol:'HTTPS',
+    base_url:'https://api.example',auth_type:'Bearer',header_name:'',
     secret_ciphertext:Buffer.from('sensitive'),enabled:true,updated_at:new Date()}]};
  }} as unknown as SqlPersistence;
  const gates:string[]=[];
@@ -24,7 +24,10 @@ test('credential listing is tenant-scoped and secrets never returned',async()=>{
 
 test('credential mutations require OneEngine manage and tenant isolation',async()=>{
  const calls:unknown[][]=[];
- const db={query:async(_sql:string,args:unknown[])=>{calls.push(args);return {rowCount:1,rows:[{id:'x'}]};}} as unknown as SqlPersistence;
+ const db={query:async(sql:string,args:unknown[])=>{calls.push(args);
+  if(sql.includes('FROM md_identity_providers'))return {rowCount:0,rows:[]};
+  return {rowCount:1,rows:[{id:'x'}]};
+ }} as unknown as SqlPersistence;
  const checks:string[]=[];
  const rbac={require:async(_t:string,_u:string,_r:string,action:string)=>{checks.push(action);}} as unknown as RbacEngine;
  const service=new NamedCredentialService(db,rbac);
@@ -35,9 +38,23 @@ test('credential mutations require OneEngine manage and tenant isolation',async(
  assert.deepEqual(calls[0],['tenant-a',id,false]);
  assert.deepEqual(calls[1],['tenant-a']); // Connector field definitions scoped to tenant.
  assert.deepEqual(calls[2],['tenant-a']); // Credential listing scoped to tenant.
- assert.deepEqual(calls[3],['tenant-a',id]);
+ assert.deepEqual(calls[3],['tenant-a',id]); // Federation link check is tenant-scoped.
+ assert.deepEqual(calls[4],['tenant-a',id]);
 });
 
+test('SMTP credentials cannot be created and legacy delivery fails explicitly',async()=>{
+ let writes=0;
+ const db={query:async()=>{writes++;return {rows:[],rowCount:1};}} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const service=new NamedCredentialService(db,rbac);
+ await assert.rejects(service.create('tenant-a','user-a',{
+  name:'LegacyMail',label:'Legacy Mail',protocol:'SMTP',authType:'Basic',
+  baseUrl:'smtp://mail.example:587',headerName:'',secret:'secret'
+ }),/Invalid credential/);
+ await assert.rejects(service.sendTenantEmail('tenant-a','credential','from@example.com',
+  'to@example.com','Subject','Body'),/SMTP email delivery has been removed/);
+ assert.equal(writes,0);
+});
 
 test('deferred HTTP delivery quarantines revoked Flow execute permission before sending',async()=>{
  const queries:string[]=[];

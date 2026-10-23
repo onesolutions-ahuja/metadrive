@@ -501,8 +501,6 @@ function RecordWorkspace({
   };
   type GlobalActionView={id:string;label:string;behavior:'Create Record'|'Run Flow'|'Send Email';targetObjectApi?:string};
   const [globalActions,setGlobalActions] = useState<GlobalActionView[]>([]);
-  const [globalEmailActionId,setGlobalEmailActionId] = useState('');
-  const quickEmailRequestKey=useRef(crypto.randomUUID());
   const [globalActionMessage,setGlobalActionMessage] = useState('');
   useEffect(()=>{
     let active=true;
@@ -511,10 +509,6 @@ function RecordWorkspace({
       .catch(()=>{if(active)setGlobalActions([]);});
     return ()=>{active=false;};
   },[route.kind]);
-  const [emailAction,setEmailAction] = useState<ObjectActionMetadata|null>(null);
-  const [emailTo,setEmailTo] = useState('');
-  const [emailSubject,setEmailSubject] = useState('');
-  const [emailBody,setEmailBody] = useState('');
   const [customActionPendingId, setCustomActionPendingId] = useState('');
   const [allowedActionIds,setAllowedActionIds] = useState<string[]>([]);
   const [customActionMessage, setCustomActionMessage] = useState('');
@@ -1201,8 +1195,8 @@ function RecordWorkspace({
   const runCustomObjectAction = async (action: ObjectActionMetadata) => {
     if(!object||!record||!action.behavior)return;
     if(action.behavior==='Send Email'){
-      setEmailAction(action);setEmailTo('');setEmailSubject('');setEmailBody('');
-      setCustomActionMessage('');return;
+      setCustomActionMessage('SMTP email actions are disabled; use an HTTP Callout Flow.');
+      return;
     }
     if(action.behavior==='Create Related'){
       if(!action.targetObjectApi||!action.relationshipFieldApi)return;
@@ -1232,21 +1226,6 @@ function RecordWorkspace({
       setCustomActionPendingId('');
     }
   };
-  const sendQuickActionEmail=async(event:FormEvent<HTMLFormElement>)=>{
-    event.preventDefault();
-    if(!emailAction||!object||!record)return;
-    setCustomActionPendingId(emailAction.id);setCustomActionMessage('');
-    try{
-      await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}/actions/${encodeURIComponent(emailAction.id)}/execute`,{
-        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
-          requestKey:quickEmailRequestKey.current})
-      });
-      setCustomActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setEmailAction(null);
-      setEmailTo('');setEmailSubject('');setEmailBody('');
-    }catch(error){
-      setCustomActionMessage(error instanceof Error?error.message:'Unable to send email');
-    }finally{setCustomActionPendingId('');}
-  };
   const runGlobalAction=async(action:GlobalActionView)=>{
     if(action.behavior==='Create Record'){
       if(!action.targetObjectApi)return;
@@ -1255,8 +1234,7 @@ function RecordWorkspace({
       return;
     }
     if(action.behavior==='Send Email'){
-      setEmailAction(null);setGlobalEmailActionId(action.id);
-      setEmailTo('');setEmailSubject('');setEmailBody('');setGlobalActionMessage('');
+      setGlobalActionMessage('SMTP email actions are disabled; use an HTTP Callout Flow.');
       return;
     }
     setCustomActionPendingId('global:'+action.id);setGlobalActionMessage('');
@@ -1267,45 +1245,17 @@ function RecordWorkspace({
     }catch(error){setGlobalActionMessage(error instanceof Error?error.message:'Cannot launch global Flow');}
     finally{setCustomActionPendingId('');}
   };
-  const sendGlobalEmail=async(event:FormEvent<HTMLFormElement>)=>{
-    event.preventDefault();
-    if(!globalEmailActionId)return;
-    setCustomActionPendingId('global:'+globalEmailActionId);setGlobalActionMessage('');
-    try{
-      await apiRequest(`/actions/global/${encodeURIComponent(globalEmailActionId)}/execute`,{
-        method:'POST',body:JSON.stringify({to:emailTo,subject:emailSubject,body:emailBody,
-          requestKey:quickEmailRequestKey.current})});
-      setGlobalActionMessage('Email queued for delivery.');quickEmailRequestKey.current=crypto.randomUUID();setGlobalEmailActionId('');
-      setEmailTo('');setEmailSubject('');setEmailBody('');
-    }catch(error){
-      setGlobalActionMessage(error instanceof Error?error.message:'Unable to send global email');
-    }finally{setCustomActionPendingId('');}
-  };
   const renderGlobalQuickActions=()=>globalActions.length===0?null:
     <section className="records-list-card surface" aria-label="Global Quick Actions"
       style={{padding:12,margin:'8px 0'}}>
       <div className="records-list-toolbar">
         <h2>Global Actions</h2>
         <div className="records-list-actions">
-          {globalActions.map(action=><button className="btn" type="button" key={action.id}
+          {globalActions.filter(action=>action.behavior!=='Send Email').map(action=><button className="btn" type="button" key={action.id}
             disabled={Boolean(customActionPendingId)} onClick={()=>void runGlobalAction(action)}>
             {action.label}</button>)}
         </div>
       </div>
-      {globalEmailActionId&&<form onSubmit={event=>void sendGlobalEmail(event)}
-        aria-label="Send global Quick Action email">
-        <h3>{globalActions.find(action=>action.id===globalEmailActionId)?.label??'Send Email'}</h3>
-        <label>Recipient<input className="form-control" type="email" required maxLength={254}
-          value={emailTo} onChange={event=>setEmailTo(event.target.value)}/></label>
-        <label>Subject<input className="form-control" required maxLength={300}
-          value={emailSubject} onChange={event=>setEmailSubject(event.target.value)}/></label>
-        <label>Message<textarea className="form-control" required rows={4} maxLength={10000}
-          value={emailBody} onChange={event=>setEmailBody(event.target.value)}/></label>
-        <div className="records-list-actions">
-          <button className="btn btn-brand" type="submit" disabled={Boolean(customActionPendingId)}>Send</button>
-          <button className="btn" type="button" onClick={()=>setGlobalEmailActionId('')}>Cancel</button>
-        </div>
-      </form>}
       {globalActionMessage&&<div className="records-message" role="status">{globalActionMessage}</div>}
     </section>;
 
@@ -1942,7 +1892,7 @@ function RecordWorkspace({
             {(object.actions ?? []).filter((action) => {
               if (action.type !== 'Custom' || !action.enabled || !allowedActionIds.includes(action.id)) return false;
               if (recordLayout && !recordLayout.actions.includes(action.id)) return false;
-              if (['Run Flow', 'Create Related', 'Send Email'].includes(action.behavior ?? '')) return true;
+              if (['Run Flow', 'Create Related'].includes(action.behavior ?? '')) return true;
               if (!canEdit || (recordLayout && !recordLayout.actions.includes('Edit'))) return false;
               if (action.behavior === 'Log Call') return true;
               return action.behavior === 'Set Field Value' && Boolean(action.fieldApiName
@@ -1955,21 +1905,6 @@ function RecordWorkspace({
           </div>
         </section>
         {renderGlobalQuickActions()}
-        {emailAction&&<form className="record-fields-card surface" onSubmit={event=>void sendQuickActionEmail(event)}
-          aria-label="Send quick action email" style={{padding:16,marginTop:12}}>
-          <h2>{emailAction.label}</h2>
-          <p>The message is sent using the tenant's configured SMTP credential and requires Email permissions.</p>
-          <label>Recipient email<input type="email" className="form-control" required value={emailTo}
-            onChange={event=>setEmailTo(event.target.value)} autoComplete="off" maxLength={254}/></label>
-          <label>Subject<input className="form-control" required maxLength={300} value={emailSubject}
-            onChange={event=>setEmailSubject(event.target.value)}/></label>
-          <label>Message<textarea className="form-control" required maxLength={10000} rows={5}
-            value={emailBody} onChange={event=>setEmailBody(event.target.value)}/></label>
-          <div className="records-list-actions">
-            <button type="submit" className="btn btn-brand" disabled={Boolean(customActionPendingId)}>Send Email</button>
-            <button type="button" className="btn" onClick={()=>setEmailAction(null)} disabled={Boolean(customActionPendingId)}>Cancel</button>
-          </div>
-        </form>}
         {customActionMessage && <div className="records-message surface" role="status">{customActionMessage}</div>}
         {duplicateMatches.length>0 && <section className="records-message" role="status" aria-label="Potential duplicate records">
           <strong>Potential duplicate records detected.</strong>

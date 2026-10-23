@@ -1,9 +1,8 @@
 import {OAuthAuthorizationService} from './oauth-authorization-service.js';
-import nodemailer from 'nodemailer';
 import {createCipheriv,createDecipheriv,randomBytes,randomUUID,createHash} from 'node:crypto';
 import {lookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
-import {request as secureRequest} from 'node:https';
+import {publicHttpsUrl,publicIp,requestExternalHttps} from './external-http-transport.js';
 import type {PoolClient} from 'pg';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
@@ -60,21 +59,6 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
  }
  return details;
 }
-const publicIp=(address:string)=>{
-   if(isIP(address)===4){
-    const [a,b]=address.split('.').map(Number);
-    return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||
-      a===192&&b===168||a===100&&b>=64&&b<=127||a===198&&b>=18&&b<=19||
-      a===192&&b===0||a===192&&b===88||a===192&&b===0||a===198&&b===51||
-      a===203&&b===0);
-   }
-   if(isIP(address)===6){
-    const v=address.toLowerCase();
-    return !(/^(::|fc|fd|fe8|fe9|fea|feb)/.test(v)||v.includes(':ffff:'));
-   }
-   return false;
-  };
-
 /** Tenant-scoped encrypted named credentials. Never disclose stored secret material. */
 export class NamedCredentialService {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
@@ -144,6 +128,122 @@ export class NamedCredentialService {
   decipher.setAuthTag(ciphertext.subarray(-16));
   return Buffer.concat([decipher.update(ciphertext.subarray(12,-16)),decipher.final()]).toString('utf8');
  }
+ async manageFederationCredentials(client:PoolClient,tenantId:string,providerId:string,
+  tokenUrl:string,jwksUrl:string,clientSecret?:string){
+  const tokenEndpoint=publicHttpsUrl(tokenUrl),jwksEndpoint=publicHttpsUrl(jwksUrl);
+  const {rows}=await client.query<{
+   token_credential_id:string|null;jwks_credential_id:string|null
+  }>(`SELECT token_credential_id,jwks_credential_id FROM md_identity_providers
+    WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,[tenantId,providerId]);
+  const provider=rows[0];
+  if(!provider)throw new Error('Identity provider not found');
+  const suffix=providerId.replace(/-/g,'');
+  const values=[
+   {kind:'Token',name:'Federation_'+suffix+'_Token',label:'Federation token: '+suffix,
+    url:tokenEndpoint.href,id:provider.token_credential_id,
+    secret:clientSecret?this.encryptOpaque(clientSecret):undefined},
+   {kind:'Jwks',name:'Federation_'+suffix+'_Jwks',label:'Federation JWKS: '+suffix,
+    url:jwksEndpoint.href,id:provider.jwks_credential_id,secret:undefined}
+  ];
+  const ids:string[]=[];
+  for(const value of values){
+   const existing=await client.query<{id:string;name:string;protocol:string}>(
+    `SELECT id,name,protocol FROM md_named_credentials
+      WHERE tenant_id=$1 AND (id=$2 OR name=$3) FOR UPDATE`,
+    [tenantId,value.id,value.name]);
+   if(existing.rows.length>1)throw new Error('Federation Named Credential ownership conflict');
+   const credential=existing.rows[0];
+   if(credential&&(credential.name!==value.name||credential.protocol!=='HTTPS'||
+      credential.id!==value.id))
+    throw new Error('Federation Named Credential ownership conflict');
+   if(credential){
+    await client.query(`UPDATE md_named_credentials SET base_url=$3,
+      secret_ciphertext=COALESCE($4,secret_ciphertext),
+      encryption_key_id=CASE WHEN $4::bytea IS NULL THEN encryption_key_id ELSE $5 END,
+      enabled=true,updated_at=now() WHERE tenant_id=$1 AND id=$2`,
+      [tenantId,credential.id,value.url,value.secret?.ciphertext??null,
+       value.secret?.keyId??null]);
+    ids.push(credential.id);
+   }else{
+    const created=await client.query<{id:string}>(`INSERT INTO md_named_credentials
+      (tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,
+       enabled,encryption_key_id)
+      VALUES($1,$2,$3,'HTTPS',$4,'None','',$5,true,$6) RETURNING id`,
+      [tenantId,value.name,value.label,value.url,value.secret?.ciphertext??null,
+       value.secret?.keyId??this.activeKeyId()]);
+    if(!created.rows[0])throw new Error('Unable to create federation Named Credential');
+    ids.push(created.rows[0].id);
+   }
+  }
+  await client.query(`UPDATE md_identity_providers SET token_credential_id=$3,
+    jwks_credential_id=$4,secret_ciphertext=NULL,key_id=NULL
+    WHERE tenant_id=$1 AND id=$2`,[tenantId,providerId,ids[0],ids[1]]);
+  return {tokenCredentialId:ids[0],jwksCredentialId:ids[1]};
+ }
+ async identityProviderJson(tenantId:string,providerId:string,endpoint:'token'|'jwks',
+  parameters?:URLSearchParams){
+  const token=endpoint==='token';
+  const {rows}=await this.db.query<{
+   provider:string;enabled:boolean;client_id:string;expected_url:string;
+   id:string;base_url:string;secret_ciphertext:Buffer|null;encryption_key_id:string
+  }>(`SELECT p.label AS provider,p.enabled,p.client_id,
+     CASE WHEN $3='token' THEN p.token_url ELSE p.jwks_url END AS expected_url,
+     c.id,c.base_url,c.secret_ciphertext,c.encryption_key_id
+    FROM md_identity_providers p
+    JOIN md_named_credentials c ON c.tenant_id=p.tenant_id
+     AND c.id=CASE WHEN $3='token' THEN p.token_credential_id ELSE p.jwks_credential_id END
+    WHERE p.tenant_id=$1 AND p.id=$2 AND p.protocol='oidc'
+     AND c.enabled=true AND c.protocol='HTTPS'`,
+   [tenantId,providerId,endpoint]);
+  const credential=rows[0];
+  if(!credential?.enabled||!credential.id||credential.base_url!==credential.expected_url)
+   throw new Error('Federation Named Credential unavailable');
+  const url=publicHttpsUrl(credential.base_url);
+  let body:string|undefined;
+  if(token){
+   if(!parameters)throw new Error('Federation token request is required');
+   parameters.delete('client_secret');
+   parameters.set('client_id',credential.client_id);
+   if(credential.secret_ciphertext){
+    parameters.set('client_secret',this.decryptOpaque(
+     credential.secret_ciphertext,credential.encryption_key_id));
+   }
+   body=parameters.toString();
+  }
+  const startedAt=Date.now(),requestBytes=Buffer.byteLength(body??'');
+  let statusCode:number|undefined,responseBytes=0;
+  const log=(outcome:'success'|'http_error'|'network_error',errorCode?:string)=>
+   writeIntegrationActivity(this.db,{
+    tenantId,direction:'Outbound',transport:'HTTP',provider:credential.provider,
+    credentialId:credential.id,endpoint:url.origin+url.pathname,
+    method:token?'POST':'GET',statusCode,outcome,durationMs:Date.now()-startedAt,
+    requestBytes,responseBytes,errorCode,
+    communication:{name:token?'Identity token exchange':'Identity provider JWKS',
+     provider:credential.provider,relatedObject:'NamedCredential',
+     relatedRecordId:credential.id}
+   },this.integrationActivityWriter);
+  let response:{status:number;body:string;responseBytes:number};
+  try{
+   response=await requestExternalHttps(url,{method:token?'POST':'GET',timeoutMs:10000,
+    maxResponseBytes:262144,body,headers:{Accept:'application/json',
+     ...(token?{'Content-Type':'application/x-www-form-urlencoded',
+      'Content-Length':String(Buffer.byteLength(body??''))}:{})}});
+   statusCode=response.status;responseBytes=response.responseBytes;
+  }catch(error){
+   await log('network_error',error instanceof Error?error.name:'NETWORK_ERROR');
+   throw error;
+  }
+  if(token?statusCode<200||statusCode>=300:statusCode!==200){
+   await log('http_error','HTTP_STATUS_'+statusCode);
+   throw new Error('Identity provider request failed');
+  }
+  await log('success');
+  try{
+   const parsed:unknown=JSON.parse(response.body);
+   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error();
+   return parsed as Record<string,unknown>;
+  }catch{throw new Error('Invalid identity provider JSON');}
+ }
  async readiness(tenantId:string,userId:string){
   return {canManage:await this.rbac.allowed(tenantId,userId,'NamedCredential','manage'),
    encryptionReady:Boolean(this.key())};
@@ -160,7 +260,7 @@ export class NamedCredentialService {
      c.enabled,c.updated_at,w.id AS webhook_id,w.enabled AS webhook_enabled
      FROM md_named_credentials c
      LEFT JOIN md_inbound_webhook_endpoints w ON w.tenant_id=c.tenant_id AND w.credential_id=c.id
-     WHERE c.tenant_id=$1 ORDER BY c.label,c.name`,[tenantId]);
+     WHERE c.tenant_id=$1 AND c.protocol='HTTPS' ORDER BY c.label,c.name`,[tenantId]);
   // Generic, opt-in public settings convention for all provider integrations.
   // Tokens, passwords and keys are never allowed to be client-readable.
   const safePublicKey=(key:string)=>/^public_[A-Za-z][A-Za-z0-9_]*$/.test(key)
@@ -210,7 +310,7 @@ export class NamedCredentialService {
   const x=body as Record<string,unknown>;
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
-    ||!['HTTPS','SMTP'].includes(String(x.protocol))
+    ||x.protocol!=='HTTPS'
     ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code','Authorization Scheme'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
@@ -378,6 +478,9 @@ export class NamedCredentialService {
  async remove(tenantId:string,userId:string,id:string){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid credential');
+  const linked=await this.db.query(`SELECT 1 FROM md_identity_providers
+   WHERE tenant_id=$1 AND (token_credential_id=$2 OR jwks_credential_id=$2)`,[tenantId,id]);
+  if(linked.rowCount)throw new Error('Federation Named Credentials must be removed from provider settings');
   const result=await this.db.query(
    'DELETE FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 RETURNING id',[tenantId,id]);
   if(!result.rowCount)throw new Error('Credential not found');
@@ -574,9 +677,12 @@ export class NamedCredentialService {
   const x=body as Record<string,unknown>;
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
-    !['HTTPS','SMTP'].includes(String(x.protocol))||
+    x.protocol!=='HTTPS'||
     !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code','Authorization Scheme'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
+  const linked=await this.db.query(`SELECT 1 FROM md_identity_providers
+   WHERE tenant_id=$1 AND (token_credential_id=$2 OR jwks_credential_id=$2)`,[tenantId,id]);
+  if(linked.rowCount)throw new Error('Federation Named Credentials must be changed in provider settings');
   if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
     ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
     throw new Error('Invalid credential configuration');
@@ -644,49 +750,14 @@ export class NamedCredentialService {
    console.error('Password recovery communication logging failed for tenant',tenantId);
   }
  }
- /** Queue encrypted SMTP delivery; duplicate request keys never enqueue twice. */
+ /** Prevent legacy SMTP Quick Actions from appearing to succeed. */
  async sendQuickActionEmail(tenantId:string,userId:string,objectApi:string,recordId:string,
   actionId:string,credentialId:string,from:string,to:string,subject:string,body:string,
   requestKey:string=randomUUID()){
   await this.rbac.require(tenantId,userId,'Email','send');
-  await this.rbac.require(tenantId,userId,'NamedCredential','read');
-  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if(!uuid.test(requestKey)||!uuid.test(credentialId)||!email.test(to)||to.length>254
-    ||!email.test(from)||from.length>254||typeof subject!=='string'
-    ||!subject.trim()||subject.length>300||/[\r\n]/.test(subject)
-    ||typeof body!=='string'||!body.trim()||body.length>10000
-    ||!(/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
-    ||!(/^[A-Za-z][A-Za-z0-9_-]*$/.test(actionId))
-    ||(objectApi==='Global'?recordId!=='':!uuid.test(recordId)))
-    throw new Error('Invalid Quick Action email');
-  const payload=JSON.stringify({from,to,subject,body});
-  const digest=createHash('sha256').update(JSON.stringify([
-    objectApi,recordId,actionId,credentialId,payload])).digest('hex');
-  return this.db.transaction(async client=>{
-    const credential=await client.query(`SELECT 1 FROM md_named_credentials
-      WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true FOR SHARE`,
-      [tenantId,credentialId]);
-    if(!credential.rowCount)throw new Error('SMTP credential unavailable');
-    const {rows}=await client.query<{id:string;payload_digest:string;status:string}>(`
-      INSERT INTO md_quick_action_email_jobs
-        (tenant_id,user_id,object_api,record_id,action_id,credential_id,
-          payload_ciphertext,encryption_key_id,request_key,payload_digest)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      ON CONFLICT(tenant_id,user_id,request_key) DO UPDATE
-        SET request_key=EXCLUDED.request_key
-      RETURNING id,payload_digest,status`,
-      [tenantId,userId,objectApi,recordId||null,actionId,credentialId,
-       this.encryptValue(payload),this.activeKeyId(),requestKey,digest]);
-    const job=rows[0];
-    if(!job||job.payload_digest!==digest)
-      throw new Error('Quick Action request key already belongs to a different message');
-    await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
-      VALUES($1,$2,'quick-action.email.queued',
-      jsonb_build_object('objectApi',$3::text,'actionId',$4::text,'jobId',$5::text))`,
-      [tenantId,userId,objectApi,actionId,job.id]);
-    return {status:job.status,jobId:job.id};
-  });
+  void objectApi; void recordId; void actionId; void credentialId;
+  void from; void to; void subject; void body; void requestKey;
+  throw new Error('SMTP email delivery has been removed; configure email through an HTTP Callout Flow');
  }
 
  private quickActionEmailDispatching=false;
@@ -750,7 +821,7 @@ export class NamedCredentialService {
       if(!payload||typeof payload.from!=='string'||typeof payload.to!=='string'
         ||typeof payload.subject!=='string'||typeof payload.body!=='string')
         throw new Error('Queued Quick Action email payload invalid');
-      errorCode='DELIVERY_OUTCOME_UNKNOWN';
+      errorCode='SMTP_REMOVED';
       await this.sendTenantEmail(job.tenant_id,job.credential_id,
         payload.from,payload.to,payload.subject,payload.body,job.user_id);
       await this.db.query(`UPDATE md_quick_action_email_jobs SET status='completed',
@@ -778,34 +849,9 @@ export class NamedCredentialService {
   subject:string,body:string) {
   await this.rbac.require(tenantId,userId,'Email','send');
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
-  const email=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-  if(!/^[0-9a-f-]{36}$/i.test(flowId)||!Number.isSafeInteger(flowVersion)||flowVersion<1
-    ||!/^[0-9a-f-]{36}$/i.test(runId)||!Number.isSafeInteger(nodeId)||nodeId<1||nodeId>250
-    ||!Number.isSafeInteger(step)||step<0||step>=200
-    ||!/^[0-9a-f-]{36}$/i.test(credentialId)||!email.test(from)||from.length>254
-    ||!Array.isArray(recipients)||recipients.length<1||recipients.length>100
-    ||recipients.some(value=>typeof value!=='string'||value.length>254||!email.test(value))
-    ||new Set(recipients).size!==recipients.length||subject.length>300||/[\r\n]/.test(subject)
-    ||body.length>10000)
-   throw new Error('Invalid Flow email configuration');
-  const credential=await client.query<{id:string}>(`
-   SELECT id FROM md_named_credentials
-   WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP' AND enabled=true FOR SHARE`,
-   [tenantId,credentialId]);
-  if(!credential.rows[0])throw new Error('SMTP credential unavailable');
-  const payload=JSON.stringify({from,recipients,subject,body});
-  const {rows}=await client.query<{id:string}>(`
-   INSERT INTO md_flow_email_jobs
-    (tenant_id,run_id,flow_id,flow_version,node_id,step,user_id,credential_id,
-     payload_ciphertext,encryption_key_id)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-   [tenantId,runId,flowId,flowVersion,nodeId,step,userId,credentialId,
-    this.encryptValue(payload),this.activeKeyId()]);
-  if(!rows[0])throw new Error('Unable to queue Flow email');
-  await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
-   VALUES($1,$2,'flow.email.queued',jsonb_build_object('flowId',$3,'runId',$4,'step',$5))`,
-   [tenantId,userId,flowId,runId,step]);
-  return rows[0].id;
+  void client; void flowId; void flowVersion; void runId; void nodeId; void step;
+  void credentialId; void from; void recipients; void subject; void body;
+  throw new Error('SMTP email delivery has been removed; configure email through an HTTP Callout Flow');
  }
 
  private emailDispatching=false;
@@ -898,7 +944,7 @@ export class NamedCredentialService {
     await this.sendTenantEmail(job.tenant_id,job.credential_id,message.from,
      message.recipients.join(','),message.subject,message.body,job.user_id);
    }catch{
-    await markFailed('DELIVERY_OUTCOME_UNKNOWN');
+    await markFailed('SMTP_REMOVED');
     return true;
    }
    const {rowCount}=await this.db.query(`UPDATE md_flow_email_jobs SET status='completed',
@@ -914,71 +960,8 @@ export class NamedCredentialService {
 
  async sendTenantEmail(tenantId:string,id:string,from:string,to:string,subject:string,body:string,
   actorUserId?:string):Promise<void>{
-  if(!/^[0-9a-f-]{36}$/i.test(id)||!from||!to||
-    /[\r\n]/.test(from+to+subject)||subject.length>300||body.length>10000)
-   throw new Error('Invalid recovery email');
-  const {rows}=await this.db.query<{
-   name:string;base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
-   configuration_ciphertext:Buffer|null;encryption_key_id:string;enabled:boolean
-  }>(`SELECT name,base_url,auth_type,secret_ciphertext,configuration_ciphertext,encryption_key_id,enabled
-      FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 AND protocol='SMTP'`,[tenantId,id]);
-  const row=rows[0];
-  if(!row?.enabled||row.auth_type!=='Basic')throw new Error('SMTP credential unavailable');
-  const endpoint=new URL(row.base_url);
-  const port=endpoint.port|| (endpoint.protocol==='smtps:'?'465':'587');
-  if(!['smtp:','smtps:'].includes(endpoint.protocol)||!['465','587'].includes(port)||
-    endpoint.username||endpoint.password||endpoint.pathname!=='/'||endpoint.search||endpoint.hash||
-    isIP(endpoint.hostname)||endpoint.hostname==='localhost'||endpoint.hostname.endsWith('.local'))
-   throw new Error('Invalid SMTP destination');
-  const addresses=await lookup(endpoint.hostname,{all:true,verbatim:true});
-  if(!addresses.length||addresses.some(a=>!publicIp(a.address)))
-   throw new Error('SMTP destination resolves to restricted network');
-  const key=this.keyFor(row.encryption_key_id);
-  const decrypt=(encrypted:Buffer|null)=>{
-   if(!key||!encrypted||encrypted.length<29)throw new Error('SMTP credential cannot be decrypted');
-   const decipher=createDecipheriv('aes-256-gcm',key,encrypted.subarray(0,12));
-   decipher.setAuthTag(encrypted.subarray(-16));
-   return Buffer.concat([decipher.update(encrypted.subarray(12,-16)),decipher.final()]).toString('utf8');
-  };
-  const secret=decrypt(row.secret_ciphertext);
-  let config:Record<string,unknown>;
-  try {config=JSON.parse(decrypt(row.configuration_ciphertext)) as Record<string,unknown>;}
-  catch{throw new Error('Invalid SMTP configuration');}
-  const username=config.username;
-  if(typeof username!=='string'||!username||username.length>254)
-   throw new Error('SMTP username missing');
-  const address=addresses[0];
-  const transport=nodemailer.createTransport({
-   host:address.address,port:Number(port),secure:port==='465',requireTLS:true,
-   auth:{user:username,pass:secret},
-   tls:{servername:endpoint.hostname,rejectUnauthorized:true,minVersion:'TLSv1.2'},
-   connectionTimeout:15000,greetingTimeout:15000,socketTimeout:15000,
-   pool:false
-  });
-  const startedAt=Date.now();
-  const endpointUrl=endpoint.protocol+'//'+endpoint.hostname+':'+port;
-  const requestBytes=Buffer.byteLength([from,to,subject,body].join('\n'));
-  try {
-   await transport.sendMail({from,to,subject,text:body});
-   await writeIntegrationActivity(this.db,{
-    tenantId,direction:'Outbound',transport:'SMTP',provider:row.name,
-    credentialId:id,actorUserId,endpoint:endpointUrl,method:'SMTP',outcome:'success',
-    durationMs:Date.now()-startedAt,requestBytes,
-     communication:{channel:'Email',name:'Outbound email',provider:row.name,
-      relatedObject:'NamedCredential',relatedRecordId:id}
-   },this.integrationActivityWriter);
-  }catch(error){
-   await writeIntegrationActivity(this.db,{
-    tenantId,direction:'Outbound',transport:'SMTP',provider:row.name,
-    credentialId:id,actorUserId,endpoint:endpointUrl,method:'SMTP',outcome:'network_error',
-    durationMs:Date.now()-startedAt,requestBytes,
-    errorCode:error instanceof Error?error.name:'SMTP_ERROR',
-    communication:{channel:'Email',name:'Outbound email',provider:row.name,
-     relatedObject:'NamedCredential',relatedRecordId:id}
-   },this.integrationActivityWriter);
-   throw error;
-  }
-  finally{transport.close();}
+  void tenantId; void id; void from; void to; void subject; void body; void actorUserId;
+  throw new Error('SMTP email delivery has been removed; configure email through an HTTP Callout Flow');
  }
 
  /** One reusable, host-independent outbound HTTP transport. Credential secrets are never returned to a Flow. */
@@ -1106,30 +1089,15 @@ export class NamedCredentialService {
    let tokenStatus:number|undefined,tokenResponseBytes=0;
    let tokenResponse:string;
    try{
-    tokenResponse=await new Promise<string>((resolve,reject)=>{
-    const request=secureRequest(tokenUrl,{method:'POST',agent:false,
-     lookup:(_host,options,cb)=>options.all
-      ?cb(null,[{address:resolved[0].address,family:resolved[0].family}])
-      :cb(null,resolved[0].address,resolved[0].family),
-     timeout:15000,headers:{Authorization:authorization,'Content-Type':'application/x-www-form-urlencoded',
-       Accept:'application/json','Content-Length':Buffer.byteLength(payload)}},response=>{
-      tokenStatus=response.statusCode;
-      if((response.statusCode??0)<200||(response.statusCode??0)>=300){
-       response.resume();reject(new Error('OAuth token endpoint rejected credentials'));return;
-      }
-      const chunks:Buffer[]=[];let length=0;
-      response.on('data',(chunk:Buffer)=>{
-       length+=chunk.length;
-       tokenResponseBytes=length;
-       if(length>8192){request.destroy(new Error('OAuth token response too large'));return;}
-       chunks.push(chunk);
-      });
-      response.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));
-    });
-    request.on('timeout',()=>request.destroy(new Error('OAuth token timeout')));
-    request.on('error',reject);
-    request.end(payload);
-    });
+    const response=await requestExternalHttps(tokenUrl,{method:'POST',timeoutMs:15000,
+     maxResponseBytes:8192,body:payload,
+     headers:{Authorization:authorization,'Content-Type':'application/x-www-form-urlencoded',
+      Accept:'application/json','Content-Length':String(Buffer.byteLength(payload))}});
+    tokenStatus=response.status;
+    tokenResponseBytes=response.responseBytes;
+    if(tokenStatus<200||tokenStatus>=300)
+     throw new Error('OAuth token endpoint rejected credentials');
+    tokenResponse=response.body;
    }catch(error){
     await writeIntegrationActivity(this.db,{
      tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
@@ -1167,31 +1135,13 @@ export class NamedCredentialService {
   if(body&&Buffer.byteLength(body)>32768)throw new Error('HTTP Callout body too large');
   if(body)header['Content-Type']='application/json';
   const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
-  const address=resolved[0];
   const requestStartedAt=Date.now();
   const requestBytes=body?Buffer.byteLength(body):0;
   const auditEndpoint=destination.origin+destination.pathname;
-  let result:{status:number;body:string};
+  let result:{status:number;body:string;responseBytes:number};
   try{
-   result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
-    const call=secureRequest(destination,{method,headers:header,timeout,
-     agent:false,lookup:(_host,options,cb)=>options.all
-      ?cb(null,[{address:address.address,family:address.family}])
-      :cb(null,address.address,address.family)},res=>{
-       const status=res.statusCode??0;
-       const chunks:Buffer[]=[];let length=0;
-       res.on('data',(chunk:Buffer)=>{
-        length+=chunk.length;
-        if(length>65536){call.destroy(new Error('HTTP response exceeded limit'));return;}
-        chunks.push(chunk);
-       });
-       res.on('end',()=>resolve({status,body:Buffer.concat(chunks).toString('utf8')}));
-    });
-    call.on('timeout',()=>call.destroy(new Error('HTTP Callout timeout')));
-    call.on('error',reject);
-    if(body)call.write(body);
-    call.end();
-   });
+   result=await requestExternalHttps(destination,{method,headers:header,timeoutMs:timeout,
+    maxResponseBytes:65536,body});
   }catch(error){
    await writeIntegrationActivity(this.db,{
     tenantId,direction:'Outbound',transport:'HTTP',provider:item.name,
@@ -1209,7 +1159,7 @@ export class NamedCredentialService {
    credentialId:String(config.namedCredentialId),actorUserId:userId,
    endpoint:auditEndpoint,method,statusCode:result.status,
    outcome:successful?'success':'http_error',durationMs:Date.now()-requestStartedAt,
-   requestBytes,responseBytes:Buffer.byteLength(result.body),
+   requestBytes,responseBytes:result.responseBytes,
    errorCode:successful?null:'HTTP_STATUS_'+result.status,
    communication:mappedCommunicationDetails(config,flowVariables,successful?result.body:undefined)
   },this.integrationActivityWriter);

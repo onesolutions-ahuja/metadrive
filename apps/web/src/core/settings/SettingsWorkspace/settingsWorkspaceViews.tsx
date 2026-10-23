@@ -163,114 +163,13 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
-  const [smtpCredentialId, setSmtpCredentialId] = useState('');
-  const [fromEmail, setFromEmail] = useState('');
-  const [method, setMethod] = useState<'OTP' | 'LINK'>('OTP');
-  const [subject, setSubject] = useState('{!Tenant.Name} — password recovery');
-  const [body, setBody] = useState('Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.');
-  const [ready, setReady] = useState(false);
-  const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
-  const [permitted, setPermitted] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const original = useRef<{ smtpCredentialId: string; fromEmail: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  useEffect(() => {
-    let active = true;
-    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean; policy?: { method: 'OTP'|'LINK'; templates?: {email?:{subject:string;body:string}} } }>('/auth/password-recovery/settings')
-      .then((value) => {
-        if (!active) return;
-        setPermitted(true); setSmtpCredentialId(value.smtpCredentialId);
-        setFromEmail(value.fromEmail); setReady(value.linkReady);
-        setMethod(value.policy?.method ?? 'OTP');
-        setSubject(value.policy?.templates?.email?.subject ?? '{!Tenant.Name} — password recovery');
-        setBody(value.policy?.templates?.email?.body ?? 'Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.');
-      }).catch(() => { if (active) setPermitted(false); });
-    void apiRequest<{ credentials: Array<{ id: string; label: string; protocol: string; enabled: boolean }> }>('/named-credentials')
-      .then((response) => { if (active) setCredentials(response.credentials.filter((item) => item.protocol === 'SMTP' && item.enabled)); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
-  if (!permitted) return null;
-  const beginEdit = () => {
-    if (!canManage || busy) return;
-    original.current = { smtpCredentialId, fromEmail };
-    setEditing(true);
-    setMessage('');
-  };
-  const cancelEdit = () => {
-    if (busy) return;
-    if (original.current) {
-      setSmtpCredentialId(original.current.smtpCredentialId);
-      setFromEmail(original.current.fromEmail);
-    }
-    original.current = null;
-    setEditing(false);
-    setMessage('');
-  };
-  const save = async () => {
-    if (!canManage || !editing || busy) return;
-    setBusy(true); setMessage('');
-    try {
-      await apiRequest('/auth/password-recovery/settings', {
-        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '',
-          policy: { method, defaultChannel:'email', allowedChannels:['email'], templates: { email: { subject, body } } } })
-      });
-      original.current = null;
-      setEditing(false);
-      setMessage('Password recovery configuration saved.');
-    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
-    finally { setBusy(false); }
-  };
+  void canManage;
   return <section className="surface permission-section">
     <TenantPasswordPolicy request={apiRequest} canManage={canManage} />
     <h2>Tenant password recovery</h2>
-    <p>Choose OTP or reset-link delivery, with editable templates and tenant-scoped SMTP. MFA is never bypassed.</p>
-    {!ready && <p role="alert" className="permission-help">
-      Configure a trusted HTTPS password-reset origin on the server before enabling recovery.
-    </p>}
-    <div className="settings-read-first-section">
-      {editing ? <div className="settings-edit-row">
-        <PlatformPageSlot slotKey="field-settings-04"><label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
-          <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
-            onChange={(event) => setSmtpCredentialId(event.target.value)}>
-            <option value="">Disabled</option>
-            {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-          </select>
-        </label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-settings-05"><label className="form-label" htmlFor="recovery-method">Verification method
-          <select className="form-control" id="recovery-method" value={method} onChange={(event)=>setMethod(event.target.value as 'OTP'|'LINK')}>
-            <option value="OTP">6-digit email OTP</option><option value="LINK">Email reset link</option>
-          </select>
-        </label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-settings-06"><label className="form-label" htmlFor="recovery-subject">Email subject template
-          <input className="form-control" id="recovery-subject" value={subject} onChange={(event)=>setSubject(event.target.value)} />
-        </label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-settings-07"><label className="form-label" htmlFor="recovery-body">Email body template
-          <textarea className="form-control" id="recovery-body" rows={5} value={body} onChange={(event)=>setBody(event.target.value)} />
-        </label></PlatformPageSlot>
-        <PlatformPageSlot slotKey="field-settings-08"><label className="form-label" htmlFor="recovery-sender">Sender email
-          <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
-            onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
-        </label></PlatformPageSlot>
-      </div> : <>
-        <SettingsViewRow label="SMTP Named Credential"
-          value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
-          canEdit={canManage} onEdit={beginEdit} />
-        <SettingsViewRow label="Verification method" value={method} canEdit={canManage} onEdit={beginEdit} />
-        <SettingsViewRow label="Email template" value={subject} canEdit={canManage} onEdit={beginEdit} />
-        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Platform fallback (if configured)'}
-          canEdit={canManage} onEdit={beginEdit} />
-      </>}
-    </div>
-    {editing && canManage && <div className="settings-read-first-toolbar">
-      <button type="button" className="btn" disabled={busy} onClick={cancelEdit}>Cancel</button>
-      <button type="button" className="btn btn-brand" onClick={() => void save()}
-        disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
-        <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
-      </button>
-    </div>}
-    {message && <p role="status" className="settings-view-row-help">{message}</p>}
+    <p role="alert" className="permission-help">
+      Email delivery is disabled because the legacy SMTP sender has been removed. Password reset emails will not be sent until a replacement HTTPS Named Credential and HTTP Callout Flow are configured.
+    </p>
   </section>;
 }
 

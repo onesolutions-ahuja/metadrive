@@ -5,8 +5,8 @@ import {encodeMetadataValue} from '../system-files/component-runtime.js';
  * All templates are intentionally inactive drafts until a tenant developer
  * selects a permitted Named Credential, configures a verified recipient and publishes.
  */
-function sendTemplate(object:'Quotation'|'Invoice',channel:'Email'|'WhatsApp',credentialId:string|null){
- const apiName='AceAssistSend'+object+(channel==='Email'?'':'WhatsApp');
+function sendTemplate(object:'Quotation'|'Invoice',credentialId:string|null){
+ const apiName='AceAssistSend'+object+'WhatsApp';
  const get={id:2,type:'Get Records',label:'Read authorised '+object,config:{
   object,recordLimit:'1',outputVariable:'document',
   conditions:[{field:'Id',operator:'Equals',value:'{!recordId}'}]}};
@@ -17,17 +17,12 @@ function sendTemplate(object:'Quotation'|'Invoice',channel:'Email'|'WhatsApp',cr
   {name:'Found',label:'Found',conditionLogic:'All',conditions:[
    {field:'{!document}',operator:'IsNotNull'},
    {field:'{!customer}',operator:'IsNotNull'}]}]}};
- const transport=channel==='Email'
-  ?{id:5,type:'Action',label:'Send via configured SMTP Named Credential',config:{
-   actionType:'Send Email',namedCredentialId:'',fromEmail:'',
-   recipients:'{!customer.Email}',subject:object+' {!document.DocumentNumber}',
-   body:'Please find the '+object.toLowerCase()+' details. Document: {!document.DocumentNumber}. Total: {!document.Total}. Please contact us for an itemised copy.'}}
-  :{id:5,type:'HTTP Callout',label:'Send approved WhatsApp template',config:{
+ const transport={id:5,type:'HTTP Callout',label:'Send approved WhatsApp template',config:{
    method:'POST',namedCredentialId:credentialId??'',
    path:'v26.0/{!public_phoneNumberId}/messages',deliveryMode:'DURABLE_ASYNC',
    onError:'FAULT_PATH',idempotencyKey:'{!recordId}',
-   body:'{"messaging_product":"whatsapp","to":"{!customer.Phone}","type":"template","template":{"name":"CONFIGURE_APPROVED_TEMPLATE","language":{"code":"en_GB"}}}'}};
- return {apiName,label:'Ace Assist - '+channel+' '+object,appApiName:'AceAssist',
+   body:'{"messaging_product":"whatsapp","to":"{!customer.Phone}","type":"template","template":{"name":"CONFIGURE_APPROVED_TEMPLATE","language":{"code":"en_GB"}}}' }}
+ return {apiName,label:'Ace Assist - WhatsApp '+object,appApiName:'AceAssist',
   flowType:'Autolaunched Flow',status:'Draft',version:1,tests:[],
   resources:[{name:'recordId',type:'Variable',dataType:'Text',availableForInput:true}],
   elements:[
@@ -46,7 +41,6 @@ function sendTemplate(object:'Quotation'|'Invoice',channel:'Email'|'WhatsApp',cr
   ]};
 }
 export const ACEASSIST_COMMUNICATION_TEMPLATE_APIS=[
- 'AceAssistSendQuotation','AceAssistSendInvoice',
  'AceAssistSendQuotationWhatsApp','AceAssistSendInvoiceWhatsApp'
 ] as const;
 export async function seedAceAssistCommunicationTemplates(client:PoolClient,tenantId:string):Promise<number>{
@@ -55,9 +49,8 @@ export async function seedAceAssistCommunicationTemplates(client:PoolClient,tena
   SELECT id FROM md_named_credentials WHERE tenant_id=$1
    AND name='WhatsApp_Cloud_API' AND protocol='HTTPS' AND enabled=true
   ORDER BY updated_at DESC, id DESC LIMIT 1`,[tenantId]);
- for(const object of ['Quotation','Invoice'] as const)
-  for(const channel of ['Email','WhatsApp'] as const){
-   const graph=sendTemplate(object,channel,credentials[0]?.id??null);
+ for(const object of ['Quotation','Invoice'] as const){
+   const graph=sendTemplate(object,credentials[0]?.id??null);
    const found=await client.query('SELECT 1 FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2',
     [tenantId,graph.apiName]);
    if(found.rowCount)continue;

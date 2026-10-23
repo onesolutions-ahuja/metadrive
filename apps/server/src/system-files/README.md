@@ -146,13 +146,13 @@ tenant, and inserts notification rows inside the Flow SQL transaction. A fault
 connector rolls back the action's savepoint before continuing; without one the
 Flow fails and the enclosing transaction rolls back. These SQL-backed actions
 do not have independent retries; the durable worker avoids replay after an
-ambiguous lease recovery. Send Email and Email Alert write encrypted payloads
-to the durable SQL outbox in the Flow transaction. The API/worker dispatcher
-rechecks Flow activation, tenant/app entitlement, `Email:send`,
-`NamedCredential:read` and the enabled SMTP credential before delivery. SMTP
-delivery is single-attempt: an ambiguous provider outcome is terminally
-recorded as unknown rather than retried, since automatic retry could duplicate
-a message. Outbound Message remains unavailable.
+ambiguous lease recovery. Legacy Send Email, Email Alert, password recovery,
+dashboard mail and email Quick Actions are disabled: the SMTP sender and
+delivery dependencies have been removed. Existing SMTP credentials and
+outbox rows are retained, but new SMTP credentials cannot be created and
+legacy queued email is marked failed rather than sent. Configure future email
+delivery as an HTTPS Named Credential plus an HTTP Callout Flow. Outbound
+Message remains unavailable.
 Record-Triggered Flows also support a Custom Error element with a resolved,
 bounded message. It aborts the Flow and enclosing record transaction; a
 field-level error is returned as a 400 response with the affected field name.

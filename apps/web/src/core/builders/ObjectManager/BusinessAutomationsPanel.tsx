@@ -11,24 +11,20 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
  const [draft,setDraft]=useState<RecipeInput>(()=>empty(object.apiName));
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const [users,setUsers]=useState<Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>>([]);
- const [credentials,setCredentials]=useState<Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>>([]);
  const [flows,setFlows]=useState<Array<{apiName:string;label:string;flowType:string;status:string;triggerObject?:string}>>([]);
  useEffect(()=>{
    let active=true;
    void Promise.allSettled([
      apiRequest<{records:Array<{Id:string;Name?:string;Email?:string;IsActive?:boolean}>}>('/records/User?limit=100'),
-     apiRequest<{credentials:Array<{id:string;name:string;label:string;protocol:string;enabled:boolean}>}>('/named-credentials'),
      apiRequest<{flows:Array<{apiName:string;label:string;flowType:string;status:string;triggerObject?:string}>}>('/metadata/flows')
    ]).then(results=>{
      if(!active)return;
      if(results[0].status==='fulfilled')setUsers(results[0].value.records);
-     if(results[1].status==='fulfilled')setCredentials(results[1].value.credentials);
-     if(results[2].status==='fulfilled')setFlows(results[2].value.flows);
+     if(results[1].status==='fulfilled')setFlows(results[1].value.flows);
    });
    return()=>{active=false};
  },[]);
  const fields=object.fields;
- const textFields=fields.filter(f=>['Email','Text'].includes(f.dataType));
  const dateFields=fields.filter(f=>['Date','Date/Time','DateTime'].includes(f.dataType));
  const change=(values:Partial<RecipeInput>)=>setDraft(current=>({...current,...values}));
  const create=async()=>{
@@ -48,7 +44,7 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
  };
  return <section className="surface object-setting-surface">
   <div className="section-toolbar"><div><h2>Business Automation Recipes</h2>
-   <p>Configure an assignment, automatic response or escalation using the shared Flow engine.
+   <p>Configure an assignment or escalation using the shared Flow engine.
     Generated Flows remain drafts until validated and activated in Flow Builder.</p></div></div>
   {error&&<p role="alert">{error}</p>}
   <div className="metadata-card"><h3>Existing record automations</h3>
@@ -64,7 +60,7 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
 
   <label className="form-label">Automation type<select className="form-control" value={draft.kind}
    onChange={e=>setDraft({...empty(object.apiName),kind:e.target.value as AutomationKind})}>
-   <option>Assignment</option><option>Auto Response</option><option>Escalation</option>
+   <option>Assignment</option><option>Escalation</option>
   </select></label>
   <label className="form-label">Label<input className="form-control" value={draft.label}
    onChange={e=>change({label:e.target.value,apiName:e.target.value.trim().replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'')})}/></label>
@@ -95,19 +91,6 @@ export default function BusinessAutomationsPanel({object}:{object:ObjectMetadata
    </select></label>
    <p>Owner is updated through the shared RecordEngine and its permission checks.
     Use a creation trigger to avoid reassignment loops.</p>
-  </div>}
-  {draft.kind==='Auto Response'&&<div className="metadata-card"><h3>Automatic email</h3>
-   <label className="form-label">SMTP Named Credential<select className="form-control" value={draft.namedCredentialId??''}
-    onChange={e=>change({namedCredentialId:e.target.value})}>
-    <option value="">Select configured SMTP connection</option>
-    {credentials.filter(c=>c.protocol==='SMTP'&&c.enabled).map(c=>
-      <option key={c.id} value={c.id}>{c.label||c.name}</option>)}
-   </select></label>
-   <label className="form-label">From email<input className="form-control" value={draft.fromEmail??''} onChange={e=>change({fromEmail:e.target.value})}/></label>
-   <label className="form-label">Recipient email field<select className="form-control" value={draft.recipientField??''} onChange={e=>change({recipientField:e.target.value})}>
-    <option value="">Select field</option>{textFields.map(f=><option key={f.apiName} value={f.apiName}>{f.label}</option>)}</select></label>
-   <label className="form-label">Subject<input className="form-control" value={draft.subject??''} onChange={e=>change({subject:e.target.value})}/></label>
-   <label className="form-label">Message<textarea className="form-control" rows={4} value={draft.body??''} onChange={e=>change({body:e.target.value})}/></label>
   </div>}
   {draft.kind==='Escalation'&&<div className="metadata-card"><h3>Durable scheduled escalation</h3>
    <label className="form-label">Date/time field<select className="form-control" value={draft.dueField??''} onChange={e=>change({dueField:e.target.value})}>

@@ -227,7 +227,7 @@ export function createSystemServer(db:SqlPersistence) {
   const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials,integrationActivityWriter);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
-  const federation=new FederationService(db,rbac,namedCredentials,undefined,integrationActivityWriter);
+  const federation=new FederationService(db,rbac,namedCredentials,integrationActivityWriter);
   const passkeys=new WebAuthnService(db,auth);
   const backups=new MfaBackupService(db,auth,mfa,rbac);
   const sessionPolicies=new SessionPolicyService(db,rbac);

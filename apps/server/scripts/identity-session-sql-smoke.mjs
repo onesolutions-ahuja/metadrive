@@ -11,10 +11,34 @@ import {WebAuthnService} from '../dist-system/system-support/webauthn-service.js
 import {syntheticPasskey,signedSamlResponse,testIdpCertificate} from './identity-test-assertions.mjs';
 export async function verifyIdentitySessionSql(db){
  await verifyLoginPasswordSql(db,async({tenant,other,user,foreign,auth})=>{
-  const allow={require:async()=>{}},vault={encryptOpaque:v=>({ciphertext:Buffer.from(v),keyId:'test'}),decryptOpaque:b=>Buffer.from(b).toString()};
+  const allow={require:async()=>{}},vault={
+   encryptOpaque:v=>({ciphertext:Buffer.from(v),keyId:'test'}),
+   decryptOpaque:b=>Buffer.from(b).toString(),
+   manageFederationCredentials:async(client,tenant,providerId,tokenUrl,jwksUrl)=>{
+    const suffix=providerId.replaceAll('-','');
+    const token=await client.query(`INSERT INTO md_named_credentials
+     (tenant_id,name,label,protocol,base_url,auth_type,header_name,enabled,encryption_key_id)
+     VALUES($1,$2,$3,'HTTPS',$4,'None','',true,'test') RETURNING id`,
+     [tenant,'Federation_'+suffix+'_Token','Federation token',tokenUrl]);
+    const jwks=await client.query(`INSERT INTO md_named_credentials
+     (tenant_id,name,label,protocol,base_url,auth_type,header_name,enabled,encryption_key_id)
+     VALUES($1,$2,$3,'HTTPS',$4,'None','',true,'test') RETURNING id`,
+     [tenant,'Federation_'+suffix+'_Jwks','Federation JWKS',jwksUrl]);
+    await client.query(`UPDATE md_identity_providers SET token_credential_id=$3,
+     jwks_credential_id=$4 WHERE tenant_id=$1 AND id=$2`,
+     [tenant,providerId,token.rows[0].id,jwks.rows[0].id]);
+   },
+   identityProviderJson:async(_tenant,_provider,endpoint,body)=>{
+    if(endpoint==='jwks')return {keys:[jwk]};
+    assert.ok(body.get('code_verifier'));return {id_token:await new SignJWT({nonce:signedNonce||nonce})
+     .setProtectedHeader({alg:'RS256',kid:'test'}).setIssuer(issuer).setAudience('client')
+     .setSubject('external-subject').setIssuedAt().setExpirationTime('2m').sign(privateKey)};
+   }
+  };
   const sessions=new SessionPolicyService(db,allow),mfa=new MfaService(db,allow,auth,vault),backups=new MfaBackupService(db,auth,mfa,allow);
   const migration=readFileSync(new URL('../src/system-support/migrations/20261122-identity-session-controls.sql',import.meta.url),'utf8');
-  await db.query(migration);await db.query('UPDATE md_password_policies SET max_age_days=0 WHERE tenant_id=$1',[tenant]);
+  const federationCredentialsMigration=readFileSync(new URL('../src/system-support/migrations/20261201-federation-named-credentials.sql',import.meta.url),'utf8');
+  await db.query(migration);await db.query(federationCredentialsMigration);await db.query('UPDATE md_password_policies SET max_age_days=0 WHERE tenant_id=$1',[tenant]);
   await db.query('UPDATE md_users SET password_changed_at=now() WHERE id=$1',[user]);
   await db.query('CREATE TABLE md_tenant_domains(domain text PRIMARY KEY,tenant_id uuid)');
   await db.query("INSERT INTO md_tenant_domains VALUES('tenant.example.test',$1)",[tenant]);
@@ -75,10 +99,7 @@ export async function verifyIdentitySessionSql(db){
   await assert.rejects(()=>keys.authenticate(badOptions.token,device.authenticate(badOptions.options,'https://foreign.example.test',2)),/origin/);
   const {publicKey,privateKey}=await generateKeyPair('RS256'),jwk=await exportJWK(publicKey);jwk.kid='test';
   const issuer='https://identity.example.test';let nonce='',signedNonce='';
-  const federation=new FederationService(db,allow,vault,async(url,body)=>{
-   if(!body)return {keys:[jwk]};
-   assert.ok(body.get('code_verifier'));return {id_token:await new SignJWT({nonce:signedNonce||nonce}).setProtectedHeader({alg:'RS256',kid:'test'}).setIssuer(issuer).setAudience('client').setSubject('external-subject').setIssuedAt().setExpirationTime('2m').sign(privateKey)};
-  });
+  const federation=new FederationService(db,allow,vault);
   const old=process.env.METADRIVE_AUTH_PUBLIC_ORIGIN;process.env.METADRIVE_AUTH_PUBLIC_ORIGIN='https://api.example.test';
   try{
    await federation.save(tenant,user,{label:'Test OIDC',protocol:'oidc',enabled:true,issuer,authorization_url:issuer+'/authorize',token_url:issuer+'/token',jwks_url:issuer+'/keys',client_id:'client'});

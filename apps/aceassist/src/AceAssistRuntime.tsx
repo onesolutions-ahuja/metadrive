@@ -391,8 +391,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
          onClick={()=>{setPrintingDocument(chosen);
           setPrintingObject(current.object as 'Quotation'|'Invoice');}}>
          Print / Save PDF</button>}
-       {current.object==='Quotation'&&actions.has('AceAssistSendQuotation')&&
-        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendQuotation',chosen)}>Send quotation</button>}
        {current.object==='Quotation'&&actions.has('AceAssistSendQuotationWhatsApp')&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistSendQuotationWhatsApp',chosen)}>Send quotation via WhatsApp</button>}
@@ -408,8 +406,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
         &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
         <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
          Record cash payment</button>}
-       {current.object==='Invoice'&&actions.has('AceAssistSendInvoice')&&
-        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistSendInvoice',chosen)}>Send invoice</button>}
        <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
       </div>
      </>:<p className="custom-empty">Select a record to edit or view details.</p>}

@@ -50,7 +50,8 @@ test('malformed backup codes never reach SQL; successful consumption uses one co
 });
 test('invalid federation state and browser binding fail before remote token verification',async()=>{
  let http=false;
- const service=new FederationService({query:async()=>({rows:[]})} as unknown as SqlPersistence,{} as RbacEngine,{} as NamedCredentialService,async()=>{http=true;return {};});
+ const vault={identityProviderJson:async()=>{http=true;return {};}} as unknown as NamedCredentialService;
+ const service=new FederationService({query:async()=>({rows:[]})} as unknown as SqlPersistence,{} as RbacEngine,vault);
  await assert.rejects(()=>service.callback('bad','browser','code',null),/Invalid federation state/);
  await assert.rejects(()=>service.callback('A'.repeat(43),'wrong-browser','code',null),/Invalid federation state/);
  assert.equal(http,false);
