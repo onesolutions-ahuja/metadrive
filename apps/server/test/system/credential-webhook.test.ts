@@ -89,6 +89,66 @@ test('credential-linked webhook accepts verified request, creates Communication,
  }
 });
 
+
+test('credential webhook retries skip inbound message IDs already stored before a partial failure',async()=>{
+ const tenant='22222222-2222-4222-8222-222222222222';
+ const endpoint='11111111-1111-4111-8111-111111111111';
+ const actor='33333333-3333-4333-8333-333333333333';
+ const secret='provider-app-secret-value';
+ const communications:Array<Record<string,unknown>>=[];
+ let eventStatus='received';
+ const db={query:async(sql:string,params:unknown[] = [])=>{
+  if(sql.includes('md_tenant_developer_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+  if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
+   tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
+   execution_user_id:actor,created_by:actor,credential_name:'WhatsApp',provider:'HmacSha256',
+   enabled:true,verify_token_digest:createHash('sha256').update('token').digest(),
+   signature_secret_ciphertext:Buffer.from('secret'),encryption_key_id:'active'
+  }]};
+  if(sql.includes('FROM md_records r'))
+   return {rows:params[1]==='wamid.existing'?[{id:'existing-record'}]:[]};
+  if(sql.includes('INSERT INTO md_inbound_webhook_events'))
+   return {rows:[{id:'44444444-4444-4444-8444-444444444444',status:eventStatus}]};
+  if(sql.includes("SET status='completed'"))eventStatus='completed';
+  return {rows:[]};
+ }};
+ const app=express();
+ app.use(express.json({verify:(req,_res,raw)=>{
+  (req as typeof req&{rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(raw);
+ }}));
+ const recordEngine={create:async(_tenant:string,_actor:string,object:string,values:Record<string,unknown>)=>{
+  assert.equal(object,'Communication');communications.push(values);
+ }};
+ const writer=createIntegrationCommunicationWriter(db as never,recordEngine as never);
+ registerInboundWebhookPublicRoutes(app,db as never,
+  {decryptOpaque:()=>secret} as never,
+  {execute:async()=>{throw new Error('credential webhooks must not invoke a Flow');}} as never,
+  {allowed:async()=>true} as never,recordEngine as never,writer);
+ const server=app.listen(0);
+ try{
+  const address=server.address();
+  if(!address||typeof address==='string')throw Error('No server port');
+  const raw=JSON.stringify({object:'whatsapp_business_account',entry:[{changes:[{value:{
+   metadata:{display_phone_number:'15551234567'},
+   messages:[
+    {id:'wamid.existing',from:'447700900123',timestamp:'1792690000',type:'text',text:{body:'already stored'}},
+    {id:'wamid.new',from:'447700900456',timestamp:'1792690001',type:'text',text:{body:'new message'}}
+   ]
+  }}]}]});
+  const signature='sha256='+createHmac('sha256',secret).update(raw).digest('hex');
+  const response=await fetch('http://127.0.0.1:'+address.port+'/api/inbound-webhooks/'+endpoint,{
+   method:'POST',headers:{'content-type':'application/json','x-hub-signature-256':signature},body:raw
+  });
+  assert.equal(response.status,200);
+  assert.equal(communications.length,1);
+  assert.equal(communications[0].ExternalMessageId,'wamid.new');
+  assert.equal(communications[0].Body,'new message');
+  assert.match(String(communications[0].Subject),/POST 200 · success/);
+ }finally{
+  await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+ }
+});
+
 test('credential webhook ingests Communication without invoking the app Flow',async()=>{
  const tenant='22222222-2222-4222-8222-222222222222';
  const endpoint='11111111-1111-4111-8111-111111111111';
