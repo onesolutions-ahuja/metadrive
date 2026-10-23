@@ -3,6 +3,7 @@
   "description": "Existing test files stay at original import-safe paths; this suite is a nonduplicating category manifest.",
   "command": "node scripts/run-test-suite.mjs unit",
   "tests": [
+    "apps/web/test/visiblePolling.test.ts",
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
     "apps/server/test/system/aceassist-booking-slot-preview.test.ts",
