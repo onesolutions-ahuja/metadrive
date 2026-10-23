@@ -2173,7 +2173,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerVersionedApiRoutes(app,records,definitions,rbac,db);
   registerPlatformEventStreamRoutes(app,db,rbac);
   registerOutboundWebhookRoutes(app,db,rbac);
-  registerStalwartMailRoutes(app,rbac);
+  registerStalwartMailRoutes(app,db,rbac);
   registerInboundWebhookAdminRoutes(app,db,namedCredentials,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
