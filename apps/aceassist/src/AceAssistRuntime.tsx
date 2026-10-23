@@ -3,6 +3,7 @@ import {useEffect,useMemo,useState} from 'react';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
 import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
+import {FinancialDocumentEditor,type DocumentChanges,type DocumentType} from './FinancialDocumentEditor';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
 import {DocumentPrint} from '../../web/src/core/components/DocumentPrint/DocumentPrint';
@@ -21,11 +22,17 @@ const tabs:Tab[]=[
  {object:'Appointment',label:'Appointments'},
  {object:'Customer',label:'Customers'},
  {object:'Quotation',label:'Quotations'},
- {object:'QuotationLine',label:'Quotation lines'},
- {object:'Invoice',label:'Billing / Invoices'},
- {object:'InvoiceLine',label:'Invoice lines'},
+ {object:'Invoice',label:'Invoices'},
  {object:'Payment',label:'Payments'}
 ];
+const isFinancialDocument=(name:string):name is DocumentType=>
+ name==='Quotation'||name==='Invoice';
+const documentHeaders:Record<DocumentType,readonly string[]>={
+ Quotation:['Name','Customer','IssueDate','ExpiryDate','CurrencyCode','TermsAndConditions','Notes','Status'],
+ Invoice:['Name','Customer','InvoiceDate','DueDate','CurrencyCode','Notes']
+};
+const documentFlow=(operation:'Create'|'Update',object:DocumentType)=>
+ 'AceAssist'+operation+'DocumentV1'+object;
 const inputFields:Record<string,string[]>={
  Appointment:['Name','StartDateTime','EndDateTime','Status','Customer','Service','Location','AssignedTo','Description','Notes'],
  Customer:['Name','Email','Phone','BillingAddress','ShippingAddress','Active'],
@@ -68,6 +75,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [selected,setSelected]=useState(0);
  const [rows,setRows]=useState<Row[]>([]);
  const [relatedRows,setRelatedRows]=useState<Row[]>([]);
+ const [documentLines,setDocumentLines]=useState<Row[]>([]);
+ const [relatedLoading,setRelatedLoading]=useState(false);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
  const [activeTenant,setActiveTenant]=useState('');
@@ -109,6 +118,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
      (f.apiName==='AssignedTo'&&definition?.fields?.some(x=>x.apiName==='AssignedUser')))));
  };
  const fields=useMemo(()=>visibleFields(current.object),[objects,actions,current.object]);
+ const documentFields=(object:DocumentType,operation:'Create'|'Update')=>
+  (objects.find(x=>x.apiName===object)?.fields??[])
+   .filter(field=>documentHeaders[object].includes(field.apiName)
+    &&(operation==='Update'||field.apiName!=='Status')&&!readOnlyField(field));
  const flowName=(operation:'Load'|Operation)=>'AceAssist'+operation+current.object;
  const can=(operation:'Load'|Operation)=>actions.has(flowName(operation));
  const loaded=useMemo(()=>new Set(objects.map(x=>x.apiName.toLowerCase())),[objects]);
@@ -182,7 +195,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
   const relations=[...new Set([...lookupFields
     .map(field=>targetObject(field)??(['Customer','Quotation','Invoice'].includes(field.apiName)?field.apiName:'')),
     ...(lookupFor==='Appointment'?['User','Product','Customer']:[]),
-    ...(['QuotationLine','InvoiceLine'].includes(lookupFor)?['Product']:[])
+    ...(['QuotationLine','InvoiceLine'].includes(lookupFor)?['Product']:[]),
+    ...(isFinancialDocument(lookupFor)?['Product','Customer']:[])
    ].filter(x=>x&&x!==lookupFor&&loaded.has(x.toLowerCase())
       &&actions.has('AceAssistLoad'+x)))];
   if(!relations.length)return;
@@ -203,13 +217,15 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[fields,current.object,editing,editingObject,objects,loaded,actions,reload]);
  useEffect(()=>{
   let alive=true;
-  setRelatedRows([]);
-  if(!chosen||!['Quotation','Invoice'].includes(current.object))return;
+  setRelatedRows([]);setRelatedLoading(false);
+  if(!chosen||!isFinancialDocument(current.object))return;
   const child=current.object+'Line';
   if(!actions.has('AceAssistLoad'+child))return;
+  setRelatedLoading(true);
   void fetchRows('Load',child).then(data=>{
    if(alive)setRelatedRows(data.filter(x=>String(x[current.object]??'')===String(chosen.Id??'')));
-  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));})
+   .finally(()=>{if(alive)setRelatedLoading(false);});
   return()=>{alive=false;};
  },[current.object,chosen?.Id,actions,reload]);
  const runRecordAction=async(apiName:string,record:Row)=>{
