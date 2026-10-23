@@ -80,6 +80,7 @@ import {registerVersionedApiRoutes} from './versioned-api-routes.js';
 import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
 import {registerStalwartMailRoutes} from './stalwart-mail-service.js';
+import {registerStalwartJmapProxyRoutes} from './stalwart-jmap-proxy.js';
 import {registerInboundWebhookPublicRoutes,registerInboundWebhookAdminRoutes} from './inbound-webhook-service.js';
 import {createIntegrationCommunicationWriter,IntegrationCommunicationOutbox} from './integration-api-log.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
@@ -184,6 +185,7 @@ export function createSystemServer(db:SqlPersistence) {
     }
     next();
   });
+  registerStalwartJmapProxyRoutes(app);
   app.use('/api/media-assets',express.json({limit:'8mb'}));
   app.use(express.json({limit:'2mb',verify:(req,_res,bytes)=>{
     if((req.url??'').startsWith('/api/inbound-webhooks/') && bytes.length<=262144)

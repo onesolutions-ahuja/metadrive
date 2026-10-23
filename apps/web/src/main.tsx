@@ -19,7 +19,6 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 // Keep the authenticated workspace, including its large builder code and CSS,
 // out of the initial public marketing bundle.
 const MailWebmail = lazy(() => import('./core/mail/MailWebmail'));
-const isMailRoute = window.location.pathname === '/mail' || window.location.pathname === '/mail/';
 
 const Workspace = lazy(async () => {
   await import('./core/workspace/WorkspaceTheme/styles.css');
@@ -92,6 +91,8 @@ if (window.location.pathname === '/' && new URLSearchParams(window.location.sear
     }
   }
 }
+
+const isMailRoute = window.location.pathname === '/mail' || window.location.pathname === '/mail/';
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const pathname = basePath && window.location.pathname.startsWith(basePath + '/')
