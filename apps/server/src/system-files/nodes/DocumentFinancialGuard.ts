@@ -50,6 +50,21 @@ type LineMutationMapping={parentObject:string;parentField:string;quantityField:s
  unitPriceField:string;discountField:string;taxField:string;lineTotalField:string;
  subtotalField:string;discountTotalField:string;taxTotalField:string;totalField:string;
  statusField?:string;lockedStatuses?:string[];numberField?:string};
+/** Backward-compatible guard for tenant Flows created before line-total metadata was seeded. */
+export function defaultDocumentLineTotalsConfig(objectApi:string):LineMutationMapping|null{
+ if(objectApi==='QuotationLine')return {parentObject:'Quotation',parentField:'Quotation',
+  quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',
+  taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',
+  discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',
+  statusField:'Status',lockedStatuses:['Accepted','Approved','Converted']};
+ if(objectApi==='InvoiceLine')return {parentObject:'Invoice',parentField:'Invoice',
+  quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',
+  taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',
+  discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',
+  statusField:'Status',lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],
+  numberField:'InvoiceNumber'};
+ return null;
+}
 const lockParent=async(context:FlowNodeContext,object:string,id:string)=>{
  await context.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
   [context.tenantId+':financial-line-parent:'+object+':'+id]);
