@@ -48,7 +48,7 @@ export function DateSlotPicker({label,value,onChange,calendar,startDate,minTime,
    &&(!safeTimes||safeTimes.includes(x)));
  },[hours?.open,hours?.close,date,startDate,minTime,preview]);
  return <div className="assist-date-slot"><label>{label}
-  <input type="date" value={date} onChange={e=>onChange(e.target.value?e.target.value+'T':'')}
+  <input type="date" value={date} onChange={e=>onChange(e.target.value?e.target.value+'T'+time:'')}
    required min={label.startsWith('End')?startDate:undefined}/></label>
   <label>Time slot<select value={time} required disabled={!date||!slots.length}
     onChange={e=>onChange(date+'T'+e.target.value)}>
