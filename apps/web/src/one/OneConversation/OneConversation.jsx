@@ -98,7 +98,7 @@ function ConversationInbox({ props }) {
     setError("");
     setNotice("");
     try {
-      const phone = String(selected?.phoneNumber ?? recipient.trim()).replace(/\\D/g, "");
+      const phone = String(selected?.phoneNumber ?? recipient.trim()).replace(/\D/g, "");
       let conversationId = selected?.id ?? JSON.stringify([selectedAccount, phone]);
       // Optional, reusable Flow chain for inbox models whose thread IDs are
       // derived from communication records rather than Conversation object IDs.
@@ -124,7 +124,7 @@ function ConversationInbox({ props }) {
         if (!Array.isArray(rows) || rows.length > 200)
           throw Error("Conversation lookup must return a record collection.");
         const matching = rows.find((row) => row && typeof row === "object" &&
-          String(row.PhoneNumber ?? "").replace(/\\D/g, "") === phone);
+          String(row.PhoneNumber ?? "").replace(/\D/g, "") === phone);
         conversationId = String(matching?.Id ?? "");
         if (!conversationId) throw Error("No authorised conversation found for this number.");
       }
