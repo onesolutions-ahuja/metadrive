@@ -321,7 +321,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
   if(editing==='Update'&&!id){setError('Document ID is missing.');return;}
   const input=editing==='Create'
    ?{...changes.header,lineInputs:changes.newLines}
-   :{recordId:id,headerInput:[{Id:id,...changes.header}],
+   :{recordId:id,...changes.header,
      removedLines:changes.removedLines,updatedLines:changes.updatedLines,newLines:changes.newLines};
   setBusy(true);setError('');
   try{
