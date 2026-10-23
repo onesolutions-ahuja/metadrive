@@ -8,7 +8,7 @@
     "dashboard",
     "flow"
   ],
-  "version": 6,
+  "version": 7,
   "scope": "platform-core",
   "jsxFile": "one/OneConversation/OneConversation.jsx",
   "cssFile": "one/OneConversation/OneConversation.css",
@@ -280,6 +280,65 @@
       "kind": "BOOLEAN",
       "defaultValue": false,
       "displayOrder": 710
+    },
+    {
+      "propertyKey": "conversationAccessMode",
+      "label": "Conversation permission source",
+      "kind": "SELECT",
+      "displayOrder": 680,
+      "defaultValue": "channelGrants",
+      "choices": [
+        {
+          "key": "channelGrants",
+          "label": "Authorised channel grants"
+        },
+        {
+          "key": "recordPermissions",
+          "label": "OneEngine record permissions"
+        }
+      ]
+    },
+    {
+      "propertyKey": "conversationDefaultAccount",
+      "label": "Default communication channel",
+      "kind": "TEXT",
+      "displayOrder": 690,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "sendEnabled",
+      "label": "Enable composer (requires authorised send Flow)",
+      "kind": "BOOLEAN",
+      "displayOrder": 700,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "enableSendPreparation",
+      "label": "Resolve Conversation record through configured Flows before send",
+      "kind": "BOOLEAN",
+      "displayOrder": 710,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "conversationNormalizePhoneNumbers",
+      "label": "Normalize participant phone numbers",
+      "kind": "BOOLEAN",
+      "displayOrder": 720,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "conversationNameFromParticipant",
+      "label": "Show participant names from sender / recipient fields",
+      "kind": "BOOLEAN",
+      "displayOrder": 730,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "conversationOutgoingOccurredFieldApiName",
+      "label": "Outgoing message date field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 740,
+      "defaultValue": ""
     }
   ]
 }
