@@ -437,7 +437,7 @@ export default function AcetillTerminal({editorStyles}: {editorStyles?:AcetillVi
         <button type="button" disabled={!ageCheck||busy||!cart.length} onClick={()=>void execute(ageCheck!,{
           cartItems:cart.map(x=>({Product:x.id,Quantity:x.quantity}))
         }).then(result=>{if(result.completed===true&&result.outputs?.verified===true)setAgeApproved(true);
-          else setError('Age verification was not approved.');}).catch(e=>setError(String(e))}>Verify age</button>
+          else setError('Age verification was not approved.');}).catch(e=>setError(String(e)))}>Verify age</button>
         {['Discount','Rewards','GiftCards','More'].map(label=>{
           const action=find(label);
           return <button key={label} type="button" disabled={!action||busy||(label==='Discount'&&!canAction('Discount'))} title={!action?'Configure Acetill'+label+' Flow':undefined}
