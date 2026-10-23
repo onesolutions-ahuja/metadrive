@@ -1,5 +1,6 @@
 import type {Express,NextFunction,Request,Response} from 'express';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {StalwartJmapClient, type StalwartJmapResponse, type StalwartJmapSession} from './stalwart-jmap-client.js';
 
 type Actor={tenant_id:string;user_id:string};
@@ -38,7 +39,8 @@ export class StalwartMailService {
  private readonly client:StalwartJmapClient;
  private session?:StalwartJmapSession;
  constructor(baseUrl=process.env.STALWART_BASE_URL??'http://127.0.0.1:8080',
-  apiKey=process.env.STALWART_API_KEY??''){
+  apiKey=process.env.STALWART_API_KEY??'',
+  private readonly allowedDomains=(process.env.STALWART_ALLOWED_DOMAINS??'unesolutions.co.uk').split(',').map(v=>v.trim().toLowerCase()).filter(Boolean)){
   this.client=new StalwartJmapClient(baseUrl,apiKey);
  }
  private async ready(){
@@ -55,7 +57,8 @@ export class StalwartMailService {
   if(!ids.length)return [];
   const get=responseObject(await this.call('x:Domain/get',{ids}),'x:Domain/get');
   const list=Array.isArray(get.list)?get.list:[];
-  return list.map(object).filter(item=>typeof item.id==='string'&&typeof item.name==='string')
+  return list.map(object).filter(item=>typeof item.id==='string'&&typeof item.name==='string'
+    &&this.allowedDomains.includes((item.name as string).toLowerCase()))
    .map(item=>({id:item.id as string,name:item.name as string,isEnabled:item.isEnabled!==false}));
  }
  async listMailboxes(tenantId:string){
@@ -132,6 +135,13 @@ export class StalwartMailService {
    throw new Error('Mailbox password must be between 12 and 256 characters');
   const current=(await this.listMailboxes(tenantId)).find(item=>item.id===id);
   if(!current)throw new Error('Mailbox not found');
+  const accountResult=responseObject(await this.call('x:Account/get',{ids:[id]}),'x:Account/get');
+  const accounts=Array.isArray(accountResult.list)?accountResult.list.map(object):[];
+  const credentials=accounts[0]?.credentials;
+  // Replacing credentials can revoke app passwords/API keys. Fail closed unless the account
+  // has exactly one password credential; never silently destroy other credential types.
+  if(!Array.isArray(credentials)||credentials.length!==1||object(credentials[0])['@type']!=='Password')
+   throw new Error('Password reset is unavailable while this mailbox has additional credentials');
   const result=responseObject(await this.call('x:Account/set',{update:{[id]:{
    credentials:[{'@type':'Password',secret:password}]
   }}}),'x:Account/set');
@@ -147,12 +157,16 @@ export class StalwartMailService {
  }
 }
 
-export function registerStalwartMailRoutes(app:Express,rbac:RbacEngine){
+export function registerStalwartMailRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
  const service=new StalwartMailService();
  const permission=async(req:MailRequest,access:'read'|'manage')=>{
   const actor=actorOf(req);
   await rbac.require(actor.tenant_id,actor.user_id,'Mailbox',access);
   return actor;
+ };
+ const audit=async(actor:Actor,action:string,mailboxId?:string)=>{
+  await db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',
+   [actor.tenant_id,actor.user_id,action,JSON.stringify({provider:'stalwart',...(mailboxId?{mailboxId}: {})})]);
  };
  const handleError=(res:Response,error:unknown)=>{
   const message=safeError(error);
@@ -170,22 +184,22 @@ export function registerStalwartMailRoutes(app:Express,rbac:RbacEngine){
  }));
  app.post('/api/mail/mailboxes',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');const mailbox=await service.createMailbox(actor.tenant_id,req.body);
-   res.status(201).json({mailbox});}
+   await audit(actor,'mailbox_created',mailbox.id);res.status(201).json({mailbox});}
   catch(error){handleError(res,error);}
  }));
  app.patch('/api/mail/mailboxes/:id',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');const mailbox=await service.updateMailbox(actor.tenant_id,req.params.id,req.body);
-   res.json({mailbox});}
+   await audit(actor,'mailbox_updated',req.params.id);res.json({mailbox});}
   catch(error){handleError(res,error);}
  }));
  app.post('/api/mail/mailboxes/:id/reset-password',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');await service.resetPassword(actor.tenant_id,req.params.id,req.body);
-   res.status(204).end();}
+   await audit(actor,'mailbox_password_reset',req.params.id);res.status(204).end();}
   catch(error){handleError(res,error);}
  }));
  app.delete('/api/mail/mailboxes/:id',wrap(async(req,res)=>{
   try{const actor=await permission(req,'manage');await service.deleteMailbox(actor.tenant_id,req.params.id);
-   res.status(204).end();}
+   await audit(actor,'mailbox_deleted',req.params.id);res.status(204).end();}
   catch(error){handleError(res,error);}
  }));
 }
