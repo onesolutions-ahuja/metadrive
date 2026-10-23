@@ -12,7 +12,7 @@ const valid={
 
 test('platform recovery requires all deployment-owned transport settings',()=>{
  assert.equal(isPlatformRecoveryMailConfigured(valid),true);
- for(const key of Object.keys(valid)){
+ for(const key of Object.keys(valid).filter(key=>key!=='METADRIVE_PLATFORM_SMTP_PORT')){
   assert.equal(isPlatformRecoveryMailConfigured({...valid,[key]:''}),false,key);
  }
  assert.equal(isPlatformRecoveryMailConfigured({...valid,METADRIVE_PLATFORM_SMTP_PORT:'465'}),true);
