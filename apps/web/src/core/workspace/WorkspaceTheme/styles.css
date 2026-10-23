@@ -2470,17 +2470,8 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .header-tools { gap: 1px; }
   .header-tools .navigation-load-time { display: none; }
 }
-@media (max-width: 520px) {
-  .salesforce-header { height: auto; min-height: 48px; flex-wrap: wrap; column-gap: 5px; row-gap: 0; padding-bottom: 6px; }
-  .header-record-picker { flex-basis: 92px; }
-  .header-searches { order: 3; flex: 1 0 100%; width: 100%; margin-top: 5px; }
-  .header-list-search { display: flex; flex: 1 1 48%; max-width: none; }
-  .salesforce-header .global-record-search { flex: 1 1 48%; }
-  .header-record-picker-options { left: -45px; }
-  .global-record-search-results { left: 0; }
-  .app-strip { top: 87px; }
-  .setup-sidebar { top: 87px; height: calc(100dvh - 87px); max-height: calc(100dvh - 87px); }
-}
+/* Removed superseded 520px wrapped-header rules; the compact header contract
+   below owns sizing, search placement, tabs and Setup positioning. */
 
 
 /* MD-09 — native, permission-gated Lightning dashboard embedding */
