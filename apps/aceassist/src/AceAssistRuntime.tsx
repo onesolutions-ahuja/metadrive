@@ -70,6 +70,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [relatedRows,setRelatedRows]=useState<Row[]>([]);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
+ const [activeTenant,setActiveTenant]=useState('');
  const [returnToAppointment,setReturnToAppointment]=useState(false);
  const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
@@ -86,7 +87,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
  const [reload,setReload]=useState(0);
- const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>('week');
+ const [calendarView,setCalendarView]=useState<'day'|'week'|'month'>(()=>
+  typeof window!=='undefined'&&typeof window.matchMedia==='function'
+   &&window.matchMedia('(max-width: 650px)').matches?'day':'week');
  const [hours,setHours]=useState<BusinessCalendar|null>(null);
  const [hoursError,setHoursError]=useState('');
  const [hoursLoading,setHoursLoading]=useState(true);
@@ -116,17 +119,37 @@ export default function AceAssistRuntime({entry,onLogout}:{
    apiRequest<{actions:Array<{apiName:string}>}>('/flows/available-actions?product='+encodeURIComponent(entry.appId))
   ]).then(([o,f])=>{if(alive){setObjects(o.objects??[]);setActions(new Set((f.actions??[]).map(x=>x.apiName)));}})
     .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
-  void apiRequest<{user:{id:string}}>('/auth/me')
-   .then(r=>{if(alive)setSelfId(r.user?.id??'');})
+  void apiRequest<{user:{id:string;tenantId?:string}}>('/auth/me')
+   .then(r=>{if(alive){setSelfId(r.user?.id??'');setActiveTenant(r.user?.tenantId??'');}})
    .catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
+  return()=>{alive=false;};
+ },[entry.appId]);
+ useEffect(()=>{
+  let alive=true;
   setHoursError('');
   setHoursLoading(true);
   void apiRequest<{calendar:BusinessCalendar|null}>('/tenant/business-calendar',{cache:'no-store'})
-   .then(r=>{if(alive)setHours(r.calendar??null);})
+   .then(r=>{
+    if(!alive)return;
+    if(!r||!Object.hasOwn(r,'calendar'))
+     throw Error('Business calendar API returned an invalid response');
+    const value=r.calendar;
+    if(value!==null&&(!value||typeof value.timezone!=='string'
+      ||!value.weeklyHours||typeof value.weeklyHours!=='object'
+      ||!Array.isArray(value.holidays)))
+     throw Error('Business calendar API returned invalid settings');
+    setHours(value);
+   })
    .catch(e=>{if(alive){setHours(null);setHoursError(e instanceof Error?e.message:String(e));}})
    .finally(()=>{if(alive)setHoursLoading(false);});
   return()=>{alive=false;};
- },[entry.appId,hoursReload]);
+ },[hoursReload]);
+ useEffect(()=>{
+  // Re-fetch the authenticated tenant's settings when the app is revisited.
+  const onVisible=()=>{if(document.visibilityState==='visible')setHoursReload(n=>n+1);};
+  document.addEventListener('visibilitychange',onVisible);
+  return()=>document.removeEventListener('visibilitychange',onVisible);
+ },[]);
  const fetchRows=async(operation:'Load',object:string)=>{
   const api='AceAssist'+operation+object;
   const res=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',
@@ -326,7 +349,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
   <main className="custom-assist">
    <div className="custom-heading"><div><span className="custom-eyebrow">ACE ASSIST</span>
     <h1>Schedule &amp; visits</h1><p>Live tenant Objects · OneEngine Flows</p></div>
-    <label className="custom-date">Week of <input type="date" value={weekOf} onChange={e=>setWeekOf(e.target.value)}/></label>
+    <label className="custom-date">{calendarView==='day'?'Date':calendarView==='month'?'Month of':'Week of'}
+      <input type="date" value={weekOf} onChange={e=>setWeekOf(e.target.value)}/></label>
    </div>
    {error&&<p role="alert" className="standalone-product-message">{error}</p>}
    {notice&&<p role="status" className="standalone-product-message">{notice}</p>}
@@ -335,7 +359,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
      onClick={()=>{setSelected(i);setEditing(null);setReturnToAppointment(false);setNotice('');}}>{tab.label}</button>)}</nav>
    <div className="custom-assist-layout"><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
-     <div style={{display:'flex',gap:8}}>
+     <div className="custom-panel-toolbar">
       {current.object==='Appointment'&&<label className="assist-view-control">
        View <select value={calendarView} onChange={e=>setCalendarView(e.target.value as 'day'|'week'|'month')}>
         <option value="day">Day</option><option value="week">Week</option><option value="month">Month</option>
@@ -345,8 +369,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
        disabled={!(can('Create')||canDynamic('Create',current.object))||busy}>New {current.object}</button>
      </div></div>
     {current.object==='Appointment'&&<p className="custom-calendar-hours">
-     {hoursLoading?'Loading business hours…':hours?'Business hours · '+hours.timezone:hoursError?'Unable to load business hours':'Business hours not configured for this tenant'}
-     {hoursError&&' · '+hoursError}
+     {hoursLoading?'Loading business hours…':hoursError?'Unable to load business hours: '+hoursError
+      :hours?'Business hours · '+hours.timezone
+      :'No saved business hours found for the signed-in tenant'}
+     {!hoursLoading&&!hours&&!hoursError&&activeTenant&&
+      <span className="custom-calendar-tenant"> · Tenant: {activeTenant}. Check Company Settings in this same tenant.</span>}
     </p>}
     {!loaded.has(current.object.toLowerCase())&&<p className="custom-empty">Object unavailable to this user.</p>}
     {loaded.has(current.object.toLowerCase())&&!can('Load')&&<p className="custom-empty">
@@ -371,7 +398,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     {busy&&<p role="status">Running OneEngine Flow…</p>}
     {!busy&&rows.length===0&&can('Load')&&<p className="custom-empty">No accessible records.</p>}
    </section>
-   <aside className="custom-visit-detail">
+   <aside className={'custom-visit-detail'+(!chosen?' custom-detail-empty':'')}>
     <div className="custom-panel-title"><h2>Record details</h2><span>OneEngine</span></div>
     {chosen?<><dl>{Object.entries(chosen).slice(0,14).map(([key,val])=>
       <div key={key}><dt>{key}</dt><dd>{show(val)}</dd></div>)}</dl>

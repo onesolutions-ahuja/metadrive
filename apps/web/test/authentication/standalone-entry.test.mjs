@@ -138,3 +138,16 @@ test('AceKiosk all-screen client demo uses record images and optional OneEngine 
  assert.match(ui,/ImageUrl/);
  assert.doesNotMatch(ui,/\/records\/|INSERT INTO|OneShoppingCart/);
 });
+
+test('Ace Assist re-reads its tenant calendar and renders a phone-safe schedule',()=>{
+  const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+  const css=readFileSync(new URL('../../../aceassist/src/aceassist.css',import.meta.url),'utf8');
+  for(const token of ["tenantId?:string","No saved business hours found for the signed-in tenant",
+    "Object.hasOwn(r,'calendar')","document.addEventListener('visibilitychange'",
+    "window.matchMedia('(max-width: 650px)')","custom-detail-empty"])
+    assert.ok(runtime.includes(token),token);
+  for(const token of ['.custom-aceassist .assist-view-day .custom-day{min-width:0',
+    '.custom-aceassist .custom-tabs{flex-wrap:nowrap',
+    '.custom-aceassist .custom-calendar,.custom-aceassist .custom-visit-detail{padding:15px'])
+    assert.ok(css.includes(token),token);
+});
