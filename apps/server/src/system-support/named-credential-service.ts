@@ -617,23 +617,31 @@ export class NamedCredentialService {
  async sendRecoveryEmail(tenantId:string,_id:string,_from:string,to:string,subject:string,body:string):Promise<void>{
   const startedAt=Date.now();
   const requestBytes=Buffer.byteLength([to,subject,body].join('\n'));
+  let result:{from:string;endpoint:string};
   try{
-   const result=await sendPlatformRecoveryEmail(to,subject,body);
+   result=await sendPlatformRecoveryEmail(to,subject,body);
+  }catch(error){
+   try{
+    await writeIntegrationActivity(this.db,{
+     tenantId,direction:'Outbound',transport:'SMTP',provider:'Platform SMTP',
+     endpoint:'smtp://platform-configured',method:'SMTP',outcome:'network_error',
+     durationMs:Date.now()-startedAt,requestBytes,
+     errorCode:error instanceof Error?error.name:'SMTP_ERROR',
+     communication:{channel:'Email',name:'Password recovery',provider:'Platform SMTP'}
+    },this.integrationActivityWriter);
+   }catch{/* Delivery failure must not be masked by a secondary logging failure. */}
+   throw error;
+  }
+  try{
    await writeIntegrationActivity(this.db,{
     tenantId,direction:'Outbound',transport:'SMTP',provider:'Platform SMTP',
     endpoint:result.endpoint,method:'SMTP',outcome:'success',
     durationMs:Date.now()-startedAt,requestBytes,
     communication:{channel:'Email',name:'Password recovery',provider:'Platform SMTP'}
    },this.integrationActivityWriter);
-  }catch(error){
-   await writeIntegrationActivity(this.db,{
-    tenantId,direction:'Outbound',transport:'SMTP',provider:'Platform SMTP',
-    endpoint:'smtp://platform-configured',method:'SMTP',outcome:'network_error',
-    durationMs:Date.now()-startedAt,requestBytes,
-    errorCode:error instanceof Error?error.name:'SMTP_ERROR',
-    communication:{channel:'Email',name:'Password recovery',provider:'Platform SMTP'}
-   },this.integrationActivityWriter);
-   throw error;
+  }catch{
+   // A successfully sent recovery token must remain valid if audit projection is unavailable.
+   console.error('Password recovery communication logging failed for tenant',tenantId);
   }
  }
  /** Queue encrypted SMTP delivery; duplicate request keys never enqueue twice. */
