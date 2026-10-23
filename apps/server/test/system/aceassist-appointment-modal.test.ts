@@ -13,6 +13,13 @@ test('Ace Assist record editors use dialogs and user/customer/product Flow looku
  assert.match(src,/\{busy\?'Saving…':editing==='Delete'\?'Delete':'Save'\}/);
  assert.doesNotMatch(src,/Save through Flow/);
  assert.match(src,/\/auth\/me/);
+ // Appointment buttons must accept the V3 actions that the tenant seeder grants.
+ assert.match(src,/disabled=\{!\(can\('Create'\)\|\|canDynamic\('Create',current\.object\)\)\|\|busy\}/);
+ assert.match(src,/disabled=\{!\(can\('Update'\)\|\|canDynamic\('Update',current\.object\)\)\|\|busy\}/);
+ // Line-item lookups must follow the active editor, including Product, rather than
+ // relying on lookup state populated by a previously visited tab.
+ assert.match(src,/const lookupFor=editing\?editingObject:current\.object/);
+ assert.match(src,/\['QuotationLine','InvoiceLine'\]\.includes\(lookupFor\)\?\['Product'\]:\[\]/);
  assert.match(picker,/role="combobox"/);
  assert.match(picker,/\+ Add new/);
  assert.match(seeder,/\['User','Product'\]/);
