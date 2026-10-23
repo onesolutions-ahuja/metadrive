@@ -7,6 +7,7 @@ import {authenticated,wrap,api} from './ApiAuthenticationGuard.js';
 import {DurableJobService} from '../system-support/durable-job-service.js';
 import {registerFlowJobApiRoutes} from './FlowJobApiRoutes.js';
 import {PlatformEventService} from '../system-support/platform-event-service.js';
+import {reconcileAceChatterLoadCommunicationsFlow} from '../app-seeders/acechatter-flow.js';
 export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:RbacEngine,flows:FlowRuntime){
  const jobs=new DurableJobService(db);
  const platformEvents=new PlatformEventService(db,rbac);
@@ -24,6 +25,19 @@ export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:Rba
     const product=req.query.product;
     if(typeof product!=='string'||!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(product))
       throw new Error('Invalid product');
+    // Repair the known default inbox Flow for already-installed tenants when AceChatter opens.
+    // The reconciler only changes the exact old seeded graph and preserves customised Flows.
+    if(product.toLowerCase()==='acechatter'){
+      const {rows:installed}=await db.query(`
+        SELECT 1 FROM md_apps a
+        JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
+        JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+        WHERE a.api_name='AceChatter' AND a.enabled=true AND e.active=true
+          AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+        LIMIT 1`,[actor.tenant_id]);
+      if(installed.length)
+        await db.transaction(client=>reconcileAceChatterLoadCommunicationsFlow(client,actor.tenant_id));
+    }
     const {rows}=await db.query<{api_name:string;label:string}>(`
       SELECT DISTINCT ON (api_name) api_name,label
       FROM md_flow_definitions
