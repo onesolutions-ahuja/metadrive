@@ -22,7 +22,7 @@ export function isPlatformRecoveryMailConfigured(env:NodeJS.ProcessEnv=process.e
  const host=env.METADRIVE_PLATFORM_SMTP_HOST?.trim()??'';
  const from=env.METADRIVE_PLATFORM_SMTP_FROM_EMAIL?.trim()??'';
  return Boolean(host&&host!=='localhost'&&!host.endsWith('.local')
-  &&!isIP(host)&&!/[\\s/@?#]/.test(host)
+  &&!isIP(host)&&!/[\s/@?#]/.test(host)
   &&env.METADRIVE_PLATFORM_SMTP_USERNAME?.trim()
   &&env.METADRIVE_PLATFORM_SMTP_PASSWORD
   &&emailPattern.test(from)&&from.length<=254
