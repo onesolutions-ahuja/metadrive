@@ -51,7 +51,7 @@ export class StalwartJmapClient {
     this.baseUrl.pathname = this.baseUrl.pathname.replace(/\/$/, '');
   }
 
-  private async request(url: URL, init: RequestInit = {}): Promise<unknown> {
+  private async request(url: URL, init: RequestInit = {}, allowSessionRedirect = false): Promise<unknown> {
     const response = await fetch(url, {
       ...init,
       signal: AbortSignal.timeout(this.timeoutMs),
@@ -61,8 +61,25 @@ export class StalwartJmapClient {
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...init.headers,
       },
-      redirect: 'error',
+      redirect: 'manual',
     });
+    if (allowSessionRedirect && response.status === 307) {
+      const location = response.headers.get('location');
+      if (location) {
+        let target: URL;
+        try {
+          target = new URL(location, url);
+        } catch {
+          throw new StalwartJmapError('Stalwart advertised an invalid JMAP redirect', response.status);
+        }
+        if (target.origin === this.baseUrl.origin
+          && !target.username && !target.password
+          && target.pathname === '/jmap/session'
+          && !target.search && !target.hash) {
+          return this.request(target, init);
+        }
+      }
+    }
     if (!response.ok) {
       // Do not include response bodies: provider errors can contain sensitive details.
       throw new StalwartJmapError(`Stalwart request failed with HTTP ${response.status}`, response.status);
@@ -76,7 +93,7 @@ export class StalwartJmapClient {
 
   async discoverSession(): Promise<StalwartJmapSession> {
     const discoveryUrl = new URL('.well-known/jmap', this.baseUrl.href.replace(/\/$/, '') + '/');
-    const value = await this.request(discoveryUrl);
+    const value = await this.request(discoveryUrl, {}, true);
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new StalwartJmapError('Stalwart JMAP session response is invalid');
     }
