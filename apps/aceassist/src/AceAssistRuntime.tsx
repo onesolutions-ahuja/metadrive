@@ -512,6 +512,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     object={current.object} rows={rows} customers={lookupRows.Customer??[]}
     users={lookupRows.User??[]} products={lookupRows.Product??[]}
     date={weekOf} timeZone={hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone}
+    hours={hours} hoursLoading={hoursLoading} hoursError={hoursError}
     loading={busy} canLoad={can('Load')}
     canCreate={isFinancialDocument(current.object)
       ?actions.has(documentFlow('Create',current.object))
