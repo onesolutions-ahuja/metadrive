@@ -5,6 +5,7 @@ import {request as httpsRequest} from 'node:https';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
+import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
 
 const sha=(value:string)=>createHash('sha256').update(value).digest();
 const digest=(value:string)=>sha(value).toString('hex');
@@ -35,24 +36,45 @@ export function publicIp(ip:string){
  }
  return false;
 }
-async function postToken(url:URL,clientId:string,clientSecret:string,parameters:URLSearchParams){
+type TokenActivity={
+ db:SqlPersistence;writer?:IntegrationActivityWriter;tenantId:string;
+ credentialId:string;actorUserId?:string
+};
+async function postToken(url:URL,clientId:string,clientSecret:string,parameters:URLSearchParams,
+ activity:TokenActivity){
+ const startedAt=Date.now(),requestBytes=Buffer.byteLength(parameters.toString());
+ let statusCode:number|undefined,responseBytes=0;
+ const endpoint=url.origin+url.pathname;
+ const log=(outcome:'success'|'http_error'|'network_error',errorCode?:string)=>
+  writeIntegrationActivity(activity.db,{
+   tenantId:activity.tenantId,direction:'Outbound',transport:'HTTP',
+   provider:'OAuth Token Endpoint',credentialId:activity.credentialId,
+   actorUserId:activity.actorUserId,endpoint,method:'POST',statusCode,
+   outcome,durationMs:Date.now()-startedAt,requestBytes,responseBytes,errorCode,
+   communication:{name:'OAuth token exchange',provider:'OAuth',
+    relatedObject:'NamedCredential',relatedRecordId:activity.credentialId}
+  },activity.writer);
  const addresses=await lookup(url.hostname,{all:true,verbatim:true});
  if(!addresses.length||addresses.some(a=>!publicIp(a.address)))
   throw new Error('OAuth token endpoint resolves to a restricted network');
  const chosen=addresses[0],body=parameters.toString();
  const auth=Buffer.from(clientId+':'+clientSecret).toString('base64');
- const payload=await new Promise<string>((resolve,reject)=>{
+ let payload:string;
+ try{
+ payload=await new Promise<string>((resolve,reject)=>{
   const req=httpsRequest(url,{method:'POST',agent:false,
    lookup:(_host,_options,cb)=>cb(null,chosen.address,chosen.family),
    timeout:15000,headers:{Authorization:'Basic '+auth,
     'Content-Type':'application/x-www-form-urlencoded',
     'Content-Length':Buffer.byteLength(body),Accept:'application/json'}},response=>{
+   statusCode=response.statusCode;
    if((response.statusCode??0)<200||(response.statusCode??0)>=300){
     response.resume();reject(new Error('OAuth token exchange failed'));return;
    }
    const chunks:Buffer[]=[];let size=0;
    response.on('data',(piece:Buffer)=>{
     size+=piece.length;
+    responseBytes=size;
     if(size>8192){req.destroy(new Error('OAuth token response too large'));return;}
     chunks.push(piece);
    });
@@ -62,6 +84,12 @@ async function postToken(url:URL,clientId:string,clientSecret:string,parameters:
   req.on('error',reject);
   req.end(body);
  });
+ }catch(error){
+  await log(statusCode!==undefined?'http_error':'network_error',
+   statusCode!==undefined?'HTTP_STATUS_'+statusCode:error instanceof Error?error.name:'NETWORK_ERROR');
+  throw error;
+ }
+ await log('success');
  let parsed:unknown;
  try {parsed=JSON.parse(payload);}catch{throw new Error('Invalid OAuth token response');}
  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
@@ -80,7 +108,8 @@ async function postToken(url:URL,clientId:string,clientSecret:string,parameters:
 /** Generic OAuth Authorization Code/PKCE flow for tenant Named Credentials. */
 export class OAuthAuthorizationService{
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine,
-  private readonly vault:NamedCredentialService){}
+  private readonly vault:NamedCredentialService,
+  private readonly activityWriter?:IntegrationActivityWriter){}
  private async credential(tenantId:string,id:string):Promise<{row:StoredCredential;config:Config;secret:string}>{
   if(!idPattern.test(id))throw new Error('Invalid Named Credential');
   const {rows}=await this.db.query<StoredCredential>(`SELECT id,enabled,auth_type,
@@ -162,12 +191,17 @@ export class OAuthAuthorizationService{
    await client.query('UPDATE md_credential_oauth_grants SET consumed_at=now() WHERE state_hash=$1',[digest(state)]);
    return found;
   });
+  const callbackStartedAt=Date.now();
+  try{
   const {config,secret}=await this.credential(grant.tenant_id,grant.credential_id);
   const verifier=this.vault.decryptOpaque(grant.verifier_ciphertext,grant.key_id);
   if(grant.redirect_uri!==this.callbackUri())throw new Error('OAuth callback URI changed');
   const parameters=new URLSearchParams({grant_type:'authorization_code',code,
     redirect_uri:grant.redirect_uri,code_verifier:verifier});
-  const result=await postToken(safeUrl(config.tokenUrl),config.clientId,secret,parameters);
+  const result=await postToken(safeUrl(config.tokenUrl),config.clientId,secret,parameters,{
+   db:this.db,writer:this.activityWriter,tenantId:grant.tenant_id,
+   credentialId:grant.credential_id,actorUserId:grant.initiated_by
+  });
   const access=this.vault.encryptOpaque(result.access);
   const refresh=result.refresh?this.vault.encryptOpaque(result.refresh):null;
   await this.db.transaction(async client=>{
@@ -183,9 +217,27 @@ export class OAuthAuthorizationService{
   });
   const web=this.returnUri();
   web.searchParams.set('oauth','connected');
+  await writeIntegrationActivity(this.db,{
+   tenantId:grant.tenant_id,direction:'Inbound',transport:'HTTP',
+   provider:'OAuth Authorization Callback',credentialId:grant.credential_id,
+   actorUserId:grant.initiated_by,endpoint:'/api/oauth/callback',method:'GET',
+   statusCode:303,outcome:'success',requestBytes:
+    Buffer.byteLength(String(state))+Buffer.byteLength(String(code))
+  },this.activityWriter);
   return web.toString();
+  }catch(error){
+   await writeIntegrationActivity(this.db,{
+    tenantId:grant.tenant_id,direction:'Inbound',transport:'HTTP',
+    provider:'OAuth Authorization Callback',credentialId:grant.credential_id,
+    actorUserId:grant.initiated_by,endpoint:'/api/oauth/callback',method:'GET',
+    statusCode:500,outcome:'http_error',durationMs:Date.now()-callbackStartedAt,
+    requestBytes:Buffer.byteLength(String(state))+Buffer.byteLength(String(code)),
+    errorCode:error instanceof Error?error.name:'OAUTH_CALLBACK_FAILED'
+   },this.activityWriter);
+   throw error;
+  }
  }
- async bearerToken(tenantId:string,id:string){
+ async bearerToken(tenantId:string,id:string,actorUserId?:string){
   const {config,secret}=await this.credential(tenantId,id);
   const {rows}=await this.db.query<{
     key_id:string;access_ciphertext:Buffer;refresh_ciphertext:Buffer|null;expires_at:Date
@@ -198,7 +250,9 @@ export class OAuthAuthorizationService{
   if(!token.refresh_ciphertext)throw new Error('OAuth refresh token is unavailable');
   const previous=this.vault.decryptOpaque(token.refresh_ciphertext,token.key_id);
   const parameters=new URLSearchParams({grant_type:'refresh_token',refresh_token:previous});
-  const fresh=await postToken(safeUrl(config.tokenUrl),config.clientId,secret,parameters);
+  const fresh=await postToken(safeUrl(config.tokenUrl),config.clientId,secret,parameters,{
+   db:this.db,writer:this.activityWriter,tenantId,credentialId:id,actorUserId
+  });
   const access=this.vault.encryptOpaque(fresh.access);
   const nextRefresh=this.vault.encryptOpaque(fresh.refresh??previous);
   await this.db.query(`UPDATE md_credential_oauth_tokens SET

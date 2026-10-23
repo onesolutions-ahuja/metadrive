@@ -22,7 +22,7 @@ export type IntegrationCommunicationDetails={
 export type IntegrationActivityInput={
  tenantId:string;
  direction:'Inbound'|'Outbound';
- transport?:'HTTP'|'Webhook';
+ transport?:'HTTP'|'Webhook'|'SMTP';
  provider?:string;
  credentialId?:string|null;
  actorUserId?:string|null;
@@ -46,7 +46,7 @@ const cleanBody=(value:unknown):string=>String(value??'').replace(/\0/g,'').slic
 const allowedChannels=new Set(['Email','SMS','WhatsApp','Phone','WebChat','Push','Other']);
 
 function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
- const method=/^(GET|POST|PUT|PATCH|DELETE)$/.test(input.method.toUpperCase())
+ const method=/^(GET|POST|PUT|PATCH|DELETE|SMTP)$/.test(input.method.toUpperCase())
   ?input.method.toUpperCase():'OTHER';
  const endpoint=clean(input.endpoint.split(/[?#]/,1)[0],2048);
  const provider=clean(input.provider||'Unknown',120)||'Unknown';
@@ -58,10 +58,10 @@ function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
   responseBytes:Math.max(0,Math.floor(input.responseBytes??0))};
 }
 
-/** Every integration attempt becomes a tenant-scoped Communication record.
+/** Every external integration attempt becomes a tenant-scoped Communication record.
  * Payloads, headers, tokens, signatures and query strings are never logged by default.
- * Message-specific fields are populated only by an explicit metadata mapping on the
- * shared HTTP Callout node; no app-specific behavior lives in this logger.
+ * Message-specific fields require an explicit caller mapping; no app-specific behavior
+ * lives in this logger.
  */
 export function createIntegrationCommunicationWriter(
  db:SqlPersistence,records:RecordEngine

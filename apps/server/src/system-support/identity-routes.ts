@@ -13,7 +13,8 @@ const cookie=(req:Request,name:string)=>(req.get('cookie')??'').split(';').map(s
 export function registerFederationCallback(app:Express,federation:FederationService){
  const callback=route(async(req,res)=>{
   const state=req.method==='POST'?req.body?.RelayState:req.query.state;
-  const result=await federation.callback(state,cookie(req,'md_sso_browser'),req.query.code,req.body?.SAMLResponse);
+  const result=await federation.callback(state,cookie(req,'md_sso_browser'),
+   req.query.code,req.body?.SAMLResponse,req.method==='POST'?'POST':'GET');
   res.setHeader('Cache-Control','no-store');
   res.setHeader('Set-Cookie',[`md_fed_result=${result.ticket}; HttpOnly; Secure; SameSite=None; Path=/api/auth; Max-Age=60`,
    'md_sso_browser=; HttpOnly; Secure; SameSite=None; Path=/api/auth/federation; Max-Age=0']);

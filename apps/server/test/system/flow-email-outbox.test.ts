@@ -61,7 +61,7 @@ test('Flow Email persists encrypted outbox data and delivers only after transact
   service.sendTenantEmail=async(...args:unknown[])=>{sendArgs.push(args);};
   assert.equal(await service.dispatchOneFlowEmail(),true);
   assert.deepEqual(sendArgs,[[tenant,credential,'sales@example.com',
-   'buyer@example.com,owner@example.com','Order updated','Hello']]);
+   'buyer@example.com,owner@example.com','Order updated','Hello',user]]);
   assert(auditActions.includes('flow.email.queued'));
   assert(auditActions.includes('flow.email.delivered'));
  }finally{

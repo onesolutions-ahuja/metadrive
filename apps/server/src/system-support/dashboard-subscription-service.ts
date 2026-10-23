@@ -186,7 +186,8 @@ export class DashboardSubscriptionService {
    for(const user of users)await this.credentials.sendTenantEmail(actor.tenant_id,
      input.namedCredentialId,input.fromEmail,user.email,
      'MetaDrive dashboard update: '+input.label,
-     'An updated dashboard is available in MetaDrive. Sign in to view it using your current permissions.');
+     'An updated dashboard is available in MetaDrive. Sign in to view it using your current permissions.',
+     actor.user_id);
    const next=nextDashboardDeliveryAt(new Date(),row.time_zone,row.local_time.slice(0,5),
      row.frequency,row.day_of_week);
    await this.db.query(`UPDATE md_dashboard_subscriptions

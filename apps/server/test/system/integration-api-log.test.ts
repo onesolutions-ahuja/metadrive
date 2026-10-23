@@ -55,6 +55,30 @@ test('metadata mapping records one business Communication with the provider mess
  assert.match(String(values?.Subject),/POST 200/);
 });
 
+test('SMTP deliveries are recorded as outbound Email Communications',async()=>{
+ let values:Record<string,unknown>|undefined;
+ const db={query:async()=>({rows:[{user_id:'tenant-system-user'}]})} as never;
+ const records={create:async(_tenant:string,_user:string,_object:string,record:Record<string,unknown>)=>{
+  values=record;return 'record-id';
+ }} as never;
+ await createIntegrationCommunicationWriter(db,records)({
+  tenantId:'tenant-a',direction:'Outbound',transport:'SMTP',provider:'Tenant Mail',
+  credentialId:'smtp-credential',actorUserId:'user-a',endpoint:'smtp://mail.example:587',
+  method:'SMTP',outcome:'success',durationMs:20,requestBytes:64,
+  communication:{channel:'Email',name:'Outbound email',
+   relatedObject:'NamedCredential',relatedRecordId:'smtp-credential'}
+ });
+ assert.equal(values?.Direction,'Outbound');
+ assert.equal(values?.Channel,'Email');
+ assert.equal(values?.Status,'Sent');
+ assert.equal(values?.Sender,'MetaDrive');
+ assert.equal(values?.Recipient,'smtp://mail.example:587');
+ assert.equal(values?.RelatedObject,'NamedCredential');
+ assert.equal(values?.RelatedRecordId,'smtp-credential');
+ assert.match(String(values?.Subject),/SMTP NO_RESPONSE · success/);
+ assert.doesNotMatch(JSON.stringify(values),/customer@example.com|Order update|Your order shipped/);
+});
+
 test('communication logging failures do not replace provider results or leak secrets',async()=>{
  const original=console.error;
  const diagnostics:string[]=[];
