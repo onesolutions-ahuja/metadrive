@@ -590,3 +590,27 @@
  .custom-aceassist .assist-quick-grid button{padding:8px;gap:6px}
  .custom-aceassist .assist-metric{padding:12px 9px;gap:5px 7px}
 }
+
+
+/* Detail screens present meaningful labels on phones; retain metadata list on desktop. */
+.assist-phone-detail-card{display:none}
+@media(max-width:700px){
+ .custom-aceassist .assist-phone-detail-card{display:block;background:#f5fafb;border:1px solid #e2eef1;
+  border-radius:17px;padding:17px;margin:18px 0 16px}
+ .custom-aceassist .assist-phone-detail-title{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:10px;margin:10px 0 17px}
+ .custom-aceassist .assist-phone-detail-title h1{font-size:21px;font-weight:800;color:#162f44;
+  line-height:1.25;letter-spacing:-.03em;margin:0;overflow-wrap:anywhere}
+ .custom-aceassist .assist-phone-detail-card dl{margin:0}
+ .custom-aceassist .assist-phone-detail-card dl div{display:flex;align-items:baseline;
+  justify-content:space-between;gap:15px;border-bottom:1px solid #e4ecee;padding:12px 0}
+ .custom-aceassist .assist-phone-detail-card dl div:last-child{border:0;padding-bottom:0}
+ .custom-aceassist .assist-phone-detail-card dt{font-size:12px;color:#6c8392}
+ .custom-aceassist .assist-phone-detail-card dd{font-size:12px;font-weight:800;
+  margin:0;text-align:right;max-width:62%;color:#234454;overflow-wrap:anywhere}
+ .custom-aceassist .custom-assist-layout>.custom-visit-detail .assist-raw-details{display:none}
+ .custom-aceassist .custom-assist-layout>.custom-visit-detail .custom-panel-title{
+  padding:0 1px 3px;margin-top:13px}
+ .custom-aceassist .custom-assist-layout>.custom-visit-detail .assist-related-list{
+  border-top:0;margin-top:0;padding-top:10px}
+}
