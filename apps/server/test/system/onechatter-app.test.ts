@@ -13,6 +13,9 @@ function fakeClient(mode:'new'|'existing'|'uninstalled'){
     if(sql.includes('SELECT a.id FROM md_apps')||sql.includes('SELECT id FROM md_apps'))return {rows:mode==='uninstalled'?[]:[{id:'app-a'}]};
     if(sql.includes('INSERT INTO md_page_definitions'))return {rows:mode==='existing'?[]:[{id:'page-a'}]};
     if(sql.includes('SELECT id FROM md_page_definitions'))return {rows:[{id:'page-a'}]};
+    if(sql.includes('SELECT DISTINCT api_name')&&sql.includes('md_flow_definitions'))
+      return {rows:['AceChatterSendMessage','AceChatterCreateConversation',
+        'AceChatterFindConversationByPhone','AceChatterLoadContacts'].map(api_name=>({api_name}))};
     if(sql.includes('SELECT api_name')&&sql.includes('md_component_definitions'))
       return {rows:[{api_name:params[1]}]};
     if(sql.includes('SELECT EXISTS('))return {rows:[{allowed:true}]};
@@ -39,6 +42,11 @@ test('OneChatter installation creates a new editable metadata page, reuses exist
   assert.ok(!calls.some(x=>/UPDATE |DELETE |INSERT INTO md_flow_definitions|INSERT INTO md_record_values|INSERT INTO md_app_seed_pages/.test(x.sql)));
   assert.ok(calls.filter(x=>x.sql.includes('md_lightning_page_node_properties'))
     .some(x=>x.params.includes('/props/actionFlows/send/flowApiName')));
+  assert.ok(calls.some(x=>x.params.includes('/props/actionFlows/start/flowApiName')
+    &&x.params.includes('AceChatterLoadContacts')));
+  assert.ok(calls.some(x=>x.params.includes('/props/stateBindings/contactChoices')
+    &&x.params.includes('oneChatterContacts')));
+  assert.ok(calls.some(x=>x.params.includes('/props/contactChoices')));
 });
 test('reinstall preserves a customised Page Builder page without replacing its nodes or properties',async()=>{
   const {client,calls}=fakeClient('existing');
