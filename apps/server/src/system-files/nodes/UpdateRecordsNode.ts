@@ -18,11 +18,13 @@ export function fieldsFromRecord(record:Record<string,unknown>,
 import {resolveMutationTargets} from './RecordMutationTargets.js';
 import {enforceRecordOverlap} from './RecordOverlapGuard.js';
 import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
-import {enforceDocumentIssue,prepareDocumentLineMutation,recalculateDocumentLineTotals} from './DocumentFinancialGuard.js';
+import {defaultDocumentLineTotalsConfig,enforceDocumentIssue,prepareDocumentLineMutation,recalculateDocumentLineTotals} from './DocumentFinancialGuard.js';
 export async function executeUpdateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,records,evaluate,scalar}=context;
  const config=context.node.config;
  const {objectApi,targets}=await resolveMutationTargets(context);
+ const lineTotalsConfig=(objectApi==='QuotationLine'||objectApi==='InvoiceLine')
+  ?config.documentLineTotals??defaultDocumentLineTotalsConfig(objectApi):null;
  const dynamic=config.fieldSource==='record';
  if(dynamic&&config.recordSource!=='record'&&config.recordSource!=='collection')
   throw Error('Record-sourced updates require a record or collection target');
@@ -43,14 +45,14 @@ export async function executeUpdateRecordsNode(context:FlowNodeContext):Promise<
   if(typeof record.Id!=='string')throw Error('Invalid Update Records target');
   const values=dynamic?fieldsFromRecord(record,scalar):mapped;
   const lineMutation=objectApi==='QuotationLine'||objectApi==='InvoiceLine'
-   ?await prepareDocumentLineMutation(context,config.documentLineTotals,record.Id,values):null;
+   ?await prepareDocumentLineMutation(context,lineTotalsConfig,record.Id,values):null;
   await enforceRecordOverlap(client,tenantId,objectApi,config.overlapGuard,{...values,Id:record.Id});
         await enforceRecordAvailability(client,tenantId,config.availabilityGuard,{...values,Id:record.Id});
   await enforceDocumentIssue(context,config.documentIssue,record.Id,values);
   await records.update(tenantId,userId,objectApi,record.Id,values,undefined,client);
   if(lineMutation){
-   if(lineMutation.oldParent)await recalculateDocumentLineTotals(context,config.documentLineTotals,lineMutation.oldParent);
-   if(lineMutation.newParent!==lineMutation.oldParent)await recalculateDocumentLineTotals(context,config.documentLineTotals,lineMutation.newParent);
+   if(lineMutation.oldParent)await recalculateDocumentLineTotals(context,lineTotalsConfig,lineMutation.oldParent);
+   if(lineMutation.newParent!==lineMutation.oldParent)await recalculateDocumentLineTotals(context,lineTotalsConfig,lineMutation.newParent);
   }
  }
  return {handled:true,clearHistory:true};
