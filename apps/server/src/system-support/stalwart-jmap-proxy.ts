@@ -2,6 +2,9 @@ import type {Express,Request,Response} from 'express';
 import {Readable,Transform} from 'node:stream';
 
 const maxBodyBytes=25*1024*1024;
+const maxJmapRequestBytes=2*1024*1024;
+const allowedCapabilities=new Set(['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission']);
+const allowedJmapMethods=new Set(['Mailbox/get','Identity/get','Email/query','Email/get','Email/set','Email/import','EmailSubmission/set']);
 const allowedPaths=[
  {path:/^\/\.well-known\/jmap\/?$/,method:'GET'},
  {path:/^\/jmap\/?$/,method:'POST'},
@@ -50,9 +53,11 @@ export function registerStalwartJmapProxyRoutes(app:Express){
   if(!/^Basic [A-Za-z0-9+/]+={0,2}$/.test(authorization)||authorization.length>8192){
    res.status(401).json({error:'Mailbox Basic authentication is required'});return;
   }
+  const isJmapApi=/^\/jmap\/?$/.test(targetPath);
+  const bodyLimit=isJmapApi?maxJmapRequestBytes:maxBodyBytes;
   const declaredLength=Number(req.get('content-length')??0);
-  if(Number.isFinite(declaredLength)&&declaredLength>maxBodyBytes){
-   res.status(413).json({error:'Mail upload exceeds the 25 MB proxy limit'});return;
+  if(Number.isFinite(declaredLength)&&declaredLength>bodyLimit){
+   res.status(413).json({error:isJmapApi?'JMAP request exceeds the 2 MB proxy limit':'Mail upload exceeds the 25 MB proxy limit'});return;
   }
   let tooLarge=false;
   try{
@@ -69,7 +74,32 @@ export function registerStalwartJmapProxyRoutes(app:Express){
    const contentType=req.get('content-type');
    if(contentType)headers.set('content-type',contentType);
    const init:RequestInit&{duplex?:'half'}={method:req.method,headers,redirect:'error',signal:AbortSignal.timeout(60_000)};
-   if(req.method==='POST'){
+   if(req.method==='POST'&&isJmapApi){
+    const chunks:Buffer[]=[];let size=0;
+    for await(const chunk of req){
+     const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+     size+=bytes.length;
+     if(size>maxJmapRequestBytes){tooLarge=true;res.status(413).json({error:'JMAP request exceeds the 2 MB proxy limit'});return;}
+     chunks.push(bytes);
+    }
+    const raw=Buffer.concat(chunks);
+    let payload:unknown;
+    try{payload=JSON.parse(raw.toString('utf8')) as unknown;}
+    catch{res.status(400).json({error:'Invalid JMAP JSON request'});return;}
+    if(!payload||typeof payload!=='object'||Array.isArray(payload)){
+     res.status(400).json({error:'Invalid JMAP request'});return;
+    }
+    const request=payload as {using?:unknown;methodCalls?:unknown};
+    if(!Array.isArray(request.using)||request.using.some(value=>typeof value!=='string'||!allowedCapabilities.has(value))
+      ||!['urn:ietf:params:jmap:core','urn:ietf:params:jmap:mail','urn:ietf:params:jmap:submission'].every(value=>request.using!.includes(value))){
+     res.status(403).json({error:'JMAP capability is not allowed through the webmail proxy'});return;
+    }
+    if(!Array.isArray(request.methodCalls)||request.methodCalls.length<1||request.methodCalls.length>20
+      ||request.methodCalls.some(call=>!Array.isArray(call)||typeof call[0]!=='string'||!allowedJmapMethods.has(call[0]))){
+     res.status(403).json({error:'JMAP method is not allowed through the webmail proxy'});return;
+    }
+    init.body=raw;
+   }else if(req.method==='POST'){
     let bytesReceived=0;
     const limiter=new Transform({transform(chunk:Buffer,_encoding,callback){
      bytesReceived+=chunk.length;
@@ -87,7 +117,7 @@ export function registerStalwartJmapProxyRoutes(app:Express){
    res.end(Buffer.from(await upstream.arrayBuffer()));
   }catch(error){
    if(res.headersSent)return;
-   if(tooLarge){res.status(413).json({error:'Mail upload exceeds the 25 MB proxy limit'});return;}
+   if(tooLarge){res.status(413).json({error:isJmapApi?'JMAP request exceeds the 2 MB proxy limit':'Mail upload exceeds the 25 MB proxy limit'});return;}
    // Do not return upstream bodies, internal URLs, or credentials in errors.
    res.status(502).json({error:'Mail server proxy request failed'});
   }
