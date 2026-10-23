@@ -129,7 +129,7 @@ function appointmentInvoiceGraph(){
     {field:'Subtotal',value:'{!service.Price}'},
     {field:'Total',value:'{!service.Price}'}]}),
   node(6,'Create Records','Create billed service line',{object:'InvoiceLine',
-   recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']},fieldValues:[
+   recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],numberField:'InvoiceNumber'},fieldValues:[
     {field:'Name',value:'{!service.Name}'},
     {field:'Invoice',value:'{!record5.Id}'},
     {field:'Product',value:'{!service.Id}'},
