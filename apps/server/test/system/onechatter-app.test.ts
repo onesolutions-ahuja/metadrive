@@ -11,6 +11,7 @@ function fakeClient(mode:'new'|'existing'|'uninstalled'){
   const client={query:async(sql:string,params:unknown[]=[])=>{
     calls.push({sql,params});
     if(sql.includes('SELECT a.id FROM md_apps')||sql.includes('SELECT id FROM md_apps'))return {rows:mode==='uninstalled'?[]:[{id:'app-a'}]};
+    if(sql.includes('SELECT version FROM md_app_package_versions'))return {rows:[{version:ONECHATTER_APP.version}]};
     if(sql.includes('INSERT INTO md_page_definitions'))return {rows:mode==='existing'?[]:[{id:'page-a'}]};
     if(sql.includes('SELECT id FROM md_page_definitions'))return {rows:[{id:'page-a'}]};
     if(sql.includes('SELECT DISTINCT api_name')&&sql.includes('md_flow_definitions'))
