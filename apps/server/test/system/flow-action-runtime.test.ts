@@ -21,7 +21,7 @@ test('Generate 4-Digit Random OTP returns four numeric text digits',async()=>{
  actionContext.config={actionType:'Generate 4-Digit Random OTP',outputVariable:'otp'};
  const result=await executeFlowAction(actionContext);
  assert.equal(result,undefined);
- assert.match(String((actionContext.variables as Record<string,unknown>).otp),/^\\d{4}$/);
+ assert.match(String((actionContext.variables as Record<string,unknown>).otp),/^[0-9]{4}$/);
 });
 
 test('Generate 6-Digit Random OTP returns six numeric text digits',async()=>{
@@ -29,7 +29,7 @@ test('Generate 6-Digit Random OTP returns six numeric text digits',async()=>{
  actionContext.config={actionType:'Generate 6-Digit Random OTP',outputVariable:'verificationCode'};
  const result=await executeFlowAction(actionContext);
  assert.equal(result,undefined);
- assert.match(String((actionContext.variables as Record<string,unknown>).verificationCode),/^\\d{6}$/);
+ assert.match(String((actionContext.variables as Record<string,unknown>).verificationCode),/^[0-9]{6}$/);
 });
 
 test('Generate Random OTP rejects an invalid output variable',async()=>{
