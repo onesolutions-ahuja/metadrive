@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const cssPath = new URL('../apps/web/src/core/workspace/WorkspaceTheme/styles.css', import.meta.url);
-const css = readFileSync(cssPath, 'utf8').replace(/^@import[^;]+;\\s*/, '');
+const css = readFileSync(cssPath, 'utf8').replace(/^@import[^;]+;\s*/, '');
 mkdirSync('artifacts', { recursive: true });
 
 const markup = `<!doctype html>
@@ -74,7 +74,7 @@ try {
     assert.notEqual(metrics.flowSettings.display, 'none',
       'Flow settings must remain available at ' + width + 'px: ' + JSON.stringify(metrics.flowSettings));
     if (width <= 820) {
-      assert.match(metrics.flowWorkarea.gridColumns, /^\\d+(?:\\.\\d+)?px$|^minmax\\(0px, 1fr\\)$/,
+      assert.match(metrics.flowWorkarea.gridColumns, /^\d+(?:\.\d+)?px$|^minmax\(0px, 1fr\)$/,
         'Narrow Flow Builder should use one column at ' + width + 'px: ' + JSON.stringify(metrics.flowWorkarea));
       assert.equal(metrics.flowSettings.position, 'static',
         'Narrow Flow settings should stack in document flow at ' + width + 'px');
