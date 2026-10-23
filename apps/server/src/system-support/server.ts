@@ -78,6 +78,7 @@ import {DeclarativeRuleError} from '../system-files/declarative-rules.js';
 import {registerVersionedApiRoutes} from './versioned-api-routes.js';
 import {registerPlatformEventStreamRoutes} from './platform-event-stream-routes.js';
 import {registerOutboundWebhookRoutes} from './outbound-webhook-service.js';
+import {registerStalwartMailRoutes} from './stalwart-mail-service.js';
 import {registerInboundWebhookPublicRoutes,registerInboundWebhookAdminRoutes} from './inbound-webhook-service.js';
 import {createIntegrationCommunicationWriter} from './integration-api-log.js';
 import {countTenantApiRequests,registerTenantInspectionRoutes} from './tenant-inspection-routes.js';
@@ -2172,6 +2173,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerVersionedApiRoutes(app,records,definitions,rbac,db);
   registerPlatformEventStreamRoutes(app,db,rbac);
   registerOutboundWebhookRoutes(app,db,rbac);
+  registerStalwartMailRoutes(app,rbac);
   registerInboundWebhookAdminRoutes(app,db,namedCredentials,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   registerSecurityWebHost(app,db,process.env.METADRIVE_WEB_DIST);
