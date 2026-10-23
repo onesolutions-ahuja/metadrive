@@ -1866,11 +1866,11 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
+            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor componentType={selected.type} value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <details className="visual-advanced-properties">
               <summary>Advanced styles and responsive settings</summary>
-              <PageComponentStyleEditor properties={selected.properties}
+              <PageComponentStyleEditor componentType={selected.type} properties={selected.properties}
                 onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />
             </details>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
