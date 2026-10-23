@@ -50,10 +50,10 @@ export default function HomeScreen() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const tenantApiUrlRef = useRef<TextInput | null>(null);
-  const tenantSlugRef = useRef<TextInput | null>(null);
-  const emailRef = useRef<TextInput | null>(null);
-  const passwordRef = useRef<TextInput | null>(null);
+  const tenantApiUrlRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const tenantSlugRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const emailRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
+  const passwordRef = useRef<React.ElementRef<typeof TextInput> | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [challengeToken, setChallengeToken] = useState('');
   const [records, setRecords] = useState<CachedRecord[]>([]);
@@ -340,14 +340,14 @@ export default function HomeScreen() {
       </View>}
       ListFooterComponent={records.length > 0 ? <Text style={styles.footer}>
         Last synced {new Date(records[0].syncedAt).toLocaleString()}. Changes are not available offline.
-      </Text> : null}
+      </Text> : undefined}
     />
   </SafeAreaView>;
 }
 
 function Field({ label, inputRef, ...props }: {
   label: string;
-  inputRef?: React.Ref<TextInput>;
+  inputRef?: React.Ref<React.ElementRef<typeof TextInput>>;
 } & React.ComponentProps<typeof TextInput>) {
   return <View style={styles.field}>
     <Text style={styles.fieldLabel}>{label}</Text>
