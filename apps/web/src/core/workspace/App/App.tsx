@@ -72,6 +72,7 @@ type NewFieldLookupFilterDraft = {
 const LazyOAuthConsent=React.lazy(()=>import('../../authentication/Login/OAuthConsent'));
 const LazyStandaloneRuntime=React.lazy(()=>import('../Standalone/StandaloneRuntime'));
 const LazyAceKiosk=React.lazy(()=>import('../../../../../acekiosk/src/AceKiosk'));
+const LazyMailboxAdmin=React.lazy(()=>import('../../mail/MailboxAdmin'));
 function AceKioskAccessGate({onLogout}:{onLogout:()=>void}){
  type AppAccess={installed:boolean;licensed:boolean;enabled:boolean;permitted:boolean};
  const [access,setAccess]=React.useState<AppAccess|null>(null);
@@ -253,6 +254,7 @@ function App() {
   };
   if(needsLandingRedirect)return <div className="auth-loading" role="status">Opening assigned application…</div>;
   if(standaloneEntry)return <React.Suspense fallback={<div className="auth-loading" role="status">Opening application…</div>}>{standaloneEntry.slug==='acekiosk'?<AceKioskAccessGate onLogout={onLogout}/>:<LazyStandaloneRuntime entry={standaloneEntry} onLogout={onLogout}/>}</React.Suspense>;
+  if(window.location.pathname==='/mail-admin'||window.location.pathname==='/mail-admin/')return <React.Suspense fallback={<div className="auth-loading" role="status">Opening mailbox administration…</div>}><LazyMailboxAdmin onLogout={onLogout}/></React.Suspense>;
   return <SetupApp entryTiming={entryTiming} onLogout={onLogout} />;
 }
 
