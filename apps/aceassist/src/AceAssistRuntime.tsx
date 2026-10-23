@@ -100,6 +100,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [hoursLoading,setHoursLoading]=useState(true);
  const [hoursReload,setHoursReload]=useState(0);
  const current=tabs[selected];
+ const financialLinesLocked=chosen!==null&&(
+  current.object==='Invoice'?Boolean(chosen.InvoiceNumber)||
+   ['Issued','PartPaid','Paid','PartiallyPaid'].includes(String(chosen.Status??'')):
+  current.object==='Quotation'&&['Accepted','Approved','Converted'].includes(String(chosen.Status??''))
+ );
  const metadata=objects.find(x=>x.apiName.toLowerCase()===current.object.toLowerCase());
  const dynamicFlow=(operation:'Create'|'Update',object:string)=>
   'AceAssist'+operation+(object==='Appointment'?'V3':'V2')+object;
@@ -408,7 +413,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
    <nav className="custom-tabs" aria-label="Booking sections">
     <button type="button" aria-current={screen==='home'?'page':undefined}
      onClick={openHome}>Home</button>{tabs.map((tab,i)=>
-    <button key={tab.object} type="button" aria-current={i===selected?'page':undefined}
+    <button key={tab.object} type="button" aria-current={screen==='records'&&i===selected?'page':undefined}
+     disabled={!loaded.has(tab.object.toLowerCase())||!actions.has('AceAssistLoad'+tab.object)}
      onClick={()=>openSection(tab.object)}>{tab.label}</button>)}</nav>
    {screen==='home'&&<AceAssistDashboard
     appointments={rows} invoices={dashboardInvoices} customers={lookupRows.Customer??[]}
@@ -476,13 +482,13 @@ export default function AceAssistRuntime({entry,onLogout}:{
          <span><strong>{title(line)}</strong><small>{String(line.Description??'')}</small>
           <small>{String(line.Quantity??'')} × {String(line.UnitPrice??'')} · {String(line.LineTotal??'')}</small></span>
          <span className="assist-line-actions">
-          <button type="button" disabled={!actions.has('AceAssistUpdateV2'+current.object+'Line')||busy}
+          <button type="button" disabled={!actions.has('AceAssistUpdateV2'+current.object+'Line')||financialLinesLocked||busy}
            onClick={()=>startEdit('Update',line,current.object+'Line',true)}>Edit</button>
-          <button type="button" disabled={!actions.has('AceAssistDelete'+current.object+'Line')||busy}
+          <button type="button" disabled={!actions.has('AceAssistDelete'+current.object+'Line')||financialLinesLocked||busy}
            onClick={()=>startEdit('Delete',line,current.object+'Line',true)}>Delete</button>
          </span>
         </div>):<p>No lines attached to this record.</p>}
-       <button type="button" disabled={!actions.has('AceAssistCreateV2'+current.object+'Line')||busy}
+       <button type="button" disabled={!actions.has('AceAssistCreateV2'+current.object+'Line')||financialLinesLocked||busy}
         onClick={()=>{
          const object=current.object+'Line';
          startEdit('Create',undefined,object,true);
