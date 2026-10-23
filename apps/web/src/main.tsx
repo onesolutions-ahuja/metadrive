@@ -18,6 +18,9 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 
 // Keep the authenticated workspace, including its large builder code and CSS,
 // out of the initial public marketing bundle.
+const MailWebmail = lazy(() => import('./core/mail/MailWebmail'));
+const isMailRoute = window.location.pathname === '/mail' || window.location.pathname === '/mail/';
+
 const Workspace = lazy(async () => {
   await import('./core/workspace/WorkspaceTheme/styles.css');
   return import('./core/workspace/App/App');
@@ -107,8 +110,10 @@ const isMarketingHome = !workspaceDevelopmentRoot && (pathname === '/' || pathna
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {isMarketingHome
-      ? <MarketingSite />
-      : <WorkspaceFailureBoundary><Suspense fallback={<WorkspaceLoadingFallback />}><Workspace /></Suspense></WorkspaceFailureBoundary>}
+    {isMailRoute
+      ? <Suspense fallback={<WorkspaceLoadingFallback />}><MailWebmail /></Suspense>
+      : isMarketingHome
+        ? <MarketingSite />
+        : <WorkspaceFailureBoundary><Suspense fallback={<WorkspaceLoadingFallback />}><Workspace /></Suspense></WorkspaceFailureBoundary>}
   </React.StrictMode>
 );
