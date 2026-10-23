@@ -34,6 +34,15 @@ export function registerStalwartJmapProxyRoutes(app:Express){
    res.status(204).end();return;
   }
   const targetPath=req.path;
+  const segments=targetPath.split('/').filter(Boolean);
+  let unsafePath=false;
+  for(const segment of segments){
+   try{
+    const decoded=decodeURIComponent(segment);
+    if(decoded==='.'||decoded==='..'||decoded.includes('/')||decoded.includes('\\'))unsafePath=true;
+   }catch{unsafePath=true;}
+  }
+  if(unsafePath){res.status(404).json({error:'JMAP endpoint not found'});return;}
   const route=allowedPaths.find(item=>item.path.test(targetPath));
   if(!route){res.status(404).json({error:'JMAP endpoint not found'});return;}
   if(req.method!==route.method){res.status(405).setHeader('Allow',route.method);res.json({error:'Method not allowed'});return;}
