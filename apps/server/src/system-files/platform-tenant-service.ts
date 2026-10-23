@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
 import {TenantProvisioning} from './tenant-provisioning.js';
@@ -136,18 +137,26 @@ export class PlatformTenantService {
     timezone:data.timezone,weeklyHours:normalizedDays,
     holidays:normalizedHolidays.sort((a,b)=>a.date.localeCompare(b.date))
    };
-   return this.db.transaction(async client=>{
+   const written=await this.db.transaction(async client=>{
     const {rows}=await client.query<{properties:Record<string,unknown>}>(`
      INSERT INTO md_tenant_settings(tenant_id,setting_key,properties)
      VALUES($1,'business-calendar',$2::jsonb)
      ON CONFLICT(tenant_id,setting_key) DO UPDATE
       SET properties=EXCLUDED.properties,revision=md_tenant_settings.revision+1,updated_at=now()
      RETURNING properties`,[tenantId,JSON.stringify(properties)]);
+    if(!rows[0]?.properties||!isDeepStrictEqual(rows[0].properties,properties))
+     throw Error('Business calendar save returned unexpected settings');
     await client.query(`INSERT INTO md_security_events(tenant_id,actor_user_id,action,details)
      VALUES($1,$2,'tenant.business-calendar.updated',$3::jsonb)`,
     [tenantId,userId,JSON.stringify({timezone:properties.timezone,holidayCount:properties.holidays.length})]);
     return rows[0].properties;
    });
+   const {rows:confirmed}=await this.db.query<{properties:Record<string,unknown>}>(`
+    SELECT properties FROM md_tenant_settings
+    WHERE tenant_id=$1 AND setting_key='business-calendar'`,[tenantId]);
+   if(!confirmed[0]?.properties||!isDeepStrictEqual(confirmed[0].properties,written))
+    throw Error('Business calendar was not confirmed after commit; please retry or contact support');
+   return confirmed[0].properties;
   } else if(key==='offline-briefcase') {
    const selections=data.selections;
    if(!Array.isArray(selections)||selections.length>20
