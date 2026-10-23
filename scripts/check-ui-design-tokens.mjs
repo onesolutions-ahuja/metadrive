@@ -11,7 +11,6 @@ const moved = {
   'marketing.css':'core/public/MarketingSite/marketing.css',
   'design-system.css':'core/workspace/WorkspaceTheme/design-system.css',
   'styles.css':'core/workspace/WorkspaceTheme/styles.css',
-  'styles-part2.css':'core/workspace/WorkspaceTheme/styles-part2.css',
   'styles-md227.css':'core/builders/PageBuilder/styles-md227.css',
   'TenantManagement.css':'core/platform/TenantManagement/TenantManagement.css',
   'TenantDomains.css':'core/platform/TenantDomains/TenantDomains.css',
@@ -49,8 +48,14 @@ assert.ok(runtime.includes("WorkspaceTheme/design-system.css"),
   'The public entry must load shared design tokens once for marketing and the workspace');
 assert.ok(runtime.includes('const Workspace = lazy('),
   'Workspace must remain lazily loaded');
+assert.ok(!runtime.includes("WorkspaceTheme/styles-part2.css") && !runtime.includes("WorkspaceTheme/styles-audit.css"),
+  'Workspace must load one consolidated stylesheet, not a conflicting three-file cascade');
+const workspaceCss = web('styles.css');
+for (const selector of ['.palette-backdrop', '.profile-menu-panel', '.flow-workarea.flow-toolbox-collapsed']) {
+  assert.ok(workspaceCss.includes(selector), 'Consolidated workspace stylesheet is missing ' + selector);
+}
 
-for (const path of ['styles.css', 'styles-part2.css', 'styles-md227.css']) {
+for (const path of ['styles.css', 'styles-md227.css']) {
   const css = web(path);
   assert.doesNotMatch(css, /font-size:\s*(?:[7-9]|10)px\b/,
     path + ' contains operational microtype below 11px');
