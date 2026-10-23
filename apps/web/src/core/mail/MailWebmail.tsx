@@ -20,6 +20,21 @@ function listOf<T>(result:Record<string,unknown>,key='list'):T[]{return Array.is
 function safeHeader(value:string){return value.replace(/[\r\n]+/g,' ').trim();}
 function plainTextToHtml(value:string){return value.replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]??ch)).replace(/\n/g,'<br>');}
 
+function bytesToB64(bytes:Uint8Array){let binary='';for(let i=0;i<bytes.length;i+=0x8000)binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(binary);}
+function safeFilename(value:string){return value.replace(/[\\\"\r\n]/g,'_').replace(/[^\x20-\x7E]/g,'_').slice(0,180)||'attachment';}
+async function buildRawMessage(sender:Identity,recipient:string,subject:string,body:string,files:File[]){
+ const headers='From: '+safeHeader(sender.name?sender.name+' <'+sender.email+'>':sender.email)+'\r\nTo: '+safeHeader(recipient)+'\r\nSubject: =?UTF-8?B?'+b64(safeHeader(subject))+'?=\r\nMIME-Version: 1.0\r\n';
+ if(!files.length)return headers+'Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+plainTextToHtml(body);
+ const boundary='----MetaDrive-'+Date.now().toString(16);
+ let raw=headers+'Content-Type: multipart/mixed; boundary="'+boundary+'"\r\n\r\n--'+boundary+'\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+body+'\r\n';
+ for(const file of files){
+  const encoded=bytesToB64(new Uint8Array(await file.arrayBuffer())).replace(/.{1,76}/g,'export default function MailWebmail(){\r\n');
+  const filename=safeFilename(file.name);const type=/^[\w!#export default function MailWebmail(){^_.+-]+\/[\w!#export default function MailWebmail(){^_.+-]+$/.test(file.type)?file.type:'application/octet-stream';
+  raw+='--'+boundary+'\r\nContent-Type: '+type+'; name="'+filename+'"\r\nContent-Disposition: attachment; filename="'+filename+'"\r\nContent-Transfer-Encoding: base64\r\n\r\n'+encoded+'\r\n';
+ }
+ return raw+'--'+boundary+'--\r\n';
+}
+
 export default function MailWebmail(){
  const [email,setEmail]=useState('');const [password,setPassword]=useState('');
  const [session,setSession]=useState<JmapSession|null>(null);const [accountId,setAccountId]=useState('');
@@ -27,7 +42,7 @@ export default function MailWebmail(){
  const [messages,setMessages]=useState<Email[]>([]);const [selected,setSelected]=useState<Email|null>(null);
  const [identities,setIdentities]=useState<Identity[]>([]);
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');
- const [compose,setCompose]=useState(false);const [to,setTo]=useState('');const [subject,setSubject]=useState('');const [body,setBody]=useState('');
+ const [compose,setCompose]=useState(false);const [to,setTo]=useState('');const [subject,setSubject]=useState('');const [body,setBody]=useState('');const [files,setFiles]=useState<File[]>([]);
  const [search,setSearch]=useState('');
  const base=useMemo(()=>new URL('/mail/',window.location.origin),[]);
  const auth=useMemo(()=>email&&password?'Basic '+b64(email.trim()+':'+password):'', [email,password]);
@@ -97,7 +112,14 @@ export default function MailWebmail(){
  const reply=(message:Email)=>{
   const sender=message.from?.[0]?.email??'';setTo(sender);setSubject((message.subject??'').startsWith('Re:')?message.subject??'':'Re: '+(message.subject??''));
   const text=message.textBody?.map(part=>part.partId?message.bodyValues?.[part.partId]?.value??'':'').filter(Boolean).join('\n')??'';
-  setBody('\n\n--- Original message ---\n'+text);setCompose(true);setSelected(null);
+  setBody('\n\n--- Original message ---\n'+text);setFiles([]);setCompose(true);setSelected(null);
+ };
+ const forward=(message:Email)=>{
+  const text=message.textBody?.map(part=>part.partId?message.bodyValues?.[part.partId]?.value??'':'').filter(Boolean).join('\n')??message.preview??'';
+  const sender=message.from?.map(x=>x.name?x.name+' <'+x.email+'>':x.email).join(', ')??'';
+  setTo('');setSubject((message.subject??'').startsWith('Fwd:')?message.subject??'':'Fwd: '+(message.subject??''));
+  setBody('\n\n---------- Forwarded message ----------\nFrom: '+sender+'\nDate: '+(message.receivedAt??'')+'\nSubject: '+(message.subject??'')+'\nTo: '+(message.to?.map(x=>x.email).join(', ')??'')+'\n\n'+text);
+  setFiles([]);setCompose(true);setSelected(null);
  };
  const send=async(event:React.FormEvent)=>{
   event.preventDefault();setBusy(true);setError('');setNotice('');
@@ -108,7 +130,8 @@ export default function MailWebmail(){
    if(!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(recipient))throw new Error('Enter a valid recipient email address.');
    const sent=mailboxes.find(x=>x.role==='sent');
    if(!sent)throw new Error('A Sent folder is required before sending mail.');
-   const raw='From: '+safeHeader(sender.name?sender.name+' <'+sender.email+'>':sender.email)+'\r\nTo: '+safeHeader(recipient)+'\r\nSubject: '+safeHeader(subject)+'\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'+plainTextToHtml(body);
+   if(files.reduce((sum,file)=>sum+file.size,0)>20*1024*1024)throw new Error('Attachments must total 20 MB or less.');
+   const raw=await buildRawMessage(sender,recipient,subject,body,files);
    const upload=await fetch(session.uploadUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'message/rfc822'},body:raw,redirect:'error'});
    if(!upload.ok)throw new Error(`Unable to prepare message (${upload.status}).`);
    const uploaded=await upload.json() as {blobId?:string};
@@ -121,8 +144,26 @@ export default function MailWebmail(){
    const submissionResult=responseFor(await api([['EmailSubmission/set',{accountId,create:{send:{emailId:messageId,identityId:identity,envelope:{mailFrom:{email:sender.email},rcptTo:[{email:recipient}]}}}},'send']]),'EmailSubmission/set');
    const submissionCreated=submissionResult.created&&typeof submissionResult.created==='object'?submissionResult.created as Record<string,unknown>:{};
    if(!submissionCreated.send)throw new Error('Mail server rejected message submission.');
-   setCompose(false);setTo('');setSubject('');setBody('');setNotice('Message submitted to the mail server.');await loadMessages(selectedMailbox,'');
+   setCompose(false);setTo('');setSubject('');setBody('');setFiles([]);setNotice('Message submitted to the mail server.');await loadMessages(selectedMailbox,'');
   }catch(e){setError(e instanceof Error?e.message:'Message could not be sent');}
+  finally{setBusy(false);}
+ };
+ const saveDraft=async(event:React.FormEvent)=>{
+  event.preventDefault();setBusy(true);setError('');setNotice('');
+  try{
+   if(!session||!auth)throw new Error('Please sign in to your mailbox.');
+   const sender=identities[0];if(!sender)throw new Error('No sending identity is configured for this mailbox.');
+   const drafts=mailboxes.find(x=>x.role==='drafts');if(!drafts)throw new Error('A Drafts folder is required to save drafts.');
+   if(files.reduce((sum,file)=>sum+file.size,0)>20*1024*1024)throw new Error('Attachments must total 20 MB or less.');
+   const raw=await buildRawMessage(sender,to.trim(),subject,body,files);
+   const upload=await fetch(session.uploadUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'message/rfc822'},body:raw,redirect:'error'});
+   if(!upload.ok)throw new Error('Unable to upload draft ('+upload.status+').');
+   const uploaded=await upload.json() as {blobId?:string};if(!uploaded.blobId)throw new Error('Mail server did not accept the draft upload.');
+   const imported=responseFor(await api([['Email/import',{accountId,emails:{draft:{blobId:uploaded.blobId,mailboxIds:{[drafts.id]:true},keywords:{'$draft':true}}}},'import']]),'Email/import');
+   const created=imported.created&&typeof imported.created==='object'?imported.created as Record<string,{id?:string}>:{};
+   if(!created.draft?.id)throw new Error('Mail server could not save the draft.');
+   setCompose(false);setTo('');setSubject('');setBody('');setFiles([]);setNotice('Draft saved in Drafts.');await loadMessages(selectedMailbox,'');
+  }catch(e){setError(e instanceof Error?e.message:'Draft could not be saved');}
   finally{setBusy(false);}
  };
  const signIn=async(event:React.FormEvent)=>{event.preventDefault();await loadSetup();};
@@ -161,8 +202,10 @@ export default function MailWebmail(){
       <label style={{display:'grid',gap:6,marginBottom:12}}>To<input style={input} type="email" required value={to} onChange={e=>setTo(e.target.value)} placeholder="recipient@example.com"/></label>
       <label style={{display:'grid',gap:6,marginBottom:12}}>Subject<input style={input} value={subject} maxLength={500} onChange={e=>setSubject(e.target.value)}/></label>
       <label style={{display:'grid',gap:6,marginBottom:12}}>Message<textarea style={{...input,minHeight:220,resize:'vertical'}} required value={body} onChange={e=>setBody(e.target.value)}/></label>
-      <div style={{display:'flex',gap:8}}><button style={{...button,background:'#183b60',color:'#fff'}} disabled={busy}>{busy?'Sending…':'Send'}</button><button type="button" style={button} onClick={()=>setCompose(false)}>Cancel</button></div>
-    </form>:selected?<article><div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><h2 style={{margin:'0 0 12px',overflowWrap:'anywhere'}}>{selected.subject||'(no subject)'}</h2><button style={button} onClick={()=>reply(selected)}>Reply</button></div>
+      <label style={{display:'grid',gap:6,marginBottom:12}}>Attachments (20 MB total maximum)<input style={input} type="file" multiple onChange={e=>setFiles(Array.from(e.target.files??[]))}/></label>
+      {files.length>0&&<ul>{files.map((file,index)=><li key={file.name+index}>{file.name} ({Math.ceil(file.size/1024)} KB)</li>)}</ul>}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button style={{...button,background:'#183b60',color:'#fff'}} disabled={busy}>{busy?'Sending…':'Send'}</button><button type="button" style={button} disabled={busy} onClick={e=>void saveDraft(e as unknown as React.FormEvent)}>Save draft</button><button type="button" style={button} onClick={()=>{setCompose(false);setFiles([]);}}>Cancel</button></div>
+    </form>:selected?<article><div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><h2 style={{margin:'0 0 12px',overflowWrap:'anywhere'}}>{selected.subject||'(no subject)'}</h2><div style={{display:'flex',gap:6,flexWrap:'wrap'}}><button style={button} onClick={()=>reply(selected)}>Reply</button><button style={button} onClick={()=>forward(selected)}>Forward</button></div></div>
       <p style={{fontSize:13,color:'#60768b',overflowWrap:'anywhere'}}>From: {selected.from?.map(x=>x.name?x.name+' <'+x.email+'>':x.email).join(', ')||'Unknown sender'}</p>
       <p style={{fontSize:13,color:'#60768b',overflowWrap:'anywhere'}}>To: {selected.to?.map(x=>x.email).join(', ')||email}</p>
       <p style={{fontSize:12,color:'#60768b'}}>{selected.receivedAt?new Date(selected.receivedAt).toLocaleString():''}</p>
