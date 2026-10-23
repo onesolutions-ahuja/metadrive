@@ -38,27 +38,30 @@ export class PasswordResetService {
   if(!inserted)return {message:acknowledgement};
   const subject=policy.templates?.email?.subject||'Password recovery';
   const text=policy.templates?.email?.body||'Your verification code is {!Verification.Value}.';
-  let verification=token;
-  if(policy.method==='LINK'){
-   const configured=process.env.METADRIVE_PASSWORD_RESET_ORIGIN;
-   if(!configured)throw new Error('Password recovery link origin is not configured');
-   const url=new URL(configured);
-   if(url.protocol!=='https:'||url.username||url.password||url.hash)
-    throw new Error('Invalid password recovery link origin');
-   url.searchParams.set('resetEmail',email);
-   url.searchParams.set('resetToken',token);
-   verification=url.toString();
-  }
-  const rendered=(text.includes('{!Verification.Value}')?text:text+'\n{!Verification.Value}')
-   .replaceAll('{!Verification.Value}',verification)
-   .replaceAll('{!Verification.ExpiryMinutes}','15');
-  try {await this.send(tenantId,'','',email,subject,rendered);}
-  catch{
+  try{
+   let verification=token;
+   if(policy.method==='LINK'){
+    const configured=process.env.METADRIVE_PASSWORD_RESET_ORIGIN;
+    if(!configured)throw new Error('Password recovery link origin is not configured');
+    const url=new URL(configured);
+    if(url.protocol!=='https:'||url.username||url.password||url.hash)
+     throw new Error('Invalid password recovery link origin');
+    url.searchParams.set('resetEmail',email);
+    url.searchParams.set('resetToken',token);
+    verification=url.toString();
+   }
+   const rendered=(text.includes('{!Verification.Value}')?text:text+'\\n{!Verification.Value}')
+    .replaceAll('{!Verification.Value}',verification)
+    .replaceAll('{!Verification.ExpiryMinutes}','15');
+   await this.send(tenantId,'','',email,subject,rendered);
+  }catch{
    await this.db.query('DELETE FROM md_password_reset_challenges WHERE tenant_id=$1 AND token_hash=$2',
     [tenantId,digest(token)]);
-   // Keep account existence private even when platform SMTP is unavailable.
-   console.error('Password recovery email delivery failed for tenant',tenantId);
+   // Keep account existence private when link configuration or platform SMTP fails.
+   console.error('Password recovery delivery failed for tenant',tenantId);
    return {message:acknowledgement};
+  }
+  return {message:acknowledgement};
   }
   return {message:acknowledgement};
  }
