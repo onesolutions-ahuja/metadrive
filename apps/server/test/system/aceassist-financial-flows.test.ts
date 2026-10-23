@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {enforceDocumentConversion,enforceDocumentIssue}
+import {enforceDocumentConversion,enforceDocumentIssue,prepareDocumentLineMutation,recalculateDocumentLineTotals}
  from '../../src/system-files/nodes/DocumentFinancialGuard.js';
 
 const id='11111111-1111-4111-8111-111111111111';
@@ -90,4 +90,51 @@ test('conversion and invoice issuance are installed as shared flow graphs, not d
  assert.match(seed,/AceAssistFinanceIssuer/);
  assert.match(seed,/md_validation_rules/);
  assert.doesNotMatch(seed,/INSERT INTO md_records|INSERT INTO md_record_values/);
+});
+
+test('Flow line guard computes LineTotal and updates parent totals after mutations',async()=>{
+ const lineConfig={parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',
+  unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',
+  lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',
+  taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']};
+ const writes:Array<{object:string;id:string;values:Record<string,unknown>}>=[];
+ const line={Id:'55555555-5555-4555-8555-555555555555',Invoice:invoiceId,
+  Quantity:2,UnitPrice:30,DiscountAmount:5,TaxAmount:6,LineTotal:70};
+ const context={tenantId:'tenant',userId:'operator',
+  node:{id:2,type:'Create Records',config:{object:'InvoiceLine'}},
+  client:{query:async()=>({rows:[],rowCount:0})},
+  records:{
+   get:async(_tenant:string,_user:string,object:string)=>object==='InvoiceLine'?line:
+    {Id:invoiceId,Status:'Draft'},
+   update:async(_tenant:string,_user:string,object:string,id:string,values:Record<string,unknown>)=>{
+    writes.push({object,id,values});return line;
+   }
+  },
+  recordQuery:{find:async()=>[line]}
+ } as never;
+ const fields:Record<string,unknown>={Invoice:invoiceId,Quantity:2,UnitPrice:30,DiscountAmount:5,TaxAmount:6};
+ const prepared=await prepareDocumentLineMutation(context,lineConfig,undefined,fields);
+ assert.equal(fields.LineTotal,61);
+ assert.equal(prepared.newParent,invoiceId);
+ await recalculateDocumentLineTotals(context,lineConfig,invoiceId);
+ assert.ok(writes.some(w=>w.object==='InvoiceLine'&&w.values.LineTotal===61));
+ assert.ok(writes.some(w=>w.object==='Invoice'&&w.values.Subtotal===60&&
+  w.values.DiscountAmount===5&&w.values.TaxAmount===6&&w.values.Total===61));
+});
+test('Flow line guard prevents changes to issued invoices',async()=>{
+ const lineConfig={parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',
+  unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',
+  lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',
+  taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']};
+ const line={Id:'55555555-5555-4555-8555-555555555555',Invoice:invoiceId,
+  Quantity:1,UnitPrice:10,DiscountAmount:0,TaxAmount:0,LineTotal:10};
+ const context={tenantId:'tenant',userId:'operator',
+  node:{id:2,type:'Update Records',config:{object:'InvoiceLine'}},
+  client:{query:async()=>({rows:[],rowCount:0})},
+  records:{get:async(_tenant:string,_user:string,object:string)=>object==='InvoiceLine'?line:
+   {Id:invoiceId,Status:'Issued'}},
+  recordQuery:{find:async()=>[line]}
+ } as never;
+ await assert.rejects(prepareDocumentLineMutation(context,lineConfig,line.Id,{Quantity:2}),
+  /cannot be changed after the financial document is issued/);
 });
