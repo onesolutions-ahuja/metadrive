@@ -2,7 +2,7 @@ import React,{useCallback,useEffect,useState} from 'react';
 import {apiRequest} from '../authentication/Client/authClient';
 
 type Domain={id:string;name:string;isEnabled:boolean};
-type Mailbox={id:string;emailAddress:string;name:string;domainId:string;description:string;usedDiskQuota:number;createdAt:string|null};
+type Mailbox={id:string;emailAddress:string;name:string;domainId:string;description:string;usedDiskQuota:number;quotas?:Record<string,number>;createdAt:string|null};
 type Props={onLogout:()=>void};
 const panel:React.CSSProperties={background:'#fff',border:'1px solid #d9e0e7',borderRadius:12,padding:20};
 const field:React.CSSProperties={display:'grid',gap:6,marginBottom:14};
@@ -27,6 +27,8 @@ export default function MailboxAdmin({onLogout}:Props){
  const [resetPassword,setResetPassword]=useState('');
  const [editId,setEditId]=useState('');
  const [editDescription,setEditDescription]=useState('');
+ const [editMaxDiskQuota,setEditMaxDiskQuota]=useState('');
+ const [editMaxEmails,setEditMaxEmails]=useState('');
  const refresh=useCallback(async()=>{
   setLoading(true);setError('');
   try{
@@ -51,7 +53,10 @@ export default function MailboxAdmin({onLogout}:Props){
  const saveDescription=async(event:React.FormEvent)=>{
   event.preventDefault();setBusy(true);setError('');setNotice('');
   try{
-   await apiRequest('/mail/mailboxes/'+encodeURIComponent(editId),{method:'PATCH',body:JSON.stringify({description:editDescription})});
+   const current=mailboxes.find(m=>m.id===editId);const quotas={...(current?.quotas??{})};
+   if(editMaxDiskQuota.trim()==='')delete quotas.maxDiskQuota;else quotas.maxDiskQuota=Number(editMaxDiskQuota);
+   if(editMaxEmails.trim()==='')delete quotas.maxEmails;else quotas.maxEmails=Number(editMaxEmails);
+   await apiRequest('/mail/mailboxes/'+encodeURIComponent(editId),{method:'PATCH',body:JSON.stringify({description:editDescription,quotas})});
    setEditId('');setNotice('Mailbox updated.');await refresh();
   }catch(e){setError(e instanceof Error?e.message:'Mailbox update failed');}
   finally{setBusy(false);}
@@ -102,6 +107,9 @@ export default function MailboxAdmin({onLogout}:Props){
   {editId&&<form onSubmit={saveDescription} style={{...panel,marginBottom:18,maxWidth:650}}>
    <h2 style={{marginTop:0,fontSize:18}}>Edit mailbox description</h2>
    <div style={field}><label htmlFor="edit-description">Description</label><input id="edit-description" value={editDescription} maxLength={500} onChange={e=>setEditDescription(e.target.value)} style={input}/></div>
+   <div style={field}><label htmlFor="edit-disk-quota">Maximum storage (bytes; leave blank for server default)</label><input id="edit-disk-quota" type="number" min="0" step="1" value={editMaxDiskQuota} onChange={e=>setEditMaxDiskQuota(e.target.value)} style={input}/></div>
+   <div style={field}><label htmlFor="edit-email-quota">Maximum email count (leave blank for server default)</label><input id="edit-email-quota" type="number" min="0" step="1" value={editMaxEmails} onChange={e=>setEditMaxEmails(e.target.value)} style={input}/></div>
+   <p style={{fontSize:12,color:'#617589'}}>Leave a quota blank to remove that explicit limit. Storage usage is shown separately.</p>
    <div style={{display:'flex',gap:8}}><button style={primary} disabled={busy}>{busy?'Saving…':'Save changes'}</button><button type="button" style={button} onClick={()=>setEditId('')}>Cancel</button></div>
   </form>}
   <section style={panel}>
@@ -114,7 +122,7 @@ export default function MailboxAdmin({onLogout}:Props){
      <td style={{padding:'14px 10px',borderBottom:'1px solid #edf1f5'}}>{fmtBytes(m.usedDiskQuota)}</td>
      <td style={{padding:'14px 10px',borderBottom:'1px solid #edf1f5',color:'#52677b'}}>{m.createdAt?new Date(m.createdAt).toLocaleDateString():'—'}</td>
      <td style={{padding:'14px 10px',borderBottom:'1px solid #edf1f5'}}><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-      <button style={button} disabled={busy} onClick={()=>{setEditId(m.id);setEditDescription(m.description);setResetId('');}}>Edit</button>
+      <button style={button} disabled={busy} onClick={()=>{setEditId(m.id);setEditDescription(m.description);setEditMaxDiskQuota(m.quotas?.maxDiskQuota===undefined?'':String(m.quotas.maxDiskQuota));setEditMaxEmails(m.quotas?.maxEmails===undefined?'':String(m.quotas.maxEmails));setResetId('');}}>Edit</button>
       <button style={button} disabled={busy} onClick={()=>{setResetId(m.id);setResetPassword('');setEditId('');}}>Reset password</button>
       <button style={{...button,color:'#a32222',borderColor:'#e4b5b5'}} disabled={busy} onClick={()=>void remove(m)}>Delete</button>
      </div></td>
