@@ -50,7 +50,6 @@ import {
   Unlock,
   FileText,
   Filter,
-  GripVertical,
   Grid2X2,
   Type,
   Square,
@@ -1461,15 +1460,6 @@ function PageBuilder({
           <button type="button" role="menuitem" onClick={() => {updateComponent(component.id,{visible:!component.visible});setComponentMenuId('');}}>{component.visible ? 'Hide' : 'Show'} element</button>
           <button type="button" role="menuitem" disabled={isCanvasLocked(component)} onClick={() => {removeSelected();setComponentMenuId('');}}>Delete <kbd>Delete</kbd></button>
         </div>}
-      </div>}
-      {!previewMode && !libraryPreview && page.layoutMode !== 'free-canvas' && <div className="record-component-head"
-        data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
-        onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
-        onPointerMove={page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
-        onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
-        onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
-        <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
-        {isCanvasLocked(component) || component.properties.canvasLocked === true ? <Lock size={13} /> : <GripVertical size={16} />}
       </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
