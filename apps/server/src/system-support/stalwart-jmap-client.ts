@@ -106,7 +106,7 @@ export class StalwartJmapClient {
     const value = await this.request(new URL(session.apiUrl), {
       method: 'POST',
       body: JSON.stringify({
-        using: ['urn:ietf:params:jmap:core', 'urn:ietf:params:jmap:mail', 'urn:ietf:params:jmap:submission', 'urn:stalwart:jmap:server'],
+        using: ['urn:ietf:params:jmap:core', 'urn:stalwart:jmap'],
         methodCalls: [[methodName, args, callId]],
       }),
     });
