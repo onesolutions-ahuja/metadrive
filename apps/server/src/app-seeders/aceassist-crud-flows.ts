@@ -31,7 +31,8 @@ const lineTotals=(objectApi:'QuotationLine'|'InvoiceLine')=>({
  quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',
  taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',
  discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',
- ...(objectApi==='InvoiceLine'?{statusField:'Status',lockedStatuses:['Issued']}:{})
+ ...(objectApi==='InvoiceLine'?{statusField:'Status',lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],numberField:'InvoiceNumber'}:
+  {statusField:'Status',lockedStatuses:['Accepted','Approved','Converted']})
 });
 function makeGraph(objectApi:string,operation:'Load'|'Create'|'Update'|'Delete',availableFields:string[]):FlowGraph {
  const apiName='AceAssist'+operation+objectApi;
