@@ -309,6 +309,52 @@ try{
  await page.locator('#flow-start-label').fill('Phase One Browser Test');
  await page.getByRole('button',{name:'Create Flow',exact:true}).click();
  await page.locator('.flow-element-option').filter({hasText:'Get Records'}).waitFor();
+
+ // Capture the real authenticated Flow Builder at the audit's phone/tablet widths.
+ // Resize the same mounted React screen so this exercises the actual builder markup,
+ // responsive CSS and Setup shell rather than a hand-built visual fixture.
+ await (await import('node:fs/promises')).mkdir(new URL('../artifacts/',import.meta.url),{recursive:true});
+ for(const {width,height} of [
+   {width:390,height:844},
+   {width:768,height:1024},
+   {width:1024,height:768}
+ ]){
+   await page.setViewportSize({width,height});
+   await page.waitForTimeout(150);
+   const responsiveMetrics=await page.evaluate(()=>{
+     const measure=selector=>{
+       const element=document.querySelector(selector);
+       if(!element)return null;
+       const rect=element.getBoundingClientRect(),style=getComputedStyle(element);
+       return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,
+         display:style.display,position:style.position,gridColumns:style.gridTemplateColumns};
+     };
+     return {viewportWidth:innerWidth,documentWidth:document.documentElement.scrollWidth,
+       header:measure('.salesforce-header'),setupSidebar:measure('.setup-sidebar'),
+       flowWorkarea:measure('.flow-workarea'),flowSettings:measure('.flow-settings')};
+   });
+   assert.ok(responsiveMetrics.flowWorkarea,
+     'Actual Flow Builder canvas missing at '+width+'px');
+   assert.ok(responsiveMetrics.documentWidth<=width+2,
+     'Actual workspace horizontal overflow at '+width+'px: '+JSON.stringify(responsiveMetrics));
+   assert.ok(responsiveMetrics.header&&responsiveMetrics.header.height<=56,
+     'Actual workspace header exceeds 56px at '+width+'px: '+JSON.stringify(responsiveMetrics.header));
+   assert.ok(responsiveMetrics.flowSettings&&responsiveMetrics.flowSettings.display!=='none',
+     'Actual Flow Builder settings panel is hidden at '+width+'px: '+JSON.stringify(responsiveMetrics.flowSettings));
+   if(width<=820){
+     assert.ok(responsiveMetrics.flowSettings.position==='static',
+       'Actual Flow Builder settings should stack at '+width+'px: '+JSON.stringify(responsiveMetrics.flowSettings));
+   }else{
+     assert.match(responsiveMetrics.flowWorkarea.gridColumns,/^56px/,
+       'Actual tablet Flow Builder should keep its 56px toolbox rail: '+JSON.stringify(responsiveMetrics.flowWorkarea));
+     assert.equal(responsiveMetrics.flowSettings.position,'absolute',
+       'Actual tablet inspector should overlay the canvas: '+JSON.stringify(responsiveMetrics.flowSettings));
+   }
+   await page.screenshot({path:new URL('../artifacts/flow-builder-responsive-'+width+'.png',import.meta.url).pathname,fullPage:true});
+   console.info('Actual Flow Builder responsive screenshot passed at '+width+'px',JSON.stringify(responsiveMetrics));
+ }
+ await page.setViewportSize({width:1440,height:900});
+ await page.waitForTimeout(150);
  for(const elementType of ['Get Records','Update Records','Delete Records','Subflow',
    'Collection Filter','Collection Sort','Transform','Publish Platform Event'])
    assert.equal(await page.locator('.flow-element-option').filter({hasText:elementType}).count(),1,
