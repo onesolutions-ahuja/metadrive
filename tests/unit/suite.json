@@ -6,6 +6,7 @@
     "apps/server/test/system/aceassist-app.test.ts",
     "apps/server/test/system/aceassist-appointment-modal.test.ts",
     "apps/server/test/system/aceassist-booking-slot-preview.test.ts",
+    "apps/server/test/system/aceassist-document-editor.test.ts",
     "apps/server/test/system/aceassist-financial-flows.test.ts",
     "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/aceassist-payment-flows.test.ts",
