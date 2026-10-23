@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {reconcileAceChatterCommunicationFlow,reconcileAceChatterCreateConversationContactFields,reconcileAceChatterCredentialFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
+import {reconcileAceChatterCommunicationFlow,reconcileAceChatterCreateConversationContactFields,reconcileAceChatterCredentialFlow,reconcileAceChatterLoadCommunicationsFlow,seedAceChatterFlowsForTenant} from '../../src/app-seeders/acechatter-flow.js';
 import {decodeMetadataValues,encodeMetadataValue} from '../../src/system-files/component-runtime.js';
 import {executeHttpCalloutNode} from '../../src/system-files/nodes/HttpCalloutNode.js';
 import {executeCreateRecordsNode} from '../../src/system-files/nodes/CreateRecordsNode.js';
@@ -398,4 +398,46 @@ test('reconcile seeded New Chat Flow adds source contact link without overwritin
  assert.ok(fieldValues?.some(field=>field.field==='SourceRecordId'&&field.value==='@sourceRecordId'));
  assert.equal(await reconcileAceChatterCreateConversationContactFields(client,'tenant-a'),false);
  assert.equal(writes,1);assert.equal(audits,1);
+});
+
+
+test('existing default AceChatter inbox Flow is migrated so inbound and outbound phone searches both match',async()=>{
+ const original={
+  apiName:'AceChatterLoadCommunications',elements:[
+   {id:1,type:'Start',config:{}},
+   {id:2,type:'Get Records',config:{object:'Communication',recordLimit:'200',
+    outputVariable:'communications',conditions:[
+     {field:'Channel',operator:'Equals',value:'WhatsApp'},
+     {field:'Sender',operator:'Contains',value:'@searchTerm'},
+     {field:'Recipient',operator:'Contains',value:'@searchTerm'}
+    ],sortField:'CreatedAt',sortOrder:'Descending'}},
+   {id:3,type:'End',config:{}}
+  ],connectors:[
+   {from:1,to:2,kind:'normal',label:'Next'},
+   {from:2,to:3,kind:'normal',label:'Next'}
+  ]
+ };
+ const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(original,'/builder',encoded);
+ let stored=encoded.map(item=>({property_path:item.path,value_kind:item.kind,value_text:item.text}));
+ let auditCount=0;
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes('SELECT id FROM md_flow_definitions'))return {rows:[{id:'inbox-flow'}],rowCount:1};
+  if(sql.includes('SELECT property_path,value_kind,value_text'))return {rows:stored,rowCount:stored.length};
+  if(sql.startsWith('DELETE FROM md_flow_editor_values')){stored=[];return {rows:[],rowCount:1};}
+  if(sql.includes('INSERT INTO md_flow_editor_values')){
+   stored.push({property_path:String(params[2]),value_kind:String(params[3]),
+    value_text:params[4]===null?null:String(params[4])});
+  }
+  if(sql.includes('INSERT INTO md_security_events'))auditCount++;
+  return {rows:[],rowCount:1};
+ }} as never;
+ assert.equal(await reconcileAceChatterLoadCommunicationsFlow(client,'tenant-a'),true);
+ const current=decodeMetadataValues(stored).builder as {
+  elements:Array<{id:number;type:string;config:Record<string,unknown>}>;
+ };
+ assert.equal(current.elements.find(node=>node.id===2)?.config.conditionLogic,'1 AND (2 OR 3)');
+ assert.equal(auditCount,1);
+ assert.equal(await reconcileAceChatterLoadCommunicationsFlow(client,'tenant-a'),false,
+  'the migration is idempotent');
 });
