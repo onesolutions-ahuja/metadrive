@@ -37,19 +37,20 @@ const safeError=(error:unknown):string=>{
  * standard Community-compatible Account/Group features rather than Enterprise-only tenant fields.
  */
 export class StalwartMailService {
- private readonly client:StalwartJmapClient;
+ private client?:StalwartJmapClient;
  private session?:StalwartJmapSession;
- constructor(baseUrl=process.env.STALWART_BASE_URL??'http://127.0.0.1:8080',
-  apiKey=process.env.STALWART_API_KEY??'',
-  private readonly allowedDomains=(process.env.STALWART_ALLOWED_DOMAINS??'unesolutions.co.uk').split(',').map(v=>v.trim().toLowerCase()).filter(Boolean)){
-  this.client=new StalwartJmapClient(baseUrl,apiKey);
- }
+ constructor(private readonly baseUrl=process.env.STALWART_BASE_URL??'http://127.0.0.1:8080',
+  private readonly apiKey=process.env.STALWART_API_KEY??'',
+  private readonly allowedDomains=(process.env.STALWART_ALLOWED_DOMAINS??'unesolutions.co.uk').split(',').map(v=>v.trim().toLowerCase()).filter(Boolean)){}
  private async ready(){
+  if(!this.apiKey.trim())throw new Error('Stalwart API key is not configured');
+  if(!this.client)this.client=new StalwartJmapClient(this.baseUrl,this.apiKey);
   if(!this.session)this.session=await this.client.discoverSession();
   return this.session;
  }
  private async call(method:string,args:MailObject){
   const session=await this.ready();
+  if(!this.client)throw new Error('Stalwart API client is unavailable');
   return this.client.call(session,method,args);
  }
  async listDomains(){
