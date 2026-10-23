@@ -28,6 +28,8 @@ Using Stalwart's supported Network Listener configuration, add and verify the mi
 
 Use Stalwart ACME with DNS-01 for `mail.unesolutions.co.uk`, so issuance and renewal do not conflict with the existing Nginx web/API listeners. The Cloudflare token must be least-privilege for the `unesolutions.co.uk` zone and stored only in Stalwart's secret-backed DNS-provider configuration. Do not place tokens or private keys in this repository, logs, shell arguments or chat. Verify certificate chain, SAN and expiry from outside the VM before opening mail ports.
 
+**Preparation saved in Stalwart:** the Cloudflare DNS provider and Let's Encrypt DNS-01 ACME provider were created, then the `unesolutions.co.uk` domain was saved with ACME TLS management, `mail` as an additional certificate hostname, and Automatic DNS management limited to **DKIM public keys only**. The UI confirmed “Saved successfully.” This configuration can publish Stalwart DKIM records and temporary ACME challenge TXT records; it does not manage MX or SPF. Public DKIM/challenge records and issuance of a certificate containing `mail.unesolutions.co.uk` have not yet been independently verified. The mail A/MX routing records have not been changed.
+
 ## Outbound relay
 
 First verify OCI Email Delivery is available for the tenancy and `unesolutions.co.uk` is an approved sender/domain in the active region. The Oracle documentation identifies region-specific SMTP endpoints and TLS on port 465; do not guess the endpoint or sender entitlement.
@@ -38,15 +40,15 @@ If OCI Email Delivery is unavailable, blocked, or lacks approved sender entitlem
 
 ## Oracle networking gates
 
-Read-only SSH checks on 2026-10-23 confirmed the container is healthy and JMAP/API diagnostics pass, but the host listens only on loopback `127.0.0.1:8080`; Docker publishes no mail ports. UFW is inactive. A workstation outside Oracle resolved `mail.unesolutions.co.uk` to the old `94.143.16.132` address, and direct connections to Oracle on 25, 587 and 993 timed out. Oracle outbound TCP 25 to a public mail exchanger also timed out, so direct-to-MX delivery is not currently viable. The OCI CLI/config are absent on the VM, and Email Delivery availability, credentials, NSG/security-list rules, outbound 465 and PTR remain unverified.
+Read-only SSH checks on 2026-10-23 confirmed the container is healthy and JMAP/API diagnostics pass, but the host listens only on loopback `127.0.0.1:8080`; Docker publishes no mail ports. UFW is inactive. A fresh workstation run of [check-mail-public.py](../../scripts/oracle/check-mail-public.py) still resolves `mail.unesolutions.co.uk` to `94.143.16.132` instead of Oracle, and times out connecting directly to Oracle on ports 25, 587 and 993. Oracle outbound TCP 25 to a public mail exchanger also timed out, so direct-to-MX delivery is not currently viable. The OCI CLI/config are absent on the VM, and Email Delivery availability, credentials, NSG/security-list rules, outbound 465 and PTR remain unverified.
 
 After Stalwart listeners and TLS are ready, an OCI tenancy administrator must review the instance VNIC's attached NSG and subnet security lists, then add only required ingress TCP 25, 587 and 993 rules. Also verify outbound TCP 465 to the confirmed OCI relay endpoint. Do not enable UFW blindly: first inventory existing host firewall rules and explicitly preserve SSH, HTTPS/API and required monitoring access. Request/set Oracle reverse DNS for `132.145.18.46` to `mail.unesolutions.co.uk` and verify the resulting PTR/A forward-confirmation.
 
 Run [check-mail-delivery.py](../../scripts/oracle/check-mail-delivery.py) on the host and [check-mail-public.py](../../scripts/oracle/check-mail-public.py) from a non-Oracle network. The public check verifies mail-host DNS, direct Oracle TCP, SMTP STARTTLS certificate identity, submission AUTH advertisement and IMAPS TLS. It does not authenticate, send mail or prove recipient delivery.
 
-## Cloudflare record plan (observed live zone; no changes made)
+## Cloudflare record plan (observed live zone; mail routing unchanged)
 
-The Cloudflare zone currently has 22 records. Preserve apex GitHub Pages A records (`185.199.108.153`, `.109.153`, `.110.153`, `.111.153`), `www`, `api` (`132.145.18.46`, DNS only), verification records, and all non-mail application records.
+The observed zone has 22 records. Preserve apex GitHub Pages A records (`185.199.108.153`, `.109.153`, `.110.153`, `.111.153`), `www`, `api` (`132.145.18.46`, DNS only), verification records, and all non-mail application records. The Stalwart domain preparation above is saved, but the live mail A/MX records remain on the old routing; do not infer successful DKIM publication or ACME issuance from the UI save confirmation.
 
 After external listener, TLS, relay, mailbox and data-readiness gates pass, have the DNS owner apply only this reviewed mail-specific diff:
 
@@ -54,11 +56,12 @@ After external listener, TLS, relay, mailbox and data-readiness gates pass, have
 | --- | --- | --- | --- | --- |
 | Replace the existing Brevo tracking CNAME | A | `mail` | `132.145.18.46` | DNS only |
 | Replace the existing Freehosting MX | MX | `@` | `mail.unesolutions.co.uk`, priority 10 | DNS only |
-| Replace the existing Freehosting SPF TXT | TXT | `@` | One SPF value generated from the verified OCI Email Delivery sender instructions | DNS only |
-| Retain the existing OCI DKIM selector only if OCI confirms it is active for this sending domain | CNAME | `metarive-london-20261023._domainkey` | Existing `.lhr1.oracleemaildelivery.com` target | DNS only |
+| Replace the existing Freehosting SPF TXT | TXT | `@` | One SPF value for the verified sending path, including only independently verified legitimate senders | DNS only |
+| Publish the Stalwart DKIM key | TXT | Selector returned by Stalwart | Exact public key returned by Stalwart | DNS only |
+| Retain the existing OCI DKIM selector only if OCI confirms it is active and required for this sending domain | CNAME | `metarive-london-20261023._domainkey` | Existing `.lhr1.oracleemaildelivery.com` target | DNS only |
 | Replace the existing Brevo DMARC report destination | TXT | `_dmarc` | `v=DMARC1; p=none`; add `rua` only for a verified owner-controlled report mailbox | DNS only |
 
-Once the new server has passed delivery checks, remove obsolete mail-only records: the Freehosting `imap` and `smtp` CNAMEs, `_autodiscover._tcp` SRV record, Freehosting MX and SPF; Brevo `mail`, `img.mail`, `r.mail` tracking CNAMEs, `brevo1._domainkey` and `brevo2._domainkey` selectors, and `brevo-code` TXT; and the old `x._domainkey` TXT only after its former sender is confirmed retired. Verify each exact record in the live zone immediately before deletion. Do not remove any unrelated record or the confirmed OCI DKIM record. Do not create a second SPF record or invent DKIM material.
+Once the new server has passed delivery checks, remove obsolete mail-only records: the Freehosting `imap` and `smtp` CNAMEs, `_autodiscover._tcp` SRV record, Freehosting MX and SPF; Brevo `mail`, `img.mail`, `r.mail` tracking CNAMEs, `brevo1._domainkey` and `brevo2._domainkey` selectors, and `brevo-code` TXT; and the old `x._domainkey` TXT only after its former sender is confirmed retired. Verify each exact record in the live zone immediately before deletion. Do not remove any unrelated record or a DKIM record still required by the verified sending path. Do not create a second SPF record or invent DKIM material.
 
 Do not change MX or remove the old-service records until real external inbound and outbound receipts, SPF/DKIM/DMARC results, support-mailbox readiness, and rollback are verified. Do not change the apex website records.
 
