@@ -61,35 +61,62 @@ export class StalwartMailService {
     &&this.allowedDomains.includes((item.name as string).toLowerCase()))
    .map(item=>({id:item.id as string,name:item.name as string,isEnabled:item.isEnabled!==false}));
  }
- async listMailboxes(tenantId:string){
+ private async tenantGroup(tenantId:string,create:boolean,preferredDomainId?:string):Promise<string|undefined>{
   if(!uuid.test(tenantId))throw new Error('Invalid tenant identifier');
   const domains=await this.listDomains();
-  const ids:string[]=[];
-  const pageSize=500;
+  if(!domains.length)throw new Error('No allowed mail domain is configured');
+  const name='mdt'+tenantId.replace(/-/g,'').toLowerCase();
   for(const domain of domains){
-   let position=0;
-   for(let page=0;page<20;page++){
-    const query=responseObject(await this.call('x:Account/query',{
-     filter:{domainId:domain.id},position,limit:pageSize
-    }),'x:Account/query');
-    const pageIds=Array.isArray(query.ids)?query.ids.filter((id):id is string=>typeof id==='string'):[];
-    ids.push(...pageIds);
-    if(pageIds.length<pageSize)break;
-    position+=pageIds.length;
-    if(page===19)throw new Error('Mailbox listing exceeded the safe pagination limit');
-   }
+   const query=responseObject(await this.call('x:Account/query',{
+    filter:{name,domainId:domain.id},limit:10
+   }),'x:Account/query');
+   const ids=Array.isArray(query.ids)?query.ids.filter((id):id is string=>typeof id==='string'):[];
+   if(!ids.length)continue;
+   const got=responseObject(await this.call('x:Account/get',{ids,properties:['id','name','domainId','@type']}),'x:Account/get');
+   const group=(Array.isArray(got.list)?got.list.map(object):[]).find(item=>
+    item['@type']==='Group'&&item.name===name&&item.domainId===domain.id&&typeof item.id==='string');
+   if(group)return group.id as string;
+  }
+  if(!create)return undefined;
+  const domain=domains.find(item=>item.id===preferredDomainId&&item.isEnabled)??domains.find(item=>item.isEnabled);
+  if(!domain)throw new Error('No enabled mail domain is available');
+  const result=responseObject(await this.call('x:Account/set',{create:{tenantGroup:{
+   '@type':'Group',name,domainId:domain.id,description:'MetaDrive tenant mailbox membership',
+   roles:{'@type':'Default'},permissions:{'@type':'Inherit'},quotas:{},aliases:{}
+  }}}),'x:Account/set');
+  const created=result.created&&typeof result.created==='object'&&!Array.isArray(result.created)?object(result.created):{};
+  const id=created.tenantGroup;
+  if(typeof id==='string')return id;
+  const failures=result.notCreated&&typeof result.notCreated==='object'&&!Array.isArray(result.notCreated)?object(result.notCreated):{};
+  const failure=failures.tenantGroup;
+  const detail=failure&&typeof failure==='object'&&!Array.isArray(failure)?object(failure):{};
+  if(detail.type==='alreadyExists')return await this.tenantGroup(tenantId,false,domain.id);
+  throw new Error('Stalwart could not establish tenant mailbox isolation');
+ }
+ async listMailboxes(tenantId:string){
+  const groupId=await this.tenantGroup(tenantId,false);
+  if(!groupId)return [];
+  const ids:string[]=[];const pageSize=500;let position=0;
+  for(let page=0;page<20;page++){
+   const query=responseObject(await this.call('x:Account/query',{
+    filter:{memberGroupIds:groupId},position,limit:pageSize
+   }),'x:Account/query');
+   const pageIds=Array.isArray(query.ids)?query.ids.filter((id):id is string=>typeof id==='string'):[];
+   ids.push(...pageIds);
+   if(pageIds.length<pageSize)break;
+   position+=pageIds.length;
+   if(page===19)throw new Error('Mailbox listing exceeded the safe pagination limit');
   }
   const rows:MailObject[]=[];
-  // Keep each get request bounded. The account query is domain-scoped and the final
-  // ownership check uses an integration-owned externalId marker, not a user-supplied filter.
   for(let offset=0;offset<ids.length;offset+=100){
    const get=responseObject(await this.call('x:Account/get',{
     ids:ids.slice(offset,offset+100),
-    properties:['id','name','domainId','emailAddress','description','quotas','usedDiskQuota','createdAt','externalId','credentials']
+    properties:['id','@type','name','domainId','emailAddress','description','quotas','usedDiskQuota','createdAt','memberGroupIds','credentials']
    }),'x:Account/get');
    rows.push(...(Array.isArray(get.list)?get.list.map(object):[]));
   }
-  return rows.filter(item=>item.externalId==='metadrive:'+tenantId&&typeof item.id==='string')
+  return rows.filter(item=>item['@type']==='User'&&typeof item.id==='string'
+    &&object(item.memberGroupIds??{} )[groupId]===true)
    .map(item=>({id:item.id as string,emailAddress:typeof item.emailAddress==='string'?item.emailAddress:'',
     name:typeof item.name==='string'?item.name:'',domainId:typeof item.domainId==='string'?item.domainId:'',
     description:typeof item.description==='string'?item.description:'',quotas:item.quotas??{},
@@ -110,8 +137,10 @@ export class StalwartMailService {
   const domains=await this.listDomains();
   if(!domains.some(domain=>domain.id===domainId&&domain.isEnabled))
    throw new Error('Mail domain not found or disabled');
+  const groupId=await this.tenantGroup(tenantId,true,domainId);
+  if(!groupId)throw new Error('Tenant mailbox isolation could not be established');
   const created=responseObject(await this.call('x:Account/set',{create:{newMailbox:{
-   '@type':'User',name,domainId,description,externalId:'metadrive:'+tenantId,
+   '@type':'User',name,domainId,description,memberGroupIds:{[groupId]:true},
    credentials:[{'@type':'Password',secret:password}],
    memberGroupIds:{},roles:{'@type':'User'},permissions:{'@type':'Inherit'},
    quotas:{},aliases:{},encryptionAtRest:{'@type':'Disabled'}
