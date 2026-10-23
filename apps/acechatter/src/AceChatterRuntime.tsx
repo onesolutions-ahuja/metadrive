@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {useEffect,useState} from 'react';
 import {apiRequest} from '../../web/src/core/authentication/Client/authClient';
+import {startVisiblePolling} from '../../web/src/core/workspace/Refresh/visiblePolling';
 import {buildCommunicationInbox,mergeCommunicationMessages,normalizeChatNumber} from './communicationInbox';
 import './aceChatter.css';
 
@@ -43,6 +44,9 @@ const validChatPhone=(value:unknown)=>/^[1-9][0-9]{6,14}$/.test(normalizeChatNum
 
 export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const chatRootRef=React.useRef<HTMLDivElement>(null);
+  const threadRef=React.useRef<HTMLElement>(null);
+  const followLatestRef=React.useRef(true);
+  const previousThreadRef=React.useRef('');
   const [conversations,setConversations]=useState<Row[]>([]);
   const [communications,setCommunications]=useState<Row[]>([]);
   const [messages,setMessages]=useState<Row[]>([]);
@@ -65,6 +69,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
   const [refresh,setRefresh]=useState(0);
+  const [newMessages,setNewMessages]=useState(false);
   const loadConversations=flowBySuffix(actions,'LoadConversations');
   const loadMessages=flowBySuffix(actions,'LoadMessages');
   const loadCommunications=flowBySuffix(actions,'LoadCommunications');
@@ -130,34 +135,19 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     return()=>{live=false;};
   },[showNewChat,newChatMode,loadContactsFlow?.apiName,submittedContactSearch]);
 
-  // Refresh inbox and active threads like a messaging app. Pause while hidden and
-  // refresh immediately when the user returns to the tab.
-  useEffect(()=>{
-    const refreshWhenVisible=()=>{
-      if(document.visibilityState==='visible')setRefresh(value=>value+1);
-    };
-    const timer=window.setInterval(refreshWhenVisible,5000);
-    document.addEventListener('visibilitychange',refreshWhenVisible);
-    return()=>{
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange',refreshWhenVisible);
-    };
-  },[]);
-
   // ChatConversation remains the authorised recipient record required by the send Flow.
   useEffect(()=>{
     if(!loadConversations){setConversations([]);return;}
     let live=true;setError('');
-    void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+    const stop=startVisiblePolling(async()=>{await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
       '/flows/'+encodeURIComponent(loadConversations.apiName)+'/execute',{
         method:'POST',body:JSON.stringify({searchTerm:'',limit:100})
       }).then(result=>{
         if(!live)return;
         if(result.interviewId)throw new Error('Loading conversations requires a synchronous Autolaunched Flow.');
         setConversations(readRows(result.outputs,'conversationsJson'));
-      }).catch(e=>{if(live)setError(errorText(e));})
-      ;
-    return()=>{live=false;};
+      });},e=>{if(live)setError(errorText(e));});
+    return()=>{live=false;stop();};
   },[loadConversations?.apiName,refresh]);
 
   // Both incoming and outgoing messages are sourced from Communication records via an authorised Flow.
@@ -166,16 +156,15 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     let live=true;setError('');
     const numberSearch=normalizeChatNumber(submittedSearch);
     const searchTerm=numberSearch.length>=3?numberSearch:submittedSearch.trim();
-    void apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+    const stop=startVisiblePolling(async()=>{await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
       '/flows/'+encodeURIComponent(loadCommunications.apiName)+'/execute',{
         method:'POST',body:JSON.stringify({searchTerm,limit:200})
       }).then(result=>{
         if(!live)return;
         if(result.interviewId)throw new Error('Loading WhatsApp Communications requires a synchronous Autolaunched Flow.');
         setCommunications(readRows(result.outputs,'communicationsJson'));
-      }).catch(e=>{if(live)setError(errorText(e));})
-      ;
-    return()=>{live=false;};
+      });},e=>{if(live)setError(errorText(e));});
+    return()=>{live=false;stop();};
   },[loadCommunications?.apiName,submittedSearch,refresh]);
 
   // If an incoming-only synthetic row becomes linked to an existing ChatConversation,
@@ -195,6 +184,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       setMessages([]);return;
     }
     let live=true;setError('');
+    const stop=startVisiblePolling(async()=>{
     const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
       ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
@@ -211,15 +201,28 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
           if(result.interviewId)throw new Error('Loading received messages requires a synchronous Autolaunched Flow.');
           return readRows(result.outputs,'communicationsJson');
         }):Promise.resolve([]);
-    void Promise.all([chatRequest,communicationRequest]).then(([chatRows,communicationRows])=>{
+    await Promise.all([chatRequest,communicationRequest]).then(([chatRows,communicationRows])=>{
       if(live)setMessages(mergeCommunicationMessages(communicationRows,chatRows,selectedPhone));
-    }).catch(e=>{if(live)setError(errorText(e));})
-      ;
-    return()=>{live=false;};
+    });},e=>{if(live)setError(errorText(e));});
+    return()=>{live=false;stop();};
   },[loadMessages?.apiName,loadCommunications?.apiName,selected,selectedPhone,
     selectedRow?.__syntheticConversation,refresh]);
 
   const visibleMessages=messages;
+  const latestMessage=messages[messages.length-1];
+  const latestMessageKey=latestMessage?JSON.stringify([
+    identify(latestMessage),pick(latestMessage,'Body','MessageBody'),messages.length
+  ]):'';
+  React.useLayoutEffect(()=>{
+    const thread=threadRef.current;
+    if(!thread)return;
+    if(previousThreadRef.current!==selected||followLatestRef.current){
+      thread.scrollTop=thread.scrollHeight;
+      followLatestRef.current=true;
+      setNewMessages(false);
+    }else if(latestMessageKey)setNewMessages(true);
+    previousThreadRef.current=selected;
+  },[selected,latestMessageKey]);
   const send=async()=>{
     if(!selected||!selectedRow||!draft.trim()||!sendFlow)return;
     setBusy(true);setError('');setNotice('');
@@ -358,7 +361,13 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
       </header>
       {error&&<p className="ace-chat-alert" role="alert">{error}</p>}
       {notice&&<p className="ace-chat-notice" role="status">{notice}</p>}
-      <section className="ace-chat-thread" aria-label="Messages">
+      <section ref={threadRef} className="ace-chat-thread" aria-label="Messages" onScroll={()=>{
+        const thread=threadRef.current;
+        if(thread){
+          followLatestRef.current=thread.scrollHeight-thread.scrollTop-thread.clientHeight<80;
+          if(followLatestRef.current)setNewMessages(false);
+        }
+      }}>
         {!selectedRow?<div className="ace-chat-welcome"><span aria-hidden="true">◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read messages from Communication records, filtered by the sender's WhatsApp number.</p><button onClick={openNewChat} disabled={!newChatFlow}>＋ New chat</button></div>:
          !loadMessages&&!loadCommunications?<p className="ace-chat-hint">Activate the authorised message-loading Flows in MetaDrive Flow Builder.</p>:
          visibleMessages.length===0?<p className="ace-chat-thread-empty">No messages visible for this WhatsApp number.</p>:
@@ -366,6 +375,11 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
            <p>{String(pick(row,'Body','MessageBody','Text','Content','Name')??'')}</p><small>{String(pick(row,'SentAt','ReceivedAt','CreatedAt','CreatedDate','Status')??'')}</small>
          </div>)}
       </section>
+      {newMessages&&<button className="ace-chat-latest" onClick={()=>{
+        const thread=threadRef.current;
+        if(thread)thread.scrollTop=thread.scrollHeight;
+        followLatestRef.current=true;setNewMessages(false);
+      }}>New messages ↓</button>}
       {selectedRow&&<section className="ace-chat-compose" aria-label="Compose via workflow">
         <div className="ace-chat-compose-row"><textarea aria-label="Message to send" placeholder="Type a message" value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void send();}}} rows={1} disabled={!sendFlow}/><button className="ace-chat-send-button" aria-label="Send message" title="Send message" onClick={()=>void send()} disabled={busy||!draft.trim()||!sendFlow}>➤</button></div>
         {!sendFlow&&<small>The WhatsApp sending Flow must be active and authorised before messages can be sent.</small>}

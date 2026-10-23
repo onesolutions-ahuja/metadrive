@@ -57,6 +57,8 @@ async function insertGraph(client:PoolClient,tenantId:string,graphValue:ReturnTy
  * three filters. That excludes inbound messages when searching by the sender's
  * number because the business recipient is a different number. Only migrate the
  * exact, uncustomised seeded graph; leave tenant-authored Flow changes untouched.
+ * CreatedAt is not a registered Communication field accepted by Flow validation;
+ * migrate that obsolete seeded sort to the registered ReceivedAt timestamp.
  */
 export async function reconcileAceChatterLoadCommunicationsFlow(client:PoolClient,tenantId:string):Promise<boolean>{
  const {rows:flows}=await client.query<{id:string}>(`
@@ -89,10 +91,12 @@ export async function reconcileAceChatterLoadCommunicationsFlow(client:PoolClien
   ||!connectors.some(edge=>edge.from===2&&edge.to===3)
   ||JSON.stringify(get.config.conditions)!==JSON.stringify(expectedConditions))return false;
  const currentLogic=get.config.conditionLogic;
- if(currentLogic==='1 AND (2 OR 3)')return false;
- if(currentLogic!==undefined&&currentLogic!==null&&currentLogic!==''&&currentLogic!=='All'
+ if(currentLogic!=='1 AND (2 OR 3)'&&currentLogic!==undefined&&currentLogic!==null&&currentLogic!==''&&currentLogic!=='All'
   &&currentLogic!=='1 AND 2 AND 3')return false;
- get.config={...get.config,conditionLogic:'1 AND (2 OR 3)'};
+ const obsoleteSort=get.config.sortField==='CreatedAt';
+ if(currentLogic==='1 AND (2 OR 3)'&&!obsoleteSort)return false;
+ get.config={...get.config,conditionLogic:'1 AND (2 OR 3)',
+  ...(obsoleteSort?{sortField:'ReceivedAt'}:{})};
  const encoded:Array<{path:string;kind:string;text:string|null}>=[];
  encodeMetadataValue(graph,'/builder',encoded);
  await client.query('DELETE FROM md_flow_editor_values WHERE tenant_id=$1 AND flow_id=$2',[tenantId,flowId]);
@@ -102,7 +106,8 @@ export async function reconcileAceChatterLoadCommunicationsFlow(client:PoolClien
  await client.query(`
   INSERT INTO md_security_events(tenant_id,action,details)
   VALUES($1,'AceChatterInboxFlowReconciled',
-   jsonb_build_object('flowId',$2::text,'conditionLogic','1 AND (2 OR 3)'))`,[tenantId,flowId]);
+   jsonb_build_object('flowId',$2::text,'conditionLogic','1 AND (2 OR 3)',
+    'sortField',$3::text))`,[tenantId,flowId,get.config.sortField??null]);
  return true;
 }
 
@@ -385,7 +390,7 @@ export async function seedAceChatterFlowsForTenant(client:PoolClient,tenantId:st
     {field:'Channel',operator:'Equals',value:'WhatsApp'},
     {field:'Sender',operator:'Contains',value:'@searchTerm'},
     {field:'Recipient',operator:'Contains',value:'@searchTerm'}
-   ],'CreatedAt','Descending','200','1 AND (2 OR 3)'),
+   ],'ReceivedAt','Descending','200','1 AND (2 OR 3)'),
   graph('AceChatterFindConversationByPhone','AceChatter - Find Conversation by Phone',
    'ChatConversation','phoneNumber',[
     {field:'PhoneNumber',operator:'Equals',value:'@phoneNumber'}

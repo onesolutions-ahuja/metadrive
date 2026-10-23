@@ -72,7 +72,7 @@ test('AceChatter app seeding is tenant-scoped, idempotent and preserves business
   {field:'Sender',operator:'Contains',value:'@searchTerm'},
   {field:'Recipient',operator:'Contains',value:'@searchTerm'}
  ]);
- assert.equal(getCommunications?.config.sortField,'CreatedAt');
+ assert.equal(getCommunications?.config.sortField,'ReceivedAt');
  assert.equal(getCommunications?.config.conditionLogic,'1 AND (2 OR 3)');
  const sendGraph=decodeMetadataValues(
   graphValues.get('flow-AceChatterSendMessage')??[]).builder as {
@@ -412,7 +412,12 @@ test('reconcile seeded New Chat Flow adds source contact link without overwritin
 });
 
 
-test('existing default AceChatter inbox Flow is migrated so inbound and outbound phone searches both match',async()=>{
+for(const [logic,sortField,expectedSort] of [
+ [undefined,'CreatedAt','ReceivedAt'],
+ ['1 AND (2 OR 3)','CreatedAt','ReceivedAt'],
+ [undefined,'SentAt','SentAt']
+] as const){
+test(`existing AceChatter inbox Flow repairs filters/sort (${logic??'implicit AND'}, ${sortField})`,async()=>{
  const original={
   apiName:'AceChatterLoadCommunications',elements:[
    {id:1,type:'Start',config:{}},
@@ -421,7 +426,7 @@ test('existing default AceChatter inbox Flow is migrated so inbound and outbound
      {field:'Channel',operator:'Equals',value:'WhatsApp'},
      {field:'Sender',operator:'Contains',value:'@searchTerm'},
      {field:'Recipient',operator:'Contains',value:'@searchTerm'}
-    ],sortField:'CreatedAt',sortOrder:'Descending'}},
+    ],...(logic?{conditionLogic:logic}:{}),sortField,sortOrder:'Descending'}},
    {id:3,type:'End',config:{}}
   ],connectors:[
    {from:1,to:2,kind:'normal',label:'Next'},
@@ -448,7 +453,9 @@ test('existing default AceChatter inbox Flow is migrated so inbound and outbound
   elements:Array<{id:number;type:string;config:Record<string,unknown>}>;
  };
  assert.equal(current.elements.find(node=>node.id===2)?.config.conditionLogic,'1 AND (2 OR 3)');
+ assert.equal(current.elements.find(node=>node.id===2)?.config.sortField,expectedSort);
  assert.equal(auditCount,1);
  assert.equal(await reconcileAceChatterLoadCommunicationsFlow(client,'tenant-a'),false,
   'the migration is idempotent');
 });
+}
