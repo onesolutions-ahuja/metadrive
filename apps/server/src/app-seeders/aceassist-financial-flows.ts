@@ -50,7 +50,7 @@ function conversionGraph(){
     {field:'Total',value:'{!quotation.Total}'}]}),
   node(8,'Loop','Copy authorised quotation lines',{
    collection:'quotationLines',loopVariable:'quotationLine',direction:'First to last'}),
-  node(9,'Create Records','Create invoice line',{object:'InvoiceLine',recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued']},
+  node(9,'Create Records','Create invoice line',{object:'InvoiceLine',recordSource:'fields',documentLineTotals:{parentObject:'Invoice',parentField:'Invoice',quantityField:'Quantity',unitPriceField:'UnitPrice',discountField:'DiscountAmount',taxField:'TaxAmount',lineTotalField:'LineTotal',subtotalField:'Subtotal',discountTotalField:'DiscountAmount',taxTotalField:'TaxAmount',totalField:'Total',statusField:'Status',lockedStatuses:['Issued','PartPaid','Paid','PartiallyPaid'],numberField:'InvoiceNumber'},
    fieldValues:[
     {field:'Name',value:'{!quotationLine.Name}'},
     {field:'Invoice',value:'{!record7.Id}'},
