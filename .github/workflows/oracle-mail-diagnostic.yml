@@ -1,0 +1,20 @@
+name: Oracle Mail Runtime Diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oracle-production-api
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, ARM64, metadrive-oracle]
+    environment: oracle-production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Diagnose running Stalwart transport (no secret logging)
+        run: sudo --non-interactive python3 scripts/oracle/check-mail-runtime.py
