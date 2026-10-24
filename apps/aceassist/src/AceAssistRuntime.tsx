@@ -379,10 +379,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }
   const payload:Record<string,unknown>={};
   if(editing!=='Create')payload.recordId=chosen?.Id;
-  if(editing==='Create'&&editingObject==='Appointment'){
-   payload.Status='Scheduled';
-   payload.TimeZone=hours?.timezone??'UTC';
-  }
   if(editing!=='Delete'){
    for(const field of visibleFields(editingObject)){
     if(fieldKind(field)==='readonly')continue;
