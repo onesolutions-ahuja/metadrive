@@ -659,7 +659,7 @@ export type ReportDateRange =
   | 'Last Year';
 
 export type ReportStandardFiltersMetadata = {
-  showMe: 'All' | 'My';
+  showMe: 'All' | 'My' | 'My Descendants';
   dateFieldApiName: string | null;
   dateRange: ReportDateRange;
   statusFieldApiName: string | null;
