@@ -5,7 +5,7 @@ import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {AceAssistDashboard} from './AceAssistDashboard';
 import {AceAssistMobileRecords} from './AceAssistMobileRecords';
-import {House,CalendarDays,ReceiptText,UsersRound,Grid2X2,LogOut,ArrowLeft} from 'lucide-react';
+import {House,CalendarDays,ReceiptText,UsersRound,Grid2X2,LogOut,ArrowLeft,FilePlus2} from 'lucide-react';
 import {FinancialDocumentEditor,type DocumentChanges,type DocumentType} from './FinancialDocumentEditor';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
@@ -34,6 +34,8 @@ const documentHeaders:Record<DocumentType,readonly string[]>={
  Quotation:['Name','Customer','IssueDate','ExpiryDate','CurrencyCode','TermsAndConditions','Notes','Status'],
  Invoice:['Name','Customer','InvoiceDate','DueDate','CurrencyCode','Notes']
 };
+const quoteInvoiceFlow='AceAssistCreateInvoiceFromQuotationV1';
+const invoiceableQuoteStatuses=new Set(['','Draft','Sent','Accepted','Approved','Open','Pending','Expired']);
 const documentFlow=(operation:'Create'|'Update',object:DocumentType)=>
  'AceAssist'+operation+'DocumentV1'+object;
 const inputFields:Record<string,string[]>={
@@ -83,6 +85,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [rows,setRows]=useState<Row[]>([]);
  const [relatedRows,setRelatedRows]=useState<Row[]>([]);
  const [documentLines,setDocumentLines]=useState<Row[]>([]);
+ const [quoteInvoiceSource,setQuoteInvoiceSource]=useState<Row|null>(null);
+ const [quoteInvoiceLines,setQuoteInvoiceLines]=useState<Row[]>([]);
+ const [quoteLinked,setQuoteLinked]=useState<Set<string>|null>(null);
  const [relatedLoading,setRelatedLoading]=useState(false);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
@@ -216,6 +221,16 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[screen,actions,reload]);
  useEffect(()=>{
   let alive=true;
+  setQuoteLinked(null);
+  if(current.object!=='Quotation'||!actions.has('AceAssistLoadInvoice'))return;
+  void fetchRows('Load','Invoice').then(invoices=>{
+   if(alive)setQuoteLinked(new Set(invoices.map(row=>String(row.Quotation??'')).filter(Boolean)));
+  }).catch(cause=>{if(alive)setError(
+   'Unable to check which quotations have invoices: '+(cause instanceof Error?cause.message:String(cause)))});
+  return()=>{alive=false;};
+ },[current.object,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
   // Lookups must follow the record currently being edited, not only the active
   // navigation tab. A QuotationLine/InvoiceLine editor needs Product and its
   // parent document even when the user opened it from a different tab.
@@ -334,6 +349,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  };
  const startEdit=(operation:Operation,row?:Row,object=current.object)=>{
   if(isFinancialDocument(object)&&operation!=='Delete'){
+   if(operation==='Create'){setQuoteInvoiceSource(null);setQuoteInvoiceLines([]);}
    if(!actions.has(documentFlow(operation,object))){
     setError('Authorised document saving Flow is not installed or accessible.');return;
    }
@@ -370,9 +386,44 @@ export default function AceAssistRuntime({entry,onLogout}:{
   setForm(values);setChosen(row??null);setEditingObject(object);
   setEditing(operation);setError('');setNotice('');
  };
+ const canInvoiceQuote=(quote:Row)=>
+  actions.has(quoteInvoiceFlow)&&actions.has('AceAssistLoadQuotationLine')
+   &&quoteLinked!==null&&!quoteLinked.has(idOf(quote))&&!quote.RelatedInvoice
+   &&invoiceableQuoteStatuses.has(String(quote.Status??''))
+   &&Boolean(quote.Id);
+ const openInvoiceFromQuotation=async(quote:Row)=>{
+  if(busy||!canInvoiceQuote(quote))return;
+  setBusy(true);setError('');setNotice('');
+  try{
+   const all=await fetchRows('Load','QuotationLine');
+   const lines=all.filter(row=>String(row.Quotation??'')===idOf(quote));
+   if(!lines.length)throw Error('Quotation has no line items to invoice.');
+   setQuoteInvoiceSource(quote);setQuoteInvoiceLines(lines);
+   setDocumentLines([]);setChosen(null);setEditingObject('Invoice');setEditing('Create');
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
+ };
+ const createCustomerForDocument=async(data:{Name:string;Email:string;Phone:string}):Promise<Row>=>{
+  const dynamic=canDynamic('Create','Customer');
+  const api=dynamic?'AceAssistCreateV2Customer':'AceAssistCreateCustomer';
+  if(!actions.has(api))throw Error('Customer creation permission is not available.');
+  const values={Name:data.Name,Email:data.Email||null,Phone:data.Phone||null,Active:true};
+  const result=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',{
+   method:'POST',body:JSON.stringify(dynamic?{recordsInput:[values]}:values)});
+  if(result.interviewId)throw Error('Customer creation was not confirmed.');
+  const output=result.outputs??result.variables??{};
+  const created=Array.isArray(output.createdRecords)?output.createdRecords[0] as Row|undefined:undefined;
+  const id=String(created?.Id??output.createdRecordId??'');
+  if(!id)throw Error('Customer save did not return an ID. Check the Flow execution log.');
+  const customer={...values,...created,Id:id,Name:String(created?.Name??data.Name)};
+  setLookupRows(previous=>({...previous,Customer:[
+   ...(previous.Customer??[]).filter(row=>idOf(row)!==id),customer]}));
+  return customer;
+ };
  const saveDocument=async(changes:DocumentChanges)=>{
   if(!editing||editing==='Delete'||!isFinancialDocument(editingObject)||busy)return;
-  const api=documentFlow(editing,editingObject);
+  const api=editing==='Create'&&editingObject==='Invoice'&&quoteInvoiceSource
+   ?quoteInvoiceFlow:documentFlow(editing,editingObject);
   if(!actions.has(api)){setError('Document Flow access is unavailable.');return;}
   const id=String(chosen?.Id??'');
   if(editing==='Update'&&!id){setError('Document ID is missing.');return;}
@@ -388,6 +439,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
    if(response.interviewId||typeof documentId!=='string'||!documentId)
     throw Error('Document Flow did not confirm saving. Check the Flow execution log.');
    setEditing(null);setChosen(null);setDocumentLines([]);
+   if(quoteInvoiceSource){setQuoteInvoiceSource(null);setQuoteInvoiceLines([]);
+    setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setScreen('records');}
    setNotice(editingObject+' and line items saved together.');
    setReload(count=>count+1);
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
@@ -591,6 +644,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
       :can('Create')||canDynamic('Create',current.object)}
     onDateChange={setWeekOf} onOpen={setChosen}
     onCreate={()=>startEdit('Create')}
+    canInvoiceQuotation={canInvoiceQuote}
+    onInvoiceQuotation={row=>void openInvoiceFromQuotation(row)}
     onRefresh={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}}/>}
    {screen==='records'&&<div className={'custom-assist-layout'+(chosen?' assist-record-open':'')}><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
@@ -647,13 +702,21 @@ export default function AceAssistRuntime({entry,onLogout}:{
         <small>{String(row.Status??'Scheduled')}</small></button>)}
       </div>;
      })}</div>:<div className="custom-record-list">
-     {rows.map((row,i)=><button key={String(row.Id??i)} type="button" onClick={()=>setChosen(row)}>
-      <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):
-       current.object==='CashLedger'?String(row.TransactionNumber??row.Reference??'Cash receipt'):title(row)}</strong>
-      <small>{current.object==='Customer'?String([row.Email,row.Phone].filter(Boolean).join(' · ')||'Customer'):
-       current.object==='CashLedger'?String([row.Amount,row.Method,row.Status].filter(Boolean).join(' · ')):
-       String(row.Status??'')}</small>
-     </button>)}
+     {rows.map((row,i)=><div className="assist-record-row" key={String(row.Id??i)}>
+       <button type="button" className="assist-record-open" onClick={()=>setChosen(row)}>
+        <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):
+         current.object==='CashLedger'?String(row.TransactionNumber??row.Reference??'Cash receipt'):
+         current.object==='Quotation'?String(row.QuotationNumber??row.DocumentNumber??row.Name??'Quotation'):title(row)}</strong>
+        <small>{current.object==='Customer'?String([row.Email,row.Phone].filter(Boolean).join(' · ')||'Customer'):
+         current.object==='CashLedger'?String([row.Amount,row.Method,row.Status].filter(Boolean).join(' · ')):
+         String(row.Status??'')}</small>
+       </button>
+       {current.object==='Quotation'&&canInvoiceQuote(row)&&<button type="button"
+        className="assist-quote-invoice-button" disabled={busy}
+        title="Create invoice from quotation" aria-label={'Create invoice from quotation '+String(row.QuotationNumber??row.DocumentNumber??row.Name??'')}
+        onClick={()=>void openInvoiceFromQuotation(row)}>
+        <FilePlus2 size={19}/><span>Create invoice</span></button>}
+      </div>)}
     </div>}
     {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
      <p className="custom-empty">No appointments match the selected staff and service filters.</p>}
@@ -688,7 +751,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
         <div><dt>Customer</dt><dd>{String(lookupRows.Customer?.find(row=>
          idOf(row)===String(chosen.Customer??''))?.Name??'—')}</dd></div>
         <div><dt>Total</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.Total)}</dd></div>
-        {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
+        {current.object==='Invoice'&&chosen.Quotation&&<div><dt>Source quotation</dt>
+          <dd>{String((lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen.Quotation))
+           ?.QuotationNumber??(lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen.Quotation))
+           ?.DocumentNumber??'Linked quotation')}</dd></div>}
+         {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
        </>}
       </dl>
      </section>
@@ -730,8 +797,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
        {current.object==='Invoice'&&actions.has('AceAssistSendInvoiceWhatsApp')&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistSendInvoiceWhatsApp',chosen)}>Send invoice via WhatsApp</button>}
-       {current.object==='Quotation'&&actions.has('AceAssistConvertQuoteToInvoice')&&
-        <button type="button" disabled={busy} onClick={()=>void runRecordAction('AceAssistConvertQuoteToInvoice',chosen)}>Convert to invoice</button>}
+       {current.object==='Quotation'&&canInvoiceQuote(chosen)&&
+        <button type="button" disabled={busy} onClick={()=>void openInvoiceFromQuotation(chosen)}>Create editable invoice</button>}
        {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
@@ -806,13 +873,19 @@ export default function AceAssistRuntime({entry,onLogout}:{
   </div>}
   {editing&&editing!=='Delete'&&isFinancialDocument(editingObject)&&
    <FinancialDocumentEditor
-    key={editingObject+':'+editing+':'+String(chosen?.Id??'new')}
+    key={editingObject+':'+editing+':'+String(chosen?.Id??quoteInvoiceSource?.Id??'new')}
     type={editingObject} operation={editing}
     document={editing==='Update'?chosen:null} storedLines={documentLines}
+    sourceQuotation={editingObject==='Invoice'?(quoteInvoiceSource??(editing==='Update'
+     ?(lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen?.Quotation??'')):null)):null}
+    sourceLines={quoteInvoiceLines}
     metadataFields={documentFields(editingObject,editing)}
     customers={lookupRows.Customer??[]} products={lookupRows.Product??[]}
     busy={busy} error={error}
-    onCancel={()=>setEditing(null)} onSave={saveDocument}/>}
+    onCreateCustomer={canDynamic('Create','Customer')||actions.has('AceAssistCreateCustomer')
+     ?createCustomerForDocument:undefined}
+    onCancel={()=>{setEditing(null);setQuoteInvoiceSource(null);setQuoteInvoiceLines([]);}}
+    onSave={saveDocument}/>}
   {editing&&(!isFinancialDocument(editingObject)||editing==='Delete')&&
    <div className="assist-modal-backdrop" role="presentation"
    onMouseDown={e=>{if(e.target===e.currentTarget&&!busy){setEditing(null);setReturnToAppointment(false);}}}>

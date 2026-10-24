@@ -3,7 +3,13 @@ import {useMemo,useState} from 'react';
 import {scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 import {previewStartSlots,type BookingSlotPreview} from './bookingSlotPreview';
 type Row=Record<string,unknown>;
-const display=(r:Row)=>String(r.Name??r.DisplayName??r.Email??r.email??r.Title??r.Id??'');
+// Do not expose a lookup's stored UUID as the customer-facing display name.
+const display=(r:Row)=>{
+ const name=String(r.Name??r.DisplayName??r.Title??'').trim();
+ if(name&&!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name))
+  return name;
+ return String(r.Email??r.email??r.Phone??'Unnamed record');
+};
 export function SearchRecord({label,value,options,onChange,addNew,emptyMessage}:{
  label:string;value:string;options:Row[];onChange:(id:string)=>void;
  addNew?:()=>void;emptyMessage?:string

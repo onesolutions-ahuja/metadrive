@@ -6,13 +6,14 @@ import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/me
 type Row=Record<string,unknown>;
 export type DocumentType='Quotation'|'Invoice';
 type Line={
- key:string;Id?:string;Name:string;Product:string;Description:string;
+ key:string;Id?:string;Name:string;Product:string;Description:string;legacy?:boolean;
  Quantity:string;UnitPrice:string;DiscountAmount:string;TaxAmount:string
 };
 const draft=(source?:Row):Line=>({
  key:source?.Id?String(source.Id):crypto.randomUUID(),
  ...(source?.Id?{Id:String(source.Id)}:{}),
  Name:String(source?.Name??''),Product:String(source?.Product??''),
+ legacy:Boolean(source?.legacy||(source?.Id&&source.Name&&!source.Product)),
  Description:String(source?.Description??''),Quantity:String(source?.Quantity??'1'),
  UnitPrice:String(source?.UnitPrice??'0'),
  DiscountAmount:String(source?.DiscountAmount??'0'),
@@ -32,7 +33,8 @@ function rowAmount(line:Line){
  return {subtotal,discount,tax,total:subtotal-discount+tax};
 }
 const validLine=(line:Line):string|null=>{
- if(!line.Name.trim())return 'Enter a name or description for each line item.';
+ if(!line.Product&&!line.legacy)return 'Choose a product or service for each line item.';
+ if(!line.Name.trim())return 'The selected product or service needs a name.';
  const quantity=Number(line.Quantity);
  if(!Number.isFinite(quantity)||quantity<=0||quantity>100000
   ||Math.abs(quantity*10000-Math.round(quantity*10000))>0.000001)
@@ -53,15 +55,20 @@ export type DocumentChanges={
 };
 export function FinancialDocumentEditor({
  type,operation,document,storedLines,metadataFields,customers,products,busy,error,
- onCancel,onSave
+ sourceQuotation,sourceLines=[],onCreateCustomer,onCancel,onSave
 }:{
  type:DocumentType;operation:'Create'|'Update';document:Row|null;storedLines:Row[];
  metadataFields:RecordField[];customers:Row[];products:Row[];busy:boolean;error:string;
+ sourceQuotation?:Row|null;sourceLines?:Row[];
+ onCreateCustomer?:(customer:{Name:string;Email:string;Phone:string})=>Promise<Row>;
  onCancel:()=>void;onSave:(changes:DocumentChanges)=>Promise<void>
 }){
  const [header,setHeader]=useState<Record<string,string>>(()=>{
   const initial=Object.fromEntries(metadataFields.map(field=>[
-   field.apiName,String(document?.[field.apiName]??field.defaultValue??'')]));
+   field.apiName,String(document?.[field.apiName]??(type==='Invoice'&&sourceQuotation?
+   ({Customer:sourceQuotation.Customer,CurrencyCode:sourceQuotation.CurrencyCode,
+     Notes:sourceQuotation.Notes,DueDate:sourceQuotation.ExpiryDate} as Row)[field.apiName]:undefined)
+   ??field.defaultValue??'')]));
   const now=new Date();
   const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
    String(now.getDate()).padStart(2,'0')].join('-');
@@ -69,7 +76,25 @@ export function FinancialDocumentEditor({
   if(operation==='Create'&&!initial[dateField])initial[dateField]=today;
   return initial;
  });
- const [lines,setLines]=useState<Line[]>(()=>storedLines.length?storedLines.map(draft):[draft()]);
+ const [lines,setLines]=useState<Line[]>(()=>storedLines.length?storedLines.map(draft):
+  sourceQuotation?sourceLines.map(item=>draft({...item,Id:undefined,
+    legacy:Boolean(item.Name&&!item.Product)})):[draft()]);
+ const [customerDialog,setCustomerDialog]=useState(false);
+ const [customerDraft,setCustomerDraft]=useState({Name:'',Email:'',Phone:''});
+ const [customerError,setCustomerError]=useState('');
+ const [creatingCustomer,setCreatingCustomer]=useState(false);
+ const addCustomer=async(event:React.FormEvent)=>{
+  event.preventDefault();
+  if(!onCreateCustomer||!customerDraft.Name.trim()||creatingCustomer)return;
+  setCreatingCustomer(true);setCustomerError('');
+  try{
+   const created=await onCreateCustomer({...customerDraft,Name:customerDraft.Name.trim()});
+   if(!created.Id)throw Error('Customer creation did not return a record ID.');
+   setHeader(previous=>({...previous,Customer:String(created.Id)}));
+   setCustomerDialog(false);setCustomerDraft({Name:'',Email:'',Phone:''});
+  }catch(cause){setCustomerError(cause instanceof Error?cause.message:String(cause));}
+  finally{setCreatingCustomer(false);}
+ };
  const [localError,setLocalError]=useState('');
  const isQuote=type==='Quotation';
  const status=String(document?.Status??'Draft');
@@ -117,6 +142,7 @@ export function FinancialDocumentEditor({
    headerInput[field.apiName]=value===''?null:fieldKind(field)==='number'
     ?Number(value):value;
   }
+  if(type==='Invoice'&&sourceQuotation?.Id)headerInput.Quotation=String(sourceQuotation.Id);
   setLocalError('');
   await onSave({
    header:headerInput,
@@ -143,14 +169,23 @@ export function FinancialDocumentEditor({
     {finalised&&<p role="status" className="assist-document-lock">
      This document is finalised. Its financial contents cannot be edited.</p>}
     <h3>Document details</h3>
+    {type==='Invoice'&&sourceQuotation&&<p className="assist-source-quotation">
+     Source quotation: <strong>{String(sourceQuotation.QuotationNumber??sourceQuotation.DocumentNumber??sourceQuotation.Name??'')}</strong>
+     <span> (linked to this invoice on save)</span></p>}
     <div className="assist-document-header-fields">
      {[...metadataFields].filter(field=>!['CurrencyCode','Name'].includes(field.apiName))
       .sort((a,b)=>{const rank=(name:string)=>({Customer:0,IssueDate:1,InvoiceDate:1,ExpiryDate:2,DueDate:2,Notes:3,TermsAndConditions:4} as Record<string,number>)[name]??5;return rank(a.apiName)-rank(b.apiName);})
       .map(field=><React.Fragment key={field.apiName}>
       {field.apiName==='Customer'?
-       <SearchRecord label="Customer" value={header.Customer??''} options={customers}
-        emptyMessage="No authorised customers available"
-        onChange={id=>setHeader(previous=>({...previous,Customer:id}))}/>:
+       <div className="assist-customer-picker">
+        <SearchRecord label="Customer" value={header.Customer??''} options={customers}
+         emptyMessage="No matching customer — use + to add one"
+         addNew={onCreateCustomer?()=>setCustomerDialog(true):undefined}
+         onChange={id=>setHeader(previous=>({...previous,Customer:id}))}/>
+        {onCreateCustomer&&<button type="button" className="assist-add-customer"
+         disabled={busy} title="Add customer" aria-label="Add customer"
+         onClick={()=>setCustomerDialog(true)}>+</button>}
+       </div>:
        <RecordFieldInput field={field} value={header[field.apiName]??''}
         onChange={value=>setHeader(previous=>({...previous,[field.apiName]:value}))}/>}
      </React.Fragment>)}
@@ -167,8 +202,8 @@ export function FinancialDocumentEditor({
       return <fieldset className="assist-document-line" key={line.key} disabled={!canEdit}>
        <legend>Item {index+1}</legend>
        <div className="assist-document-line-main">
-        <SearchRecord label="Product / service (optional)" value={line.Product} options={products}
-         emptyMessage="Choose a product or enter an item name below"
+        <SearchRecord label="Product / service" value={line.Product} options={products}
+         emptyMessage="No matching product or service"
          onChange={id=>{
           const product=products.find(p=>String(p.Id)===id);
           setLines(previous=>previous.map(old=>old.key===line.key
@@ -176,9 +211,7 @@ export function FinancialDocumentEditor({
               UnitPrice:old.UnitPrice==='0'&&product?.Price!=null
                ?String(product.Price):old.UnitPrice}:old));
          }}/>
-        {!line.Product&&<label>Custom item name
-         <input type="text" required value={line.Name}
-          onChange={e=>setLine(line.key,'Name',e.target.value)}/></label>}
+
        </div>
        <label>Description
         <input type="text" value={line.Description}
@@ -213,5 +246,25 @@ export function FinancialDocumentEditor({
     </footer>
    </form>
   </section>
+  {customerDialog&&<div className="assist-modal-backdrop assist-customer-overlay" role="presentation">
+   <section className="assist-modal assist-customer-modal" role="dialog" aria-modal="true" aria-label="Add customer">
+    <header className="assist-modal-heading"><h2>Add customer</h2>
+     <button type="button" disabled={creatingCustomer} aria-label="Close customer form"
+      onClick={()=>setCustomerDialog(false)}>✕</button></header>
+    <form onSubmit={event=>void addCustomer(event)}>
+     <label>Customer name<input autoFocus required value={customerDraft.Name}
+      onChange={event=>setCustomerDraft(x=>({...x,Name:event.target.value}))}/></label>
+     <label>Email<input type="email" value={customerDraft.Email}
+      onChange={event=>setCustomerDraft(x=>({...x,Email:event.target.value}))}/></label>
+     <label>Phone<input type="tel" value={customerDraft.Phone}
+      onChange={event=>setCustomerDraft(x=>({...x,Phone:event.target.value}))}/></label>
+     {customerError&&<p role="alert" className="assist-document-error">{customerError}</p>}
+     <footer className="assist-modal-footer"><button type="button" disabled={creatingCustomer}
+      onClick={()=>setCustomerDialog(false)}>Cancel</button>
+      <button type="submit" disabled={creatingCustomer||!customerDraft.Name.trim()}>
+       {creatingCustomer?'Saving…':'Save customer'}</button></footer>
+    </form>
+   </section>
+  </div>}
  </div>;
 }
