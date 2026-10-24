@@ -25,8 +25,8 @@ export async function verifySecurityGovernanceSql(db){
   // schema.sql is the current full schema: it already contains the credential FK.
   // Adapt only this test's full-schema replay; never rewrite an applied migration
   // (production validates each applied file's immutable SHA-256 checksum).
-  const replay=async()=>{
-   for(const n of readdirSync(migrations).filter(n=>n.endsWith('.sql')).sort()){
+  const replay=async(minVersion='')=>{
+   for(const n of readdirSync(migrations).filter(n=>n.endsWith('.sql')&&n>=minVersion).sort()){
     let source=sql(new URL(n,migrations));
     if(n==='20261127-credential-webhooks.sql'){
      source=source.replace(
@@ -72,7 +72,7 @@ export async function verifySecurityGovernanceSql(db){
   const session=await auth.issuePasswordSession(tenant,user);
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:core,assigned:false});
   await assert.rejects(()=>auth.authenticate(session.accessToken),/Invalid session/);
-  for(const n of readdirSync(migrations).filter(n=>n>='20261123'&&n.endsWith('.sql')).sort())await db.query(sql(new URL(n,migrations)));
+  await replay('20261123');
   assert.equal((await db.query('SELECT md_user_licensed($1,$2) AS yes',[tenant,user])).rows[0].yes,false,'migration replay must preserve licence revocation');
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:core,assigned:true});
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:entitlement,assigned:true});
