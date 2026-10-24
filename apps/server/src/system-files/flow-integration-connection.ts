@@ -22,13 +22,10 @@ export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngi
    WHERE b.tenant_id=$1 AND b.credential_id=$2 LIMIT 1`,
    [tenantId,credentialId]);
   const provider=object(rows[0]?.properties);
-  const channelId=provider.channelId;
-  if(typeof channelId!=='string'||!/^onesys_[a-z0-9_]+$/.test(channelId))return config;
-  const channel=typeof provider.communicationChannel==='string'
-   ?provider.communicationChannel:undefined;
-  return {...config,systemChannelId:channelId,
-   communicationLog:{...object(config.communicationLog),
-    ...(channel?{channel}:{}),provider:channelId}};
+  const details=communicationFor(provider);
+  if(!details)return config;
+  return {...config,systemChannelId:details.provider,
+   communicationLog:{...object(config.communicationLog),...details}};
  }
  const connectionId=String(config.integrationConnectionId);
  const operationName=String(config.operation??'');
@@ -74,13 +71,10 @@ export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngi
  }
  if(config.path&&config.path!==operation.path||config.method&&config.method!==operation.method)
   throw new Error('Integration operation has been modified outside provider metadata');
- // Connector identity comes from installed metadata, not browser-supplied values.
- const channelId=typeof provider.channelId==='string'&&/^onesys_[a-z0-9_]+$/.test(provider.channelId)
-  ?provider.channelId:undefined;
+ // Classification and safe payload selectors come from the installed connector.
+ const details=communicationFor(provider,operationName);
  return {...config,namedCredentialId:credentialId,
   method:operation.method,path:operation.path,
-  ...(channelId?{systemChannelId:channelId,connectorApi:connectorKey,
-   communicationLog:{...object(config.communicationLog),
-    ...(typeof provider.communicationChannel==='string'
-      ?{channel:provider.communicationChannel}:{}),provider:channelId}}:{})};
+  ...(details?{systemChannelId:details.provider,connectorApi:connectorKey,
+   communicationLog:{...object(config.communicationLog),...details}}:{})};
 }
