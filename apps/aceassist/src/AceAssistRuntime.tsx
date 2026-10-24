@@ -783,7 +783,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
            targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
           onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
-         <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:field} value={form[field.apiName]??''}
+         <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:editingObject==='Appointment'&&field.apiName==='Notes'?{...field,dataType:'textarea'}:field} value={form[field.apiName]??''}
           onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
      {error&&<p role="alert">{error}</p>}
