@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+exec 9>/run/lock/metadrive-api-deploy.lock
+flock -n 9 || { echo "Another API deployment is active"; exit 75; }
 SOURCE="${1:?source checkout required}"
 SHA="${2:?commit SHA required}"
 [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "Invalid commit SHA"; exit 1; }

@@ -1,0 +1,86 @@
+import {z} from 'zod';
+import type {RecordEngine} from '../system-files/record-engine.js';
+import type {FlowRuntime} from '../system-files/flow-runtime.js';
+import type {RbacEngine} from '../system-files/rbac-engine.js';
+import type {ObjectDefinitionService} from '../system-files/object-definition.js';
+import type {SqlPersistence} from '../system-files/sql-persistence.js';
+import type {PlatformTenantService} from '../system-files/platform-tenant-service.js';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+const execute=promisify(execFile);
+export type McpActor={tenant_id:string;user_id:string};
+export type McpServices={records:RecordEngine;flows:FlowRuntime;rbac:RbacEngine;definitions:ObjectDefinitionService;db:SqlPersistence;platform:PlatformTenantService};
+const identifier=z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,199}$/);
+const values=z.record(z.unknown());
+const schemas={
+ list_records:z.object({object:identifier,limit:z.number().int().min(1).max(100).default(50),offset:z.number().int().min(0).max(1000000).default(0),search:z.string().max(256).optional()}).strict(),
+ get_record:z.object({object:identifier,id:z.string().uuid()}).strict(),
+ create_record:z.object({object:identifier,values}).strict(),
+ update_record:z.object({object:identifier,id:z.string().uuid(),values}).strict(),
+ delete_record:z.object({object:identifier,id:z.string().uuid()}).strict(),
+ list_objects:z.object({}).strict(),
+ describe_object:z.object({object:identifier}).strict(),
+ run_flow:z.object({flow:identifier,inputs:values.default({})}).strict(),
+ server_operation:z.object({action:z.enum(['status','logs','restart','activate_release']),service:z.enum(['api','worker']).default('api'),release:z.string().regex(/^[a-f0-9]{40}$/).optional()}).strict()
+};
+const descriptions:Record<keyof typeof schemas,string>={
+ list_records:'Read database records through tenant, record and field permissions. Paginate with offset.',
+ get_record:'Read one database record through the shared record engine.',
+ create_record:'Create a database record with validation and normal triggers.',
+ update_record:'Edit a database record with validation and normal triggers.',
+ delete_record:'Delete a database record using normal permissions and recovery behavior.',
+ describe_object:'Describe readable fields on a database object before querying or editing records.',
+ list_objects:'List objects the signed-in user can read.',
+ run_flow:'Execute a published MetaDrive flow with the signed-in user permissions.',
+ server_operation:'Platform administrators: inspect service status or logs, restart API/worker, or activate an already built immutable API release. Requires the installed operations helper. Does not build or fetch code.'
+};
+// JSON schemas are derived from the same Zod validators used for execution.
+import {zodToJsonSchema} from 'zod-to-json-schema';
+export const mcpTools=Object.entries(schemas).map(([name,schema])=>({name,description:descriptions[name as keyof typeof schemas],inputSchema:zodToJsonSchema(schema,{$refStrategy:'none'}),annotations:{readOnlyHint:['list_records','get_record','list_objects','describe_object'].includes(name),destructiveHint:!['list_records','get_record','list_objects','describe_object','create_record'].includes(name),openWorldHint:name==='run_flow'}}));
+export function mcpToolScope(name:string){
+ if(['list_records','get_record'].includes(name))return 'records:read';
+ if(['create_record','update_record','delete_record'].includes(name))return 'records:write';
+ if(name==='list_objects'||name==='describe_object')return 'metadata:read';
+ if(name==='run_flow')return 'flows:execute';
+ if(name==='server_operation')return 'operations:manage';
+ throw Error('Unknown MCP tool');
+}
+export async function callMcpTool(s:McpServices,a:McpActor,name:string,input:unknown){
+ const t=a.tenant_id,u=a.user_id;
+ if(name==='list_records'){const p=schemas.list_records.parse(input);return s.records.list(t,u,p.object,p.limit,p.offset,{search:p.search});}
+ if(name==='get_record'){const p=schemas.get_record.parse(input);return s.records.get(t,u,p.object,p.id);}
+ if(name==='create_record'){const p=schemas.create_record.parse(input);return {id:await s.records.create(t,u,p.object,p.values)};}
+ if(name==='update_record'){const p=schemas.update_record.parse(input);await s.records.update(t,u,p.object,p.id,p.values);return {updated:true};}
+ if(name==='delete_record'){const p=schemas.delete_record.parse(input);await s.records.remove(t,u,p.object,p.id);return {deleted:true};}
+ if(name==='list_objects'){
+  schemas.list_objects.parse(input);await s.rbac.require(t,u,'ObjectDefinition','read');
+  const result=[];for(const object of await s.definitions.list(t))if(await s.rbac.allowed(t,u,object.apiName,'read'))result.push({apiName:object.apiName,label:object.label});return result;
+ }
+ if(name==='describe_object'){
+  const p=schemas.describe_object.parse(input);
+  await s.rbac.require(t,u,'ObjectDefinition','read');await s.rbac.require(t,u,p.object,'read');
+  const object=await s.definitions.get(t,p.object);const fields=[];
+  for(const f of object.fields)if(await s.rbac.allowed(t,u,p.object+'.'+f.apiName,'read'))fields.push({apiName:f.apiName,label:f.label,dataType:f.dataType,required:f.required});
+  return {apiName:object.apiName,label:object.label,fields};
+ }
+ if(name==='run_flow'){const p=schemas.run_flow.parse(input);return s.flows.execute(t,p.flow,u,p.inputs);}
+ if(name==='server_operation'){
+  const p=schemas.server_operation.parse(input);
+  if((p.action==='activate_release')!==!!p.release)throw Error('Release SHA is required only for activate_release');
+  if(p.action==='activate_release'&&p.service!=='api')throw Error('Release activation supports the API service only');
+  await s.platform.requirePlatform(t,u);
+  await s.rbac.require(t,u,'PlatformOperations',p.action==='status'||p.action==='logs'?'read':'manage');
+  if(process.env.METADRIVE_MCP_OPERATIONS!=='enabled')throw Error('Server operations are not installed/enabled');
+  // Record the attempt before starting a privileged operation; fail closed if auditing fails.
+  await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationRequested',JSON.stringify(p)]);
+  try{
+   const result=await execute('/usr/bin/sudo',['-n','/usr/local/sbin/metadrive-mcp-operations',p.action,p.service,...(p.release?[p.release]:[])],{timeout:15000,maxBuffer:256*1024,env:{PATH:'/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C.UTF-8'}});
+   await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationAccepted',JSON.stringify(p)]);
+   return {output:result.stdout};
+  }catch{
+   await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationFailed',JSON.stringify(p)]);
+   throw Error('Server operation failed; inspect the system journal on the VM');
+  }
+ }
+ throw Error('Unknown MCP tool');
+}
