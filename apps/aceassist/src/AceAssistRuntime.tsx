@@ -570,7 +570,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
      <label>Service<select value={calendarServiceFilter} onChange={e=>setCalendarServiceFilter(e.target.value)}>
        <option value="">All services</option>{(lookupRows.Product??[])
         .filter(product=>product.Active!==false&&product.Active!=='false'
-         &&product.IsService!==false&&product.IsService!=='false')
+         &&(product.IsService===true||product.IsService==='true'))
         .map(product=><option key={idOf(product)} value={idOf(product)}>{String(product.Name??idOf(product))}</option>)}
       </select></label>
     </div>}
