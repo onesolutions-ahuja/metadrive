@@ -240,6 +240,8 @@ try{
  await save(snapshot=>{snapshot.permissionSets.find(set=>set.id===superSet).recordDataScopes={Invoice:'descendants'};},developer);
  assert.equal((await db.query("SELECT md_effective_reporting_scope($1,$2,'Invoice') AS scope",[t,supervisor])).rows[0].scope,'descendants');
  const forbidden=await records.create(t,developer,'Invoice',{Name:'Outside team record',Total:18,RecordTypeId:'master'});
+ const installedRecordPolicy=(await db.query("SELECT pg_get_functiondef('md_record_access(uuid,uuid,uuid,text)'::regprocedure) AS body")).rows[0].body;
+ assert.match(installedRecordPolicy,/md_effective_reporting_scope/,'Record access must enforce management scopes');
  const scopeCheck=await db.query("SELECT owner_id,owner_queue_id,md_effective_reporting_scope($1,$2,'Invoice') AS scope,md_reporting_scope($1,$2,owner_id,'descendants') AS in_team,md_record_access($1,$2,$3,'read') AS allowed FROM md_records WHERE tenant_id=$1 AND id=$3",
   [t,supervisor,forbidden]);
  assert.equal(scopeCheck.rows[0].in_team,false);
