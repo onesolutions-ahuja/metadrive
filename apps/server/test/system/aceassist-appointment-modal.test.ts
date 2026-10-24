@@ -45,3 +45,18 @@ test('Ace Assist financial line CRUD is guarded and recalculates parent totals i
  assert.match(crud,/documentLineTotals:lineTotals\(objectApi\)/);
  assert.match(financial,/documentLineTotals:\{parentObject:'Invoice',parentField:'Invoice'/);
 });
+
+
+test('new appointment hides post-booking controls and retains tenant calendar defaults',()=>{
+ const src=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ assert.match(src,/editing!=='Create'\|\|!\['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime'\]/);
+ assert.match(src,/values\.Status='Scheduled'/);
+ assert.match(src,/payload\.Status='Scheduled'/);
+ assert.match(src,/payload\.TimeZone=hours\?\.timezone/);
+ assert.match(src,/payload\.Name=/);
+ assert.match(src,/Appointment date and time/);
+ assert.match(src,/Contact person \(optional\)/);
+ assert.match(src,/label:'Address'/);
+ assert.match(src,/dataType:'textarea'/);
+ assert.match(src,/checkBusinessHours\(hours,form\.StartDateTime/);
+});
