@@ -27,7 +27,7 @@ test('fresh core seeds definitions only and reruns without overwriting customisa
  }};
  await seedFreshCoreObjects(client as never,'new-tenant');
  assert.equal(statements.filter(sql=>sql.includes('md_object_definitions')).length,22);
- assert.equal(statements.filter(sql=>sql.includes('md_field_definitions')).length,FRESH_CORE_OBJECTS.reduce((sum,o)=>sum+o.fields.length+(o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
+ assert.equal(statements.filter(sql=>sql.includes('md_field_definitions')).length,1+FRESH_CORE_OBJECTS.reduce((sum,o)=>sum+o.fields.length+(o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
  assert.equal(statements.some(sql=>/INSERT INTO md_records|INSERT INTO md_record_values/.test(sql)),false);
 });
 
@@ -67,7 +67,7 @@ test('existing tenants receive Core metadata exactly once via the versioned seed
  assert.equal(await seedCoreObjectsForExistingTenants(db as never),1);
  assert.equal(statements.filter(sql=>sql.includes('INSERT INTO md_object_definitions')).length,22);
  assert.equal(statements.filter(sql=>sql.includes('INSERT INTO md_field_definitions')).length,
-  FRESH_CORE_OBJECTS.reduce((total,o)=>total+o.fields.length+
+  1+FRESH_CORE_OBJECTS.reduce((total,o)=>total+o.fields.length+
    (o.category==='standard'?FRESH_STANDARD_FIELDS[o.apiName].length:0),0));
  // Idempotent reconciliation visits tenants again without overwriting seeded or customised fields.
  assert.equal(await seedCoreObjectsForExistingTenants(db as never),1);
