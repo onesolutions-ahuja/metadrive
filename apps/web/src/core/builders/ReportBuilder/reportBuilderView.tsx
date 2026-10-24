@@ -1196,9 +1196,10 @@ export function ReportBuilder({
           }}><Plus size={13} />{field.label}</button>)}
           <label className="form-label" htmlFor="report-show-me">Show Me</label>
           <select id="report-show-me" className="form-control" value={current.standardFilters.showMe}
-            onChange={(event) => { updateReport({ standardFilters: { ...current.standardFilters, showMe: event.target.value as 'All' | 'My' } }); setResult(null); }}>
+            onChange={(event) => { updateReport({ standardFilters: { ...current.standardFilters, showMe: event.target.value as 'All' | 'My' | 'My Descendants' } }); setResult(null); }}>
             <option value="All">All {reportObject?.pluralLabel ?? 'records'}</option>
             <option value="My" disabled={!reportObject?.fields.some((field) => field.apiName === 'OwnerId')}>My {reportObject?.pluralLabel ?? 'records'}</option>
+            <option value="My Descendants">My Descendants (including me)</option>
           </select>
           {reportStatusFields.length > 0 && <>
             <label className="form-label" htmlFor="report-status-field">Status field</label>
