@@ -143,6 +143,9 @@ try{
  assert.equal(sms.Channel,'SMS');
  assert.equal(sms.Direction,'Outbound');
  assert.equal(sms.Body,'SQL real outbox delivery test');
+ const smsList=await records.list(tenantId,userId,'Communication',50,0);
+ assert.ok(smsList.records.some(row=>row.Id===delivery.rows[0].id),
+  'Communication record must be visible in the shared Records list API');
  const pending=await db.query(
   'SELECT count(*)::int AS n FROM md_communication_delivery_outbox WHERE tenant_id=$1',[tenantId]);
  assert.equal(pending.rows[0].n,0,'Materialized Communication leaves no outbox backlog');
