@@ -53,6 +53,10 @@ export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngi
  }
  if(config.path&&config.path!==operation.path||config.method&&config.method!==operation.method)
   throw new Error('Integration operation has been modified outside provider metadata');
+ // Connector identity comes from installed metadata, not browser-supplied values.
+ const channelId=typeof provider.channelId==='string'&&/^onesys_[a-z0-9_]+$/.test(provider.channelId)
+  ?provider.channelId:undefined;
  return {...config,namedCredentialId:credentialId,
-  method:operation.method,path:operation.path};
+  method:operation.method,path:operation.path,
+  ...(channelId?{systemChannelId:channelId,connectorApi:connectorKey}:{})};
 }
