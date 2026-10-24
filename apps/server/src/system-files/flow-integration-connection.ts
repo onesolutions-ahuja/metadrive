@@ -8,7 +8,28 @@ const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='obje
 /** Resolve provider operation to a tenant-scoped HTTPS Named Credential. */
 export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngine,
  tenantId:string,userId:string,config:Record<string,unknown>):Promise<Record<string,unknown>> {
- if(!config.integrationConnectionId)return config;
+ if(!config.integrationConnectionId){
+  // Direct Named Credential callouts must retain connector identity too.
+  // Resolve only a tenant-installed, enabled system connector binding.
+  const credentialId=config.namedCredentialId;
+  if(typeof credentialId!=='string'||!uuid.test(credentialId))return config;
+  const {rows}=await db.query<{properties:unknown}>(`
+   SELECT p.properties FROM md_connector_app_credentials b
+   JOIN md_apps a ON a.id=b.app_id AND a.tenant_owner_id IS NULL
+   JOIN md_app_installations i ON i.tenant_id=b.tenant_id AND i.app_id=b.app_id
+   JOIN md_system_definitions p ON p.tenant_id=b.tenant_id
+    AND p.kind='connector-providers' AND p.api_name=a.api_name AND p.enabled=true
+   WHERE b.tenant_id=$1 AND b.credential_id=$2 LIMIT 1`,
+   [tenantId,credentialId]);
+  const provider=object(rows[0]?.properties);
+  const channelId=provider.channelId;
+  if(typeof channelId!=='string'||!/^onesys_[a-z0-9_]+$/.test(channelId))return config;
+  const channel=typeof provider.communicationChannel==='string'
+   ?provider.communicationChannel:undefined;
+  return {...config,systemChannelId:channelId,
+   communicationLog:{...object(config.communicationLog),
+    ...(channel?{channel}:{}),provider:channelId}};
+ }
  const connectionId=String(config.integrationConnectionId);
  const operationName=String(config.operation??'');
  if(!identifier.test(connectionId)||!identifier.test(operationName))
@@ -59,5 +80,7 @@ export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngi
  return {...config,namedCredentialId:credentialId,
   method:operation.method,path:operation.path,
   ...(channelId?{systemChannelId:channelId,connectorApi:connectorKey,
-   communicationLog:{...object(config.communicationLog),provider:channelId}}:{})};
+   communicationLog:{...object(config.communicationLog),
+    ...(typeof provider.communicationChannel==='string'
+      ?{channel:provider.communicationChannel}:{}),provider:channelId}}:{})};
 }
