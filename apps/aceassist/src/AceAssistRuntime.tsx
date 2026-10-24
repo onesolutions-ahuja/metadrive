@@ -103,6 +103,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
  const [appointmentServices,setAppointmentServices]=useState<string[]>([]);
+ const [appointmentLines,setAppointmentLines]=useState<Row[]>([]);
  const [reload,setReload]=useState(0);
  const [calendarStaffFilter,setCalendarStaffFilter]=useState('');
  const [calendarServiceFilter,setCalendarServiceFilter]=useState('');
@@ -255,6 +256,16 @@ export default function AceAssistRuntime({entry,onLogout}:{
    if(alive)setRelatedRows(data.filter(x=>String(x[current.object]??'')===String(chosen.Id??'')));
   }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));})
    .finally(()=>{if(alive)setRelatedLoading(false);});
+  return()=>{alive=false;};
+ },[current.object,chosen?.Id,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
+  setAppointmentLines([]);
+  if(current.object!=='Appointment'||!chosen?.Id||!actions.has('AceAssistLoadAppointmentLine'))
+   return;
+  void fetchRows('Load','AppointmentLine').then(data=>{
+   if(alive)setAppointmentLines(data.filter(line=>String(line.Appointment??'')===String(chosen.Id)));
+  }).catch(e=>{if(alive)setError(e instanceof Error?e.message:String(e));});
   return()=>{alive=false;};
  },[current.object,chosen?.Id,actions,reload]);
  const runRecordAction=async(apiName:string,record:Row)=>{
@@ -650,7 +661,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </div>
       <dl>
        {current.object==='Appointment'&&<>
-        <div><dt>Service</dt><dd>{String(chosen.ServiceName??chosen.Service??'Appointment')}</dd></div>
+        <div><dt>Service</dt><dd>{String(appointmentLines.length?appointmentLines.map(line=>line.Name).join(', '):chosen.ServiceName??chosen.Service??'Appointment')}</dd></div>
         <div><dt>Start</dt><dd>{displayStart(chosen.StartDateTime).replace('T',' · ')||'—'}</dd></div>
         <div><dt>End</dt><dd>{displayStart(chosen.EndDateTime).replace('T',' · ')||'—'}</dd></div>
        </>}
