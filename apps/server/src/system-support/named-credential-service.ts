@@ -528,6 +528,8 @@ export class NamedCredentialService {
    ?JSON.parse(this.decryptOpaque(credentialSettings[0].configuration_ciphertext,
       credentialSettings[0].encryption_key_id)) as unknown:null;
   const mappedVariables=bindPublicHttpCredentialVariables(variables,configuration,templates);
+  if(Object.hasOwn(mappedVariables,'OneSysCommunicationLog'))
+   throw new Error('Reserved durable communication metadata variable');
   const prepared=prepareFlowHttpRequest(resolvedConfig,mappedVariables);
   const method=String(resolvedConfig.method??'GET').toUpperCase();
   const path=prepared.path;
@@ -575,7 +577,7 @@ export class NamedCredentialService {
     if(serialized.length>8192)throw new Error('Communication classification too large');
     await client.query(`
      INSERT INTO md_http_callout_job_values(tenant_id,job_id,api_name,value_ciphertext,data_type)
-     VALUES($1,$2,'__communication_log',$3,'communication_log')`,
+     VALUES($1,$2,'OneSysCommunicationLog',$3,'string')`,
      [tenantId,rows[0].id,this.encryptValue(serialized)]);
    }
    // Persist the trusted credential-derived scalar snapshot encrypted for durable headers.
@@ -643,7 +645,7 @@ export class NamedCredentialService {
     const variables:Record<string,CalloutScalar>=Object.create(null) as Record<string,CalloutScalar>;
     let communicationLog:Record<string,unknown>|undefined;
     for(const row of rows){
-     if(row.api_name==='__communication_log'&&row.data_type==='communication_log'){
+     if(row.api_name==='OneSysCommunicationLog'&&row.data_type==='string'){
       const parsed:unknown=JSON.parse(this.decryptValue(row.value_ciphertext));
       if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
        throw new Error('Invalid durable communication metadata');
