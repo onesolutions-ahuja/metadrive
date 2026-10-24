@@ -511,6 +511,8 @@ export class NamedCredentialService {
  }
  async enqueueCallout(client:PoolClient,tenantId:string,userId:string,runId:string,nodeId:number,
    config:Record<string,unknown>,variables:Record<string,CalloutScalar>){
+  // An external callout must never be queued by an unwired runtime.
+  if(!this.integrationActivityWriter)throw new Error('Central Communication writer is unavailable');
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   const resolvedConfig=await resolveFlowIntegrationCallout(client,this.rbac,tenantId,userId,config);
@@ -1024,6 +1026,8 @@ export class NamedCredentialService {
  async callout(tenantId:string,userId:string,config:Record<string,unknown>,
    variables:Record<string,string|number|boolean|null>,idempotencyKey:string,
    previouslyPrepared=false){
+  // Guard before any provider side effect; Flow configuration never controls logging.
+  if(!this.integrationActivityWriter)throw new Error('Central Communication writer is unavailable');
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
   config=await resolveFlowIntegrationCallout(this.db,this.rbac,tenantId,userId,config);
