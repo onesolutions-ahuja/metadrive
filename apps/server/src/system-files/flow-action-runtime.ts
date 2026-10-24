@@ -11,13 +11,13 @@ import {executeActionEmailNode} from './nodes/ActionEmailNode.js';
 
 export async function loadFlowUserResource(client:PoolClient,tenantId:string,userId:string,
  graph:unknown,variables:Record<string,unknown>):Promise<FormulaEvaluationContext> {
- if(typeof graph!=='string'||!(/\$User\.(?:Name|Email|TimeZone)\b/.test(graph)
+ if(typeof graph!=='string'||!(/\$User\.(?:Name|Email|TimeZone|ManagerId|AncestorIds|DescendantIds|DirectReportIds)\b/.test(graph)
    ||/\b(?:TODAY|TIMENOW|DAY|MONTH|YEAR|HOUR|MINUTE|SECOND|WEEKDAY|ISOWEEK|ISOYEAR|DATEVALUE|DATETIMEVALUE|TIMEVALUE|ADDMONTHS|TZOFFSET|CURRENCYRATE)\s*\(/i.test(graph)))
   return {};
  const {rows}=await client.query<{
-  id:string;email:string;display_name:string;time_zone:string;has_currency_settings:boolean;
+  id:string;email:string;display_name:string;time_zone:string;reports_to_user_id:string|null;has_currency_settings:boolean;
   currency_iso_code:string|null;conversion_rate:string|null
- }>(`SELECT u.id,u.email,u.display_name,u.time_zone,s.tenant_id IS NOT NULL AS has_currency_settings,
+ }>(`SELECT u.id,u.email,u.display_name,u.time_zone,u.reports_to_user_id,s.tenant_id IS NOT NULL AS has_currency_settings,
     currency.value->>'currencyIsoCode' AS currency_iso_code,
     currency.value->>'conversionRate' AS conversion_rate
    FROM md_users u
@@ -38,8 +38,22 @@ export async function loadFlowUserResource(client:PoolClient,tenantId:string,use
    currencyRates[row.currency_iso_code]=rate;
   }
  }
+ const hierarchyNeeded=/\$User\.(?:AncestorIds|DescendantIds|DirectReportIds)\b/.test(graph);
+ let ancestorIds:string[]=[],descendantIds:string[]=[],directReportIds:string[]=[];
+ if(hierarchyNeeded){
+  const ancestors=await client.query<{user_id:string;hierarchy_level:number}>(
+    "SELECT user_id,hierarchy_level FROM md_reporting_users($1,$2,'ancestors') WHERE hierarchy_level>0 ORDER BY hierarchy_level",
+    [tenantId,userId]);
+  ancestorIds=ancestors.rows.map(row=>row.user_id);
+  const descendants=await client.query<{user_id:string;hierarchy_level:number}>(
+    "SELECT user_id,hierarchy_level FROM md_reporting_users($1,$2,'descendants') WHERE hierarchy_level>0 ORDER BY hierarchy_level",
+    [tenantId,userId]);
+  descendantIds=descendants.rows.map(row=>row.user_id);
+  directReportIds=descendants.rows.filter(row=>row.hierarchy_level===1).map(row=>row.user_id);
+ }
  variables.$User={Id:actor.id,Name:actor.display_name.trim()||actor.email,Email:actor.email,
-  TimeZone:actor.time_zone};
+  TimeZone:actor.time_zone,ManagerId:actor.reports_to_user_id,
+  AncestorIds:ancestorIds,DescendantIds:descendantIds,DirectReportIds:directReportIds};
  return {timeZone:actor.time_zone,currencyRates};
 }
 
