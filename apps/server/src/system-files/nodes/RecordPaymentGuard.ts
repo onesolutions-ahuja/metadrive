@@ -81,4 +81,10 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
   [config.invoicePaidField]:totalPaid,
   [config.invoiceStatusField]:settled?config.paidStatus:config.partialStatus
  },undefined,context.client);
+ if(config.paymentObject==='CashLedger'){
+  // Transaction-local proof, consumed by the shared RecordEngine insert guard.
+  // A direct CRUD request cannot mint this proof.
+  await context.client.query(
+   "SELECT set_config('metadrive.cash_ledger_guarded','yes',true)");
+ }
 }
