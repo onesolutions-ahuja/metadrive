@@ -49,7 +49,7 @@ test('Ace Assist financial line CRUD is guarded and recalculates parent totals i
 
 test('new appointment hides post-booking controls and retains tenant calendar defaults',()=>{
  const src=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
- assert.match(src,/editing!=='Create'\|\|!\['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime'\]/);
+ assert.match(src,/editing!=='Create'\|\|!\['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime','Service','ServiceProduct'\]/);
  assert.match(src,/values\.Status='Scheduled'/);
  assert.match(src,/payload\.Status='Scheduled'/);
  assert.match(src,/payload\.TimeZone=hours\?\.timezone/);
