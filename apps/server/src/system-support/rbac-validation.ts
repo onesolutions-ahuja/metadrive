@@ -40,7 +40,7 @@ export async function validateRbac(db:SqlExecutor,tenant:string,next:Snapshot){
   for(const key of Object.keys(values))if(!known.has(key))throw Error('Unknown tenant metadata reference: '+key);
  };
  for(const p of [...next.profiles,...next.permissionSets]){
-  keys(p.objectPermissions,objectSet);keys(p.fieldPermissions,fieldSet);keys(p.recordTypePermissions,typeSet);
+  keys(p.objectPermissions,objectSet);keys(p.recordDataScopes??{},objectSet);keys(p.fieldPermissions,fieldSet);keys(p.recordTypePermissions,typeSet);
   keys(p.appPermissions,appSet);keys(p.tabPermissions,objectSet);grantRules(p);
  }
  for(const p of next.profiles)refs(p.inheritedPermissionSetIds,next.permissionSets);
