@@ -95,6 +95,7 @@
     "apps/server/test/system/record-recycle-bin.test.ts",
     "apps/server/test/system/record-related-list.test.ts",
     "apps/server/test/system/record-retention.test.ts",
+    "apps/server/test/system/oracle-runtime-deployment.test.ts",
     "apps/server/test/system/related-list-settings.test.ts",
     "apps/server/test/system/relationship-field-parity.test.ts",
     "apps/server/test/system/role-administration.test.ts",

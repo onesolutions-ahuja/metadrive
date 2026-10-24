@@ -1,5 +1,14 @@
 name: Oracle SQL API Deployment
 on:
+  # Backend changes now deploy to Oracle from main, subject to the existing
+  # oracle-production environment protection/approval.
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/**'
+      - 'apps/connectors/**'
+      - 'scripts/oracle/deploy-api.sh'
+      - '.github/workflows/oracle-api-deploy.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,9 +31,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build --workspace apps/server
-      - name: Verify API build
+      - name: Verify both runtime builds and rollback script
         run: |
           test -f apps/server/dist-system/system-support/entrypoint.js
+          test -f apps/server/dist-system/system-support/job-worker-entrypoint.js
           grep -q registerStalwartMailRoutes apps/server/dist-system/system-support/server.js
-      - name: Deploy immutable API release with rollback
+          bash -n scripts/oracle/deploy-api.sh
+      - name: Deploy immutable API and worker release with rollback
         run: sudo --non-interactive bash scripts/oracle/deploy-api.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
