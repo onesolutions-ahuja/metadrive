@@ -22,7 +22,29 @@ export async function verifySecurityGovernanceSql(db){
   // Test schemas do not install cluster-wide extensions. gen_random_uuid is built in.
   const sql=n=>readFileSync(n,'utf8').replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;/g,'');
   await db.query(sql(new URL('../src/system-files/schema.sql',import.meta.url)));
-  const replay=async()=>{for(const n of readdirSync(migrations).filter(n=>n.endsWith('.sql')).sort())await db.query(sql(new URL(n,migrations)));};
+  // schema.sql is the current full schema: it already contains the credential FK.
+  // Adapt only this test's full-schema replay; never rewrite an applied migration
+  // (production validates each applied file's immutable SHA-256 checksum).
+  const replay=async(minVersion='')=>{
+   for(const n of readdirSync(migrations).filter(n=>n.endsWith('.sql')&&n>=minVersion).sort()){
+    let source=sql(new URL(n,migrations));
+    if(n==='20261127-credential-webhooks.sql'){
+     source=source.replace(
+      /ALTER TABLE md_inbound_webhook_endpoints\s+ADD CONSTRAINT md_inbound_webhook_credential_fk\s+FOREIGN KEY \(tenant_id,credential_id\)\s+REFERENCES md_named_credentials\(tenant_id,id\) ON DELETE CASCADE;/,
+      `DO $test_replay$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+          WHERE conname='md_inbound_webhook_credential_fk'
+            AND conrelid='md_inbound_webhook_endpoints'::regclass) THEN
+          ALTER TABLE md_inbound_webhook_endpoints
+            ADD CONSTRAINT md_inbound_webhook_credential_fk
+            FOREIGN KEY (tenant_id,credential_id)
+            REFERENCES md_named_credentials(tenant_id,id) ON DELETE CASCADE;
+        END IF;
+       END $test_replay$;`);
+    }
+    await db.query(source);
+   }
+  };
   await replay();
   const tenant=(await db.query("INSERT INTO md_tenants(slug,name,status) VALUES('governance','Governance test','ACTIVE') RETURNING id")).rows[0].id;
   const other=(await db.query("INSERT INTO md_tenants(slug,name,status) VALUES('other','Other test','ACTIVE') RETURNING id")).rows[0].id;
@@ -50,7 +72,7 @@ export async function verifySecurityGovernanceSql(db){
   const session=await auth.issuePasswordSession(tenant,user);
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:core,assigned:false});
   await assert.rejects(()=>auth.authenticate(session.accessToken),/Invalid session/);
-  for(const n of readdirSync(migrations).filter(n=>n>='20261123'&&n.endsWith('.sql')).sort())await db.query(sql(new URL(n,migrations)));
+  await replay('20261123');
   assert.equal((await db.query('SELECT md_user_licensed($1,$2) AS yes',[tenant,user])).rows[0].yes,false,'migration replay must preserve licence revocation');
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:core,assigned:true});
   await licenses.assign(tenant,admin,{user_id:user,entitlement_id:entitlement,assigned:true});

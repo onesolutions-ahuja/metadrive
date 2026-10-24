@@ -5,18 +5,10 @@ ALTER TABLE md_inbound_webhook_endpoints
 ALTER TABLE md_inbound_webhook_endpoints ALTER COLUMN app_id DROP NOT NULL;
 ALTER TABLE md_inbound_webhook_endpoints ALTER COLUMN flow_api DROP NOT NULL;
 ALTER TABLE md_inbound_webhook_endpoints ALTER COLUMN execution_user_id DROP NOT NULL;
-DO $mcp$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'md_inbound_webhook_credential_fk'
-      AND conrelid = 'md_inbound_webhook_endpoints'::regclass
-  ) THEN
-    ALTER TABLE md_inbound_webhook_endpoints
-      ADD CONSTRAINT md_inbound_webhook_credential_fk
-      FOREIGN KEY (tenant_id,credential_id)
-      REFERENCES md_named_credentials(tenant_id,id) ON DELETE CASCADE;
-  END IF;
-END $mcp$;
+ALTER TABLE md_inbound_webhook_endpoints
+  ADD CONSTRAINT md_inbound_webhook_credential_fk
+  FOREIGN KEY (tenant_id,credential_id)
+  REFERENCES md_named_credentials(tenant_id,id) ON DELETE CASCADE;
 CREATE UNIQUE INDEX IF NOT EXISTS md_inbound_webhook_credential_one
   ON md_inbound_webhook_endpoints(tenant_id,credential_id)
   WHERE credential_id IS NOT NULL;
