@@ -42,6 +42,14 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  if(fields[config.methodField]!==config.cashMethod
    ||fields[config.statusField]!==config.settledStatus)
   throw Error('Only authorised cash settlement is supported by this Flow');
+ if(config.paymentObject==='CashLedger'){
+  if(fields.Direction!=='IN'||fields.TransactionType!=='Receipt')
+   throw Error('Cash ledger receipt direction or type is invalid');
+  // Actor and timestamp are trusted server values; ignore caller-supplied identity.
+  fields.User=context.userId;
+  fields.TransactionDate=new Date().toISOString();
+  fields.SourceApp='AceAssist';
+ }
  const received=money(fields[config.amountField]);
  if(received<=0)throw Error('Payment amount must be positive');
  await context.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
@@ -51,6 +59,10 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  if(!config.acceptedInvoiceStatuses.includes(String(invoice[config.invoiceStatusField]??''))
    ||!invoice[config.invoiceNumberField])
   throw Error('An issued, numbered invoice is required for settlement');
+ if(config.paymentObject==='CashLedger'){
+  fields.Customer=invoice.Customer??null;
+  fields.CurrencyCode=invoice.CurrencyCode??null;
+ }
  const outstanding=money(invoice[config.invoiceTotalField]);
  const entries=await context.recordQuery.find(context.tenantId,context.userId,
   config.paymentObject,[{field:config.invoiceField,operator:'Equals',value:id}],
@@ -60,6 +72,8 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  if(existing.some(entry=>entry[config.referenceField]===paymentRef))
   throw Error('This payment has already been recorded');
  const paid=existing.reduce((sum,p)=>sum+money(p[config.amountField]),0);
+ if(config.paymentObject==='CashLedger'&&money(invoice[config.invoicePaidField]??0)!==paid)
+  throw Error('Invoice has legacy or unreconciled payments; reconcile before posting to CashLedger');
  if(paid+received>outstanding)throw Error('Payment exceeds invoice outstanding balance');
  const totalPaid=(paid+received)/100;
  const settled=paid+received===outstanding;
