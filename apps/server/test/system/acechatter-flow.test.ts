@@ -459,3 +459,36 @@ test(`existing AceChatter inbox Flow repairs filters/sort (${logic??'implicit AN
   'the migration is idempotent');
 });
 }
+
+test('reconcile legacy WhatsApp sender path on installed tenants without replacing recipient settings',async()=>{
+ const graph={elements:[
+  {id:1,type:'Start',config:{}},
+  {id:4,type:'Get Records',config:{object:'ChatConversation',outputVariable:'conversation'}},
+  {id:2,type:'HTTP Callout',config:{path:'v26.0/{!phoneNumberId}/messages',
+   namedCredentialId:'existing-credential',method:'POST'}},
+  {id:6,type:'Create Records',config:{object:'ChatMessage'}},
+  {id:3,type:'End',config:{}}
+ ],connectors:[
+  {from:1,to:4,kind:'normal'},{from:4,to:2,kind:'normal'},
+  {from:2,to:6,kind:'normal'},{from:6,to:3,kind:'normal'}
+ ]};
+ const encoded:Array<{path:string;kind:string;text:string|null}>=[];
+ encodeMetadataValue(graph,'/builder',encoded);
+ let stored=encoded.map(row=>({property_path:row.path,value_kind:row.kind,value_text:row.text}));
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes('SELECT id FROM md_flow_definitions'))return {rows:[{id:'flow-id'}]};
+  if(sql.includes('SELECT property_path,value_kind,value_text'))return {rows:stored};
+  if(sql.startsWith('DELETE FROM md_flow_editor_values')){stored=[];return {rows:[]};}
+  if(sql.includes('INSERT INTO md_flow_editor_values'))
+   stored.push({property_path:String(params[2]),value_kind:String(params[3]),
+    value_text:params[4]===null?null:String(params[4])});
+  return {rows:[]};
+ }} as never;
+ assert.equal(await reconcileAceChatterCommunicationFlow(client,'tenant-a'),true);
+ const revised=decodeMetadataValues(stored).builder as typeof graph;
+ const callout=revised.elements.find(node=>node.id===2);
+ assert.equal(callout?.config.path,'v26.0/{!phoneNumberId}/messages');
+ assert.equal(callout?.config.namedCredentialId,'existing-credential');
+ assert.equal((callout?.config.communicationLog as Record<string,unknown>)?.channel,'WhatsApp');
+ assert.equal(await reconcileAceChatterCommunicationFlow(client,'tenant-a'),false);
+});

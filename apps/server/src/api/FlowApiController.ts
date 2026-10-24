@@ -7,7 +7,7 @@ import {authenticated,wrap,api} from './ApiAuthenticationGuard.js';
 import {DurableJobService} from '../system-support/durable-job-service.js';
 import {registerFlowJobApiRoutes} from './FlowJobApiRoutes.js';
 import {PlatformEventService} from '../system-support/platform-event-service.js';
-import {reconcileAceChatterLoadCommunicationsFlow} from '../app-seeders/acechatter-flow.js';
+import {reconcileAceChatterLoadCommunicationsFlow,reconcileAceChatterCommunicationFlow} from '../app-seeders/acechatter-flow.js';
 export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:RbacEngine,flows:FlowRuntime){
  const jobs=new DurableJobService(db);
  const platformEvents=new PlatformEventService(db,rbac);
@@ -36,7 +36,10 @@ export function registerFlowApiController(app:Express,db:SqlPersistence,rbac:Rba
           AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
         LIMIT 1`,[actor.tenant_id]);
       if(installed.length)
-        await db.transaction(client=>reconcileAceChatterLoadCommunicationsFlow(client,actor.tenant_id));
+        await db.transaction(async client=>{
+          await reconcileAceChatterLoadCommunicationsFlow(client,actor.tenant_id);
+          await reconcileAceChatterCommunicationFlow(client,actor.tenant_id);
+        });
     }
     const {rows}=await db.query<{api_name:string;label:string}>(`
       SELECT DISTINCT ON (api_name) api_name,label
