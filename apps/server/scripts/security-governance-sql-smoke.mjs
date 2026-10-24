@@ -22,7 +22,15 @@ export async function verifySecurityGovernanceSql(db){
   // Test schemas do not install cluster-wide extensions. gen_random_uuid is built in.
   const sql=n=>readFileSync(n,'utf8').replace(/CREATE EXTENSION IF NOT EXISTS pgcrypto;/g,'');
   await db.query(sql(new URL('../src/system-files/schema.sql',import.meta.url)));
-  const replay=async()=>{for(const n of readdirSync(migrations).filter(n=>n.endsWith('.sql')).sort())await db.query(sql(new URL(n,migrations)));};
+  const replay=async()=>{
+   for(const name of readdirSync(migrations).filter(n=>n.endsWith('.sql')).sort()){
+    try{await db.query(sql(new URL(name,migrations)));}
+    catch(error){
+     throw new Error('Isolated SQL replay failed in '+name+
+      ': '+(error instanceof Error?error.message:'unknown PostgreSQL error'),{cause:error});
+    }
+   }
+  };
   await replay();
   const tenant=(await db.query("INSERT INTO md_tenants(slug,name,status) VALUES('governance','Governance test','ACTIVE') RETURNING id")).rows[0].id;
   const other=(await db.query("INSERT INTO md_tenants(slug,name,status) VALUES('other','Other test','ACTIVE') RETURNING id")).rows[0].id;
