@@ -63,6 +63,22 @@ export async function seedConnectorAppCatalog(db:Pick<SqlPersistence,'transactio
       (app_id,version,published,description,brand_color)
       VALUES($1,1,true,$2,'#3A6073')
       ON CONFLICT(app_id,version) DO NOTHING`,[rows[0].id,d.description]);
+   // Upgrade only already-installed connector metadata. Do not install apps,
+   // replace tenant credentials or overwrite customer-authored properties.
+   if(d.defaultCommunicationFields){
+    const defaults={channelId:'onesys_'+d.folder.replace(/-/g,'_'),
+     ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{}),
+     defaultCommunicationFields:d.defaultCommunicationFields};
+    await client.query(`
+     UPDATE md_system_definitions p
+     SET properties=$2::jsonb || p.properties,updated_at=now()
+     FROM md_apps a JOIN md_app_installations i ON i.app_id=a.id
+     WHERE a.api_name=$1 AND a.tenant_owner_id IS NULL
+       AND p.tenant_id=i.tenant_id AND p.api_name=a.api_name
+       AND p.kind='connector-providers' AND p.enabled=true
+       AND NOT (p.properties ? 'defaultCommunicationFields')`,
+      [name,JSON.stringify(defaults)]);
+   }
   }
  });
 }
