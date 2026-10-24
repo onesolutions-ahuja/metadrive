@@ -208,7 +208,8 @@ export async function reconcileAceChatterCommunicationFlow(client:PoolClient,ten
   &&recipient.config?.object==='ChatConversation'
   &&recipient.config?.outputVariable==='conversation'
   &&outbound?.type==='HTTP Callout'
-  &&outbound.config?.path==='v26.0/{!public_phoneNumberId}/messages'
+  &&['v26.0/{!public_phoneNumberId}/messages',
+    'v26.0/{!phoneNumberId}/messages'].includes(String(outbound.config?.path))
   &&saveMessage?.type==='Create Records'&&saveMessage.config?.object==='ChatMessage'
   &&elements.find(item=>item.id===1)?.type==='Start'
   &&elements.find(item=>item.id===3)?.type==='End';
