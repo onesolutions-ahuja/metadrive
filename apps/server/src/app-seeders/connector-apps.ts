@@ -85,6 +85,13 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
    VALUES($1,$2,$3,'HTTPS',$4,$5,$6,true)
    ON CONFLICT(tenant_id,name) DO NOTHING RETURNING id`,
    [tenantId,credentialName,d.label,d.url,d.auth,d.header]);
+ // An existing unbound system name is not automatically owned by this connector.
+ if(!credentials[0]&&!legacyBinding[0]){
+  const {rows:owner}=await client.query<{app_id:string}>(`
+   SELECT app_id FROM md_connector_app_credentials
+   WHERE tenant_id=$1 AND credential_name=$2 LIMIT 1`,[tenantId,credentialName]);
+  if(!owner[0])throw Error('System credential name collision: '+credentialName);
+ }
  const created=Boolean(credentials[0]);
  const {rows:current}=created?{rows:credentials}:await client.query<{id:string}>(`
   SELECT id FROM md_named_credentials WHERE tenant_id=$1 AND name=$2 FOR UPDATE`,
