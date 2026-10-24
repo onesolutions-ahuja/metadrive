@@ -48,11 +48,16 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
   try{
    const json:unknown=JSON.parse(requestBody);
    const get=(selector:unknown):string|undefined=>{
-    if(typeof selector!=='string'||!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(selector))return undefined;
+    if(typeof selector!=='string'||!/^[A-Za-z][A-Za-z0-9_]*(?:\[\d{1,2}\])?(?:\.[A-Za-z][A-Za-z0-9_]*(?:\[\d{1,2}\])?){0,5}$/.test(selector))
+     return undefined;
     let value:unknown=json;
-    for(const part of selector.split('.')){
-     if(!value||typeof value!=='object'||Array.isArray(value)){value=undefined;break;}
-     value=(value as Record<string,unknown>)[part];
+    for(const part of selector.match(/[A-Za-z][A-Za-z0-9_]*|\[\d+\]/g)??[]){
+     if(part.startsWith('[')){
+      if(!Array.isArray(value)){value=undefined;break;}
+      value=value[Number(part.slice(1,-1))];
+     }else if(value&&typeof value==='object'&&!Array.isArray(value))
+      value=(value as Record<string,unknown>)[part];
+     else {value=undefined;break;}
     }
     return typeof value==='string'||typeof value==='number'?String(value).slice(0,10000):undefined;
    };

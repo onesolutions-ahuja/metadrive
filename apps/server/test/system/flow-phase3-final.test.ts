@@ -95,6 +95,28 @@ test('Installed connector automatically assigns WhatsApp channel and message fie
  assert.equal(log.externalMessageIdResponsePath,'messages[0].id');
 });
 
+test('SMS Gate credential classifies outbound messages without any Flow logging metadata',async()=>{
+ const rbac={require:async()=>undefined} as unknown as RbacEngine;
+ const credential='00000000-0000-4000-8000-000000000001';
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_connector_app_credentials'))return {rows:[{properties:{
+   channelId:'onesys_sms_gate',communicationChannel:'SMS',
+   defaultCommunicationFields:{recipient:'phoneNumbers[0]',
+    body:'textMessage.text',responseId:'id'}
+  }}]};
+  throw new Error('Unexpected query');
+ }} as unknown as SqlExecutor;
+ const resolved=await resolveFlowIntegrationCallout(db,rbac,'tenant-a','user-a',{
+  namedCredentialId:credential,method:'POST',path:'messages',
+  body:'{"phoneNumbers":["447700900001"],"textMessage":{"text":"Hello"}}'});
+ const metadata=resolved.communicationLog as Record<string,unknown>;
+ assert.equal(metadata.channel,'SMS');
+ assert.equal(metadata.provider,'onesys_sms_gate');
+ assert.equal(metadata.requestRecipientPath,'phoneNumbers[0]');
+ assert.equal(metadata.requestBodyPath,'textMessage.text');
+ assert.equal(metadata.externalMessageIdResponsePath,'id');
+});
+
 test('VLOOKUP supports bounded typed read-only record collection values',()=>{
  const rows=[{SKU:'A',Price:3},{SKU:'B',Price:5}];
  const lookup='VLOOKUP("B", @Products, "SKU", "Price")';

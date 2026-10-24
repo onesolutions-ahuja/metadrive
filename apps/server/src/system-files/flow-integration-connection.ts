@@ -14,7 +14,7 @@ const communicationFor=(provider:Record<string,unknown>,operationName?:string)=>
  const defaults=object(provider.defaultCommunicationFields);
  const fields=Object.keys(selectors).length?selectors:defaults;
  const safe=(value:unknown)=>typeof value==='string'
-  &&/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(value)
+  &&/^[A-Za-z][A-Za-z0-9_]*(?:\[\d{1,2}\])?(?:\.[A-Za-z][A-Za-z0-9_]*(?:\[\d{1,2}\])?){0,5}$/.test(value)
   ?value:undefined;
  const channel=typeof provider.communicationChannel==='string'
   ?provider.communicationChannel:undefined;

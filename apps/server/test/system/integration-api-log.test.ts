@@ -30,6 +30,9 @@ test('central integration writer records every attempt as tenant-scoped Communic
  assert.equal(values?.Channel,'Other');
  assert.equal(values?.Status,'Sent');
  assert.equal(values?.Recipient,'https://provider.example/messages');
+ assert.ok(values);
+ assert.equal(Object.entries(values).filter(([,value])=>value===undefined).length,0,
+  'Central writer must omit absent optional fields before generic RecordEngine validation');
  assert.equal(values?.RelatedObject,'IntegrationApiCall');
  assert.equal(values?.RelatedRecordId,'credential-a');
  assert.match(String(values?.Subject),/POST 200/);
