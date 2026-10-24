@@ -191,6 +191,12 @@ async function verifyMcpSql(db,{tenant,admin,auth,connected,verifier}){
   const config={label:'MCP SQL test',enabled:true,client_type:'public',require_mfa:true,redirects:['https://client.example.test/mcp-callback'],scopes:['mcp:access','records:read'],users:[admin]};
   const client=await connected.save(tenant,admin,config);
   const request={client_id:client.id,redirect_uri:config.redirects[0],response_type:'code',code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256',state:'mcp-state-'.repeat(4),scope:'mcp:access records:read',resource};
+  // ChatGPT may send OAuth extensions such as prompt/login_hint. Unknown fields
+  // must not break consent, while the validated request is stripped to safe keys.
+  const extended=await connected.consent(tenant,admin,{...request,prompt:'consent',login_hint:'admin@example.test'});
+  assert.equal(extended.request.client_id,client.id);
+  assert.equal('prompt' in extended.request,false);
+  await assert.rejects(()=>connected.consent(tenant,admin,{...request,code_challenge_method:'plain'}),/Invalid OAuth authorization request/);
   await assert.rejects(()=>connected.consent(tenant,admin,{...request,resource:'https://evil.example/mcp'}),/Invalid OAuth resource/);
   const session=await auth.issueMfaSession(tenant,admin);
   const grant=await connected.grant(tenant,admin,session.accessToken,request,true);
