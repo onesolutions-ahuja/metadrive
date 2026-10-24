@@ -7,6 +7,7 @@ export default Object.freeze({
   "credential": "WhatsApp_Cloud_API",
   "url": "https://graph.facebook.com/",
   "auth": "Bearer",
+  "communicationChannel": "WhatsApp",
   "header": "",
   "fields": [
     {
