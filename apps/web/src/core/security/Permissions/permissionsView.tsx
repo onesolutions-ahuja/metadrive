@@ -783,6 +783,22 @@ function Permissions({
           </label>)}</div>
           <h3 className="permission-section-heading">Object Permissions</h3>
           <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label} ${permission}`} checked={Boolean(selectedSet.objectPermissions[object.apiName]?.[permission])} onChange={() => toggleObjectPermission(selectedSet, object.apiName, permission)} /></td>)}</tr>)}</tbody></table></div>
+          <h3 className="permission-section-heading">User reporting data scopes</h3>
+          <p className="permission-help">For each Object, decide whether this permission set can access own records, descendants' records or all users' records. The tree follows Reports To, never role or job title. All scopes still require Object permissions and honour explicit denials.</p>
+          <div className="permission-form-grid">{objects.map(object => <label key={object.apiName} className="form-label">{object.label}
+            <select className="form-control" value={selectedSet.recordDataScopes?.[object.apiName]??''}
+              onChange={event => {
+                const scopes = {...(selectedSet.recordDataScopes??{})};
+                if (!event.target.value) delete scopes[object.apiName];
+                else scopes[object.apiName] = event.target.value as 'all'|'descendants'|'own';
+                patchSet(selectedSet.id,{recordDataScopes:scopes});
+              }}>
+              <option value="">Default record sharing</option>
+              <option value="own">My Records</option>
+              <option value="descendants">My Descendants (including me)</option>
+              <option value="all">All Users (tenant-wide)</option>
+            </select>
+          </label>)}</div>
           <h3 className="permission-section-heading">Record Type Access</h3>
           {objects.filter((object) => object.recordTypes?.length).map((object) => <div className="permission-table-wrap" key={object.apiName}><table className="slds-table permission-matrix"><thead><tr><th>{object.label}</th><th>Available</th></tr></thead><tbody>{object.recordTypes?.filter((recordType) => recordType.active).map((recordType) => {
             const key = `${object.apiName}.${recordType.id}`;
