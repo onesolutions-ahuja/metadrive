@@ -289,17 +289,17 @@ export default function AceAssistRuntime({entry,onLogout}:{
   setCashRequestId(window.crypto.randomUUID());setError('');setNotice('');
  };
  const submitCashPayment=async(event:React.FormEvent)=>{
-  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashPayment'))return;
+  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashLedgerV1'))return;
   const amount=Number(cashAmount);
   if(!Number.isFinite(amount)||amount<=0||Math.abs(amount*100-Math.round(amount*100))>0.00001){
    setError('Enter a positive amount with at most two decimal places.');return;
   }
   setBusy(true);setError('');
   try{
-   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashPayment/execute',{
+   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashLedgerV1/execute',{
     method:'POST',body:JSON.stringify({recordId:cashInvoice.Id,amount,requestId:cashRequestId})});
    if(response.interviewId)throw Error('Cash settlement has not completed');
-   setCashInvoice(null);setNotice('Cash settlement recorded by authorised Flow.');
+   setCashInvoice(null);setNotice('Cash receipt posted to CashLedger through authorised Flow.');
    setReload(x=>x+1);
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
   finally{setBusy(false);}
@@ -683,7 +683,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
-       {current.object==='Invoice'&&actions.has('AceAssistRecordCashPayment')
+       {current.object==='Invoice'&&actions.has('AceAssistRecordCashLedgerV1')
         &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
         <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
          Record cash payment</button>}
