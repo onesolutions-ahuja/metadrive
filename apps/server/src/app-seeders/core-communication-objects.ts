@@ -119,6 +119,7 @@ export const COMMUNICATION_OBJECTS_SEED_VERSION='core-communication-objects-v1';
 export async function seedCommunicationObjects(client:PoolClient,tenantId:string):Promise<void>{
   for(const object of COMMUNICATION_OBJECTS){
     await client.query('INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system) VALUES($1,$2,$3,false) ON CONFLICT(tenant_id,api_name) DO NOTHING',[tenantId,object.apiName,object.label]);
+    await client.query("INSERT INTO md_sharing_settings (tenant_id,object_api,default_access,use_hierarchy) VALUES($1,$2,'Public Read Only',false) ON CONFLICT(tenant_id,object_api) DO UPDATE SET default_access='Public Read Only',use_hierarchy=false",[tenantId,object.apiName]);
     for(const field of object.fields){
       await client.query('INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,false) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
         [tenantId,object.apiName,field.apiName,field.label,field.dataType,'relatedObject' in field?field.relatedObject:null,'maxLength' in field?field.maxLength:null]);

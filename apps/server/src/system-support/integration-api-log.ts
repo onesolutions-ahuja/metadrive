@@ -1,5 +1,4 @@
 import {randomUUID} from 'node:crypto';
-import type {RecordEngine} from '../system-files/record-engine.js';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 
 export type IntegrationCommunicationDetails={
@@ -61,53 +60,35 @@ function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
   responseBytes:Math.min(2147483647,Math.max(0,Math.floor(input.responseBytes??0)))};
 }
 
-/** Every external integration attempt becomes a tenant-scoped Communication record.
- * Payloads, headers, tokens, signatures and query strings are never logged by default.
- * Message-specific fields require an explicit caller mapping; no app-specific behavior
- * lives in this logger.
+/** System-owned, append-only SQL persistence for external integration events.
+ * The central runtime alone sets a transaction-local insert marker; ordinary
+ * CRUD/Flows never create, edit or delete Communication. Tenant isolation is
+ * enforced by SQL foreign keys and all queries remain tenant-scoped.
+ * No user identity, licence, app installation or OneEngine write grant is needed.
  */
-export function createIntegrationCommunicationWriter(
- db:SqlPersistence,records:RecordEngine
-):IntegrationActivityWriter{
- return async(raw)=>{
+export function createIntegrationCommunicationWriter(db:SqlPersistence,_legacyRecords?:unknown):IntegrationActivityWriter{
+ return async raw=>{
   const input=normalized(raw);
-  // Never impersonate developer@tenant. It is deliberately disabled until
-  // activation and SQL OneEngine RBAC rejects disabled users.
-  // The tenant-scoped, permanently login-locked writer has *only* Communication
-  // create permissions granted through the standard OneEngine policy.
-  const {rows}=await db.query<{user_id:string}>(`
-   SELECT a.user_id FROM md_communication_logger_accounts a
-   JOIN md_users u ON u.tenant_id=a.tenant_id AND u.id=a.user_id
-   WHERE a.tenant_id=$1 AND u.enabled=true`,[input.tenantId]);
-  const systemUserId=rows[0]?.user_id;
-  if(!systemUserId)throw new Error('Tenant Communication writer identity unavailable');
-
   const details=input.communication??{};
   const now=input.occurredAt??new Date().toISOString();
   const status=input.outcome==='success'
    ?input.direction==='Inbound'?'Received':'Sent':'Failed';
-  // normalized() strips query strings and fragments. Use only this sanitised value
-  // in every displayed/logged field; never rebuild a subject from the raw endpoint.
   const endpoint=clean(input.endpoint,2048);
   const metadata={
    type:'IntegrationApiCall',transport:input.transport??'HTTP',endpoint,
    method:input.method,statusCode:input.statusCode??null,outcome:input.outcome,
    durationMs:input.durationMs??0,requestBytes:input.requestBytes??0,
    responseBytes:input.responseBytes??0,errorCode:input.errorCode??null,
-   credentialId:input.credentialId??null,actorUserId:input.actorUserId??null,
-   occurredAt:now
+   credentialId:input.credentialId??null,actorUserId:input.actorUserId??null,occurredAt:now
   };
   const body=details.body===undefined
    ?JSON.stringify(metadata).slice(0,10000):cleanBody(details.body);
   const subjectPrefix=details.subject?clean(details.subject,100)+' · ':'';
-  const statusLabel=input.statusCode===undefined||input.statusCode===null
-   ?'NO_RESPONSE':String(input.statusCode);
+  const statusLabel=input.statusCode==null?'NO_RESPONSE':String(input.statusCode);
   const subject=clean(subjectPrefix+input.method+' '+statusLabel+' · '+input.outcome+
    ' · '+(input.durationMs??0)+'ms · req '+(input.requestBytes??0)+'B/resp '+
    (input.responseBytes??0)+'B · '+endpoint,500);
-
-  const record:Record<string,unknown>={
-   OwnerId:input.actorUserId||systemUserId,
+  const values:Record<string,string|undefined>={
    Name:clean(details.name||input.direction+' API - '+input.provider,500),
    Channel:allowedChannels.has(String(details.channel))?details.channel:'Other',
    Direction:input.direction,Status:status,
@@ -122,10 +103,49 @@ export function createIntegrationCommunicationWriter(
    ReceivedAt:details.receivedAt??(input.direction==='Inbound'&&input.outcome==='success'?now:undefined),
    ErrorMessage:input.outcome==='success'?undefined:clean(input.errorCode||input.outcome,2000)
   };
-  // RecordEngine treats a supplied undefined field as invalid input.
-  // Omitted optional fields are not the same as explicit null values.
-  await records.create(input.tenantId,systemUserId,'Communication',
-   Object.fromEntries(Object.entries(record).filter(([,value])=>value!==undefined)));
+  const fields=Object.entries(values).filter((entry):entry is [string,string]=>
+   typeof entry[1]==='string');
+  await db.transaction(async client=>{
+   // Serialise identical provider IDs to close the outbox lease/crash race.
+   await client.query('SELECT pg_advisory_xact_lock(hashtext($1::text),hashtext($2::text))',
+    [input.tenantId,values.ExternalMessageId]);
+   const {rows:existing}=await client.query<{id:string}>(`
+    SELECT r.id FROM md_records r JOIN md_record_values v
+     ON v.tenant_id=r.tenant_id AND v.record_id=r.id
+     AND v.object_api=r.object_api AND v.field_api='ExternalMessageId'
+    WHERE r.tenant_id=$1 AND r.object_api='Communication'
+     AND r.is_deleted=false AND v.value_text=$2 LIMIT 1`,
+    [input.tenantId,values.ExternalMessageId]);
+   if(existing.length)return; // SQL-level idempotency across worker retries
+   // The tenant has to exist; it never needs an enabled user/licence/RBAC.
+   const {rows:tenant}=await client.query<{id:string}>(
+    'SELECT id FROM md_tenants WHERE id=$1',[input.tenantId]);
+   if(!tenant.length)throw new Error('COMMUNICATION_TENANT_MISSING');
+   const {rows:configured}=await client.query<{api_name:string}>(`
+    SELECT api_name FROM md_field_definitions
+    WHERE tenant_id=$1 AND object_api='Communication'
+     AND deleted_at IS NULL AND api_name=ANY($2::text[])`,
+    [input.tenantId,fields.map(([name])=>name)]);
+   if(configured.length!==fields.length)
+    throw new Error('COMMUNICATION_FIELDS_MISSING');
+   // Used only for this transaction. The SQL trigger blocks all normal app
+   // CRUD and subsequent UPDATE/DELETE operations even by privileged users.
+   await client.query("SELECT set_config('metadrive.communication_writer','on',true)");
+   const {rows:created}=await client.query<{id:string}>(`
+    INSERT INTO md_records(tenant_id,object_api,owner_id)
+    VALUES($1,'Communication',NULL) RETURNING id`,[input.tenantId]);
+   const recordId=created[0]?.id;
+   if(!recordId)throw new Error('COMMUNICATION_RECORD_INSERT_FAILED');
+   await client.query(`
+    INSERT INTO md_record_values
+     (tenant_id,record_id,object_api,field_api,value_text,value_datetime)
+    SELECT $1::uuid,$2::uuid,'Communication',
+     payload.field_api,payload.value_text,
+     CASE WHEN payload.field_api IN ('SentAt','ReceivedAt')
+       THEN payload.value_text::timestamptz ELSE NULL END
+    FROM unnest($3::text[],$4::text[]) AS payload(field_api,value_text)`,
+    [input.tenantId,recordId,fields.map(([name])=>name),fields.map(([,value])=>value)]);
+  });
  };
 }
 
@@ -235,7 +255,12 @@ export class IntegrationCommunicationOutbox{
    await this.db.query(`DELETE FROM md_communication_delivery_outbox
     WHERE tenant_id=$1 AND id=$2 AND status='processing'`,[row.tenant_id,row.id]);
   }catch(error){
-   const errorCode=error instanceof Error?error.name:'UnknownError';
+   // Persist safe SQLSTATE or fixed system codes, never request bodies or secrets.
+   const sqlState=(error as {code?:unknown})?.code;
+   const errorCode=typeof sqlState==='string'&&/^[0-9A-Z]{5}$/.test(sqlState)
+    ?'PG_'+sqlState
+    :error instanceof Error&&/^COMMUNICATION_[A-Z_]+$/.test(error.message)
+     ?error.message:error instanceof Error?error.name:'UnknownError';
    await this.db.query(`UPDATE md_communication_delivery_outbox
     SET status='pending',claimed_at=NULL,last_error=$3,
      next_attempt_at=now()+(LEAST(3600,power(2,LEAST(attempt_count,12))::integer)

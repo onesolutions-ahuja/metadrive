@@ -120,20 +120,11 @@ try{
   await db.query('INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system) VALUES($1,$2,$3,false) ON CONFLICT(tenant_id,api_name) DO NOTHING',[tenantId,api,api]);
  }
  await db.transaction(client=>seedCommunicationObjects(client,tenantId));
- const {rows:[loggerAccount]}=await db.query(
-  'SELECT md_ensure_communication_logger($1::uuid) AS id',[tenantId]);
- assert.ok(loggerAccount.id);
- const loggerUser=await db.query(
-  'SELECT enabled,password_hash FROM md_users WHERE tenant_id=$1 AND id=$2',
-  [tenantId,loggerAccount.id]);
- assert.equal(loggerUser.rows[0].enabled,true);
- assert.equal(loggerUser.rows[0].password_hash,'!no-interactive-login!');
- const communicationWriter=createIntegrationCommunicationWriter(db,
-  new RecordEngine(db,new RbacEngine(db)));
+ const communicationWriter=createIntegrationCommunicationWriter(db);
  const communicationOutbox=new IntegrationCommunicationOutbox(db,communicationWriter);
  await communicationOutbox.write({
   tenantId,direction:'Outbound',transport:'HTTP',provider:'onesys_sms_gate',
-  actorUserId:userId,endpoint:'https://api.example.invalid/send',
+  endpoint:'https://api.example.invalid/send',
   method:'POST',statusCode:200,outcome:'success',
   communication:{channel:'SMS',recipient:'447700900000',
    body:'SQL real outbox delivery test',externalMessageId:'sql-sms-'+tenantId}
@@ -154,6 +145,14 @@ try{
  const pending=await db.query(
   'SELECT count(*)::int AS n FROM md_communication_delivery_outbox WHERE tenant_id=$1',[tenantId]);
  assert.equal(pending.rows[0].n,0,'Materialized Communication leaves no outbox backlog');
+ await assert.rejects(()=>records.create(tenantId,userId,'Communication',{
+  Name:'User-created',Channel:'SMS',Direction:'Outbound',Status:'Sent'
+ }),/append-only/);
+ await assert.rejects(()=>records.update(tenantId,userId,'Communication',
+  delivery.rows[0].id,{Body:'Changed'}),/append-only/);
+ await assert.rejects(()=>records.remove(tenantId,userId,'Communication',
+  delivery.rows[0].id),/append-only/);
+
  console.info('Real PostgreSQL Communication outbox delivery and record read: passed');
 
  // Phase 1 actual PostgreSQL lifecycle/relationship contracts.
