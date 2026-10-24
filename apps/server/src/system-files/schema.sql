@@ -1311,6 +1311,12 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
   ELSE (SELECT bool_or(COALESCE(ok,false)) FROM comparisons) END,false)
  FROM md_record_policies policy WHERE policy.tenant_id=t AND policy.id=p
 $$;
+-- Schema reconciliation must not downgrade the reporting-aware record policy
+-- installed by additive system migrations in an existing tenant database.
+DO $md_record_guard$
+BEGIN
+ IF to_regprocedure('md_effective_reporting_scope(uuid,uuid,text)') IS NULL THEN
+  EXECUTE $md_legacy_record_definition$
 CREATE OR REPLACE FUNCTION md_record_access(t uuid,u uuid,rid uuid,act text)
 RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT COALESCE((
@@ -1358,6 +1364,10 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
  WHERE rec.tenant_id=t AND rec.id=rid
  ),false)
 $$;
+$md_legacy_record_definition$;
+ END IF;
+END
+$md_record_guard$;
 
  CREATE TABLE IF NOT EXISTS md_object_manager_settings (
    tenant_id uuid NOT NULL REFERENCES md_tenants(id),
@@ -2364,6 +2374,12 @@ RETURNS TABLE(allow_granted boolean,deny_granted boolean) LANGUAGE sql STABLE AS
  COALESCE(bool_or(m.effect='deny'),false)
  FROM matched m
 $$;
+-- Schema reconciliation must not downgrade the reporting-aware record policy
+-- installed by additive system migrations in an existing tenant database.
+DO $md_record_guard$
+BEGIN
+ IF to_regprocedure('md_effective_reporting_scope(uuid,uuid,text)') IS NULL THEN
+  EXECUTE $md_legacy_record_definition$
 CREATE OR REPLACE FUNCTION md_record_access(t uuid,u uuid,rid uuid,act text)
 RETURNS boolean LANGUAGE sql STABLE AS $$
  SELECT COALESCE((
@@ -2411,6 +2427,10 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
  WHERE rec.tenant_id=t AND rec.id=rid
  ),false)
 $$;
+$md_legacy_record_definition$;
+ END IF;
+END
+$md_record_guard$;
 
 CREATE TABLE IF NOT EXISTS md_oauth_clients(
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),id uuid NOT NULL DEFAULT gen_random_uuid(),label text NOT NULL,
