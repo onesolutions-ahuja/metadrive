@@ -533,7 +533,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     onDateChange={setWeekOf} onOpen={setChosen}
     onCreate={()=>startEdit('Create')}
     onRefresh={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}}/>}
-   {screen==='records'&&<div className="custom-assist-layout"><section className="custom-calendar">
+   {screen==='records'&&<div className={'custom-assist-layout'+(chosen?' assist-record-open':'')}><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
      <div className="custom-panel-toolbar">
       {current.object==='Appointment'&&<label className="assist-view-control">
@@ -589,7 +589,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </div>;
      })}</div>:<div className="custom-record-list">
      {rows.map((row,i)=><button key={String(row.Id??i)} type="button" onClick={()=>setChosen(row)}>
-      <strong>{title(row)}</strong><small>{String(row.Status??row.Id??'')}</small>
+      <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):title(row)}</strong>
+      <small>{current.object==='Customer'?String([row.Email,row.Phone].filter(Boolean).join(' · ')||'Customer'):
+       String(row.Status??'')}</small>
      </button>)}
     </div>}
     {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
