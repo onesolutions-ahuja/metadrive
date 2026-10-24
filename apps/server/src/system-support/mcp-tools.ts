@@ -6,8 +6,33 @@ import type {ObjectDefinitionService} from '../system-files/object-definition.js
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {PlatformTenantService} from '../system-files/platform-tenant-service.js';
 import {execFile} from 'node:child_process';
+import {createConnection} from 'node:net';
 import {promisify} from 'node:util';
 const execute=promisify(execFile);
+async function brokerOperation(request:{action:string;service:string;release?:string}):Promise<{output:string}>{
+ const socketPath=process.env.METADRIVE_MCP_BROKER_SOCKET;
+ if(!socketPath)throw Error('Operations broker is not configured');
+ return await new Promise((resolve,reject)=>{
+  let finished=false,buffer='';
+  const sock=createConnection({path:socketPath});
+  const fail=()=>{if(!finished){finished=true;sock.destroy();reject(Error('Operations broker unavailable'));}};
+  sock.setTimeout(15000,fail);
+  sock.on('error',fail);
+  sock.on('connect',()=>sock.write(JSON.stringify(request)+'\n'));
+  sock.on('data',(chunk:Buffer)=>{
+   buffer+=chunk.toString('utf8');
+   if(buffer.length>256*1024){fail();return;}
+   const index=buffer.indexOf('\n');
+   if(index<0)return;
+   try{
+    const answer=JSON.parse(buffer.slice(0,index));
+    if(typeof answer.output!=='string')throw Error('Invalid broker response');
+    if(!finished){finished=true;sock.end();resolve({output:answer.output});}
+   }catch{fail();}
+  });
+  sock.on('close',fail);
+ });
+}
 export type McpActor={tenant_id:string;user_id:string};
 export type McpServices={records:RecordEngine;flows:FlowRuntime;rbac:RbacEngine;definitions:ObjectDefinitionService;db:SqlPersistence;platform:PlatformTenantService};
 const identifier=z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,199}$/);
@@ -21,7 +46,7 @@ const schemas={
  list_objects:z.object({}).strict(),
  describe_object:z.object({object:identifier}).strict(),
  run_flow:z.object({flow:identifier,inputs:values.default({})}).strict(),
- server_operation:z.object({action:z.enum(['status','logs','restart','activate_release']),service:z.enum(['api','worker']).default('api'),release:z.string().regex(/^[a-f0-9]{40}$/).optional()}).strict()
+ server_operation:z.object({action:z.enum(['status','logs','restart','activate_release','mail_diagnostic']),service:z.enum(['api','worker']).default('api'),release:z.string().regex(/^[a-f0-9]{40}$/).optional()}).strict()
 };
 const descriptions:Record<keyof typeof schemas,string>={
  list_records:'Read database records through tenant, record and field permissions. Paginate with offset.',
@@ -69,14 +94,16 @@ export async function callMcpTool(s:McpServices,a:McpActor,name:string,input:unk
   if((p.action==='activate_release')!==!!p.release)throw Error('Release SHA is required only for activate_release');
   if(p.action==='activate_release'&&p.service!=='api')throw Error('Release activation supports the API service only');
   await s.platform.requirePlatform(t,u);
-  await s.rbac.require(t,u,'PlatformOperations',p.action==='status'||p.action==='logs'?'read':'manage');
+  await s.rbac.require(t,u,'PlatformOperations',p.action==='status'||p.action==='logs'||p.action==='mail_diagnostic'?'read':'manage');
   if(process.env.METADRIVE_MCP_OPERATIONS!=='enabled')throw Error('Server operations are not installed/enabled');
   // Record the attempt before starting a privileged operation; fail closed if auditing fails.
   await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationRequested',JSON.stringify(p)]);
   try{
-   const result=await execute('/usr/bin/sudo',['-n','/usr/local/sbin/metadrive-mcp-operations',p.action,p.service,...(p.release?[p.release]:[])],{timeout:15000,maxBuffer:256*1024,env:{PATH:'/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C.UTF-8'}});
+   const result=process.env.METADRIVE_MCP_BROKER_SOCKET
+    ? await brokerOperation(p)
+    : {output:(await execute('/usr/bin/sudo',['-n','/usr/local/sbin/metadrive-mcp-operations',p.action,p.service,...(p.release?[p.release]:[])],{timeout:15000,maxBuffer:256*1024,env:{PATH:'/usr/sbin:/usr/bin:/sbin:/bin',LANG:'C.UTF-8'}})).stdout};
    await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationAccepted',JSON.stringify(p)]);
-   return {output:result.stdout};
+   return {output:result.output};
   }catch{
    await s.db.query('INSERT INTO md_security_events(tenant_id,actor_user_id,action,details) VALUES($1,$2,$3,$4::jsonb)',[t,u,'McpServerOperationFailed',JSON.stringify(p)]);
    throw Error('Server operation failed; inspect the system journal on the VM');
