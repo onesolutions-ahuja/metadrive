@@ -106,7 +106,7 @@ export function createIntegrationCommunicationWriter(
    ' · '+(input.durationMs??0)+'ms · req '+(input.requestBytes??0)+'B/resp '+
    (input.responseBytes??0)+'B · '+endpoint,500);
 
-  await records.create(input.tenantId,systemUserId,'Communication',{
+  const record:Record<string,unknown>={
    OwnerId:input.actorUserId||systemUserId,
    Name:clean(details.name||input.direction+' API - '+input.provider,500),
    Channel:allowedChannels.has(String(details.channel))?details.channel:'Other',
@@ -121,7 +121,11 @@ export function createIntegrationCommunicationWriter(
    SentAt:details.sentAt??(input.direction==='Outbound'&&input.outcome==='success'?now:undefined),
    ReceivedAt:details.receivedAt??(input.direction==='Inbound'&&input.outcome==='success'?now:undefined),
    ErrorMessage:input.outcome==='success'?undefined:clean(input.errorCode||input.outcome,2000)
-  });
+  };
+  // RecordEngine treats a supplied undefined field as invalid input.
+  // Omitted optional fields are not the same as explicit null values.
+  await records.create(input.tenantId,systemUserId,'Communication',
+   Object.fromEntries(Object.entries(record).filter(([,value])=>value!==undefined)));
  };
 }
 
