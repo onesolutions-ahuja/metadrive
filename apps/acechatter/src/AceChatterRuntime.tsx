@@ -71,7 +71,6 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
   const [refresh,setRefresh]=useState(0);
   const [newMessages,setNewMessages]=useState(false);
   const loadConversations=flowBySuffix(actions,'LoadConversations');
-  const loadMessages=flowBySuffix(actions,'LoadMessages');
   const loadCommunications=flowBySuffix(actions,'LoadCommunications');
   const resolveConversationFlow=flowBySuffix(actions,'FindConversationByPhone');
   const sendFlow=flowBySuffix(actions,'SendMessage');
@@ -177,36 +176,24 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
     if(linked&&identify(linked)!==selected)setSelected(identify(linked));
   },[selected,conversations,communications,submittedSearch]);
 
-  // Read the selected thread from both the durable Communication log and existing
-  // Flow-created ChatMessage records. All object/record/field access stays in OneEngine.
+  // Communication is the only message-history source. The tenant-authorised Flow
+  // applies the WhatsApp/channel filters and OneEngine record/field permissions.
   useEffect(()=>{
-    if(!selected||!selectedRow||(!loadMessages&&!loadCommunications)){
+    if(!selected||!selectedRow||!loadCommunications||!selectedPhone){
       setMessages([]);return;
     }
     let live=true;setError('');
     const stop=startVisiblePolling(async()=>{
-    const chatRequest:Promise<Row[]>=loadMessages&&selectedRow.__syntheticConversation!==true
-      ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
-        '/flows/'+encodeURIComponent(loadMessages.apiName)+'/execute',{
-          method:'POST',body:JSON.stringify({conversationId:selected,limit:200})
-        }).then(result=>{
-          if(result.interviewId)throw new Error('Loading messages requires a synchronous Autolaunched Flow.');
-          return readRows(result.outputs,'messagesJson');
-        }):Promise.resolve([]);
-    const communicationRequest:Promise<Row[]>=loadCommunications&&selectedPhone
-      ?apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
+      const result=await apiRequest<{outputs?:Record<string,unknown>;interviewId?:string}>(
         '/flows/'+encodeURIComponent(loadCommunications.apiName)+'/execute',{
           method:'POST',body:JSON.stringify({searchTerm:selectedPhone,limit:200})
-        }).then(result=>{
-          if(result.interviewId)throw new Error('Loading received messages requires a synchronous Autolaunched Flow.');
-          return readRows(result.outputs,'communicationsJson');
-        }):Promise.resolve([]);
-    await Promise.all([chatRequest,communicationRequest]).then(([chatRows,communicationRows])=>{
-      if(live)setMessages(mergeCommunicationMessages(communicationRows,chatRows,selectedPhone));
-    });},e=>{if(live)setError(errorText(e));});
+        });
+      if(result.interviewId)throw new Error('Loading messages requires a synchronous Autolaunched Flow.');
+      const rows=readRows(result.outputs,'communicationsJson');
+      if(live)setMessages(mergeCommunicationMessages(rows,[],selectedPhone));
+    },e=>{if(live)setError(errorText(e));});
     return()=>{live=false;stop();};
-  },[loadMessages?.apiName,loadCommunications?.apiName,selected,selectedPhone,
-    selectedRow?.__syntheticConversation,refresh]);
+  },[loadCommunications?.apiName,selected,selectedPhone,refresh]);
 
   const visibleMessages=messages;
   const latestMessage=messages[messages.length-1];
@@ -369,7 +356,7 @@ export default function AceChatterRuntime({onLogout}:{onLogout:()=>void}) {
         }
       }}>
         {!selectedRow?<div className="ace-chat-welcome"><span aria-hidden="true">◉</span><h2>WhatsApp inbox</h2><p>Choose a chat to read messages from Communication records, filtered by the sender's WhatsApp number.</p><button onClick={openNewChat} disabled={!newChatFlow}>＋ New chat</button></div>:
-         !loadMessages&&!loadCommunications?<p className="ace-chat-hint">Activate the authorised message-loading Flows in MetaDrive Flow Builder.</p>:
+         !loadCommunications?<p className="ace-chat-hint">Activate the authorised Communication-loading Flow in MetaDrive Flow Builder.</p>:
          visibleMessages.length===0?<p className="ace-chat-thread-empty">No messages visible for this WhatsApp number.</p>:
          visibleMessages.map((row,index)=><div key={identify(row)||index} className={String(pick(row,'Direction','MessageDirection')??'').toLowerCase().includes('out')?'ace-chat-bubble outgoing':'ace-chat-bubble'}>
            <p>{String(pick(row,'Body','MessageBody','Text','Content','Name')??'')}</p><small>{String(pick(row,'SentAt','ReceivedAt','CreatedAt','CreatedDate','Status')??'')}</small>
