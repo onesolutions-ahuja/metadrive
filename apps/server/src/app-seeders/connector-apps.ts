@@ -75,7 +75,8 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
  // Existing Named Credentials can have customer-renamed labels, custom endpoints and ciphertext.
  // A system credential uses an immutable AppExchange-controlled namespace.
  // Keep legacy tenant credentials reusable until references can be migrated safely.
- const systemCredentialName='onesys_'+name;
+ const systemChannelId='onesys_'+connectorApps[name].replace(/-/g,'_');
+ const systemCredentialName=systemChannelId;
  const {rows:legacyBinding}=await client.query<{credential_id:string;credential_name:string}>(`
   SELECT b.credential_id,b.credential_name FROM md_connector_app_credentials b
   WHERE b.tenant_id=$1 AND b.app_id=$2 LIMIT 1`,[tenantId,appId]);
@@ -124,7 +125,7 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
     AND NOT (field_api=ANY($4::text[]))`,
   [tenantId,appId,credentialName,d.fields.map(field=>field.apiName)]);
  const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs,
-  channelId:'onesys_'+connectorApps[name].replace(/-/g,'_'),credentialName};
+  channelId:systemChannelId,credentialName};
  await client.query(`INSERT INTO md_system_definitions
   (tenant_id,kind,api_name,label,properties,enabled)
   VALUES($1,'connector-providers',$2,$3,$4::jsonb,true)
