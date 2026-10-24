@@ -5,7 +5,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
-import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
+import type {IntegrationActivityWriter} from './integration-api-log.js';
 
 type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
@@ -108,6 +108,7 @@ function publicUrl(req:Request,id:string){
 export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence,
  vault:NamedCredentialService,flows:FlowRuntime,rbac:RbacEngine,records?:RecordEngine,
  activityWriter?:IntegrationActivityWriter){
+ void records;
  const load=async(id:string):Promise<Endpoint|undefined>=>{
   if(!uuid.test(id))return undefined;
   const {rows}=await db.query<Endpoint>(`
