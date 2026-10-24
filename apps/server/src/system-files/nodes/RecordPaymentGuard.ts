@@ -122,7 +122,7 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  const invoice=await context.records.get(context.tenantId,context.userId,
   config.invoiceObject,id,context.client);
  if(!config.acceptedInvoiceStatuses.includes(String(invoice[config.invoiceStatusField]??''))
-   ||!invoice[config.invoiceNumberField])
+   ||!(invoice[config.invoiceNumberField]||invoice.DocumentNumber))
   throw Error('An issued, numbered invoice is required for settlement');
  if(config.paymentObject==='CashLedger'){
   fields.Customer=invoice.Customer??null;
