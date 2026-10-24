@@ -118,11 +118,6 @@ export function AceAssistMobileRecords({object,rows,customers,users,products,dat
       <strong>{candidate.getDate()}</strong>
       {value===localToday(timeZone)&&<i aria-label="Today"/>}
      </button>
-      {object==='Quotation'&&canInvoiceQuotation(row)&&<button type="button"
-       className="assist-phone-quote-invoice" title="Create invoice from quotation"
-       aria-label={'Create invoice from quotation '+safeString(row.QuotationNumber??row.DocumentNumber??row.Name??'')}
-       onClick={()=>onInvoiceQuotation(row)}><FilePlus2 size={21}/></button>}
-     </div>;
     })}
    </div>
    <div className="assist-phone-hours" role="status"><Clock3 size={15}/>
@@ -214,7 +209,12 @@ export function AceAssistMobileRecords({object,rows,customers,users,products,dat
       </span>:object==='Customer'?<ChevronRight size={18} className="assist-phone-row-chevron"/>:
        isAppointment?<ChevronRight size={18} className="assist-phone-row-chevron"/>:
        <ChevronRight size={18} className="assist-phone-row-chevron"/>}
-     </button>;
+     </button>
+      {object==='Quotation'&&canInvoiceQuotation(row)&&<button type="button"
+       className="assist-phone-quote-invoice" title="Create invoice from quotation"
+       aria-label={'Create invoice from quotation '+safeString(row.QuotationNumber??row.DocumentNumber??row.Name??'')}
+       onClick={()=>onInvoiceQuotation(row)}><FilePlus2 size={21}/></button>}
+     </div>;
     })}
   </div>
  </section>;
