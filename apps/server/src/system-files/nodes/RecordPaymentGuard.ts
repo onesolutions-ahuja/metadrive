@@ -16,6 +16,15 @@ const money=(value:unknown):number=>{
 /** Shared SQL-backed settlement check; configuration is supplied by the calling
  * Flow, never hardcoded to an app. Funds are not collected here.
  */
+/** Historical settled Payment rows remain the source of truth until explicitly
+ * reversed or migrated. This is read-only reconciliation, not a second posting. */
+async function historicalPayments(context:FlowNodeContext,invoiceId:string):Promise<number>{
+ const rows=await context.recordQuery.find(context.tenantId,context.userId,
+  'Payment',[{field:'Invoice',operator:'Equals',value:invoiceId}],
+  undefined,{limit:200},context.client);
+ if(rows.length===200)throw Error('Legacy payment history exceeds reconciliation limit');
+ return rows.filter(row=>row.Status==='Settled').reduce((sum,row)=>sum+money(row.Amount),0);
+}
 /** Authorised reversal of an existing posted cash receipt. A reversal is a new
  * immutable OUT entry; never edits or deletes the original ledger row.
  * The invoice and both postings are protected by the same transaction lock.
@@ -54,9 +63,10 @@ export async function enforceCashLedgerReversal(context:FlowNodeContext,raw:unkn
  if(reversal<=0||total<reversal)throw Error('Reversal exceeds current paid balance');
  const invoice=await context.records.get(context.tenantId,context.userId,
   'Invoice',invoiceId,context.client);
- if(money(invoice.AmountPaid??0)!==total)
+ const prior=await historicalPayments(context,invoiceId);
+ if(money(invoice.AmountPaid??0)!==total+prior)
   throw Error('Invoice and CashLedger disagree; reconciliation required');
- const remaining=total-reversal;
+ const remaining=total-reversal+prior;
  const invoiceTotal=money(invoice.Total);
  await context.records.update(context.tenantId,context.userId,'Invoice',invoiceId,{
   AmountPaid:remaining/100,Status:remaining===invoiceTotal?'Paid':remaining>0?'PartPaid':'Issued'
@@ -127,11 +137,12 @@ export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unkn
  if(existing.some(entry=>entry[config.referenceField]===paymentRef))
   throw Error('This payment has already been recorded');
  const paid=existing.reduce((sum,p)=>sum+money(p[config.amountField]),0);
- if(config.paymentObject==='CashLedger'&&money(invoice[config.invoicePaidField]??0)!==paid)
-  throw Error('Invoice has legacy or unreconciled payments; reconcile before posting to CashLedger');
- if(paid+received>outstanding)throw Error('Payment exceeds invoice outstanding balance');
- const totalPaid=(paid+received)/100;
- const settled=paid+received===outstanding;
+ const prior=config.paymentObject==='CashLedger'?await historicalPayments(context,id):0;
+ if(config.paymentObject==='CashLedger'&&money(invoice[config.invoicePaidField]??0)!==paid+prior)
+  throw Error('Invoice payment history is unreconciled');
+ if(paid+prior+received>outstanding)throw Error('Payment exceeds invoice outstanding balance');
+ const totalPaid=(paid+prior+received)/100;
+ const settled=paid+prior+received===outstanding;
  await context.records.update(context.tenantId,context.userId,config.invoiceObject,id,{
   [config.invoicePaidField]:totalPaid,
   [config.invoiceStatusField]:settled?config.paidStatus:config.partialStatus
