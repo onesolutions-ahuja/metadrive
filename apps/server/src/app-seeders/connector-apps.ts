@@ -16,7 +16,7 @@ type Operation={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';path:string;
  communicationFields?:{recipient?:string;sender?:string;body?:string;responseId?:string}};
 type Definition={folder:string;appApi:string;label:string;description:string;credential:string;url:string;
  auth:string;header:string;fields:Field[];operations:Record<string,Operation>;docs:string;notes:string;
- communicationChannel?:string};
+ communicationChannel?:string;defaultCommunicationFields?:Record<string,string>};
 const id=/^[A-Za-z][A-Za-z0-9_]*$/;
 function validate(value:Definition,apiName:string):Definition{
  if(value.appApi!==apiName||!id.test(value.credential)||!value.label||!value.description
@@ -128,7 +128,8 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
   [tenantId,appId,credentialName,d.fields.map(field=>field.apiName)]);
  const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs,
   channelId:systemChannelId,credentialName,
-  ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{})};
+  ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{}),
+  ...(d.defaultCommunicationFields?{defaultCommunicationFields:d.defaultCommunicationFields}:{})};
  await client.query(`INSERT INTO md_system_definitions
   (tenant_id,kind,api_name,label,properties,enabled)
   VALUES($1,'connector-providers',$2,$3,$4::jsonb,true)
