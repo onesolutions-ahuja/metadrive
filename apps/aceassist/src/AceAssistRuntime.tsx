@@ -379,6 +379,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }
   const payload:Record<string,unknown>={};
   if(editing!=='Create')payload.recordId=chosen?.Id;
+  if(editing==='Create'&&editingObject==='Appointment'){
+   payload.Status='Scheduled';
+   payload.TimeZone=hours?.timezone??'UTC';
+  }
   if(editing!=='Delete'){
    for(const field of visibleFields(editingObject)){
     if(fieldKind(field)==='readonly')continue;
@@ -734,6 +738,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <form className="custom-crud-form" onSubmit={e=>void submit(e)}>
      {editing==='Delete'?<p>Delete this record? This action cannot be undone.</p>:
       visibleFields(editingObject)
+       .filter(field=>editingObject!=='Appointment'||editing!=='Create'||!['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime'].includes(field.apiName))
        .map(field=><React.Fragment key={field.apiName}>
         {editingObject==='Appointment'&&['AssignedTo','AssignedUser'].includes(field.apiName)?
          <SearchRecord label="Assigned to" value={form[field.apiName]??''}
@@ -755,7 +760,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
            const value=field.apiName==='Service'?String(product?.Name??id):id;
            setForm(x=>withServiceEnd({...x,[field.apiName]:value},product));}}/>:
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
-         <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
+         <DateSlotPicker label={field.apiName==='StartDateTime'?'Appointment date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
           preview={field.apiName==='StartDateTime'?{
            appointments:rows,shifts:lookupRows.StaffAvailability??[],
@@ -782,7 +787,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
            targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
           onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
-         <RecordFieldInput field={field} value={form[field.apiName]??''}
+         <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:field} value={form[field.apiName]??''}
           onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
      {error&&<p role="alert">{error}</p>}
