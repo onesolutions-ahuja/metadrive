@@ -13,7 +13,7 @@ const config=z.object({id:uuid.optional(),label:z.string().trim().min(1).max(100
  redirects:z.array(z.string().max(2000).refine(v=>{try{const u=new URL(v);return u.protocol==='https:'&&!u.username&&!u.password&&!u.hash;}catch{return false;}})).min(1).max(20),
  scopes:z.array(scope).min(1).max(6),users:z.array(uuid).max(2000)}).strict();
 const authorize=z.object({client_id:uuid,redirect_uri:z.string().max(2000),response_type:z.literal('code'),code_challenge:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
- code_challenge_method:z.literal('S256'),state:z.string().min(16).max(512),scope:z.string().max(200),resource:z.string().max(2000).optional()}).strict();
+ code_challenge_method:z.literal('S256'),state:z.string().min(16).max(512),scope:z.string().max(200),resource:z.string().max(2000).optional()}).strip();
 type Client={tenant_id:string;id:string;label:string;enabled:boolean;client_type:'public'|'confidential';secret_hash:string|null;require_mfa:boolean};
 export class ConnectedAppService{
  constructor(private readonly db:SqlPersistence,private readonly auth:AuthenticationService,private readonly rbac:RbacEngine){}
