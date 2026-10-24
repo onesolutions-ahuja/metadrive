@@ -415,7 +415,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
    payload.Name=String(customer?.Name??'Appointment')+' - '+String(form.StartDateTime??'').replace('T',' ');
   }
   const input=multiBooking?{
-   ...payload,
+   ...Object.fromEntries(Object.entries(payload).filter(([key])=>
+    ['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct',
+     'Location','AssignedTo','Notes','TimeZone'].includes(key))),
    lineInputs:appointmentServices.map(id=>{
     const product=(lookupRows.Product??[]).find(p=>idOf(p)===id);
     return {Name:String(product?.Name??'Service'),Product:id,Quantity:1,
