@@ -1847,8 +1847,11 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'User','read');
     await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     const {rows}=await db.query<{id:string;email:string;display_name:string;reports_to_user_id:string|null}>(
-      'SELECT id,email,display_name,reports_to_user_id FROM md_users WHERE tenant_id=$1 ORDER BY display_name,email,id LIMIT 2000',
-      [actor.tenant_id]);
+      `SELECT id,email,display_name,reports_to_user_id FROM md_users WHERE tenant_id=$1
+       AND (md_effective_reporting_scope($1,$2,'User') IS NULL OR
+         md_reporting_scope($1,$2,id,md_effective_reporting_scope($1,$2,'User')))
+       ORDER BY display_name,email,id LIMIT 2000`,
+      [actor.tenant_id,actor.user_id]);
     const root=await db.query<{user_id:string}>('SELECT user_id FROM md_tenant_developer_accounts WHERE tenant_id=$1',[actor.tenant_id]);
     res.setHeader('Cache-Control','private, no-store');
     res.json({users:rows.map(u=>({id:u.id,name:u.display_name||u.email,email:u.email,reportsToId:u.reports_to_user_id})),
@@ -1863,8 +1866,11 @@ export function createSystemServer(db:SqlPersistence) {
     const direction=req.query.direction==='ancestors'?'ancestors':req.query.direction==='descendants'?'descendants':null;
     if(!direction)throw new Error('Invalid hierarchy direction');
     const {rows}=await db.query<{user_id:string;hierarchy_level:number}>(
-      'SELECT user_id,hierarchy_level FROM md_reporting_users($1,$2,$3) ORDER BY hierarchy_level,user_id LIMIT 2000',
-      [actor.tenant_id,target,direction]);
+      `SELECT h.user_id,h.hierarchy_level FROM md_reporting_users($1,$2,$3) h
+       WHERE md_effective_reporting_scope($1,$4,'User') IS NULL OR
+         md_reporting_scope($1,$4,h.user_id,md_effective_reporting_scope($1,$4,'User'))
+       ORDER BY h.hierarchy_level,h.user_id LIMIT 2000`,
+      [actor.tenant_id,target,direction,actor.user_id]);
     res.setHeader('Cache-Control','private, no-store');
     res.json({userIds:rows.map(row=>row.user_id),users:rows.map(row=>({id:row.user_id,level:row.hierarchy_level}))});
   }));
