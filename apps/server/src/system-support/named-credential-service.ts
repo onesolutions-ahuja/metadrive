@@ -308,7 +308,7 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid credential');
   const x=body as Record<string,unknown>;
-  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name))
+  if(typeof x.name==='string'&&/^onesys/i.test(x.name))
    throw new Error('onesys is reserved for system-installed credentials');
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
@@ -704,7 +704,7 @@ export class NamedCredentialService {
    WHERE tenant_id=$1 AND credential_id=$2`,[tenantId,id]);
   if(bindings.length&&bindings.some(binding=>binding.credential_name!==x.name))
    throw new Error('Connector credential name cannot be changed');
-  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name)
+  if(typeof x.name==='string'&&/^onesys/i.test(x.name)
     &&!bindings.some(binding=>binding.credential_name===x.name))
    throw new Error('System credential names are managed by AppExchange');
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
