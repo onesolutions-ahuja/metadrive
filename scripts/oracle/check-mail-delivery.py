@@ -8,6 +8,11 @@ import smtplib
 import socket
 import ssl
 import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from mail_relay_probe import probe_oci_smtp_relay
 
 MAIL_HOST = "mail.unesolutions.co.uk"
 PORTS = (25, 465, 587, 993)
@@ -87,5 +92,10 @@ if shutil.which("docker"):
         show("log_keyword_counts_last_300_lines", {k:v for k,v in counts.items() if v})
     else:
         show("log_keyword_counts_last_300_lines", "unavailable")
+
+try:
+    show("oci_smtp_relay_587", probe_oci_smtp_relay())
+except (OSError, RuntimeError, ssl.SSLError, smtplib.SMTPException, TimeoutError) as error:
+    show("oci_smtp_relay_587", {"error": type(error).__name__})
 
 show("cutover_status", "DO_NOT_CHANGE_MX_YET: requires external SMTP 25, TLS, outbound relay, and mailbox migration verification")

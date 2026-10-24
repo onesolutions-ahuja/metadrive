@@ -23,7 +23,9 @@ jobs:
 
       - name: Check inbound SMTP and outgoing delivery prerequisites (read-only)
         run: |
+          python3 -m py_compile scripts/oracle/mail_relay_probe.py
           python3 -m py_compile scripts/oracle/check-mail-delivery.py
+          python3 -m unittest scripts/oracle/test_mail_relay_probe.py
           sudo --non-interactive /usr/bin/python3 -I -S scripts/oracle/check-mail-delivery.py
 
   public-mail-probe:
