@@ -6,9 +6,11 @@ import {createIntegrationCommunicationWriter,IntegrationCommunicationOutbox,
 test('central integration writer records every attempt as tenant-scoped Communication metadata',async()=>{
  let actor:string|undefined,object:string|undefined,values:Record<string,unknown>|undefined;
  const db={query:async(sql:string,params:unknown[]=[])=>{
-  assert.match(sql,/md_tenant_developer_accounts/);
+  assert.match(sql,/md_communication_logger_accounts/);
+  assert.match(sql,/u.enabled=true/);
+  assert.doesNotMatch(sql,/md_tenant_developer_accounts/);
   assert.deepEqual(params,['tenant-a']);
-  return {rows:[{user_id:'tenant-system-user'}]};
+  return {rows:[{user_id:'tenant-communication-writer'}]};
  }} as never;
  const records={create:async(tenant:string,user:string,api:string,record:Record<string,unknown>)=>{
   assert.equal(tenant,'tenant-a');actor=user;object=api;values=record;return 'record-id';
@@ -21,7 +23,7 @@ test('central integration writer records every attempt as tenant-scoped Communic
   method:'POST',statusCode:200,outcome:'success',durationMs:15,
   requestBytes:48,responseBytes:25
  },writer);
- assert.equal(actor,'tenant-system-user');
+ assert.equal(actor,'tenant-communication-writer');
  assert.equal(object,'Communication');
  assert.equal(values?.Direction,'Outbound');
  assert.equal(values?.OwnerId,'user-a');

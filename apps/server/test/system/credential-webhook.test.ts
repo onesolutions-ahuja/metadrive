@@ -14,7 +14,7 @@ test('credential-linked webhook accepts verified request, creates Communication,
  let flowsCalled=0;
  let state='received';
  const db={query:async(sql:string)=>{
-  if(sql.includes('md_tenant_developer_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+  if(sql.includes('md_communication_logger_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
   if(sql.includes('FROM md_records r'))return {rows:[]};
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
@@ -98,7 +98,7 @@ test('credential webhook retries skip inbound message IDs already stored before 
  const communications:Array<Record<string,unknown>>=[];
  let eventStatus='received';
  const db={query:async(sql:string,params:unknown[] = [])=>{
-  if(sql.includes('md_tenant_developer_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+  if(sql.includes('md_communication_logger_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
    execution_user_id:actor,created_by:actor,credential_name:'WhatsApp',provider:'HmacSha256',

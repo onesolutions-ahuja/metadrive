@@ -99,6 +99,8 @@ export class TenantProvisioning {
       // Fresh tenant catalog belongs to the same SQL transaction; business records are never seeded.
       await seedFreshCoreObjects(client,tenantId);
       await seedCommunicationObjects(client,tenantId);
+      // Central integration delivery uses its own tenant-scoped, non-login RBAC actor.
+      await client.query('SELECT md_ensure_communication_logger($1::uuid)',[tenantId]);
       await seedQuotationObjects(client,tenantId);
       await seedLocationSrnMetadata(client,tenantId);
       await seedAppointmentObjects(client,tenantId);

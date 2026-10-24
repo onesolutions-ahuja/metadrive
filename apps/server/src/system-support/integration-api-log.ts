@@ -71,12 +71,16 @@ export function createIntegrationCommunicationWriter(
 ):IntegrationActivityWriter{
  return async(raw)=>{
   const input=normalized(raw);
-  // This tenant-scoped service identity has explicit OneEngine grants. Never use
-  // email-based bypasses or a cross-tenant/platform identity for system logging.
-  const {rows}=await db.query<{user_id:string}>(
-   'SELECT user_id FROM md_tenant_developer_accounts WHERE tenant_id=$1',[input.tenantId]);
+  // Never impersonate developer@tenant. It is deliberately disabled until
+  // activation and SQL OneEngine RBAC rejects disabled users.
+  // The tenant-scoped, permanently login-locked writer has *only* Communication
+  // create permissions granted through the standard OneEngine policy.
+  const {rows}=await db.query<{user_id:string}>(`
+   SELECT a.user_id FROM md_communication_logger_accounts a
+   JOIN md_users u ON u.tenant_id=a.tenant_id AND u.id=a.user_id
+   WHERE a.tenant_id=$1 AND u.enabled=true`,[input.tenantId]);
   const systemUserId=rows[0]?.user_id;
-  if(!systemUserId)throw new Error('Tenant integration logger identity unavailable');
+  if(!systemUserId)throw new Error('Tenant Communication writer identity unavailable');
 
   const details=input.communication??{};
   const now=input.occurredAt??new Date().toISOString();
