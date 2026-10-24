@@ -647,3 +647,35 @@
 .assist-service-choice span{flex:1;min-width:0}
 .assist-service-choice small{color:#60758a;white-space:nowrap}
 @media(max-width:650px){.assist-modal .custom-crud-form>.assist-service-selection{grid-template-columns:1fr}}
+
+/* Customer-first quotation editor and quotation-to-invoice row actions. */
+.assist-customer-picker{display:flex;align-items:end;gap:8px;min-width:0}
+.assist-customer-picker .assist-lookup{flex:1;min-width:0}
+.assist-add-customer{width:42px;height:42px;flex:none;border:1px solid #147d74;
+ border-radius:9px;background:#e9f7f4;color:#076b61;font-size:23px;
+ font-weight:700;cursor:pointer}
+.assist-document-line-main{grid-template-columns:minmax(0,1fr)}
+.assist-source-quotation{margin:0;padding:10px 12px;border:1px solid #c8e1dc;
+ border-radius:9px;background:#f3faf8;color:#305c5a;font-size:13px}
+.assist-customer-overlay{z-index:1600}
+.assist-customer-modal{width:min(420px,100%)}
+.assist-customer-modal form{display:grid;gap:13px;margin-top:15px}
+.assist-customer-modal form>label{display:grid;gap:5px;font-size:13px;font-weight:600}
+.assist-customer-modal input{box-sizing:border-box;width:100%;padding:11px;border:1px solid #cddbe6;
+ border-radius:9px;font:inherit}
+.custom-record-list .assist-record-row{display:flex;align-items:stretch;gap:8px;min-width:0}
+.custom-record-list .assist-record-open{flex:1;min-width:0}
+.custom-record-list .assist-quote-invoice-button{display:inline-flex;align-items:center;
+ justify-content:center;gap:7px;flex:none;color:#087367;border-color:#92c7ba;
+ background:#eaf8f4;font-weight:700}
+.custom-record-list .assist-quote-invoice-button:hover{background:#d9f0e9}
+.assist-phone-record-row{display:flex;align-items:stretch;gap:8px;min-width:0}
+.assist-phone-record-row .assist-phone-record{flex:1;min-width:0}
+.assist-phone-quote-invoice{align-self:center;display:grid;place-items:center;
+ width:42px;height:42px;flex:none;border:1px solid #b8dcd3;border-radius:11px;
+ background:#e9f7f4;color:#087367;cursor:pointer}
+@media(max-width:680px){
+ .custom-record-list .assist-record-row{gap:5px}
+ .custom-record-list .assist-quote-invoice-button span{display:none}
+ .custom-record-list .assist-quote-invoice-button{padding:12px}
+}
