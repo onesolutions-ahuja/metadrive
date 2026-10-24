@@ -7,7 +7,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
  */
 export const CORE_CASH_LEDGER_FIELDS=[
  {api:'Name',label:'Name',type:'text'},
- {api:'TransactionNumber',label:'Transaction Number',type:'text'},
+ {api:'TransactionNumber',label:'Transaction Number',type:'autonumber'},
  {api:'TransactionType',label:'Transaction Type',type:'picklist'},
  {api:'Direction',label:'Direction',type:'picklist'},
  {api:'Amount',label:'Amount',type:'number'},
@@ -39,10 +39,12 @@ export async function seedCoreCashLedger(client:PoolClient,tenantId:string):Prom
  ON CONFLICT(tenant_id,api_name) DO NOTHING`,[tenantId]);
  for(const f of CORE_CASH_LEDGER_FIELDS){
   await client.query(`INSERT INTO md_field_definitions
-   (tenant_id,object_api,api_name,label,data_type,related_object,required)
-   VALUES($1,'CashLedger',$2,$3,$4,$5,false)
+   (tenant_id,object_api,api_name,label,data_type,related_object,auto_number_format,is_unique,required)
+   VALUES($1,'CashLedger',$2,$3,$4,$5,$6,$7,false)
    ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING`,
-   [tenantId,f.api,f.label,f.type,'related' in f?f.related:null]);
+   [tenantId,f.api,f.label,f.type,'related' in f?f.related:null,
+    f.api==='TransactionNumber'?'CL-{YYYY}-{000000}':null,
+    f.api==='TransactionNumber'||f.api==='Reference']);
  }
  for(const [field,values] of Object.entries(PICKLISTS)){
   for(const [index,value] of values.entries()){
