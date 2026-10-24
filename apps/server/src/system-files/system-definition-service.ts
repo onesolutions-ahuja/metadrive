@@ -104,7 +104,7 @@ export class SystemDefinitionService {
     const apiName=typeof body.apiName==='string'?body.apiName:body.name;
     if(typeof apiName!=='string'||! /^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)
       ||typeof body.label!=='string'||!body.label.trim())throw new Error('Invalid definition');
-    if(/^onesys(?:_|$)/i.test(apiName))
+    if(/^onesys/i.test(apiName))
       throw new Error('onesys is reserved for AppExchange system metadata');
     const {apiName:_apiName,name:_name,id:_id,label,revision,enabled,...properties}=body;
     let eventDescription='';
