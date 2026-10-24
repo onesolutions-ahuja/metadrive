@@ -6,13 +6,14 @@ import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/me
 type Row=Record<string,unknown>;
 export type DocumentType='Quotation'|'Invoice';
 type Line={
- key:string;Id?:string;Name:string;Product:string;Description:string;
+ key:string;Id?:string;Name:string;Product:string;Description:string;legacy?:boolean;
  Quantity:string;UnitPrice:string;DiscountAmount:string;TaxAmount:string
 };
 const draft=(source?:Row):Line=>({
  key:source?.Id?String(source.Id):crypto.randomUUID(),
  ...(source?.Id?{Id:String(source.Id)}:{}),
  Name:String(source?.Name??''),Product:String(source?.Product??''),
+ legacy:Boolean(source?.legacy||(source?.Id&&source.Name&&!source.Product)),
  Description:String(source?.Description??''),Quantity:String(source?.Quantity??'1'),
  UnitPrice:String(source?.UnitPrice??'0'),
  DiscountAmount:String(source?.DiscountAmount??'0'),
@@ -32,7 +33,7 @@ function rowAmount(line:Line){
  return {subtotal,discount,tax,total:subtotal-discount+tax};
 }
 const validLine=(line:Line):string|null=>{
- if(!line.Product)return 'Choose a product or service for each line item.';
+ if(!line.Product&&!line.legacy)return 'Choose a product or service for each line item.';
  if(!line.Name.trim())return 'The selected product or service needs a name.';
  const quantity=Number(line.Quantity);
  if(!Number.isFinite(quantity)||quantity<=0||quantity>100000
@@ -76,7 +77,8 @@ export function FinancialDocumentEditor({
   return initial;
  });
  const [lines,setLines]=useState<Line[]>(()=>storedLines.length?storedLines.map(draft):
-  sourceQuotation?sourceLines.map(item=>draft({...item,Id:undefined})):[draft()]);
+  sourceQuotation?sourceLines.map(item=>draft({...item,Id:undefined,
+    legacy:Boolean(item.Name&&!item.Product)})):[draft()]);
  const [customerDialog,setCustomerDialog]=useState(false);
  const [customerDraft,setCustomerDraft]=useState({Name:'',Email:'',Phone:''});
  const [customerError,setCustomerError]=useState('');
