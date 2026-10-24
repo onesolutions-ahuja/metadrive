@@ -74,6 +74,27 @@ test('Integration provider resolves tenant credential, active operation and RBAC
   {...config,path:'v1/other'}),/modified outside provider metadata/);
 });
 
+test('Installed connector automatically assigns WhatsApp channel and message fields without Flow mapping',async()=>{
+ const rbac={require:async()=>undefined} as unknown as RbacEngine;
+ const credential='00000000-0000-4000-8000-000000000001';
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_connector_app_credentials'))return {rows:[{properties:{
+   channelId:'onesys_whatsapp',communicationChannel:'WhatsApp',
+   defaultCommunicationFields:{recipient:'to',body:'text.body',responseId:'messages[0].id'}
+  }}]};
+  throw new Error('Unexpected query');
+ }} as unknown as SqlExecutor;
+ const resolved=await resolveFlowIntegrationCallout(db,rbac,'tenant-a','user-a',{
+  namedCredentialId:credential,method:'POST',path:'v26.0/123/messages',
+  body:'{"to":"447700900001","text":{"body":"Hello"}}'});
+ const log=resolved.communicationLog as Record<string,unknown>;
+ assert.equal(log.channel,'WhatsApp');
+ assert.equal(log.provider,'onesys_whatsapp');
+ assert.equal(log.requestRecipientPath,'to');
+ assert.equal(log.requestBodyPath,'text.body');
+ assert.equal(log.externalMessageIdResponsePath,'messages[0].id');
+});
+
 test('VLOOKUP supports bounded typed read-only record collection values',()=>{
  const rows=[{SKU:'A',Price:3},{SKU:'B',Price:5}];
  const lookup='VLOOKUP("B", @Products, "SKU", "Price")';
