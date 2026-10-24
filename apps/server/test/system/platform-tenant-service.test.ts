@@ -38,7 +38,7 @@ test('tenant suspension uses an audited SQL transaction and revokes both token f
  const audit=operations.find(x=>x.sql.includes('INSERT INTO md_tenant_lifecycle_audit'));
  assert.deepEqual(audit?.args,['actor-tenant','actor-user','target-tenant','suspend','ACTIVE','SUSPENDED']);
 });
-test('tenant developer cannot transition other tenants without PlatformDeveloper assignment',async()=>{
+test('tenant developer cannot transition other tenants without OneEngine assignment',async()=>{
  const db={query:async(sql:string)=>{
   if(sql.includes('AS authorised'))return {rows:[{authorised:false}]};
   throw Error('Unexpected query');
@@ -99,4 +99,14 @@ test('tenant request retries reuse the same SQL tenant and reject changes to req
  assert.equal(statements.filter(q=>q.includes('INSERT INTO md_tenants')).length,1);
  assert.equal(statements.filter(q=>q.includes('INSERT INTO md_tenant_lifecycle_audit')).length,1);
  await assert.rejects(()=>provisioning.provision({...request,name:'Different'},authority),/Idempotency key conflict/);
+});
+
+
+test('platform authority checks OneEngine membership rather than deprecated PlatformDeveloper',async()=>{
+ let query='';
+ const db={query:async(sql:string)=>{query=sql;return {rows:[{authorised:true}]};}} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ await new PlatformTenantService(db,rbac).requirePlatform('tenant','user');
+ assert.ok(query.includes("p.api_name='OneEngine'"));
+ assert.doesNotMatch(query,/PlatformDeveloper/);
 });

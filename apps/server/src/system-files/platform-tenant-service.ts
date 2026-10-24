@@ -7,17 +7,17 @@ export class PlatformTenantService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
  private async platformScope(tenantId:string,userId:string){
   await this.rbac.require(tenantId,userId,'Tenant','manage');
-  // Tenant developer wildcard policy must never imply cross-tenant administration.
+  // OneEngine membership is required independently of tenant-level Tenant:manage RBAC.
   const {rows}=await this.db.query<{authorised:boolean}>(`
    SELECT EXISTS(
      SELECT 1 FROM md_permission_assignments a
        JOIN md_permission_sets p ON p.tenant_id=a.tenant_id AND p.id=a.permission_set_id
-       WHERE a.tenant_id=$1 AND a.user_id=$2 AND p.api_name='PlatformDeveloper'
+       WHERE a.tenant_id=$1 AND a.user_id=$2 AND p.api_name='OneEngine'
      UNION ALL
      SELECT 1 FROM md_user_roles ur
        JOIN md_role_permission_sets rp ON rp.tenant_id=ur.tenant_id AND rp.role_id=ur.role_id
        JOIN md_permission_sets p ON p.tenant_id=rp.tenant_id AND p.id=rp.permission_set_id
-       WHERE ur.tenant_id=$1 AND ur.user_id=$2 AND p.api_name='PlatformDeveloper'
+       WHERE ur.tenant_id=$1 AND ur.user_id=$2 AND p.api_name='OneEngine'
    ) AS authorised`,[tenantId,userId]);
   return rows[0]?.authorised===true;
  }

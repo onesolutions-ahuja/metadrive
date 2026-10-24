@@ -47,7 +47,7 @@ superuser access or arbitrary root shell commands.
   release, with a health check and rollback. This is not a build/upload facility.
   Use the existing GitHub deployment workflow to build a new release first.
 
-Server operations additionally require PlatformDeveloper membership and central
+Server operations additionally require OneEngine membership and central
 `PlatformOperations/read` or `PlatformOperations/manage` permissions. Existing
 explicit denies and revocations continue to apply; a tenant's OneEngine assignment
 is not sufficient for host access. Permission labels are seeded in the central

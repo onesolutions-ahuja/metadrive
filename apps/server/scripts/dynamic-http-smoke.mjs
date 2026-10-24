@@ -45,7 +45,7 @@ try{
  const login=await http('/auth/login',{method:'POST',
   body:{tenantSlug:'ci-isolated-tenant',email:'ci-user@example.invalid',password}});
  assert.equal(login.status,200,JSON.stringify(login));
- const token=login.body?.access_token;
+ let token=login.body?.access_token;
  assert.equal(typeof token,'string');
  const noAuth=await http('/metadata/dashboards/LiveAudit/data/AuditItem__c');
  assert.equal(noAuth.status,401,'Authenticated-only dynamic API returned unexpected status');
@@ -125,12 +125,18 @@ try{
  const deletedClaim=await http('/tenant/domains/'+domain,{method:'DELETE',token});
  assert.equal(deletedClaim.status,204,JSON.stringify(deletedClaim));
  const deniedPlatform=await http('/platform/tenants/ci-isolated-tenant/usage',{token});
- assert.notEqual(deniedPlatform.status,200,'Tenant Developer was granted Platform Developer authority');
+ assert.notEqual(deniedPlatform.status,200,'Tenant Developer was granted OneEngine platform authority');
  const {rows:platformSets}=await db.query(`INSERT INTO md_permission_sets(tenant_id,api_name)
-  VALUES($1,'PlatformDeveloper') ON CONFLICT(tenant_id,api_name)
+  VALUES($1,'OneEngine') ON CONFLICT(tenant_id,api_name)
   DO UPDATE SET api_name=EXCLUDED.api_name RETURNING id`,[tenantId]);
  await db.query(`INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id)
   VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[tenantId,userId,platformSets[0].id]);
+ // A permission-set assignment invalidates active sessions; get a new grant-bearing token.
+ const platformLogin=await http('/auth/login',{method:'POST',
+  body:{tenantSlug:'ci-isolated-tenant',email:'ci-user@example.invalid',password}});
+ assert.equal(platformLogin.status,200,JSON.stringify(platformLogin));
+ token=platformLogin.body?.access_token;
+ assert.equal(typeof token,'string');
  const changedTargets=await http('/platform/tenants/ci-isolated-tenant/usage-targets',{
   method:'PATCH',token,body:{users:1,records:1,objects:1,flows:1}});
  assert.equal(changedTargets.status,200,JSON.stringify(changedTargets));
