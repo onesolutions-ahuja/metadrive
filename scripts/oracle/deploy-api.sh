@@ -80,7 +80,7 @@ systemctl restart "$API_SERVICE"
 # Check the actual systemd backend as well as the reverse proxy. A public
 # HTTP 502 alone cannot distinguish a failed SQL startup from proxy misrouting.
 # Read only the numeric PORT setting, never source or print production secrets.
-API_PORT="$(sed -nE 's/^[[:space:]]*PORT="?([0-9]{1,5})"?[[:space:]]*$/\\1/p' /etc/metadrive/production.env | head -n 1)"
+API_PORT="$(sed -nE 's/^[[:space:]]*PORT="?([0-9]{1,5})"?[[:space:]]*$/\1/p' /etc/metadrive/production.env | head -n 1)"
 API_PORT="${API_PORT:-10000}"
 [[ "$API_PORT" =~ ^[0-9]{1,5}$ ]] && ((API_PORT >= 1 && API_PORT <= 65535))
 LOCAL_OK=0
