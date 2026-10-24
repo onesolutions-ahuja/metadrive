@@ -62,7 +62,9 @@ export function FinancialDocumentEditor({
  const [header,setHeader]=useState<Record<string,string>>(()=>{
   const initial=Object.fromEntries(metadataFields.map(field=>[
    field.apiName,String(document?.[field.apiName]??field.defaultValue??'')]));
-  const today=new Date().toLocaleDateString('en-CA');
+  const now=new Date();
+  const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+   String(now.getDate()).padStart(2,'0')].join('-');
   const dateField=type==='Quotation'?'IssueDate':'InvoiceDate';
   if(operation==='Create'&&!initial[dateField])initial[dateField]=today;
   return initial;
