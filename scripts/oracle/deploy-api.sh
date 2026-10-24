@@ -31,7 +31,9 @@ restore_override() {
 rollback() {
   trap - ERR
   if [[ "$SWITCHED" == 1 ]]; then
-    echo "Oracle API/worker verification failed: restoring both previous releases"
+    echo "Oracle API/worker verification failed: capturing API startup diagnostics before rollback"
+    python3 -I "$SOURCE/scripts/oracle/diagnose-api-startup.py" || true
+    echo "Restoring both previous releases"
     restore_override "$API_BACKUP" "$API_OVERRIDE" "$HAD_API_OVERRIDE"
     restore_override "$WORKER_BACKUP" "$WORKER_OVERRIDE" "$HAD_WORKER_OVERRIDE"
     systemctl daemon-reload
@@ -75,16 +77,28 @@ systemctl daemon-reload
 # API owns SQL migrations and metadata seeding. Health must pass before
 # activating the worker against the upgraded schema.
 systemctl restart "$API_SERVICE"
-OK=0
+# Check the actual systemd backend as well as the reverse proxy. A public
+# HTTP 502 alone cannot distinguish a failed SQL startup from proxy misrouting.
+# Read only the numeric PORT setting, never source or print production secrets.
+API_PORT="$(sed -nE 's/^[[:space:]]*PORT="?([0-9]{1,5})"?[[:space:]]*$/\\1/p' /etc/metadrive/production.env | head -n 1)"
+API_PORT="${API_PORT:-10000}"
+[[ "$API_PORT" =~ ^[0-9]{1,5}$ ]] && ((API_PORT >= 1 && API_PORT <= 65535))
+LOCAL_OK=0
+PUBLIC_OK=0
 for attempt in $(seq 1 20); do
-  if curl --silent --show-error --fail --max-time 4 https://api.unesolutions.co.uk/api/health |
+  if curl --silent --fail --max-time 3 "http://127.0.0.1:${API_PORT}/api/health" |
        grep -q '"status":"ok"'; then
-    OK=1
-    break
+    LOCAL_OK=1
   fi
+  if curl --silent --fail --max-time 4 https://api.unesolutions.co.uk/api/health |
+       grep -q '"status":"ok"'; then
+    PUBLIC_OK=1
+  fi
+  if [[ "$LOCAL_OK" == 1 && "$PUBLIC_OK" == 1 ]]; then break; fi
   sleep 2
 done
-[[ "$OK" == 1 ]]
+echo "Oracle API health: local=${LOCAL_OK} reverse_proxy=${PUBLIC_OK}"
+[[ "$LOCAL_OK" == 1 && "$PUBLIC_OK" == 1 ]]
 systemctl is-active --quiet "$API_SERVICE"
 systemctl show -p ExecStart --value "$API_SERVICE" | grep -F -q "$RELEASE"
 
