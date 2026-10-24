@@ -239,7 +239,11 @@ try{
  await assert.rejects(()=>db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,developer,cashier]),/Circular reporting hierarchy/);
  await save(snapshot=>{snapshot.permissionSets.find(set=>set.id===superSet).recordDataScopes={Invoice:'descendants'};},developer);
  assert.equal((await db.query("SELECT md_effective_reporting_scope($1,$2,'Invoice') AS scope",[t,supervisor])).rows[0].scope,'descendants');
- assert.equal((await db.query("SELECT md_record_access($1,$2,$3,'read') AS allowed",[t,supervisor,owned])).rows[0].allowed,false);
+ const forbidden=await records.create(t,developer,'Invoice',{Name:'Outside team record',Total:18,RecordTypeId:'master'});
+ const scopeCheck=await db.query("SELECT owner_id,owner_queue_id,md_effective_reporting_scope($1,$2,'Invoice') AS scope,md_reporting_scope($1,$2,owner_id,'descendants') AS in_team,md_record_access($1,$2,$3,'read') AS allowed FROM md_records WHERE tenant_id=$1 AND id=$3",
+  [t,supervisor,forbidden]);
+ assert.equal(scopeCheck.rows[0].in_team,false);
+ assert.equal(scopeCheck.rows[0].allowed,false,JSON.stringify(scopeCheck.rows[0]));
  console.info('RBAC SQL validation passed: profiles, groups, direct grants/revocation, denies/restoration, sharing/restrictions, queues, record types, tenant isolation, atomic rollback, migration idempotency, HTTP and app licensing');
 }finally{
  if(listener?.listening)await new Promise((resolve,reject)=>listener.close(e=>e?reject(e):resolve()));
