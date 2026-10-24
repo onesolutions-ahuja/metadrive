@@ -5,7 +5,7 @@ import {ACEASSIST_STANDALONE_ENTRY} from './standalone-entry';
 import {SearchRecord,DateSlotPicker} from './AppointmentFields';
 import {AceAssistDashboard} from './AceAssistDashboard';
 import {AceAssistMobileRecords} from './AceAssistMobileRecords';
-import {House,CalendarDays,ReceiptText,UsersRound,Grid2X2,LogOut,ArrowLeft} from 'lucide-react';
+import {House,CalendarDays,ReceiptText,UsersRound,Grid2X2,LogOut,ArrowLeft,FilePlus2} from 'lucide-react';
 import {FinancialDocumentEditor,type DocumentChanges,type DocumentType} from './FinancialDocumentEditor';
 import {RecordFieldInput,fieldKind,type RecordField} from '../../web/src/core/metadata/Fields/RecordFieldInput';
 import NotificationBell from '../../web/src/core/automation/Notifications/NotificationBell';
@@ -34,6 +34,8 @@ const documentHeaders:Record<DocumentType,readonly string[]>={
  Quotation:['Name','Customer','IssueDate','ExpiryDate','CurrencyCode','TermsAndConditions','Notes','Status'],
  Invoice:['Name','Customer','InvoiceDate','DueDate','CurrencyCode','Notes']
 };
+const quoteInvoiceFlow='AceAssistCreateInvoiceFromQuotationV1';
+const invoiceableQuoteStatuses=new Set(['','Draft','Sent','Accepted','Approved','Open','Pending','Expired']);
 const documentFlow=(operation:'Create'|'Update',object:DocumentType)=>
  'AceAssist'+operation+'DocumentV1'+object;
 const inputFields:Record<string,string[]>={
@@ -83,6 +85,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [rows,setRows]=useState<Row[]>([]);
  const [relatedRows,setRelatedRows]=useState<Row[]>([]);
  const [documentLines,setDocumentLines]=useState<Row[]>([]);
+ const [quoteInvoiceSource,setQuoteInvoiceSource]=useState<Row|null>(null);
+ const [quoteInvoiceLines,setQuoteInvoiceLines]=useState<Row[]>([]);
+ const [quoteLinked,setQuoteLinked]=useState<Set<string>|null>(null);
  const [relatedLoading,setRelatedLoading]=useState(false);
  const [lookupRows,setLookupRows]=useState<Record<string,Row[]>>({});
  const [selfId,setSelfId]=useState('');
@@ -216,6 +221,16 @@ export default function AceAssistRuntime({entry,onLogout}:{
  },[screen,actions,reload]);
  useEffect(()=>{
   let alive=true;
+  setQuoteLinked(null);
+  if(current.object!=='Quotation'||!actions.has('AceAssistLoadInvoice'))return;
+  void fetchRows('Load','Invoice').then(invoices=>{
+   if(alive)setQuoteLinked(new Set(invoices.map(row=>String(row.Quotation??'')).filter(Boolean)));
+  }).catch(cause=>{if(alive)setError(
+   'Unable to check which quotations have invoices: '+(cause instanceof Error?cause.message:String(cause)))});
+  return()=>{alive=false;};
+ },[current.object,actions,reload]);
+ useEffect(()=>{
+  let alive=true;
   // Lookups must follow the record currently being edited, not only the active
   // navigation tab. A QuotationLine/InvoiceLine editor needs Product and its
   // parent document even when the user opened it from a different tab.
@@ -334,6 +349,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  };
  const startEdit=(operation:Operation,row?:Row,object=current.object)=>{
   if(isFinancialDocument(object)&&operation!=='Delete'){
+   if(operation==='Create'){setQuoteInvoiceSource(null);setQuoteInvoiceLines([]);}
    if(!actions.has(documentFlow(operation,object))){
     setError('Authorised document saving Flow is not installed or accessible.');return;
    }
@@ -370,9 +386,44 @@ export default function AceAssistRuntime({entry,onLogout}:{
   setForm(values);setChosen(row??null);setEditingObject(object);
   setEditing(operation);setError('');setNotice('');
  };
+ const canInvoiceQuote=(quote:Row)=>
+  actions.has(quoteInvoiceFlow)&&actions.has('AceAssistLoadQuotationLine')
+   &&quoteLinked!==null&&!quoteLinked.has(idOf(quote))&&!quote.RelatedInvoice
+   &&invoiceableQuoteStatuses.has(String(quote.Status??''))
+   &&Boolean(quote.Id);
+ const openInvoiceFromQuotation=async(quote:Row)=>{
+  if(busy||!canInvoiceQuote(quote))return;
+  setBusy(true);setError('');setNotice('');
+  try{
+   const all=await fetchRows('Load','QuotationLine');
+   const lines=all.filter(row=>String(row.Quotation??'')===idOf(quote));
+   if(!lines.length)throw Error('Quotation has no line items to invoice.');
+   setQuoteInvoiceSource(quote);setQuoteInvoiceLines(lines);
+   setDocumentLines([]);setChosen(null);setEditingObject('Invoice');setEditing('Create');
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
+ };
+ const createCustomerForDocument=async(data:{Name:string;Email:string;Phone:string}):Promise<Row>=>{
+  const dynamic=canDynamic('Create','Customer');
+  const api=dynamic?'AceAssistCreateV2Customer':'AceAssistCreateCustomer';
+  if(!actions.has(api))throw Error('Customer creation permission is not available.');
+  const values={Name:data.Name,Email:data.Email||null,Phone:data.Phone||null,Active:true};
+  const result=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(api)+'/execute',{
+   method:'POST',body:JSON.stringify(dynamic?{recordsInput:[values]}:values)});
+  if(result.interviewId)throw Error('Customer creation was not confirmed.');
+  const output=result.outputs??result.variables??{};
+  const created=Array.isArray(output.createdRecords)?output.createdRecords[0] as Row|undefined:undefined;
+  const id=String(created?.Id??output.createdRecordId??'');
+  if(!id)throw Error('Customer save did not return an ID. Check the Flow execution log.');
+  const customer={...values,...created,Id:id,Name:String(created?.Name??data.Name)};
+  setLookupRows(previous=>({...previous,Customer:[
+   ...(previous.Customer??[]).filter(row=>idOf(row)!==id),customer]}));
+  return customer;
+ };
  const saveDocument=async(changes:DocumentChanges)=>{
   if(!editing||editing==='Delete'||!isFinancialDocument(editingObject)||busy)return;
-  const api=documentFlow(editing,editingObject);
+  const api=editing==='Create'&&editingObject==='Invoice'&&quoteInvoiceSource
+   ?quoteInvoiceFlow:documentFlow(editing,editingObject);
   if(!actions.has(api)){setError('Document Flow access is unavailable.');return;}
   const id=String(chosen?.Id??'');
   if(editing==='Update'&&!id){setError('Document ID is missing.');return;}
@@ -388,6 +439,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
    if(response.interviewId||typeof documentId!=='string'||!documentId)
     throw Error('Document Flow did not confirm saving. Check the Flow execution log.');
    setEditing(null);setChosen(null);setDocumentLines([]);
+   if(quoteInvoiceSource){setQuoteInvoiceSource(null);setQuoteInvoiceLines([]);
+    setSelected(tabs.findIndex(tab=>tab.object==='Invoice'));setScreen('records');}
    setNotice(editingObject+' and line items saved together.');
    setReload(count=>count+1);
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
