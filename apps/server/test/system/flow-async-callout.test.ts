@@ -102,6 +102,34 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
  }
 });
 
+test('durable external message metadata uses valid SQL key and type',async()=>{
+ const previousKey=process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
+ process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=Buffer.alloc(32,9).toString('base64');
+ const writes:Array<{sql:string;params:unknown[]}>=[],id=credentialId;
+ const client={query:async(sql:string,params:unknown[]=[])=>{
+  writes.push({sql,params});
+  if(sql.includes('FROM md_connector_app_credentials'))return {rows:[]};
+  if(sql.includes('FROM md_named_credentials'))return {rows:[{id}]};
+  if(sql.includes('INSERT INTO md_http_callout_jobs'))return {rows:[{id:jobId}]};
+  return {rows:[]};
+ }} as unknown as PoolClient;
+ const service=new NamedCredentialService({} as SqlPersistence,rbac);
+ try{
+  await service.enqueueCallout(client,tenantId,userId,runId,9,{
+   namedCredentialId:credentialId,method:'POST',path:'v1/message',
+   communicationLog:{provider:'onesys_whatsapp',channel:'WhatsApp'}
+  },{});
+  const metadata=writes.find(row=>row.sql.includes("'OneSysCommunicationLog'"));
+  assert.ok(metadata);
+  assert.match(metadata.sql,/\'string\'/);
+  assert.equal(metadata.params[2] instanceof Buffer,true);
+  assert.ok(!writes.some(row=>row.sql.includes("'__communication_log'")));
+ }finally{
+  if(previousKey===undefined)delete process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY;
+  else process.env.METADRIVE_CREDENTIAL_ENCRYPTION_KEY=previousKey;
+ }
+});
+
 test('abandoned HTTP callout leases are quarantined and cannot be selected again',async()=>{
  const statements:string[]=[];
  const db={
