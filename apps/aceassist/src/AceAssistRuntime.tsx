@@ -786,7 +786,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
            return withServiceEnd(next,selectedProduct);
           })}/>:
         fieldKind(field)==='reference'?
-         <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
+         <SearchRecord label={editingObject==='Appointment'&&field.apiName==='Contact'?'Contact person (optional)':field.label??field.apiName} value={form[field.apiName]??''}
           options={(lookupRows[targetObject(field)??'']??[]).filter(row=>
            targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
