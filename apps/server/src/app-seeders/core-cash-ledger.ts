@@ -6,6 +6,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
  * Financial postings must be performed by authorised OneEngine flows, not by UI writes.
  */
 export const CORE_CASH_LEDGER_FIELDS=[
+ {api:'Name',label:'Name',type:'text'},
  {api:'TransactionNumber',label:'Transaction Number',type:'text'},
  {api:'TransactionType',label:'Transaction Type',type:'picklist'},
  {api:'Direction',label:'Direction',type:'picklist'},
