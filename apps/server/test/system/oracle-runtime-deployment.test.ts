@@ -11,6 +11,18 @@ const startupDiagnostic=new URL('../../../../scripts/oracle/diagnose-api-startup
 
 test('Oracle backend release deploys API and Communication worker as one rollback unit',()=>{
  const sh=readFileSync(script,'utf8');
+ assert.match(sh,/LOCAL_OK=0/);
+ assert.match(sh,/PUBLIC_OK=0/);
+ assert.match(sh,/diagnose-api-startup\.py/);
+ const portLine=sh.split('\n').find(line=>line.startsWith('API_PORT="$(sed -nE'));
+ const portFilter=portLine?.match(/sed -nE '([^']+)'/)?.[1];
+ assert.ok(portFilter,'Local health check must parse configured numeric PORT');
+ if(process.platform!=='win32'){
+  const port=spawnSync('sed',['-nE',portFilter],{input:'PORT=3001\n',encoding:'utf8'});
+  assert.equal(port.status,0,port.stderr);
+  assert.equal(port.stdout.trim(),'3001');
+ }
+
  assert.match(sh,/API_SERVICE=metadrive-api\.service/);
  assert.match(sh,/WORKER_SERVICE=metadrive-worker\.service/);
  assert.match(sh,/job-worker-entrypoint\.js/);
