@@ -17,7 +17,7 @@ const node=(id:number,type:string,label:string,config:Record<string,unknown>={})
 const resource=(name:string,type='Text')=>({name,type:'Variable',dataType:type,availableForInput:true});
 function booking(){
  const header=['Name','StartDateTime','EndDateTime','Status','Customer','Service','ServiceProduct',
- 'Location','AssignedTo','AssignedUser','Resource','Description','Notes','TimeZone'];
+ 'Location','AssignedTo','Notes','TimeZone'];
  return {
   apiName:APPOINTMENT_LINE_CREATE_FLOW,label:'Ace Assist - Create appointment with all service lines',
   appApiName:'AceAssist',flowType:'Autolaunched Flow',status:'Active',version:1,tests:[],
