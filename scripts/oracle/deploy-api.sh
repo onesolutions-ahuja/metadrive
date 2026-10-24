@@ -85,7 +85,9 @@ API_PORT="${API_PORT:-10000}"
 [[ "$API_PORT" =~ ^[0-9]{1,5}$ ]] && ((API_PORT >= 1 && API_PORT <= 65535))
 LOCAL_OK=0
 PUBLIC_OK=0
-for attempt in $(seq 1 20); do
+# Migrations and tenant metadata seeding on Oracle ARM can exceed the old
+# 40-second health window. Allow a bounded three-minute startup grace period.
+for attempt in $(seq 1 90); do
   if curl --silent --fail --max-time 3 "http://127.0.0.1:${API_PORT}/api/health" |
        grep -q '"status":"ok"'; then
     LOCAL_OK=1
