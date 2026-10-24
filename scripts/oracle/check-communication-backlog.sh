@@ -18,9 +18,10 @@ done
 records="$(query_count "SELECT count(*) FROM md_records WHERE object_api='Communication' AND is_deleted=false")"
 [[ "$records" =~ ^[0-9]+$ ]] || { echo "Unexpected SQL count" >&2; exit 1; }
 echo "Oracle Communication: records=$records outbox_pending=$count"
-if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  echo "pending_count=$count" >> "$GITHUB_OUTPUT"
-  echo "record_count=$records" >> "$GITHUB_OUTPUT"
+output="${1:-${GITHUB_OUTPUT:-}}"
+if [[ -n "$output" ]]; then
+  echo "pending_count=$count" >> "$output"
+  echo "record_count=$records" >> "$output"
 fi
 # Do not declare a verified deployment if queued external transactions remain.
 [[ "$count" == 0 ]] || { echo "Communication outbox has undelivered transactions" >&2; exit 1; }
