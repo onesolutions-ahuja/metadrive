@@ -32,14 +32,14 @@ test('six independently defined connector apps provision only tenant-scoped non-
   const credential=writes.find(w=>w.sql.includes('INSERT INTO md_named_credentials'));
   assert.ok(credential,name);
   assert.equal(credential.args[0],'tenant-1');
-  assert.equal(credential.args[1],'onesys_'+name);
+  const channelName='onesys_'+({WhatsAppConnector:'whatsapp',SmsGateConnector:'sms_gate',BrevoConnector:'brevo',
+      UberEatsConnector:'uber_eats',DeliverooConnector:'deliveroo',JustEatConnector:'just_eat'} as Record<string,string>)[name];
+  assert.equal(credential.args[1],channelName);
   const provider=writes.find(w=>w.sql.includes("'connector-providers'"));
   assert.ok(provider);
   const providerMetadata=JSON.parse(String(provider.args[3]));
-  assert.equal(providerMetadata.channelId,
-    'onesys_'+({WhatsAppConnector:'whatsapp',SmsGateConnector:'sms_gate',BrevoConnector:'brevo',
-      UberEatsConnector:'uber_eats',DeliverooConnector:'deliveroo',JustEatConnector:'just_eat'} as Record<string,string>)[name]);
-  assert.equal(providerMetadata.credentialName,'onesys_'+name);
+  assert.equal(providerMetadata.channelId,channelName);
+  assert.equal(providerMetadata.credentialName,channelName);
   assert.equal(credential.args[3]?.toString().startsWith('https://'),true);
   assert.equal(credential.args.length,6,'No tenant secret belongs in a connector definition');
   assert.ok(writes.some(w=>w.sql.includes("kind,api_name,label,properties,enabled")));
