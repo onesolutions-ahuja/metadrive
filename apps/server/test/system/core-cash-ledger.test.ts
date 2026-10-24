@@ -45,7 +45,7 @@ test('CashLedger receipt uses server-authenticated user and server time',async()
 test('CashLedger fails closed on legacy unallocated amount paid',async()=>{
  const f=fixture(20);
  await assert.rejects(enforceManualPaymentGuard(f.context,config,f.fields),
-  /legacy or unreconciled/);
+  /unreconciled/);
  assert.equal(f.updates.length,0);
 });
 test('CashLedger rejects replayed request and mismatched direction',async()=>{
