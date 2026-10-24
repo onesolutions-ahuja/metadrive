@@ -26,7 +26,7 @@ const tabs:Tab[]=[
  {object:'Customer',label:'Customers'},
  {object:'Quotation',label:'Quotations'},
  {object:'Invoice',label:'Invoices'},
- {object:'Payment',label:'Payments'}
+ {object:'CashLedger',label:'Cash Ledger'}
 ];
 const isFinancialDocument=(name:string):name is DocumentType=>
  name==='Quotation'||name==='Invoice';
@@ -63,8 +63,9 @@ const targetObject=(f:Field)=>f.relationship?.targetObject??f.relatedObject;
 const idOf=(v:Row)=>String(v.Id??v.id??'');
 /** Presentation-only duration preview. Authoritative booking validation is server-side. */
 function withServiceEnd(form:Record<string,string>,product?:Row):Record<string,string>{
- const duration=Number(product?.DurationMinutes);
- if(!form.StartDateTime||!Number.isSafeInteger(duration)||duration<1||duration>1440)return form;
+ const rawDuration=Number(product?.DurationMinutes);
+ const duration=Number.isSafeInteger(rawDuration)&&rawDuration>0&&rawDuration<=1440?rawDuration:30;
+ if(!form.StartDateTime)return form;
  const start=new Date(form.StartDateTime+':00Z');
  if(!Number.isFinite(start.getTime()))return form;
  return {...form,EndDateTime:new Date(start.getTime()+duration*60000).toISOString().slice(0,16)};
@@ -289,17 +290,17 @@ export default function AceAssistRuntime({entry,onLogout}:{
   setCashRequestId(window.crypto.randomUUID());setError('');setNotice('');
  };
  const submitCashPayment=async(event:React.FormEvent)=>{
-  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashPayment'))return;
+  event.preventDefault();if(!cashInvoice||busy||!actions.has('AceAssistRecordCashLedgerV1'))return;
   const amount=Number(cashAmount);
   if(!Number.isFinite(amount)||amount<=0||Math.abs(amount*100-Math.round(amount*100))>0.00001){
    setError('Enter a positive amount with at most two decimal places.');return;
   }
   setBusy(true);setError('');
   try{
-   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashPayment/execute',{
+   const response=await apiRequest<FlowResponse>('/flows/AceAssistRecordCashLedgerV1/execute',{
     method:'POST',body:JSON.stringify({recordId:cashInvoice.Id,amount,requestId:cashRequestId})});
    if(response.interviewId)throw Error('Cash settlement has not completed');
-   setCashInvoice(null);setNotice('Cash settlement recorded by authorised Flow.');
+   setCashInvoice(null);setNotice('Cash receipt posted to CashLedger through authorised Flow.');
    setReload(x=>x+1);
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
   finally{setBusy(false);}
@@ -366,7 +367,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
-  const dynamic=editing!=='Delete'&&canDynamic(editing,editingObject);
+  // Legacy single-record update Flow accepts recordId; collection update rejects Id as a field.
+  const useSingleUpdate=editing==='Update'&&editingObject==='Customer'
+   &&actions.has('AceAssistUpdateCustomer');
+  const dynamic=!useSingleUpdate&&editing!=='Delete'&&canDynamic(editing,editingObject);
   if(editingObject==='Appointment'&&!dynamic&&editing!=='Delete'){
    setError('Safe booking Flow V3 is unavailable. Ask your administrator to run the AceAssist app seeder.');
    return;
@@ -398,7 +402,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }
   const input=dynamic?{
    recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
-  }:payload;
+  }:useSingleUpdate
+   ?Object.fromEntries(Object.entries(payload).filter(([key])=>
+      key==='recordId'||inputFields.Customer.includes(key)))
+   :payload;
   setBusy(true);setError('');
   try{
    const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(mutationFlow)+'/execute',
@@ -411,7 +418,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
     const addedId=String(first?.Id??response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
     if(!addedId)throw Error('Customer was saved but the Flow did not return the new record ID');
     setSelected(0);setScreen('records');setEditing('Create');setEditingObject('Appointment');
-    setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
+    setForm({...appointmentDraft,Customer:addedId});
+    const customerName=String(first?.Name??form.Name??'');
+    setLookupRows(prev=>({...prev,Customer:[...(prev.Customer??[]).filter(row=>idOf(row)!==addedId),{Id:addedId,Name:customerName}]}));
+    setReturnToAppointment(false);
    }else setEditing(null);
    setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
@@ -533,7 +543,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     onDateChange={setWeekOf} onOpen={setChosen}
     onCreate={()=>startEdit('Create')}
     onRefresh={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}}/>}
-   {screen==='records'&&<div className="custom-assist-layout"><section className="custom-calendar">
+   {screen==='records'&&<div className={'custom-assist-layout'+(chosen?' assist-record-open':'')}><section className="custom-calendar">
     <div className="custom-panel-title"><h2>{current.label}</h2>
      <div className="custom-panel-toolbar">
       {current.object==='Appointment'&&<label className="assist-view-control">
@@ -546,11 +556,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
        <button type="button" onClick={()=>changeCalendarDate(1)} aria-label="Next period">›</button>
       </div>}
       <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
-      <button type="button" onClick={()=>startEdit('Create')}
+      {current.object!=='CashLedger'&&<button type="button" onClick={()=>startEdit('Create')}
        disabled={isFinancialDocument(current.object)
         ?!actions.has(documentFlow('Create',current.object))||busy:
         !(can('Create')||canDynamic('Create',current.object))||busy}>
-       New {current.object}</button>
+       New {current.object}</button>}
      </div></div>
     {current.object==='Appointment'&&<div className="assist-calendar-filters">
      <label>Staff<select value={calendarStaffFilter} onChange={e=>setCalendarStaffFilter(e.target.value)}>
@@ -589,7 +599,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </div>;
      })}</div>:<div className="custom-record-list">
      {rows.map((row,i)=><button key={String(row.Id??i)} type="button" onClick={()=>setChosen(row)}>
-      <strong>{title(row)}</strong><small>{String(row.Status??row.Id??'')}</small>
+      <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):
+       current.object==='CashLedger'?String(row.TransactionNumber??row.Reference??'Cash receipt'):title(row)}</strong>
+      <small>{current.object==='Customer'?String([row.Email,row.Phone].filter(Boolean).join(' · ')||'Customer'):
+       current.object==='CashLedger'?String([row.Amount,row.Method,row.Status].filter(Boolean).join(' · ')):
+       String(row.Status??'')}</small>
      </button>)}
     </div>}
     {current.object==='Appointment'&&!busy&&rows.length>0&&filteredAppointments.length===0&&
@@ -672,7 +686,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
        {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
-       {current.object==='Invoice'&&actions.has('AceAssistRecordCashPayment')
+       {current.object==='Invoice'&&actions.has('AceAssistRecordCashLedgerV1')
         &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
         <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
          Record cash payment</button>}

@@ -614,3 +614,28 @@
  .custom-aceassist .custom-assist-layout>.custom-visit-detail .assist-related-list{
   border-top:0;margin-top:0;padding-top:10px}
 }
+
+/* Full-width record list, replacing the permanently visible details sidebar. */
+.custom-aceassist .custom-assist-layout{grid-template-columns:minmax(0,1fr)}
+.custom-aceassist .custom-assist-layout:not(.assist-record-open)>.custom-visit-detail{display:none}
+.custom-aceassist .custom-assist-layout.assist-record-open>.custom-calendar{display:none}
+.custom-aceassist .custom-assist-layout.assist-record-open>.custom-visit-detail{display:block;width:100%;max-width:100%}
+.custom-aceassist .custom-assist-layout.assist-record-open .assist-detail-back{display:inline-flex}
+.custom-aceassist .custom-assist-layout.assist-record-open .assist-raw-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px}
+@media(max-width:650px){
+ .custom-aceassist .custom-assist-layout.assist-record-open .assist-raw-details{grid-template-columns:minmax(0,1fr)}
+}
+
+/* Compact aligned record editor controls, without centred floating checkboxes. */
+.assist-modal .custom-crud-form input[type=checkbox]{
+ width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:#118277
+}
+.assist-modal .custom-crud-form label:has(input[type=checkbox]){
+ display:flex;flex-direction:row;align-items:center;justify-content:flex-start;
+ gap:10px;min-height:44px;padding:10px 12px;border:1px solid #e3ebf1;
+ border-radius:9px;background:#f8fafb
+}
+.assist-modal .custom-crud-form label:has(input[type=checkbox]) input{order:-1}
+.assist-modal .custom-crud-form label:has(textarea),
+.assist-modal .custom-crud-form .assist-modal-footer{grid-column:1/-1}
+@media(max-width:650px){.assist-modal .custom-crud-form{grid-template-columns:1fr}}

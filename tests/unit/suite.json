@@ -10,6 +10,7 @@
     "apps/server/test/system/aceassist-financial-flows.test.ts",
     "apps/server/test/system/aceassist-flow-crud.test.ts",
     "apps/server/test/system/aceassist-payment-flows.test.ts",
+    "apps/server/test/system/core-cash-ledger.test.ts",
     "apps/server/test/system/aceassist-v3-metadata.test.ts",
     "apps/server/test/system/acechatter-communication-inbox.test.ts",
     "apps/server/test/system/acetill-app-catalog.test.ts",

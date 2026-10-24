@@ -653,6 +653,12 @@ export class RecordEngine {
   }
   private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,
     prepared:Map<string,Storable>,isClone=false) {
+    if(objectApi==='CashLedger'){
+      const proof=await client.query<{allowed:string|null}>(
+        "SELECT current_setting('metadrive.cash_ledger_guarded',true) AS allowed");
+      if(proof.rows[0]?.allowed!=='yes')
+        throw Error('CashLedger records can only be created through an authorised posting Flow');
+    }
     const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const selectedOwner=prepared.get('__OwnerId__')?.value_text??userId,queue=prepared.get('__OwnerQueue__')?.value_text==='true';
     const {rows}=await client.query<{id:string}>(
@@ -1136,6 +1142,7 @@ export class RecordEngine {
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,
     ifUnmodifiedSince?:string,client?:PoolClient,runTriggers=false) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
+    if(objectApi==='CashLedger')throw new Error('CashLedger entries are immutable; post a reversal');
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
     await this.rbac.require(tenantId,userId,objectApi,'edit');
@@ -1353,6 +1360,7 @@ export class RecordEngine {
   /** Retain business records and their dependent SQL rows for recoverable deletion. */
   private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
     root:boolean,visiting:Set<string>,deletionGroupId:string,rootId:string){
+    if(objectApi==='CashLedger')throw Error('CashLedger entries cannot be deleted; post a reversal');
     await this.lockObjectForWrite(client,tenantId,objectApi);
     const recordKey=JSON.stringify([objectApi,id]);
     if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
@@ -1417,6 +1425,7 @@ export class RecordEngine {
 
   /** Object-level delete permission and record access are checked for the root. */
   async remove(tenantId:string,userId:string,objectApi:string,id:string,client?:PoolClient) {
+    if(objectApi==='CashLedger')throw Error('CashLedger entries cannot be deleted; post a reversal');
     if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
       throw new Error('Invalid record reference');
     await this.rbac.require(tenantId,userId,objectApi,'delete');

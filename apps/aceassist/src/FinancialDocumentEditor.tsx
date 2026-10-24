@@ -59,9 +59,16 @@ export function FinancialDocumentEditor({
  metadataFields:RecordField[];customers:Row[];products:Row[];busy:boolean;error:string;
  onCancel:()=>void;onSave:(changes:DocumentChanges)=>Promise<void>
 }){
- const [header,setHeader]=useState<Record<string,string>>(()=>
-  Object.fromEntries(metadataFields.map(field=>[
-   field.apiName,String(document?.[field.apiName]??field.defaultValue??'')])));
+ const [header,setHeader]=useState<Record<string,string>>(()=>{
+  const initial=Object.fromEntries(metadataFields.map(field=>[
+   field.apiName,String(document?.[field.apiName]??field.defaultValue??'')]));
+  const now=new Date();
+  const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),
+   String(now.getDate()).padStart(2,'0')].join('-');
+  const dateField=type==='Quotation'?'IssueDate':'InvoiceDate';
+  if(operation==='Create'&&!initial[dateField])initial[dateField]=today;
+  return initial;
+ });
  const [lines,setLines]=useState<Line[]>(()=>storedLines.length?storedLines.map(draft):[draft()]);
  const [localError,setLocalError]=useState('');
  const isQuote=type==='Quotation';
@@ -77,7 +84,6 @@ export function FinancialDocumentEditor({
  const submit=async(event:React.FormEvent)=>{
   event.preventDefault();
   if(!canEdit)return;
-  if(!header.Name?.trim()){setLocalError('Document name is required.');return;}
   if(!header.Customer){setLocalError('Select a customer before saving.');return;}
   if(!lines.length||lines.length>200){
    setLocalError('A financial document requires 1 to 200 line items.');return;
@@ -106,7 +112,8 @@ export function FinancialDocumentEditor({
   }
   const headerInput:Row={};
   for(const field of metadataFields){
-   const value=header[field.apiName]??'';
+   const value=field.apiName==='Name'&&operation==='Create'&&!header.Name?.trim()
+    ?type+' draft':header[field.apiName]??'';
    headerInput[field.apiName]=value===''?null:fieldKind(field)==='number'
     ?Number(value):value;
   }
@@ -129,7 +136,7 @@ export function FinancialDocumentEditor({
    aria-label={(operation==='Create'?'New ':'Edit ')+type}>
    <header className="assist-modal-heading">
     <div><small>{operation==='Create'?'Create document':'Edit document'}</small>
-     <h2>{type} {String(document?.QuotationNumber??document?.InvoiceNumber??'')}</h2></div>
+     <h2>{type} {String(document?.QuotationNumber??document?.InvoiceNumber??document?.DocumentNumber??'')}</h2></div>
     <button type="button" disabled={busy} onClick={onCancel} aria-label="Close editor">✕</button>
    </header>
    <form className="assist-document-form" onSubmit={event=>void submit(event)}>
@@ -137,7 +144,9 @@ export function FinancialDocumentEditor({
      This document is finalised. Its financial contents cannot be edited.</p>}
     <h3>Document details</h3>
     <div className="assist-document-header-fields">
-     {metadataFields.map(field=><React.Fragment key={field.apiName}>
+     {[...metadataFields].filter(field=>!['CurrencyCode','Name'].includes(field.apiName))
+      .sort((a,b)=>{const rank=(name:string)=>({Customer:0,IssueDate:1,InvoiceDate:1,ExpiryDate:2,DueDate:2,Notes:3,TermsAndConditions:4} as Record<string,number>)[name]??5;return rank(a.apiName)-rank(b.apiName);})
+      .map(field=><React.Fragment key={field.apiName}>
       {field.apiName==='Customer'?
        <SearchRecord label="Customer" value={header.Customer??''} options={customers}
         emptyMessage="No authorised customers available"
@@ -163,13 +172,13 @@ export function FinancialDocumentEditor({
          onChange={id=>{
           const product=products.find(p=>String(p.Id)===id);
           setLines(previous=>previous.map(old=>old.key===line.key
-           ?{...old,Product:id,Name:old.Name||String(product?.Name??''),
+           ?{...old,Product:id,Name:String(product?.Name??old.Name),
               UnitPrice:old.UnitPrice==='0'&&product?.Price!=null
                ?String(product.Price):old.UnitPrice}:old));
          }}/>
-        <label>Item name
+        {!line.Product&&<label>Custom item name
          <input type="text" required value={line.Name}
-          onChange={e=>setLine(line.key,'Name',e.target.value)}/></label>
+          onChange={e=>setLine(line.key,'Name',e.target.value)}/></label>}
        </div>
        <label>Description
         <input type="text" value={line.Description}
