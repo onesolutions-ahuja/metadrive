@@ -107,6 +107,6 @@ test('platform authority checks OneEngine membership rather than deprecated Plat
  const db={query:async(sql:string)=>{query=sql;return {rows:[{authorised:true}]};}} as unknown as SqlPersistence;
  const rbac={require:async()=>{}} as unknown as RbacEngine;
  await new PlatformTenantService(db,rbac).requirePlatform('tenant','user');
- assert.match(query,/p\\.api_name='OneEngine'/);
+ assert.ok(query.includes("p.api_name='OneEngine'"));
  assert.doesNotMatch(query,/PlatformDeveloper/);
 });
