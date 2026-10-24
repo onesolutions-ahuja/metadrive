@@ -63,8 +63,9 @@ const targetObject=(f:Field)=>f.relationship?.targetObject??f.relatedObject;
 const idOf=(v:Row)=>String(v.Id??v.id??'');
 /** Presentation-only duration preview. Authoritative booking validation is server-side. */
 function withServiceEnd(form:Record<string,string>,product?:Row):Record<string,string>{
- const duration=Number(product?.DurationMinutes);
- if(!form.StartDateTime||!Number.isSafeInteger(duration)||duration<1||duration>1440)return form;
+ const rawDuration=Number(product?.DurationMinutes);
+ const duration=Number.isSafeInteger(rawDuration)&&rawDuration>0&&rawDuration<=1440?rawDuration:30;
+ if(!form.StartDateTime)return form;
  const start=new Date(form.StartDateTime+':00Z');
  if(!Number.isFinite(start.getTime()))return form;
  return {...form,EndDateTime:new Date(start.getTime()+duration*60000).toISOString().slice(0,16)};
