@@ -6,6 +6,7 @@ import {test} from 'node:test';
 
 const script=new URL('../../../../scripts/oracle/deploy-api.sh',import.meta.url);
 const workflow=new URL('../../../../.github/workflows/oracle-api-deploy.yml',import.meta.url);
+const diagnostic=new URL('../../../../scripts/oracle/check-communication-backlog.sh',import.meta.url);
 
 test('Oracle backend release deploys API and Communication worker as one rollback unit',()=>{
  const sh=readFileSync(script,'utf8');
@@ -35,4 +36,15 @@ test('Oracle deployment runs on main backend changes behind environment protecti
  assert.match(yaml,/runs-on: \[self-hosted, linux, ARM64, metadrive-oracle\]/);
  assert.match(yaml,/job-worker-entrypoint\.js/);
  assert.match(yaml,/bash -n scripts\/oracle\/deploy-api\.sh/);
+ assert.match(yaml,/statuses: write/);
+ assert.match(yaml,/oracle-production\/communication/);
+ assert.match(yaml,/check-communication-backlog\.sh/);
+ const probe=readFileSync(diagnostic,'utf8');
+ assert.match(probe,/md_communication_delivery_outbox/);
+ assert.match(probe,/md_records/);
+ assert.match(probe,/runuser -u postgres/);
+ if(process.platform!=='win32'){
+  const syntax=spawnSync('bash',['-n',fileURLToPath(diagnostic)],{encoding:'utf8'});
+  assert.equal(syntax.status,0,syntax.stderr);
+ }
 });

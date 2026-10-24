@@ -12,6 +12,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  statuses: write
 concurrency:
   group: oracle-production-api
   cancel-in-progress: false
@@ -37,5 +38,30 @@ jobs:
           test -f apps/server/dist-system/system-support/job-worker-entrypoint.js
           grep -q registerStalwartMailRoutes apps/server/dist-system/system-support/server.js
           bash -n scripts/oracle/deploy-api.sh
+          bash -n scripts/oracle/check-communication-backlog.sh
       - name: Deploy immutable API and worker release with rollback
+        id: deploy
         run: sudo --non-interactive bash scripts/oracle/deploy-api.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+      - name: Verify live SQL Communication deliveries
+        id: communication_check
+        run: sudo --non-interactive bash scripts/oracle/check-communication-backlog.sh "$GITHUB_OUTPUT"
+      - name: Publish verifiable Oracle production result to the deployed commit
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployed = '${{ steps.deploy.outcome }}' === 'success';
+            const sqlChecked = '${{ steps.communication_check.outcome }}' === 'success';
+            const pending = '${{ steps.communication_check.outputs.pending_count }}' || 'unknown';
+            const count = '${{ steps.communication_check.outputs.record_count }}' || 'unknown';
+            const verified = deployed && sqlChecked;
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner, repo: context.repo.repo, sha: context.sha,
+              state: verified ? 'success' : 'failure',
+              context: 'oracle-production/communication',
+              description: (verified
+                ? 'API+worker active; Communication records '+count+'; pending 0'
+                : 'API/worker or Communication backlog check failed; pending '+pending).slice(0,140),
+              target_url: context.serverUrl+'/'+context.repo.owner+'/'+
+                context.repo.repo+'/actions/runs/'+context.runId
+            });
