@@ -125,9 +125,9 @@ try{
  const deletedClaim=await http('/tenant/domains/'+domain,{method:'DELETE',token});
  assert.equal(deletedClaim.status,204,JSON.stringify(deletedClaim));
  const deniedPlatform=await http('/platform/tenants/ci-isolated-tenant/usage',{token});
- assert.notEqual(deniedPlatform.status,200,'Tenant Developer was granted Platform Developer authority');
+ assert.notEqual(deniedPlatform.status,200,'Tenant Developer was granted OneEngine platform authority');
  const {rows:platformSets}=await db.query(`INSERT INTO md_permission_sets(tenant_id,api_name)
-  VALUES($1,'PlatformDeveloper') ON CONFLICT(tenant_id,api_name)
+  VALUES($1,'OneEngine') ON CONFLICT(tenant_id,api_name)
   DO UPDATE SET api_name=EXCLUDED.api_name RETURNING id`,[tenantId]);
  await db.query(`INSERT INTO md_permission_assignments(tenant_id,user_id,permission_set_id)
   VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,[tenantId,userId,platformSets[0].id]);
