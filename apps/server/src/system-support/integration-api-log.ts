@@ -255,7 +255,12 @@ export class IntegrationCommunicationOutbox{
    await this.db.query(`DELETE FROM md_communication_delivery_outbox
     WHERE tenant_id=$1 AND id=$2 AND status='processing'`,[row.tenant_id,row.id]);
   }catch(error){
-   const errorCode=error instanceof Error?error.name:'UnknownError';
+   // Persist safe SQLSTATE or fixed system codes, never request bodies or secrets.
+   const sqlState=(error as {code?:unknown})?.code;
+   const errorCode=typeof sqlState==='string'&&/^[0-9A-Z]{5}$/.test(sqlState)
+    ?'PG_'+sqlState
+    :error instanceof Error&&/^COMMUNICATION_[A-Z_]+$/.test(error.message)
+     ?error.message:error instanceof Error?error.name:'UnknownError';
    await this.db.query(`UPDATE md_communication_delivery_outbox
     SET status='pending',claimed_at=NULL,last_error=$3,
      next_attempt_at=now()+(LEAST(3600,power(2,LEAST(attempt_count,12))::integer)
