@@ -401,7 +401,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
   }
   const input=dynamic?{
    recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
-  }:payload;
+  }:useSingleUpdate
+   ?Object.fromEntries(Object.entries(payload).filter(([key])=>
+      key==='recordId'||inputFields.Customer.includes(key)))
+   :payload;
   setBusy(true);setError('');
   try{
    const response=await apiRequest<FlowResponse>('/flows/'+encodeURIComponent(mutationFlow)+'/execute',
