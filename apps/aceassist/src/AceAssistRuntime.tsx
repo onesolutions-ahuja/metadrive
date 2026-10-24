@@ -332,6 +332,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
    values[field.apiName]=formatInput(existing,field,hours?.timezone);
   }
   if(object==='Appointment'&&operation==='Create'){
+   values.Status='Scheduled';
+   values.TimeZone=hours?.timezone??'';
    if(visibleFields(object).some(f=>f.apiName==='AssignedUser'))values.AssignedUser=selfId;
    else values.AssignedTo=selfId;
   }
@@ -387,6 +389,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
       ?asBusinessInstant(raw,hours?.timezone??Intl.DateTimeFormat().resolvedOptions().timeZone)
       :scalar(raw,field);
    }
+  }
+  if(editing==='Create'&&editingObject==='Appointment'){
+   payload.Status='Scheduled';
+   payload.TimeZone=hours?.timezone??'UTC';
+   const customer=lookupRows.Customer?.find(row=>idOf(row)===String(payload.Customer??''));
+   payload.Name=String(customer?.Name??'Appointment')+' - '+String(form.StartDateTime??'').replace('T',' ');
   }
   const input=dynamic?{
    recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
@@ -734,6 +742,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <form className="custom-crud-form" onSubmit={e=>void submit(e)}>
      {editing==='Delete'?<p>Delete this record? This action cannot be undone.</p>:
       visibleFields(editingObject)
+       .filter(field=>editingObject!=='Appointment'||editing!=='Create'||!['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime'].includes(field.apiName))
        .map(field=><React.Fragment key={field.apiName}>
         {editingObject==='Appointment'&&['AssignedTo','AssignedUser'].includes(field.apiName)?
          <SearchRecord label="Assigned to" value={form[field.apiName]??''}
@@ -755,7 +764,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
            const value=field.apiName==='Service'?String(product?.Name??id):id;
            setForm(x=>withServiceEnd({...x,[field.apiName]:value},product));}}/>:
         editingObject==='Appointment'&&['StartDateTime','EndDateTime'].includes(field.apiName)?
-         <DateSlotPicker label={field.apiName==='StartDateTime'?'Start date and time':'End date and time'}
+         <DateSlotPicker label={field.apiName==='StartDateTime'?'Appointment date and time':'End date and time'}
           value={form[field.apiName]??''} calendar={hours}
           preview={field.apiName==='StartDateTime'?{
            appointments:rows,shifts:lookupRows.StaffAvailability??[],
@@ -777,12 +786,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
            return withServiceEnd(next,selectedProduct);
           })}/>:
         fieldKind(field)==='reference'?
-         <SearchRecord label={field.label??field.apiName} value={form[field.apiName]??''}
+         <SearchRecord label={editingObject==='Appointment'&&field.apiName==='Contact'?'Contact person (optional)':field.label??field.apiName} value={form[field.apiName]??''}
           options={(lookupRows[targetObject(field)??'']??[]).filter(row=>
            targetObject(field)!=='BookableResource'||row.Active!==false&&row.Active!=='false')}
           emptyMessage="No accessible records available for selection"
           onChange={id=>setForm(x=>({...x,[field.apiName]:id}))}/>:
-         <RecordFieldInput field={field} value={form[field.apiName]??''}
+         <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:editingObject==='Appointment'&&field.apiName==='Notes'?{...field,dataType:'textarea'}:field} value={form[field.apiName]??''}
           onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
      {error&&<p role="alert">{error}</p>}
