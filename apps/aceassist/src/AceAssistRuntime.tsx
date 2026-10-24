@@ -794,7 +794,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistSendInvoiceWhatsApp',chosen)}>Send invoice via WhatsApp</button>}
        {current.object==='Quotation'&&canInvoiceQuote(chosen)&&
-        <button type="button" disabled={busy} onClick={()=>void openInvoiceFromQuotation(chosen)}>Create editable invoice</button>
+        <button type="button" disabled={busy} onClick={()=>void openInvoiceFromQuotation(chosen)}>Create editable invoice</button>}
        {current.object==='Invoice'&&actions.has('AceAssistIssueInvoice')&&String(chosen.Status??'')==='Draft'&&
         <button type="button" disabled={busy}
          onClick={()=>void runRecordAction('AceAssistIssueInvoice',chosen)}>Issue invoice</button>}
