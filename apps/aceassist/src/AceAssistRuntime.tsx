@@ -102,6 +102,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [editing,setEditing]=useState<Operation|null>(null);
  const [editingObject,setEditingObject]=useState('');
  const [form,setForm]=useState<Record<string,string>>({});
+ const [appointmentServices,setAppointmentServices]=useState<string[]>([]);
  const [reload,setReload]=useState(0);
  const [calendarStaffFilter,setCalendarStaffFilter]=useState('');
  const [calendarServiceFilter,setCalendarServiceFilter]=useState('');
@@ -333,6 +334,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
    values[field.apiName]=formatInput(existing,field,hours?.timezone);
   }
   if(object==='Appointment'&&operation==='Create'){
+   setAppointmentServices([]);
    values.Status='Scheduled';
    values.TimeZone=hours?.timezone??'';
    if(visibleFields(object).some(f=>f.apiName==='AssignedUser'))values.AssignedUser=selfId;
@@ -370,15 +372,21 @@ export default function AceAssistRuntime({entry,onLogout}:{
   // Legacy single-record update Flow accepts recordId; collection update rejects Id as a field.
   const useSingleUpdate=editing==='Update'&&editingObject==='Customer'
    &&actions.has('AceAssistUpdateCustomer');
-  const dynamic=!useSingleUpdate&&editing!=='Delete'&&canDynamic(editing,editingObject);
-  if(editingObject==='Appointment'&&!dynamic&&editing!=='Delete'){
+  const multiBooking=editing==='Create'&&editingObject==='Appointment'
+   &&actions.has('AceAssistCreateAppointmentWithLinesV1');
+  const dynamic=!multiBooking&&!useSingleUpdate&&editing!=='Delete'&&canDynamic(editing,editingObject);
+  if(editingObject==='Appointment'&&!dynamic&&!multiBooking&&editing!=='Delete'){
    setError('Safe booking Flow V3 is unavailable. Ask your administrator to run the AceAssist app seeder.');
    return;
   }
-  const mutationFlow=dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
+  const mutationFlow=multiBooking?'AceAssistCreateAppointmentWithLinesV1':
+   dynamic?dynamicFlow(editing as 'Create'|'Update',editingObject):
    'AceAssist'+editing+editingObject;
  if(!actions.has(mutationFlow)){setError('The '+editing+' Flow is not available to this user.');return;}
   if(editing==='Delete'&&!chosen?.Id)return;
+  if(multiBooking&&!appointmentServices.length){
+   setError('Select at least one service for the appointment.');return;
+  }
   if(editing!=='Delete'&&editingObject==='Appointment'){
    const violation=checkBusinessHours(hours,form.StartDateTime??'',form.EndDateTime??'');
    if(violation){setError(violation);return;}
@@ -395,12 +403,24 @@ export default function AceAssistRuntime({entry,onLogout}:{
    }
   }
   if(editing==='Create'&&editingObject==='Appointment'){
+   if(multiBooking){
+    const first=lookupRows.Product?.find(p=>idOf(p)===appointmentServices[0]);
+    payload.ServiceProduct=appointmentServices[0];
+    payload.Service=String(first?.Name??'Services');
+   }
    payload.Status='Scheduled';
    payload.TimeZone=hours?.timezone??'UTC';
    const customer=lookupRows.Customer?.find(row=>idOf(row)===String(payload.Customer??''));
    payload.Name=String(customer?.Name??'Appointment')+' - '+String(form.StartDateTime??'').replace('T',' ');
   }
-  const input=dynamic?{
+  const input=multiBooking?{
+   ...payload,
+   lineInputs:appointmentServices.map(id=>{
+    const product=(lookupRows.Product??[]).find(p=>idOf(p)===id);
+    return {Name:String(product?.Name??'Service'),Product:id,Quantity:1,
+     UnitPrice:Number(product?.Price??0),DurationMinutes:Number(product?.DurationMinutes??30)};
+   })
+  }:dynamic?{
    recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
   }:useSingleUpdate
    ?Object.fromEntries(Object.entries(payload).filter(([key])=>
@@ -728,6 +748,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
        value={cashAmount} onChange={event=>setCashAmount(event.target.value)}/>
      </label>
      <p>Only record cash actually received. Card payments require a verified provider callback.</p>
+     {editingObject==='Appointment'&&editing==='Create'&&
+      <fieldset className="assist-service-selection">
+       <legend>Services (select one or more)</legend>
+       {(lookupRows.Product??[]).filter(p=>
+        p.Active!==false&&p.Active!=='false'&&(p.IsService===true||p.IsService==='true'))
+        .map(product=>{
+         const id=idOf(product);
+         return <label key={id} className="assist-service-choice">
+          <input type="checkbox" checked={appointmentServices.includes(id)}
+           onChange={event=>{
+            const next=event.target.checked?[...appointmentServices,id]:appointmentServices.filter(x=>x!==id);
+            setAppointmentServices(next);
+            const total=next.reduce((minutes,productId)=>minutes+
+             Number((lookupRows.Product??[]).find(p=>idOf(p)===productId)?.DurationMinutes||30),0);
+            setForm(previous=>withServiceEnd(previous,{DurationMinutes:total||30}));
+           }}/>
+          <span>{String(product.Name??'Service')}</span>
+          <small>{Number(product.DurationMinutes??30)} min · {Number(product.Price??0).toFixed(2)}</small>
+         </label>;
+        })}
+       {!lookupRows.Product?.some(p=>p.IsService===true||p.IsService==='true')&&
+        <p>No active bookable services. Mark the relevant products as services first.</p>}
+      </fieldset>}
      {error&&<p role="alert">{error}</p>}
      <footer className="assist-modal-footer">
       <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Cancel</button>
@@ -756,7 +799,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     <form className="custom-crud-form" onSubmit={e=>void submit(e)}>
      {editing==='Delete'?<p>Delete this record? This action cannot be undone.</p>:
       visibleFields(editingObject)
-       .filter(field=>editingObject!=='Appointment'||editing!=='Create'||!['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime'].includes(field.apiName))
+       .filter(field=>editingObject!=='Appointment'||editing!=='Create'||!['CompletedAt','ExternalBookingId','Resource','Status','TimeZone','ReminderAt','Name','EndDateTime','Service','ServiceProduct'].includes(field.apiName))
        .map(field=><React.Fragment key={field.apiName}>
         {editingObject==='Appointment'&&['AssignedTo','AssignedUser'].includes(field.apiName)?
          <SearchRecord label="Assigned to" value={form[field.apiName]??''}
@@ -785,9 +828,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
            exceptions:lookupRows.AvailabilityException??[],
            staffId:form.AssignedUser??form.AssignedTo??selfId,
            resourceId:form.Resource??'',
-           durationMinutes:Number((lookupRows.Product??[]).find(product=>
-            idOf(product)===(form.ServiceProduct??'')
-            ||String(product.Name??'')===(form.Service??''))?.DurationMinutes??30),
+           durationMinutes:editing==='Create'&&appointmentServices.length
+            ?appointmentServices.reduce((minutes,id)=>minutes+Number((lookupRows.Product??[]).find(p=>idOf(p)===id)?.DurationMinutes||30),0)
+            :Number((lookupRows.Product??[]).find(product=>
+             idOf(product)===(form.ServiceProduct??'')
+             ||String(product.Name??'')===(form.Service??''))?.DurationMinutes??30),
            timeZone:hours?.timezone??'UTC',excludeId:chosen?.Id?String(chosen.Id):undefined
           }:undefined}
           startDate={form.StartDateTime?.slice(0,10)}
@@ -797,7 +842,9 @@ export default function AceAssistRuntime({entry,onLogout}:{
            if(field.apiName!=='StartDateTime')return next;
            const selectedProduct=(lookupRows.Product??[]).find(r=>idOf(r)===next.ServiceProduct
             ||String(r.Name??'')===next.Service);
-           return withServiceEnd(next,selectedProduct);
+           return withServiceEnd(next,editing==='Create'&&appointmentServices.length
+            ?{DurationMinutes:appointmentServices.reduce((minutes,id)=>minutes+Number((lookupRows.Product??[]).find(p=>idOf(p)===id)?.DurationMinutes||30),0)}
+            :selectedProduct);
           })}/>:
         fieldKind(field)==='reference'?
          <SearchRecord label={editingObject==='Appointment'&&field.apiName==='Contact'?'Contact person (optional)':field.label??field.apiName} value={form[field.apiName]??''}
