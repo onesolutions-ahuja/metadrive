@@ -773,7 +773,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
         editingObject==='Appointment'&&['Service','ServiceProduct'].includes(field.apiName)?
          <SearchRecord label="Service" value={form[field.apiName]??''}
           options={(lookupRows.Product??[]).filter(r=>r.Active!==false&&r.Active!=='false'
-           &&r.IsService!==false&&r.IsService!=='false')} emptyMessage="No available services"
+           &&(r.IsService===true||r.IsService==='true'))} emptyMessage="No available services"
           onChange={id=>{const product=(lookupRows.Product??[]).find(row=>idOf(row)===id);
            const value=field.apiName==='Service'?String(product?.Name??id):id;
            setForm(x=>withServiceEnd({...x,[field.apiName]:value},product));}}/>:
