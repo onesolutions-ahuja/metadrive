@@ -407,6 +407,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
     const first=lookupRows.Product?.find(p=>idOf(p)===appointmentServices[0]);
     payload.ServiceProduct=appointmentServices[0];
     payload.Service=String(first?.Name??'Services');
+    payload.AssignedTo=String(payload.AssignedTo??payload.AssignedUser??selfId);
    }
    payload.Status='Scheduled';
    payload.TimeZone=hours?.timezone??'UTC';
