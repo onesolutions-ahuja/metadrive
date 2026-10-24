@@ -5,7 +5,7 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {FlowRuntime} from '../system-files/flow-runtime.js';
 import type {RecordEngine} from '../system-files/record-engine.js';
 import type {NamedCredentialService} from './named-credential-service.js';
-import {writeIntegrationActivity,type IntegrationActivityWriter} from './integration-api-log.js';
+import type {IntegrationActivityWriter} from './integration-api-log.js';
 
 type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
@@ -22,16 +22,6 @@ const handler=(fn:(req:Authenticated,res:Response)=>Promise<void>)=>
  };
 const digest=(value:string)=>createHash('sha256').update(value).digest();
 const matches=(expected:Buffer,actual:Buffer)=>expected.length===actual.length&&timingSafeEqual(expected,actual);
-/** Only non-sensitive transaction content is copied to the browser-visible Communication Object. */
-function safePayload(value:unknown,depth=0):unknown {
- if(depth>7)return '[depth limit]';
- if(Array.isArray(value))return value.slice(0,100).map(item=>safePayload(item,depth+1));
- if(value&&typeof value==='object')return Object.fromEntries(
-  Object.entries(value).slice(0,100).map(([key,item])=>[
-   key,/(?:secret|token|password|authorization|credential|signature|cookie|api[_-]?key|private[_-]?key)/i.test(key)
-    ?'[redacted]':safePayload(item,depth+1)]));
- return typeof value==='string'?value.slice(0,2000):value;
-}
 /** Convert Meta's WhatsApp envelope into one Communication record per real inbound message. */
 function whatsappMessages(payload:unknown,endpointId:string):Array<Record<string,unknown>> {
  if(!payload||typeof payload!=='object')return [];
@@ -118,6 +108,7 @@ function publicUrl(req:Request,id:string){
 export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence,
  vault:NamedCredentialService,flows:FlowRuntime,rbac:RbacEngine,records?:RecordEngine,
  activityWriter?:IntegrationActivityWriter){
+ void records;
  const load=async(id:string):Promise<Endpoint|undefined>=>{
   if(!uuid.test(id))return undefined;
   const {rows}=await db.query<Endpoint>(`
@@ -158,20 +149,26 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
+  if(endpoint&&!activityWriter){
+   res.status(503).type('text/plain').send('Webhook communication logger unavailable');
+   return;
+  }
   const mode=req.query['hub.mode'],token=req.query['hub.verify_token'];
   const challenge=req.query['hub.challenge'];
   const valid=Boolean(endpoint&&['Meta','HmacSha256'].includes(endpoint.provider)
    &&mode==='subscribe'&&typeof token==='string'&&token.length<=512
    &&typeof challenge==='string'&&challenge.length<=1024
    &&matches(endpoint.verify_token_digest,digest(token)));
-  if(endpoint)await writeIntegrationActivity(db,{
+  if(endpoint)await activityWriter!({
    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
    provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
    actorUserId:endpoint.execution_user_id??endpoint.created_by,
    endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
    durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
-   errorCode:valid?null:'VERIFY_TOKEN_REJECTED'
-  },activityWriter);
+   errorCode:valid?null:'VERIFY_TOKEN_REJECTED',
+   communication:{channel:endpoint.channel_name??'Other',
+    provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider}
+  });
   if(!valid){res.status(403).type('text/plain').send('Forbidden');return;}
   res.status(200).type('text/plain').send(challenge as string);
  }));
@@ -179,12 +176,17 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
+  // No external request is acknowledged without the central Communication writer.
+  if(endpoint&&!activityWriter){
+   res.status(503).json({error:'Webhook communication logger unavailable'});
+   return;
+  }
   const signature=req.get('x-hub-signature-256');
   const raw=req.rawWebhookBody;
   const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
    errorCode?:string)=>{
    if(!endpoint)return;
-   await writeIntegrationActivity(db,{
+   await activityWriter!({
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
     provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
     actorUserId:endpoint.execution_user_id??endpoint.created_by,
@@ -192,7 +194,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
     requestBytes:raw?.length??0,errorCode:errorCode??null,
     communication:{channel:endpoint.channel_name??'Other',
      provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider}
-   },activityWriter);
+   });
   };
   const reject=async(reason:string,rawBodyBytes?:number)=>{
    // Log only a bounded reason code and body length; never log signature, body, or secret.
@@ -245,24 +247,22 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const event=events[0];
   if(!event){await logInbound(503,'http_error','EVENT_WRITE_FAILED');res.status(503).json({error:'Unable to accept webhook'});return;}
   if(event.status==='completed'){await logInbound(200,'success');res.status(200).json({received:true});return;}
-  // The event payload is retained in tenant SQL. A compact scalar copy is sent
-  // only when the Flow input contract can accept it (max 4096 characters).
-  const json=raw.toString('utf8');
+  // The event payload is retained in tenant SQL. The central writer is independent
+  // of any Flow; business Flows may run afterwards, but never create the audit record.
   let requestCommunicationRecorded=false;
   try{
    // Save the provider message before any optional legacy Flow work. A credential
    // webhook never executes AceChatterReceiveWebhook or any other app Flow.
    if(endpoint.credential_name){
-    if(!records&&!activityWriter)throw new Error('Communication record engine unavailable');
+    if(!activityWriter)throw new Error('Central Communication writer unavailable');
     const messages=whatsappMessages(req.body,endpoint.id);
     let writtenMessages=0;
     for(const values of messages){
      const externalMessageId=typeof values.ExternalMessageId==='string'?values.ExternalMessageId:'';
      if(externalMessageId&&await hasInboundMessage(db,endpoint.tenant_id,externalMessageId))continue;
-     if(activityWriter){
-      // The one Communication record carries both the real inbound message and this
-      // webhook attempt's result/latency/byte counts; do not emit a second API row.
-      await activityWriter({
+     // A verified inbound message always enters the same central outbox.
+     // Never write it through an app Flow or a direct RecordEngine bypass.
+     await activityWriter({
        tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
        provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
        actorUserId:endpoint.execution_user_id??endpoint.created_by,
@@ -279,10 +279,6 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
         receivedAt:typeof values.ReceivedAt==='string'?values.ReceivedAt:undefined
        }
       });
-     }else{
-      await records!.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
-       'Communication',values);
-     }
      writtenMessages++;
     }
     requestCommunicationRecorded=writtenMessages>0;
@@ -294,21 +290,12 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
      webhookEndpoint:endpoint.api_name
     });
-   }else{
-    if(!records)throw new Error('Communication record engine unavailable');
-    const sanitized=JSON.stringify(safePayload(req.body)).slice(0,10000);
-    await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
-     'Communication',{
-      Name:'Webhook '+endpoint.api_name,Channel:'Other',Direction:'Inbound',Status:'Received',
-      Provider:endpoint.provider,Body:sanitized,ReceivedAt:new Date().toISOString(),
-      ExternalMessageId:event.id,RelatedObject:'InboundWebhookEvent',RelatedRecordId:event.id
-     });
-    requestCommunicationRecorded=true;
    }
+   // Journal even non-message events before acknowledging the provider.
+   if(!requestCommunicationRecorded)await logInbound(200,'success');
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
      processed_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2`,
     [endpoint.tenant_id,event.id]);
-   if(!requestCommunicationRecorded)await logInbound(200,'success');
   res.status(200).json({received:true});
   }catch(error){
    await db.query(`UPDATE md_inbound_webhook_events SET status='failed',

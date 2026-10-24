@@ -33,7 +33,7 @@ test('Meta verification and signatures are mandatory before an inbound Flow runs
  registerInboundWebhookPublicRoutes(app,db as never,
   {decryptOpaque:()=>secret} as never,
   {execute:async()=>{called++;return {status:'completed'}}} as never,
-  {allowed:async()=>true} as never);
+  {allowed:async()=>true} as never,undefined,async()=>undefined);
  const server=app.listen(0);
  try{
   const address=server.address();

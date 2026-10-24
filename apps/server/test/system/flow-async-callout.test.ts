@@ -14,6 +14,16 @@ const credentialId='00000000-0000-4000-8000-000000000004';
 const jobId='00000000-0000-4000-8000-000000000005';
 const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
 
+test('unwired Named Credential runtimes cannot send or queue external traffic',async()=>{
+ const service=new NamedCredentialService({} as SqlPersistence,rbac);
+ await assert.rejects(()=>service.callout(tenantId,userId,{
+  namedCredentialId:credentialId,method:'POST',path:'v1/send'
+ },{},'test-idempotency'),/Central Communication writer is unavailable/);
+ await assert.rejects(()=>service.enqueueCallout({} as PoolClient,tenantId,userId,
+  runId,1,{namedCredentialId:credentialId,method:'POST',path:'v1/send'},{}),
+  /Central Communication writer is unavailable/);
+});
+
 test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
  const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const draft={apiName:'AsyncFlow',flowType:'Autolaunched Flow',
@@ -67,6 +77,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
   }
  } as unknown as SqlPersistence;
  const service=new NamedCredentialService(db,rbac);
+ service.setIntegrationActivityWriter(async()=>undefined);
  let sent:Record<string,unknown>|undefined;
  service.callout=async(_tenant,_user,config,variables,key)=>{
   idempotencyKeys.push(key);
@@ -114,6 +125,7 @@ test('durable external message metadata uses valid SQL key and type',async()=>{
   return {rows:[]};
  }} as unknown as PoolClient;
  const service=new NamedCredentialService({} as SqlPersistence,rbac);
+ service.setIntegrationActivityWriter(async()=>undefined);
  try{
   await service.enqueueCallout(client,tenantId,userId,runId,9,{
    namedCredentialId:credentialId,method:'POST',path:'v1/message',
