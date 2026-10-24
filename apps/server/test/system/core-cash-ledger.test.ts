@@ -23,7 +23,7 @@ function fixture(amountPaid=0,entries:Record<string,unknown>[]=[]){
     updates.push(fields);
    }
   },
-  recordQuery:{find:async()=>entries}
+  recordQuery:{find:async(_t:string,_u:string,object:string)=>object==='Payment'?[]:entries}
  } as never;
  const fields:Record<string,unknown>={
   Invoice:invoiceId,Amount:40,Method:'Cash',Status:'Posted',
@@ -83,7 +83,7 @@ test('cash receipt reversal appends an OUT posting and decreases invoice paid to
    update:async(_t:string,_u:string,_object:string,_id:string,value:Record<string,unknown>)=>
     {changes.push(value);}
   },
-  recordQuery:{find:async()=>[{Id:originalId,Amount:40,Direction:'IN',
+  recordQuery:{find:async(_t:string,_u:string,object:string)=>object==='Payment'?[]:[{Id:originalId,Amount:40,Direction:'IN',
    TransactionType:'Receipt',Status:'Posted',Method:'Cash',Reference:'old-request'}]}
  } as never;
  const fields:Record<string,unknown>={ReversalOf:originalId,Reference:'refund-request-001',
@@ -99,4 +99,13 @@ test('CashLedger reversal flow is explicit and permission-scoped',()=>{
  assert.match(source,/AceAssistReverseCashLedgerV1/);
  assert.match(source,/cashReversalGuard/);
  assert.match(source,/AceAssistCashier/);
+});
+
+test('CashLedger reconciles existing settled Payment without double-posting',async()=>{
+ const f=fixture(30);
+ (f.context as unknown as {recordQuery:{find:(t:string,u:string,o:string)=>Promise<Record<string,unknown>[]>}})
+  .recordQuery.find=async(_t,_u,object)=>object==='Payment'
+   ?[{Status:'Settled',Amount:30}]:[];
+ await enforceManualPaymentGuard(f.context,config,f.fields);
+ assert.deepEqual(f.updates,[{AmountPaid:70,Status:'PartPaid'}]);
 });
