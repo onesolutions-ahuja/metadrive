@@ -66,7 +66,7 @@ function normalized(input:IntegrationActivityInput):IntegrationActivityInput{
  * enforced by SQL foreign keys and all queries remain tenant-scoped.
  * No user identity, licence, app installation or OneEngine write grant is needed.
  */
-export function createIntegrationCommunicationWriter(db:SqlPersistence):IntegrationActivityWriter{
+export function createIntegrationCommunicationWriter(db:SqlPersistence,_legacyRecords?:unknown):IntegrationActivityWriter{
  return async raw=>{
   const input=normalized(raw);
   const details=input.communication??{};
