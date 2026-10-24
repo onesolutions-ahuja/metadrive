@@ -599,8 +599,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
       </div>;
      })}</div>:<div className="custom-record-list">
      {rows.map((row,i)=><button key={String(row.Id??i)} type="button" onClick={()=>setChosen(row)}>
-      <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):title(row)}</strong>
+      <strong>{current.object==='Customer'?String(row.Name||row.Email||row.Phone||'Unnamed customer'):
+       current.object==='CashLedger'?String(row.TransactionNumber??row.Reference??'Cash receipt'):title(row)}</strong>
       <small>{current.object==='Customer'?String([row.Email,row.Phone].filter(Boolean).join(' · ')||'Customer'):
+       current.object==='CashLedger'?String([row.Amount,row.Method,row.Status].filter(Boolean).join(' · ')):
        String(row.Status??'')}</small>
      </button>)}
     </div>}
