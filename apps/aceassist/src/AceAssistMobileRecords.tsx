@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {useMemo,useState} from 'react';
 import {CalendarDays,ChevronLeft,ChevronRight,Clock3,FileText,
- Plus,Search,SlidersHorizontal,UserRound,UsersRound,Wallet} from 'lucide-react';
+ Plus,Search,SlidersHorizontal,UserRound,UsersRound,Wallet,FilePlus2} from 'lucide-react';
 import {asBusinessLocal} from './businessDateTime';
 import {scheduleForDay,type BusinessCalendar} from './aceAssistCalendar';
 
@@ -12,6 +12,8 @@ type Props={
  hours:BusinessCalendar|null;hoursLoading:boolean;hoursError:string;
  onDateChange:(value:string)=>void;onOpen:(record:Row)=>void;onCreate:()=>void;
  onRefresh:()=>void;
+ canInvoiceQuotation:(quote:Row)=>boolean;
+ onInvoiceQuotation:(quote:Row)=>void;
 };
 const recordId=(row:Row)=>String(row.Id??row.id??'');
 const safeString=(value:unknown)=>String(value??'');
@@ -47,7 +49,8 @@ function statusClass(value:unknown){
   ['confirmed','issued'].includes(status)?'confirmed':'pending';
 }
 export function AceAssistMobileRecords({object,rows,customers,users,products,date,timeZone,
- hours,hoursLoading,hoursError,loading,canLoad,canCreate,onDateChange,onOpen,onCreate,onRefresh}:Props){
+ hours,hoursLoading,hoursError,loading,canLoad,canCreate,onDateChange,onOpen,onCreate,onRefresh,
+ canInvoiceQuotation,onInvoiceQuotation}:Props){
  const [search,setSearch]=useState('');
  const [staff,setStaff]=useState('');
  const [service,setService]=useState('');
@@ -114,7 +117,12 @@ export function AceAssistMobileRecords({object,rows,customers,users,products,dat
       <small>{candidate.toLocaleDateString('en-GB',{weekday:'short'})}</small>
       <strong>{candidate.getDate()}</strong>
       {value===localToday(timeZone)&&<i aria-label="Today"/>}
-     </button>;
+     </button>
+      {object==='Quotation'&&canInvoiceQuotation(row)&&<button type="button"
+       className="assist-phone-quote-invoice" title="Create invoice from quotation"
+       aria-label={'Create invoice from quotation '+safeString(row.QuotationNumber??row.DocumentNumber??row.Name??'')}
+       onClick={()=>onInvoiceQuotation(row)}><FilePlus2 size={21}/></button>}
+     </div>;
     })}
    </div>
    <div className="assist-phone-hours" role="status"><Clock3 size={15}/>
@@ -180,8 +188,8 @@ export function AceAssistMobileRecords({object,rows,customers,users,products,dat
      const status=safeString(row.Status??(isAppointment?'Scheduled':'Draft'));
      const customer=isAppointment?customerName(row):
       safeString(customers.find(c=>recordId(c)===safeString(row.Customer))?.Name??'Customer');
-     return <button type="button" className="assist-phone-record" onClick={()=>onOpen(row)}
-      key={recordId(row)||i}>
+     return <div className="assist-phone-record-row" key={recordId(row)||i}>
+      <button type="button" className="assist-phone-record" onClick={()=>onOpen(row)}>
       {isAppointment?<div className="assist-phone-time">
        <strong>{timeOf(row.StartDateTime,timeZone).slice(11,16)||'—'}</strong>
        <span>{timeOf(row.EndDateTime,timeZone).slice(11,16)}</span>
