@@ -107,6 +107,47 @@ try{
  const {RecordEngine}=await import(new URL('record-engine.js',built).href);
  const records=new RecordEngine(db,new RbacEngine(db));
 
+ // Validate the real SQL outbox → RecordEngine → Communication persistence.
+ const [{seedCommunicationObjects},{createIntegrationCommunicationWriter,
+  IntegrationCommunicationOutbox}]=await Promise.all([
+   import(new URL('core-communication-objects.js',
+    new URL('../dist-system/app-seeders/',import.meta.url)).href),
+   import(new URL('integration-api-log.js',support).href)
+ ]);
+ await db.transaction(client=>seedCommunicationObjects(client,tenantId));
+ const {rows:[loggerAccount]}=await db.query(
+  'SELECT md_ensure_communication_logger($1::uuid) AS id',[tenantId]);
+ assert.ok(loggerAccount.id);
+ const loggerUser=await db.query(
+  'SELECT enabled,password_hash FROM md_users WHERE tenant_id=$1 AND id=$2',
+  [tenantId,loggerAccount.id]);
+ assert.equal(loggerUser.rows[0].enabled,true);
+ assert.equal(loggerUser.rows[0].password_hash,'!no-interactive-login!');
+ const communicationWriter=createIntegrationCommunicationWriter(db,
+  new RecordEngine(db,new RbacEngine(db)));
+ const communicationOutbox=new IntegrationCommunicationOutbox(db,communicationWriter);
+ await communicationOutbox.write({
+  tenantId,direction:'Outbound',transport:'HTTP',provider:'onesys_sms_gate',
+  actorUserId:userId,endpoint:'https://api.example.invalid/send',
+  method:'POST',statusCode:200,outcome:'success',
+  communication:{channel:'SMS',recipient:'447700900000',
+   body:'SQL real outbox delivery test',externalMessageId:'sql-sms-'+tenantId}
+ });
+ const delivery=await db.query(
+  "SELECT r.id FROM md_records r JOIN md_record_values v ON v.tenant_id=r.tenant_id "+
+  "AND v.record_id=r.id AND v.field_api='ExternalMessageId' WHERE r.tenant_id=$1 "+
+  "AND r.object_api='Communication' AND r.is_deleted=false AND v.value_text=$2",
+  [tenantId,'sql-sms-'+tenantId]);
+ assert.equal(delivery.rows.length,1,'Communication must materialize in md_records');
+ const sms=await records.get(tenantId,userId,'Communication',delivery.rows[0].id);
+ assert.equal(sms.Channel,'SMS');
+ assert.equal(sms.Direction,'Outbound');
+ assert.equal(sms.Body,'SQL real outbox delivery test');
+ const pending=await db.query(
+  'SELECT count(*)::int AS n FROM md_communication_delivery_outbox WHERE tenant_id=$1',[tenantId]);
+ assert.equal(pending.rows[0].n,0,'Materialized Communication leaves no outbox backlog');
+ console.info('Real PostgreSQL Communication outbox delivery and record read: passed');
+
  // Phase 1 actual PostgreSQL lifecycle/relationship contracts.
  // No mocked query engine: exercise SQL constraints, record permissions and restoration.
  const {RecordRetentionService}=await import(new URL('record-retention-service.js',support).href);
