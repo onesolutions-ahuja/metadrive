@@ -179,9 +179,10 @@ test('credential webhook ingests Communication without invoking the app Flow',as
    assert.equal(typeof inputs.webhookPayloadJson,'string');executed++;
   }} as never,
   {allowed:async()=>true} as never,
-  {create:async(_tenant:string,_actor:string,object:string,values:Record<string,unknown>)=>{
-   assert.equal(object,'Communication');assert.equal(values.Direction,'Inbound');archived++;
-  }} as never);
+  undefined,async input=>{
+   assert.equal(input.direction,'Inbound');
+   if(input.communication?.externalMessageId)archived++;
+  });
  const server=app.listen(0);
  try{
   const address=server.address();
@@ -209,6 +210,54 @@ test('credential webhook ingests Communication without invoking the app Flow',as
   assert.equal(fallback.status,200);
   assert.equal(executed,0);
   assert.equal(archived,2);
+ }finally{
+  await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+ }
+});
+
+test('generic inbound webhook is journaled centrally without any configured Flow or direct CRUD',async()=>{
+ const tenant='22222222-2222-4222-8222-222222222222';
+ const endpoint='11111111-1111-4111-8111-111111111111';
+ const secret='provider-app-secret-value';
+ const received:Array<{outcome:string;provider:string;statusCode:number|undefined}>=[];
+ const db={query:async(sql:string)=>{
+  if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
+   tenant_id:tenant,id:endpoint,api_name:'GenericWebhook',flow_api:null,
+   execution_user_id:null,created_by:'33333333-3333-4333-8333-333333333333',
+   credential_name:null,provider:'HmacSha256',enabled:true,
+   verify_token_digest:Buffer.alloc(32),signature_secret_ciphertext:Buffer.from('secret'),
+   encryption_key_id:'active',channel_id:null,channel_name:null
+  }]};
+  if(sql.includes('INSERT INTO md_inbound_webhook_events'))
+   return {rows:[{id:'44444444-4444-4444-8444-444444444444',status:'received'}]};
+  return {rows:[]};
+ }} as never;
+ const app=express();
+ app.use(express.json({verify:(req,_res,bytes)=>{
+  (req as typeof req&{rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(bytes);
+ }}));
+ registerInboundWebhookPublicRoutes(app,db,
+  {decryptOpaque:()=>secret} as never,
+  {execute:async()=>{throw new Error('Flow should not execute');}} as never,
+  {allowed:async()=>true} as never,
+  {create:async()=>{throw new Error('Direct CRUD bypass forbidden');}} as never,
+  async input=>{received.push({outcome:input.outcome,provider:input.provider,
+   statusCode:input.statusCode??undefined});});
+ const server=app.listen(0);
+ try{
+  const addr=server.address();
+  if(!addr||typeof addr==='string')throw Error('Missing port');
+  const url='http://127.0.0.1:'+addr.port+'/api/inbound-webhooks/'+endpoint;
+  const raw=JSON.stringify({event:'example',secret:'do-not-log'});
+  const signature='sha256='+createHmac('sha256',secret).update(raw).digest('hex');
+  const invalid=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},
+   body:raw});
+  assert.equal(invalid.status,401);
+  const valid=await fetch(url,{method:'POST',headers:{'content-type':'application/json',
+   'x-hub-signature-256':signature},body:raw});
+  assert.equal(valid.status,200);
+  assert.deepEqual(received,[{outcome:'rejected',provider:'HmacSha256',statusCode:401},
+   {outcome:'success',provider:'HmacSha256',statusCode:200}]);
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
  }
