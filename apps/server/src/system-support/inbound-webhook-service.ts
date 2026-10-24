@@ -22,16 +22,6 @@ const handler=(fn:(req:Authenticated,res:Response)=>Promise<void>)=>
  };
 const digest=(value:string)=>createHash('sha256').update(value).digest();
 const matches=(expected:Buffer,actual:Buffer)=>expected.length===actual.length&&timingSafeEqual(expected,actual);
-/** Only non-sensitive transaction content is copied to the browser-visible Communication Object. */
-function safePayload(value:unknown,depth=0):unknown {
- if(depth>7)return '[depth limit]';
- if(Array.isArray(value))return value.slice(0,100).map(item=>safePayload(item,depth+1));
- if(value&&typeof value==='object')return Object.fromEntries(
-  Object.entries(value).slice(0,100).map(([key,item])=>[
-   key,/(?:secret|token|password|authorization|credential|signature|cookie|api[_-]?key|private[_-]?key)/i.test(key)
-    ?'[redacted]':safePayload(item,depth+1)]));
- return typeof value==='string'?value.slice(0,2000):value;
-}
 /** Convert Meta's WhatsApp envelope into one Communication record per real inbound message. */
 function whatsappMessages(payload:unknown,endpointId:string):Array<Record<string,unknown>> {
  if(!payload||typeof payload!=='object')return [];
@@ -168,14 +158,16 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    &&mode==='subscribe'&&typeof token==='string'&&token.length<=512
    &&typeof challenge==='string'&&challenge.length<=1024
    &&matches(endpoint.verify_token_digest,digest(token)));
-  if(endpoint)await writeIntegrationActivity(db,{
+  if(endpoint)await activityWriter!({
    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
    provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
    actorUserId:endpoint.execution_user_id??endpoint.created_by,
    endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
    durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
-   errorCode:valid?null:'VERIFY_TOKEN_REJECTED'
-  },activityWriter);
+   errorCode:valid?null:'VERIFY_TOKEN_REJECTED',
+   communication:{channel:endpoint.channel_name??'Other',
+    provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider}
+  });
   if(!valid){res.status(403).type('text/plain').send('Forbidden');return;}
   res.status(200).type('text/plain').send(challenge as string);
  }));
@@ -193,7 +185,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
    errorCode?:string)=>{
    if(!endpoint)return;
-   await writeIntegrationActivity(db,{
+   await activityWriter!({
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
     provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
     actorUserId:endpoint.execution_user_id??endpoint.created_by,
@@ -201,7 +193,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
     requestBytes:raw?.length??0,errorCode:errorCode??null,
     communication:{channel:endpoint.channel_name??'Other',
      provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider}
-   },activityWriter);
+   });
   };
   const reject=async(reason:string,rawBodyBytes?:number)=>{
    // Log only a bounded reason code and body length; never log signature, body, or secret.
@@ -298,10 +290,11 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      webhookEndpoint:endpoint.api_name
     });
    }
+   // Journal even non-message events before acknowledging the provider.
+   if(!requestCommunicationRecorded)await logInbound(200,'success');
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
      processed_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2`,
     [endpoint.tenant_id,event.id]);
-   if(!requestCommunicationRecorded)await logInbound(200,'success');
   res.status(200).json({received:true});
   }catch(error){
    await db.query(`UPDATE md_inbound_webhook_events SET status='failed',
