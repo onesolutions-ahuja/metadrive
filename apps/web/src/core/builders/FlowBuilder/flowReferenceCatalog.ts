@@ -98,6 +98,16 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
     }
   };
+  // Shared user reporting references are available in any Flow context without
+  // building separate roles, records, or app-specific Flow nodes.
+  for(const field of [
+    {reference:'{!$User.Id}',label:'Current user ID'},
+    {reference:'{!$User.ManagerId}',label:'Current user reporting manager'}
+  ]){
+    const choice:FlowReferenceChoice={...field,detail:field.reference.slice(2,-1)+' · User',
+      category:'Flow inputs and variables',dataType:'Id',targetObject:'User'};
+    if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
+  }
   if(flow.triggerObject && ['Record-Triggered Flow','Schedule-Triggered Flow'].includes(flow.flowType))
     recordChoices('$Record','Trigger record',flow.triggerObject,'Trigger record');
   if(flow.triggerObject&&flow.flowType==='Record-Triggered Flow')
