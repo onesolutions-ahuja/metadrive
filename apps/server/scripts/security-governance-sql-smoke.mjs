@@ -122,6 +122,7 @@ export async function verifySecurityGovernanceSql(db){
   const secretClient=await connected.save(tenant,admin,{label:'Confidential test',enabled:true,client_type:'confidential',require_mfa:false,redirects:[request.redirect_uri],scopes:['records:read'],users:[admin]});
   assert.equal(secretClient.clientSecret.length,43);assert.equal((await connected.describe(tenant,admin)).clients.some(c=>'secret_hash' in c),false);
   assert.notEqual((await db.query('SELECT secret_hash FROM md_oauth_clients WHERE id=$1',[secretClient.id])).rows[0].secret_hash,secretClient.clientSecret);
+  await verifyMcpSql(db,{tenant,admin,auth,connected,verifier});
   await verifyHttpBoundary(db,{tenant,admin,auth,connected,request,exchange,verifier});
   console.log('Governance SQL: full schema, migrations/replay, licensing/seats/denies, audit redaction/rollback, monitoring and OAuth PKCE/consent/scope/refresh replay passed');
  }finally{await db.query('SET search_path TO public');await db.query(`DROP SCHEMA ${schema} CASCADE`);}
@@ -156,3 +157,29 @@ async function verifyHttpBoundary(db,{tenant,admin,auth,connected,request,exchan
  }finally{server.closeIdleConnections();await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await tail;}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await withSqlTestConnection(verifySecurityGovernanceSql);
+
+async function verifyMcpSql(db,{tenant,admin,auth,connected,verifier}){
+ const previous=process.env.METADRIVE_MCP_ORIGIN;
+ process.env.METADRIVE_MCP_ORIGIN='https://api.example.test';
+ try{
+  const resource='https://api.example.test/api/mcp';
+  const config={label:'MCP SQL test',enabled:true,client_type:'public',require_mfa:true,redirects:['https://client.example.test/mcp-callback'],scopes:['mcp:access','records:read'],users:[admin]};
+  const client=await connected.save(tenant,admin,config);
+  const request={client_id:client.id,redirect_uri:config.redirects[0],response_type:'code',code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256',state:'mcp-state-'.repeat(4),scope:'mcp:access records:read',resource};
+  await assert.rejects(()=>connected.consent(tenant,admin,{...request,resource:'https://evil.example/mcp'}),/Invalid OAuth resource/);
+  const session=await auth.issueMfaSession(tenant,admin);
+  const grant=await connected.grant(tenant,admin,session.accessToken,request,true);
+  const exchange={grant_type:'authorization_code',client_id:client.id,code:new URL(grant.redirect).searchParams.get('code'),redirect_uri:request.redirect_uri,code_verifier:verifier,resource};
+  await assert.rejects(()=>connected.exchange({...exchange,resource:undefined}),/Invalid OAuth grant/);
+  const token=await connected.exchange(exchange);
+  const actor=await auth.authenticate(token.access_token,{path:'/api/mcp',method:'POST'});
+  assert.equal(actor.tenant_id,tenant);assert.equal(actor.user_id,admin);
+  await assert.rejects(()=>auth.authenticate(token.access_token,{path:'/api/security/licenses',method:'GET'}),/Invalid session/);
+  await assert.rejects(()=>connected.refresh({grant_type:'refresh_token',client_id:client.id,refresh_token:token.refresh_token,resource:'https://evil.example/mcp'}),/Invalid OAuth grant/);
+  const refreshed=await connected.refresh({grant_type:'refresh_token',client_id:client.id,refresh_token:token.refresh_token,resource});
+  await auth.authenticate(refreshed.access_token,{path:'/api/mcp',method:'POST'});
+  await connected.save(tenant,admin,{...config,id:client.id,enabled:false});
+  await assert.rejects(()=>auth.authenticate(refreshed.access_token,{path:'/api/mcp',method:'POST'}),/Invalid session/);
+  assert.equal((await db.query('SELECT resource FROM md_oauth_consents WHERE tenant_id=$1 AND client_id=$2',[tenant,client.id])).rows[0].resource,resource);
+ }finally{if(previous===undefined)delete process.env.METADRIVE_MCP_ORIGIN;else process.env.METADRIVE_MCP_ORIGIN=previous;}
+}

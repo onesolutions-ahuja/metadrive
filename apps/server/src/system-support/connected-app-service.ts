@@ -1,3 +1,4 @@
+import {validMcpResource} from './mcp-resource.js';
 import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
@@ -6,13 +7,13 @@ import type {RbacEngine} from '../system-files/rbac-engine.js';
 import type {LoginContext} from './session-policy-service.js';
 const hash=(v:string)=>createHash('sha256').update(v).digest('hex');
 const mint=()=>randomBytes(32).toString('base64url');
-export const connectedScopes=['records:read','records:write','metadata:read','flows:execute'] as const;
+export const connectedScopes=['records:read','records:write','metadata:read','flows:execute','mcp:access','operations:manage'] as const;
 const uuid=z.string().uuid(),scope=z.enum(connectedScopes);
 const config=z.object({id:uuid.optional(),label:z.string().trim().min(1).max(100),enabled:z.boolean(),client_type:z.enum(['public','confidential']),require_mfa:z.boolean(),
  redirects:z.array(z.string().max(2000).refine(v=>{try{const u=new URL(v);return u.protocol==='https:'&&!u.username&&!u.password&&!u.hash;}catch{return false;}})).min(1).max(20),
- scopes:z.array(scope).min(1).max(4),users:z.array(uuid).max(2000)}).strict();
+ scopes:z.array(scope).min(1).max(6),users:z.array(uuid).max(2000)}).strict();
 const authorize=z.object({client_id:uuid,redirect_uri:z.string().max(2000),response_type:z.literal('code'),code_challenge:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
- code_challenge_method:z.literal('S256'),state:z.string().min(16).max(512),scope:z.string().max(200)}).strict();
+ code_challenge_method:z.literal('S256'),state:z.string().min(16).max(512),scope:z.string().max(200),resource:z.string().max(2000).optional()}).strict();
 type Client={tenant_id:string;id:string;label:string;enabled:boolean;client_type:'public'|'confidential';secret_hash:string|null;require_mfa:boolean};
 export class ConnectedAppService{
  constructor(private readonly db:SqlPersistence,private readonly auth:AuthenticationService,private readonly rbac:RbacEngine){}
@@ -73,6 +74,7 @@ export class ConnectedAppService{
    this.db.query<{scope:string}>('SELECT scope FROM md_oauth_client_scopes WHERE tenant_id=$1 AND client_id=$2',[tenant,p.id])]);
   if(!redirect.rows[0]||!member.rows[0])throw Error('Invalid OAuth client authorization');
   const selected=[...new Set(v.scope.split(' '))];if(!selected.length||selected.some(s=>!scopes.rows.some(v=>v.scope===s)))throw Error('Invalid OAuth scope');
+  if(selected.includes('mcp:access')?(!v.resource||!validMcpResource(v.resource)):v.resource!==undefined)throw Error('Invalid OAuth resource');
   await this.rbac.require(tenant,user,'API','execute');return {clientId:p.id,label:p.label,scopes:selected,requireMfa:p.require_mfa,request:v};
  }
  async grant(tenant:string,user:string,accessToken:string,input:unknown,approved:unknown){
@@ -82,7 +84,7 @@ export class ConnectedAppService{
   const current=await this.db.query<{mfa_verified:boolean}>('SELECT mfa_verified FROM md_sessions WHERE tenant_id=$1 AND user_id=$2 AND token_hash=$3 AND revoked_at IS NULL AND expires_at>now()',[tenant,user,hash(accessToken)]);
   if(!current.rows[0]||(consent.requireMfa&&!current.rows[0].mfa_verified))throw Error('MFA required for connected app consent');
   const code=mint();await this.db.transaction(async c=>{
-   const id=(await c.query<{id:string}>('INSERT INTO md_oauth_consents(tenant_id,client_id,user_id) VALUES($1,$2,$3) RETURNING id',[tenant,v.client_id,user])).rows[0].id;
+   const id=(await c.query<{id:string}>('INSERT INTO md_oauth_consents(tenant_id,client_id,user_id,resource) VALUES($1,$2,$3,$4) RETURNING id',[tenant,v.client_id,user,v.resource??null])).rows[0].id;
    await c.query('INSERT INTO md_oauth_codes(code_hash,tenant_id,consent_id,redirect_uri,challenge,mfa_verified) VALUES($1,$2,$3,$4,$5,$6)',[hash(code),tenant,id,v.redirect_uri,v.code_challenge,current.rows[0].mfa_verified]);
    for(const s of consent.scopes)await c.query('INSERT INTO md_oauth_consent_scopes VALUES($1,$2,$3)',[tenant,id,s]);
    await c.query("INSERT INTO md_security_events(tenant_id,actor_user_id,action) VALUES($1,$2,'OAuthConsentGranted')",[tenant,user]);
@@ -96,24 +98,24 @@ export class ConnectedAppService{
  }
  async exchange(input:unknown,context:LoginContext={}){
   const parsed=z.object({grant_type:z.literal('authorization_code'),client_id:uuid,client_secret:z.string().max(200).optional(),code:z.string().regex(/^[\w-]{43}$/),
-   redirect_uri:z.string().max(2000),code_verifier:z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/)}).strict().safeParse(input);
+   resource:z.string().max(2000).optional(),redirect_uri:z.string().max(2000),code_verifier:z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/)}).strict().safeParse(input);
   if(!parsed.success)throw Error('Invalid OAuth grant');const v=parsed.data,p=await this.client(v.client_id,v.client_secret);
   const grant=await this.db.transaction(async c=>{
-   const {rows}=await c.query<{consent_id:string;user_id:string;redirect_uri:string;challenge:string;mfa_verified:boolean}>(`SELECT x.consent_id,g.user_id,x.redirect_uri,x.challenge,x.mfa_verified FROM md_oauth_codes x JOIN md_oauth_consents g ON g.tenant_id=x.tenant_id AND g.id=x.consent_id
+   const {rows}=await c.query<{consent_id:string;user_id:string;redirect_uri:string;challenge:string;mfa_verified:boolean;resource:string|null}>(`SELECT x.consent_id,g.user_id,x.redirect_uri,x.challenge,x.mfa_verified,g.resource FROM md_oauth_codes x JOIN md_oauth_consents g ON g.tenant_id=x.tenant_id AND g.id=x.consent_id
     JOIN md_oauth_client_users a ON a.tenant_id=g.tenant_id AND a.client_id=g.client_id AND a.user_id=g.user_id
     WHERE x.code_hash=$1 AND x.tenant_id=$2 AND g.client_id=$3 AND x.consumed_at IS NULL AND x.expires_at>now() AND g.revoked_at IS NULL FOR UPDATE OF x`,[hash(v.code),p.tenant_id,p.id]);
-   const g=rows[0];if(!g||g.redirect_uri!==v.redirect_uri||createHash('sha256').update(v.code_verifier).digest('base64url')!==g.challenge)throw Error('Invalid OAuth grant');
+   const g=rows[0];if(!g||(g.resource??undefined)!==v.resource||g.redirect_uri!==v.redirect_uri||createHash('sha256').update(v.code_verifier).digest('base64url')!==g.challenge)throw Error('Invalid OAuth grant');
    await c.query('UPDATE md_oauth_codes SET consumed_at=now() WHERE code_hash=$1',[hash(v.code)]);return g;
   });await this.rbac.require(p.tenant_id,grant.user_id,'API','execute');
   const session=grant.mfa_verified?await this.auth.issueMfaSession(p.tenant_id,grant.user_id,context):await this.auth.issuePasswordSession(p.tenant_id,grant.user_id,context);
   return this.bind(p.tenant_id,grant.consent_id,session);
  }
  async refresh(input:unknown,context:LoginContext={}){
-  const parsed=z.object({grant_type:z.literal('refresh_token'),client_id:uuid,client_secret:z.string().max(200).optional(),refresh_token:z.string().regex(/^[\w-]{43}$/)}).strict().safeParse(input);
+  const parsed=z.object({grant_type:z.literal('refresh_token'),client_id:uuid,client_secret:z.string().max(200).optional(),refresh_token:z.string().regex(/^[\w-]{43}$/),resource:z.string().max(2000).optional()}).strict().safeParse(input);
   if(!parsed.success)throw Error('Invalid OAuth grant');const v=parsed.data,p=await this.client(v.client_id,v.client_secret);
-  const {rows}=await this.db.query<{consent_id:string;revoked_at:Date|null}>(`SELECT b.consent_id,s.revoked_at FROM md_oauth_tokens b JOIN md_oauth_consents c ON c.tenant_id=b.tenant_id AND c.id=b.consent_id
+  const {rows}=await this.db.query<{consent_id:string;revoked_at:Date|null;resource:string|null}>(`SELECT b.consent_id,s.revoked_at,c.resource FROM md_oauth_tokens b JOIN md_oauth_consents c ON c.tenant_id=b.tenant_id AND c.id=b.consent_id
    JOIN md_refresh_sessions s ON s.token_hash=b.token_hash WHERE b.token_hash=$1 AND b.kind='refresh' AND b.tenant_id=$2 AND c.client_id=$3 AND c.revoked_at IS NULL`,[hash(v.refresh_token),p.tenant_id,p.id]);
-  const g=rows[0];if(!g)throw Error('Invalid OAuth grant');
+  const g=rows[0];if(!g||(g.resource??undefined)!==v.resource)throw Error('Invalid OAuth grant');
   if(g.revoked_at){await this.revokeConsent(p.tenant_id,g.consent_id);throw Error('Invalid OAuth grant: refresh replay');}
   let session;
   try{session=await this.auth.refresh(v.refresh_token,{...context,oauthClientId:p.id});}

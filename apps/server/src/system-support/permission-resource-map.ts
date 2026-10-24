@@ -1,6 +1,8 @@
 /** UI permission names are labels for central RBAC resource/action pairs.
  * The evaluator continues to receive one canonical SQL resource/action contract. */
 export const systemPermissionBindings: Readonly<Record<string, readonly [string,string]>> = {
+  'platformOperations:read':['PlatformOperations','read'],
+  'platformOperations:manage':['PlatformOperations','manage'],
   'metadata:read':['ObjectDefinition','read'],
   'metadata:write':['ObjectDefinition','create'],
   'security:read':['Security','read'],
