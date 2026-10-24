@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {readdirSync} from 'node:fs';
+import {readdirSync,readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {test} from 'node:test';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 import {applySystemMigrations} from '../../src/system-support/system-migrations.js';
@@ -34,4 +35,14 @@ test('system migrations are additive, recorded, and idempotent',async()=>{
  await applySystemMigrations(db);
  assert.equal(queries.filter(q=>q.includes('CREATE TABLE IF NOT EXISTS md_named_credentials')).length,numberOfDDL);
  assert.equal(versions.size,expected);
+});
+
+test('already-applied credential webhook migration remains byte-for-byte immutable',()=>{
+ const original=readFileSync(new URL('../../src/system-support/migrations/20261127-credential-webhooks.sql',import.meta.url));
+ const blobHash=createHash('sha1').update('blob '+original.length+'\\0').update(original).digest('hex');
+ assert.equal(blobHash,'b90beba8b1466148a6d3c9b7515014ee32de6c08',
+  'Never edit a migration whose checksum was stored in production SQL');
+ const followup=readFileSync(new URL('../../src/system-support/migrations/20261203-credential-webhook-fk-reconcile.sql',import.meta.url),'utf8');
+ assert.match(followup,/IF NOT EXISTS/);
+ assert.match(followup,/md_inbound_webhook_credential_fk/);
 });
