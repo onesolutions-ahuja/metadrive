@@ -10,6 +10,9 @@ on:
       - 'scripts/oracle/deploy-api.sh'
       - 'scripts/oracle/diagnose-api-startup.py'
       - 'scripts/oracle/repair-oauth-function-owner.py'
+      - 'scripts/oracle/install-mcp-operations.sh'
+      - 'scripts/oracle/metadrive-mcp-operations'
+      - 'scripts/oracle/metadrive-mcp-activate'
       - '.github/workflows/oracle-api-deploy.yml'
   workflow_dispatch:
 permissions:
@@ -48,6 +51,24 @@ jobs:
       - name: Deploy immutable API and worker release with rollback
         id: deploy
         run: sudo --non-interactive bash scripts/oracle/deploy-api.sh "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+      - name: Install restricted MCP operations from trusted checkout
+        id: mcp_install
+        run: |
+          bash -n scripts/oracle/install-mcp-operations.sh
+          sudo --non-interactive bash scripts/oracle/install-mcp-operations.sh
+          sudo --non-interactive systemctl restart metadrive-api.service
+          for attempt in $(seq 1 45); do
+            if curl --silent --show-error --fail --max-time 4 https://api.unesolutions.co.uk/.well-known/oauth-protected-resource/api/mcp > /tmp/metadrive-mcp-discovery-${GITHUB_RUN_ID}.json; then
+              if node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync(process.argv[1]));if(x.resource!=="https://api.unesolutions.co.uk/api/mcp")process.exit(1)' "/tmp/metadrive-mcp-discovery-${GITHUB_RUN_ID}.json"; then
+                rm -f "/tmp/metadrive-mcp-discovery-${GITHUB_RUN_ID}.json"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          rm -f "/tmp/metadrive-mcp-discovery-${GITHUB_RUN_ID}.json"
+          echo "MCP resource metadata did not pass HTTPS verification" >&2
+          exit 1
       - name: Verify live SQL Communication deliveries
         id: communication_check
         run: sudo --non-interactive bash scripts/oracle/check-communication-backlog.sh "$GITHUB_OUTPUT"
@@ -57,10 +78,11 @@ jobs:
         with:
           script: |
             const deployed = '${{ steps.deploy.outcome }}' === 'success';
+            const mcpInstalled = '${{ steps.mcp_install.outcome }}' === 'success';
             const sqlChecked = '${{ steps.communication_check.outcome }}' === 'success';
             const pending = '${{ steps.communication_check.outputs.pending_count }}' || 'unknown';
             const count = '${{ steps.communication_check.outputs.record_count }}' || 'unknown';
-            const verified = deployed && sqlChecked;
+            const verified = deployed && mcpInstalled && sqlChecked;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner, repo: context.repo.repo, sha: context.sha,
               state: verified ? 'success' : 'failure',
