@@ -639,3 +639,11 @@
 .assist-modal .custom-crud-form label:has(textarea),
 .assist-modal .custom-crud-form .assist-modal-footer{grid-column:1/-1}
 @media(max-width:650px){.assist-modal .custom-crud-form{grid-template-columns:1fr}}
+
+.assist-modal .custom-crud-form>.assist-service-selection{grid-column:1/-1;min-width:0;border:1px solid #d9e4e8;border-radius:12px;padding:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.assist-service-selection legend{padding:0 6px;font-weight:700;color:#234257}
+.assist-modal .assist-service-choice{display:flex!important;flex-direction:row!important;align-items:center;gap:10px;padding:9px 10px;background:#f6fafb;border:1px solid #e0e9ef;border-radius:9px}
+.assist-modal .assist-service-choice input{width:18px!important;min-width:18px!important;height:18px;padding:0;margin:0;accent-color:#087f72}
+.assist-service-choice span{flex:1;min-width:0}
+.assist-service-choice small{color:#60758a;white-space:nowrap}
+@media(max-width:650px){.assist-modal .custom-crud-form>.assist-service-selection{grid-template-columns:1fr}}
