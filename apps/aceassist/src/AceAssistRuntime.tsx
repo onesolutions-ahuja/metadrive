@@ -751,7 +751,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
         <div><dt>Customer</dt><dd>{String(lookupRows.Customer?.find(row=>
          idOf(row)===String(chosen.Customer??''))?.Name??'—')}</dd></div>
         <div><dt>Total</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.Total)}</dd></div>
-        {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
+        {current.object==='Invoice'&&chosen.Quotation&&<div><dt>Source quotation</dt>
+          <dd>{String((lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen.Quotation))
+           ?.QuotationNumber??(lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen.Quotation))
+           ?.DocumentNumber??'Linked quotation')}</dd></div>}
+         {current.object==='Invoice'&&<div><dt>Paid</dt><dd>{String(chosen.CurrencyCode??'')} {show(chosen.AmountPaid)}</dd></div>}
        </>}
       </dl>
      </section>
@@ -872,7 +876,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
     key={editingObject+':'+editing+':'+String(chosen?.Id??quoteInvoiceSource?.Id??'new')}
     type={editingObject} operation={editing}
     document={editing==='Update'?chosen:null} storedLines={documentLines}
-    sourceQuotation={editingObject==='Invoice'?quoteInvoiceSource:null}
+    sourceQuotation={editingObject==='Invoice'?(quoteInvoiceSource??(editing==='Update'
+     ?(lookupRows.Quotation??[]).find(row=>idOf(row)===String(chosen?.Quotation??'')):null)):null}
     sourceLines={quoteInvoiceLines}
     metadataFields={documentFields(editingObject,editing)}
     customers={lookupRows.Customer??[]} products={lookupRows.Product??[]}
