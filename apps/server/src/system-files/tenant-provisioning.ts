@@ -92,6 +92,9 @@ export class TenantProvisioning {
         [tenantId,disabledDeveloper.rows[0].id,role.rows[0].id]);
       await client.query('INSERT INTO md_tenant_developer_accounts(tenant_id,user_id) VALUES($1,$2)',
         [tenantId,disabledDeveloper.rows[0].id]);
+      // Developer identity is the unique reporting root, independent of creation order.
+      await client.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',
+        [tenantId,user.rows[0].id,disabledDeveloper.rows[0].id]);
       // Wildcard rights are SQL policy rules, not a hardcoded developer bypass.
       await client.query(
         "INSERT INTO md_permission_rules (tenant_id,permission_set_id,resource,action,effect) VALUES ($1,$2,'*','*','allow')",
