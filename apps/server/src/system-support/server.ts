@@ -1809,7 +1809,15 @@ export function createSystemServer(db:SqlPersistence) {
       tenant:input.Tenant as string|undefined,landingApp:input.LandingApp as string|undefined,
       reportingTo:input.ReportsToId as string|null|undefined,role:undefined};
   };
+  const requireUserReportingScope=async(tenantId:string,userId:string,target:string)=>{
+    const {rows}=await db.query<{allowed:boolean}>(`
+      SELECT COALESCE(md_effective_reporting_scope($1,$2,'User') IS NULL
+        OR md_reporting_scope($1,$2,$3,md_effective_reporting_scope($1,$2,'User')),false) AS allowed
+      WHERE EXISTS(SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$3)`,[tenantId,userId,target]);
+    if(!rows[0]?.allowed)throw new Error('Permission denied');
+  };
   const readUser=async(tenantId:string,userId:string,id:string)=>{
+    await requireUserReportingScope(tenantId,userId,id);
     const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string;reports_to_user_id:string|null}>(
       'SELECT id,email,display_name,enabled,landing_app_api,reports_to_user_id FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
     if(!result.rows[0])throw new Error('Record not found');
@@ -1822,16 +1830,16 @@ export function createSystemServer(db:SqlPersistence) {
     if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0)throw new Error('Invalid pagination');
     const [users,count]=await Promise.all([
       db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string;reports_to_user_id:string|null}>(
-        'SELECT id,email,display_name,enabled,landing_app_api,reports_to_user_id FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
-        [actor.tenant_id,Math.min(limit,100),offset]),
-      db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
+        `SELECT id,email,display_name,enabled,landing_app_api,reports_to_user_id FROM md_users
+         WHERE tenant_id=$1 AND (md_effective_reporting_scope($1,$4,'User') IS NULL
+           OR md_reporting_scope($1,$4,id,md_effective_reporting_scope($1,$4,'User')))
+         ORDER BY email,id LIMIT $2 OFFSET $3`,
+        [actor.tenant_id,Math.min(limit,100),offset,actor.user_id]),
+      db.query<{total:string}>(`SELECT count(*)::text AS total FROM md_users
+        WHERE tenant_id=$1 AND (md_effective_reporting_scope($1,$2,'User') IS NULL
+        OR md_reporting_scope($1,$2,id,md_effective_reporting_scope($1,$2,'User')))`,[actor.tenant_id,actor.user_id])
     ]);
     res.json({records:await Promise.all(users.rows.map(row=>userRecord(row,actor))),total:Number(count.rows[0]?.total??0)});
-  }));
-  app.get('/api/records/User/:id',route(async(req,res)=>{
-    const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
-    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   }));
   // The manager picker uses tenant identities, not role hierarchy or a shadow User object.
   app.get('/api/records/User/reporting-options',route(async(req,res)=>{
@@ -1850,6 +1858,7 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','read');
     const target=req.params.id;
+    await requireUserReportingScope(actor.tenant_id,actor.user_id,target);
     if(target!==actor.user_id)await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
     const direction=req.query.direction==='ancestors'?'ancestors':req.query.direction==='descendants'?'descendants':null;
     if(!direction)throw new Error('Invalid hierarchy direction');
@@ -1858,6 +1867,11 @@ export function createSystemServer(db:SqlPersistence) {
       [actor.tenant_id,target,direction]);
     res.setHeader('Cache-Control','private, no-store');
     res.json({userIds:rows.map(row=>row.user_id),users:rows.map(row=>({id:row.user_id,level:row.hierarchy_level}))});
+  }));
+  app.get('/api/records/User/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
+    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   }));
   app.post('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1893,6 +1907,7 @@ export function createSystemServer(db:SqlPersistence) {
       await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
+    await requireUserReportingScope(actor.tenant_id,actor.user_id,req.params.id);
     if(values.tenant&&values.tenant!==actor.tenant_id)throw new Error('Permission denied');
     if(values.landingApp&&values.landingApp!=='Setup'
       &&!(await apps.listMetadata(actor.tenant_id)).some(app=>app.apiName===values.landingApp))
@@ -1923,6 +1938,7 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','delete');
     if(req.params.id===actor.user_id)throw new Error('Invalid self deactivation');
+    await requireUserReportingScope(actor.tenant_id,actor.user_id,req.params.id);
     await db.transaction(async client=>{
       const result=await client.query('UPDATE md_users SET enabled=false WHERE tenant_id=$1 AND id=$2 RETURNING id',
         [actor.tenant_id,req.params.id]);
