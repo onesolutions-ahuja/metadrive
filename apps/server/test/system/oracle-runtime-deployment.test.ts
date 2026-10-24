@@ -7,9 +7,22 @@ import {test} from 'node:test';
 const script=new URL('../../../../scripts/oracle/deploy-api.sh',import.meta.url);
 const workflow=new URL('../../../../.github/workflows/oracle-api-deploy.yml',import.meta.url);
 const diagnostic=new URL('../../../../scripts/oracle/check-communication-backlog.sh',import.meta.url);
+const startupDiagnostic=new URL('../../../../scripts/oracle/diagnose-api-startup.py',import.meta.url);
 
 test('Oracle backend release deploys API and Communication worker as one rollback unit',()=>{
  const sh=readFileSync(script,'utf8');
+ assert.match(sh,/LOCAL_OK=0/);
+ assert.match(sh,/PUBLIC_OK=0/);
+ assert.match(sh,/diagnose-api-startup\.py/);
+ const portLine=sh.split('\n').find(line=>line.startsWith('API_PORT="$(sed -nE'));
+ const portFilter=portLine?.match(/sed -nE '([^']+)'/)?.[1];
+ assert.ok(portFilter,'Local health check must parse configured numeric PORT');
+ if(process.platform!=='win32'){
+  const port=spawnSync('sed',['-nE',portFilter],{input:'PORT=3001\n',encoding:'utf8'});
+  assert.equal(port.status,0,port.stderr);
+  assert.equal(port.stdout.trim(),'3001');
+ }
+
  assert.match(sh,/API_SERVICE=metadrive-api\.service/);
  assert.match(sh,/WORKER_SERVICE=metadrive-worker\.service/);
  assert.match(sh,/job-worker-entrypoint\.js/);
@@ -39,6 +52,10 @@ test('Oracle deployment runs on main backend changes behind environment protecti
  assert.match(yaml,/statuses: write/);
  assert.match(yaml,/oracle-production\/communication/);
  assert.match(yaml,/check-communication-backlog\.sh/);
+ const startup=readFileSync(startupDiagnostic,'utf8');
+ assert.match(startup,/journalctl/);
+ assert.match(startup,/sanitize/);
+ assert.doesNotMatch(startup,/print\\(logs\\)/);
  const probe=readFileSync(diagnostic,'utf8');
  assert.match(probe,/md_communication_delivery_outbox/);
  assert.match(probe,/md_records/);
