@@ -114,6 +114,11 @@ try{
     new URL('../dist-system/app-seeders/',import.meta.url)).href),
    import(new URL('integration-api-log.js',support).href)
  ]);
+ // Raw CI tenant setup intentionally omits full Core seeding. Communication has
+ // reusable Contact/Customer lookup fields, so create referenced Object metadata.
+ for(const api of ['Contact','Customer']){
+  await db.query('INSERT INTO md_object_definitions(tenant_id,api_name,label,is_system) VALUES($1,$2,$3,false) ON CONFLICT(tenant_id,api_name) DO NOTHING',[tenantId,api,api]);
+ }
  await db.transaction(client=>seedCommunicationObjects(client,tenantId));
  const {rows:[loggerAccount]}=await db.query(
   'SELECT md_ensure_communication_logger($1::uuid) AS id',[tenantId]);
