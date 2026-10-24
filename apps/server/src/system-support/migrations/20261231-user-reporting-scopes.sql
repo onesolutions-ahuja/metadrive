@@ -102,3 +102,9 @@ RETURNS boolean LANGUAGE sql STABLE AS $$
  WHERE rec.tenant_id=t AND rec.id=rid
  ),false)
 $$;
+
+-- Existing tenant metadata: additive field backfill without changing layouts.
+INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,required)
+SELECT o.tenant_id,'User','ReportsToId','Reports To','reference','User',false
+FROM md_object_definitions o WHERE o.api_name='User'
+ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING;
