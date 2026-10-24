@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {aceAssistDocumentFlowApi,buildAceAssistDocumentGraph}
+import {aceAssistDocumentFlowApi,buildAceAssistDocumentGraph,
+ buildAceAssistQuoteInvoiceGraph,ACEASSIST_CREATE_INVOICE_FROM_QUOTATION}
  from '../../src/app-seeders/aceassist-document-flows.js';
 
 test('quotations and invoices have single-transaction header + item creation Flows',()=>{
@@ -51,4 +52,29 @@ test('Ace Assist financial documents show inline items instead of separate navig
  assert.match(editor,/updatedLines:changed.map/);
  assert.match(editor,/removedLines:storedLines.filter/);
  assert.match(css,/assist-document-line-numbers/);
+});
+
+test('quotation invoice draft Flow links its source and prevents duplicate billing',()=>{
+ const graph=buildAceAssistQuoteInvoiceGraph();
+ assert.equal(graph.apiName,ACEASSIST_CREATE_INVOICE_FROM_QUOTATION);
+ const header=graph.elements.find(node=>node.id===2);
+ assert.equal(header?.config.object,'Invoice');
+ assert.equal((header?.config.sourceLinkGuard as Record<string,unknown>)?.sourceObject,'Quotation');
+ assert.equal((header?.config.sourceLinkGuard as Record<string,unknown>)?.sourceField,'Quotation');
+ assert.ok((header?.config.fieldValues as Array<{field:string;value:string}>)
+  .some(entry=>entry.field==='Quotation'&&entry.value==='{!Quotation}'));
+ assert.ok(graph.resources.some(item=>item.name==='Quotation'&&item.availableForInput===true));
+ assert.ok(graph.resources.some(item=>item.name==='lineInputs'));
+});
+test('quotation invoice opens editable before save; customer lookup avoids IDs',()=>{
+ const runtime=readFileSync(new URL('../../../aceassist/src/AceAssistRuntime.tsx',import.meta.url),'utf8');
+ const editor=readFileSync(new URL('../../../aceassist/src/FinancialDocumentEditor.tsx',import.meta.url),'utf8');
+ const fields=readFileSync(new URL('../../../aceassist/src/AppointmentFields.tsx',import.meta.url),'utf8');
+ assert.match(runtime,/openInvoiceFromQuotation/);
+ assert.match(runtime,/canInvoiceQuote/);
+ assert.match(runtime,/sourceLines=\{quoteInvoiceLines\}/);
+ assert.match(editor,/onCreateCustomer/);
+ assert.match(editor,/Source quotation/);
+ assert.doesNotMatch(editor,/Custom item name/);
+ assert.match(fields,/Unnamed record/);
 });
