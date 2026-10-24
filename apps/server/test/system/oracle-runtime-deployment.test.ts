@@ -8,6 +8,8 @@ const script=new URL('../../../../scripts/oracle/deploy-api.sh',import.meta.url)
 const workflow=new URL('../../../../.github/workflows/oracle-api-deploy.yml',import.meta.url);
 const diagnostic=new URL('../../../../scripts/oracle/check-communication-backlog.sh',import.meta.url);
 const startupDiagnostic=new URL('../../../../scripts/oracle/diagnose-api-startup.py',import.meta.url);
+const ownerRepair=new URL('../../../../scripts/oracle/repair-oauth-function-owner.py',import.meta.url);
+const ownerTests=new URL('../../../../scripts/oracle/',import.meta.url);
 
 test('Oracle backend release deploys API and Communication worker as one rollback unit',()=>{
  const sh=readFileSync(script,'utf8');
@@ -52,6 +54,7 @@ test('Oracle deployment runs on main backend changes behind environment protecti
  assert.match(yaml,/statuses: write/);
  assert.match(yaml,/oracle-production\/communication/);
  assert.match(yaml,/check-communication-backlog\.sh/);
+ assert.match(yaml,/repair-oauth-function-owner\.py/);
  const startup=readFileSync(startupDiagnostic,'utf8');
  assert.match(startup,/journalctl/);
  assert.match(startup,/sanitize/);
@@ -63,5 +66,19 @@ test('Oracle deployment runs on main backend changes behind environment protecti
  if(process.platform!=='win32'){
   const syntax=spawnSync('bash',['-n',fileURLToPath(diagnostic)],{encoding:'utf8'});
   assert.equal(syntax.status,0,syntax.stderr);
+ }
+});
+
+test('Oracle OAuth function ownership repair is restricted, repeatable, and secret-free',()=>{
+ const code=readFileSync(ownerRepair,'utf8');
+ assert.match(code,/md_oauth_token_allowed/);
+ assert.match(code,/NOT rolsuper/);
+ assert.match(code,/runuser/);
+ assert.doesNotMatch(code,/ALTER ROLE.*SUPERUSER/);
+ if(process.platform!=='win32'){
+  const py=spawnSync('python3',['-m','unittest','discover','-s',
+   fileURLToPath(ownerTests),'-p','test_repair_oauth_function_owner.py'],
+   {encoding:'utf8'});
+  assert.equal(py.status,0,py.stdout+py.stderr);
  }
 });
