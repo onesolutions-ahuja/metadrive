@@ -390,6 +390,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
       :scalar(raw,field);
    }
   }
+  if(editing==='Create'&&editingObject==='Appointment'){
+   payload.Status='Scheduled';
+   payload.TimeZone=hours?.timezone??'UTC';
+   const customer=lookupRows.Customer?.find(row=>idOf(row)===String(payload.Customer??''));
+   payload.Name=String(customer?.Name??'Appointment')+' - '+String(form.StartDateTime??'').replace('T',' ');
+  }
   const input=dynamic?{
    recordsInput:[{...payload,...(editing==='Update'?{Id:String(chosen?.Id??'')}:{} )}]
   }:payload;
