@@ -50,6 +50,10 @@ export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Sn
   await tx.query('INSERT INTO md_permission_sets(tenant_id,id,api_name,label,description,license,navigation_default_access) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,id) DO UPDATE SET api_name=EXCLUDED.api_name,label=EXCLUDED.label,description=EXCLUDED.description,license=EXCLUDED.license,navigation_default_access=EXCLUDED.navigation_default_access',
    [t,p.id,p.apiName,p.label,p.description,p.license,p.navigationDefaultAccess]);
   await writeRules(tx,t,p.id,grantRules(p));
+  await tx.query('DELETE FROM md_permission_data_scopes WHERE tenant_id=$1 AND permission_set_id=$2',[t,p.id]);
+  for(const [objectApi,scope] of Object.entries(p.recordDataScopes??{}))
+   await tx.query('INSERT INTO md_permission_data_scopes(tenant_id,permission_set_id,object_api,scope) VALUES($1,$2,$3,$4)',
+    [t,p.id,objectApi,scope]);
  }
  for(const p of next.profiles){
   if(equal(p,previous.profiles.find(old=>old.id===p.id)))continue;
