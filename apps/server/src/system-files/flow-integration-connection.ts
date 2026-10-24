@@ -58,5 +58,6 @@ export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngi
   ?provider.channelId:undefined;
  return {...config,namedCredentialId:credentialId,
   method:operation.method,path:operation.path,
-  ...(channelId?{systemChannelId:channelId,connectorApi:connectorKey}:{})};
+  ...(channelId?{systemChannelId:channelId,connectorApi:connectorKey,
+   communicationLog:{...object(config.communicationLog),provider:channelId}}:{})};
 }
