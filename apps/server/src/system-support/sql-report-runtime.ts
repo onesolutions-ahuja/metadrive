@@ -24,7 +24,7 @@ export class SqlReportRuntime {
     Array.isArray(input[k])&&(input[k] as unknown[]).length>0);
   if(report.format!=='Tabular'||report.filters?.length||report.crossFilters?.length||
      report.groupByFieldApiNames?.length||Object.keys(report.summaryOperations??{}).length||
-     (report.standardFilters?.showMe&&report.standardFilters.showMe!=='All')||
+     (report.standardFilters?.showMe&&!['All','My','My Descendants'].includes(report.standardFilters.showMe))||
      (report.standardFilters?.dateRange&&report.standardFilters.dateRange!=='All Time')||
      report.rowLimit?.limit!=null||unsupported||input.dashboardApiName||input.dashboardRunningUserId)
     throw new Error('Unsupported report configuration in SQL runtime');
@@ -37,7 +37,10 @@ export class SqlReportRuntime {
   if(typeof offset!=='number'||!Number.isSafeInteger(offset)||offset<0||
      typeof limit!=='number'||!Number.isSafeInteger(limit)||limit<1||limit>100)
     throw new Error('Invalid pagination');
-  const values=await this.records.list(actor.tenant_id,actor.user_id,report.objectApiName,limit,offset);
+  // Scope is evaluated by the same Record Engine used by ordinary CRUD/Flows.
+  const showMe=report.standardFilters?.showMe??'All';
+  const scope=showMe==='My'?'my':showMe==='My Descendants'?'my_team':undefined;
+  const values=await this.records.list(actor.tenant_id,actor.user_id,report.objectApiName,limit,offset,{scope});
   const visible=new Map<string,boolean>();
   for(const field of report.fieldApiNames)visible.set(field,
     await this.rbac.allowed(actor.tenant_id,actor.user_id,report.objectApiName+'.'+field,'read'));

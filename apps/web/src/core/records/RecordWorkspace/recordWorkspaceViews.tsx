@@ -561,6 +561,23 @@ function RecordWorkspace({
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [lookupRecords, setLookupRecords] = useState<Record<string, RecordData[]>>({});
   const [lookupError, setLookupError] = useState('');
+  const [reportingUsers, setReportingUsers] = useState<Array<{id:string;name:string;email:string}>>([]);
+  const [reportingRootId, setReportingRootId] = useState<string|null>(null);
+  useEffect(() => {
+    if (!formOpen || object?.apiName !== 'User' || !canManageUserIdentities) return;
+    let active = true;
+    void apiRequest<{users:Array<{id:string;name:string;email:string}>;rootUserId:string|null}>(
+      '/records/User/reporting-options').then(result => {
+      if (!active) return;
+      setReportingUsers(result.users);
+      setReportingRootId(result.rootUserId);
+      if (!editingId && result.rootUserId)
+        setFormValues(current => ({...current, ReportsToId: current.ReportsToId ?? result.rootUserId}));
+    }).catch(error => {
+      if (active) setFormError(error instanceof Error ? error.message : 'Unable to load reporting users');
+    });
+    return () => {active = false;};
+  }, [formOpen,object?.apiName,canManageUserIdentities,editingId]);
   const searchLookupRecords=useCallback(async(targetObject:string,term:string)=>{
     const params=new URLSearchParams({search:term,limit:'20',offset:'0'});
     const result=await apiRequest<{records:RecordData[]}>(`/records/${encodeURIComponent(targetObject)}?${params}`);
@@ -1109,7 +1126,7 @@ function RecordWorkspace({
     if (!object || !canEdit) return;
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
     const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) =>
-      editableFieldNames.has(apiName) || apiName === 'RecordTypeId' || object.apiName === 'User' && apiName === 'LandingApp'));
+      editableFieldNames.has(apiName) || apiName === 'RecordTypeId' || object.apiName === 'User' && ['LandingApp','ReportsToId'].includes(apiName)));
     setEditingId(item.Id);
     setEditingTimestamp(typeof item.LastModifiedDate === 'string' ? item.LastModifiedDate : '');
     setFormValues(editableValues);
@@ -1133,7 +1150,7 @@ function RecordWorkspace({
           && object.fields.some((field) => field.apiName === apiName
             && field.dataType === 'Text (Encrypted)')
           && formValues[apiName] === '********') && (object.apiName === 'User'
-          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp'].includes(apiName)
+          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp', 'ReportsToId'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
@@ -1146,7 +1163,7 @@ function RecordWorkspace({
           writableValues.Password = formValues.Password;
         }
         // The identity API accepts only these explicit fields. No arbitrary metadata fields or password edits.
-        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp']);
+        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp', 'ReportsToId']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       const relatedCreation=route.kind==='record-list'&&!editingId?route.relatedCreation:undefined;
@@ -1593,7 +1610,17 @@ function RecordWorkspace({
         formValues={formValues} recordId={editingId} lookupRecords={lookupRecords}
         searchLookupRecords={searchLookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
         actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-        extraFields={object.apiName==='User'&&canManageUserIdentities?<label className="form-label">Default landing page
+        extraFields={object.apiName==='User'&&canManageUserIdentities?<><label className="form-label">Reports To
+          <select className="form-control" value={String(formValues.ReportsToId??reportingRootId??'')}
+            disabled={saving || Boolean(editingId && editingId===reportingRootId)}
+            onChange={event=>setFormValues(current=>({...current,ReportsToId:event.target.value||reportingRootId}))}>
+            <option value="">Tenant Developer (default)</option>
+            {reportingUsers.filter(u=>u.id!==editingId).map(u=><option key={u.id} value={u.id}>
+              {u.name} ({u.email})
+            </option>)}
+          </select>
+          <small>Managers define ancestors and descendants; roles never determine this tree.</small>
+        </label><label className="form-label">Default landing page
           <select className="form-control" value={String(formValues.LandingApp??'Setup')} disabled={saving}
             onChange={event=>setFormValues(current=>({...current,LandingApp:event.target.value}))}>
             <option value="Setup">Setup Home</option>
@@ -1603,7 +1630,7 @@ function RecordWorkspace({
               &&<option value={formValues.LandingApp}>{formValues.LandingApp} (unavailable)</option>}
           </select>
           <small>This sets where the user lands after sign-in. It does not grant app access.</small>
-        </label>:undefined}
+        </label></>:undefined}
         onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />
   </main>;

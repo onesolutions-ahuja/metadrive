@@ -880,6 +880,16 @@ export default function FlowBuilder({
         </>}
         {selected.type === 'Get Records' && <>
           <h3>Filter Records</h3>
+          <label className="form-label">Records Owned By
+            <select className="form-control" value={displayValue(selected.config.ownerScope)||'all'}
+              onChange={event=>setConfig('ownerScope',event.target.value)}>
+              <option value="all">All accessible users</option>
+              <option value="own">Current user</option>
+              <option value="direct">Current user and direct reports</option>
+              <option value="descendants">Current user and all descendants</option>
+            </select>
+            <small>Uses the Reports To user tree. Existing Object and Record permissions still apply.</small>
+          </label>
           {renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All',
             rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}
           {renderConditions('conditions', object?.fields ?? [])}

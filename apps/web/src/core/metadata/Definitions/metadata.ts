@@ -659,7 +659,7 @@ export type ReportDateRange =
   | 'Last Year';
 
 export type ReportStandardFiltersMetadata = {
-  showMe: 'All' | 'My';
+  showMe: 'All' | 'My' | 'My Descendants';
   dateFieldApiName: string | null;
   dateRange: ReportDateRange;
   statusFieldApiName: string | null;
@@ -856,6 +856,7 @@ export type PermissionSetMetadata = PermissionPolicyExtras & {
   appPermissions?: Record<string, boolean>;
   tabPermissions?: Record<string, boolean>;
   navigationDefaultAccess?: 'Allow' | 'Deny';
+  recordDataScopes?: Record<string, 'all' | 'descendants' | 'own'>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
 

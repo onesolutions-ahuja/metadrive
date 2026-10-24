@@ -535,6 +535,8 @@ export async function seedFreshCoreObjects(client:PoolClient,tenantId:string) {
       'INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
       [tenantId,object.apiName,field.apiName,field.label,field.dataType,relatedObject,'maxLength' in field?field.maxLength:null,false]);
   }
+  // Additive metadata for the native User reporting reference; no shadow User records.
+  await client.query("INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,required) VALUES($1,'User','ReportsToId','Reports To','reference','User',false) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING",[tenantId]);
 }
 
 /**

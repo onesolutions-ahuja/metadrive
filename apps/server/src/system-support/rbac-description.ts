@@ -7,7 +7,7 @@ export async function readRbac(db:SqlExecutor,tenant:string){
   'md_permission_set_groups','md_permission_group_sets','md_permission_group_mutes','md_user_permission_groups',
   'md_access_groups','md_access_group_members','md_queue_objects','md_sharing_settings','md_record_policies',
   'md_policy_owner_roles','md_policy_conditions','md_policy_condition_values','md_rbac_revisions','md_profile_permission_sets',
-  'md_object_record_types','md_tenant_app_metadata'];
+  'md_object_record_types','md_tenant_app_metadata','md_permission_data_scopes'];
  // A normal GET uses a pool-backed executor: bound parallelism avoids a
  // 27-query network waterfall without consuming the whole connection pool.
  // In SQL transactions the shared client still serialises these queries.
@@ -34,7 +34,9 @@ export async function readRbac(db:SqlExecutor,tenant:string){
  };
  const sets=rows('md_permission_sets').filter(p=>!ownSets.has(p.id)).map(p=>({
   id:p.id,apiName:p.api_name,label:p.label??p.api_name,license:p.license??'',description:p.description??'',
-  navigationDefaultAccess:p.navigation_default_access??'Deny',...grants(p.id)
+  navigationDefaultAccess:p.navigation_default_access??'Deny',
+  recordDataScopes:Object.fromEntries(rows('md_permission_data_scopes').filter(s=>s.permission_set_id===p.id).map(s=>[s.object_api,s.scope])),
+  ...grants(p.id)
  }));
  const members=(groupId:string,kind:string)=>rows('md_access_group_members')
   .filter(m=>m.group_id===groupId&&m.member_kind===kind).map(m=>m.member_id);

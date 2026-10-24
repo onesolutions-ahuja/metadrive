@@ -54,7 +54,7 @@ export class FlowRecordQuery {
 
   async find(tenantId:string,userId:string,objectApi:string,
     conditions:readonly FlowRecordCondition[],conditionLogic?:string,
-    options:{sortField?:string;sortOrder?:string;limit?:number}={},
+    options:{sortField?:string;sortOrder?:string;limit?:number;ownerScope?:'all'|'own'|'direct'|'descendants'}={},
     executor:SqlExecutor=this.db) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||conditions.length>50)
       throw new Error('Invalid Flow record query');
@@ -132,6 +132,10 @@ export class FlowRecordQuery {
       }
     }
     const logic=logicSql(conditionLogic,predicates);
+    const ownerScope=options.ownerScope??'all';
+    if(!['all','own','direct','descendants'].includes(ownerScope))throw new Error('Invalid Flow owner scope');
+    const ownerPredicate=ownerScope==='all'?'TRUE':ownerScope==='own'?'r.owner_id=$3':
+      `r.owner_id IS NOT NULL AND md_reporting_scope($1,$3,r.owner_id,'${ownerScope}')`;
     const limit=options.limit===undefined?200:Number(options.limit);
     if(!Number.isSafeInteger(limit)||limit<1||limit>200)
       throw new Error('Flow record query limit must be between 1 and 200');
@@ -164,7 +168,7 @@ export class FlowRecordQuery {
           r.record_type_id
         FROM md_records r
         WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.is_deleted=false AND md_record_access($1,$3,r.id,'read')
-          AND (${logic})
+          AND (${logic}) AND (${ownerPredicate})
         ORDER BY ${sort} LIMIT $${params.length}
       )
       SELECT m.id,m.created_at,m.updated_at,m.owner_id,m.record_type_id,

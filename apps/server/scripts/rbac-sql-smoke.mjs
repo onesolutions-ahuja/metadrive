@@ -229,6 +229,23 @@ try{
  assert.ok((await get('/records/User')).records.every(u=>u.Email===undefined));
  const adminTokens=await auth.signIn(t,'administrator@example.invalid',password);
  assert.equal((await http(adminTokens.accessToken,{...await rbac.describe(t,supervisor),revision:0})).status,409);
+
+ // Native user reporting hierarchy is independent of the role tree.
+ await db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,supervisor,developer]);
+ await db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,cashier,supervisor]);
+ const descendant=(await db.query("SELECT md_reporting_scope($1,$2,$3,'descendants') AS allowed",[t,developer,cashier])).rows[0].allowed;
+ assert.equal(descendant,true);
+ assert.equal((await db.query("SELECT md_reporting_scope($1,$2,$3,'descendants') AS allowed",[t,cashier,developer])).rows[0].allowed,false);
+ await assert.rejects(()=>db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,developer,cashier]),/Circular reporting hierarchy/);
+ await save(snapshot=>{snapshot.permissionSets.find(set=>set.id===superSet).recordDataScopes={Invoice:'descendants'};},developer);
+ assert.equal((await db.query("SELECT md_effective_reporting_scope($1,$2,'Invoice') AS scope",[t,supervisor])).rows[0].scope,'descendants');
+ const forbidden=await records.create(t,developer,'Invoice',{Name:'Outside team record',Total:18,RecordTypeId:'master'});
+ const installedRecordPolicy=(await db.query("SELECT pg_get_functiondef('md_record_access(uuid,uuid,uuid,text)'::regprocedure) AS body")).rows[0].body;
+ assert.match(installedRecordPolicy,/md_effective_reporting_scope/,'Record access must enforce management scopes');
+ const scopeCheck=await db.query("SELECT owner_id,owner_queue_id,md_effective_reporting_scope($1,$2,'Invoice') AS scope,md_reporting_scope($1,$2,owner_id,'descendants') AS in_team,md_record_access($1,$2,$3,'read') AS allowed FROM md_records WHERE tenant_id=$1 AND id=$3",
+  [t,supervisor,forbidden]);
+ assert.equal(scopeCheck.rows[0].in_team,false);
+ assert.equal(scopeCheck.rows[0].allowed,false,JSON.stringify(scopeCheck.rows[0]));
  console.info('RBAC SQL validation passed: profiles, groups, direct grants/revocation, denies/restoration, sharing/restrictions, queues, record types, tenant isolation, atomic rollback, migration idempotency, HTTP and app licensing');
 }finally{
  if(listener?.listening)await new Promise((resolve,reject)=>listener.close(e=>e?reject(e):resolve()));

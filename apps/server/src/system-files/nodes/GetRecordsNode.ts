@@ -15,7 +15,9 @@ export async function executeGetRecordsNode(context:FlowNodeContext):Promise<Flo
     const found=await recordQuery.find(tenantId,userId,objectApi,conditions,
       typeof config.conditionLogic==='string'?config.conditionLogic:undefined,
       {sortField:typeof config.sortField==='string'&&config.sortField?config.sortField:undefined,
-        sortOrder:typeof config.sortOrder==='string'?config.sortOrder:undefined,limit},client);
+        sortOrder:typeof config.sortOrder==='string'?config.sortOrder:undefined,limit,
+        ownerScope:typeof config.ownerScope==='string'
+          ?config.ownerScope as 'all'|'own'|'direct'|'descendants':undefined},client);
     const selectedFields=Array.isArray(config.fields)
       ?new Set(config.fields.filter((field):field is string=>typeof field==='string')):undefined;
     const projected=found.map(record=>!selectedFields?record:Object.fromEntries(Object.entries(record)

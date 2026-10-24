@@ -502,6 +502,8 @@ export function RecordFormDialog({
         {helpText}
       </div>;
     }
+    // The native reporting manager is edited using the secure User identity picker.
+    if (object.apiName === 'User' && field.apiName === 'ReportsToId') return null;
     if (object.apiName === 'User' && field.apiName === 'UserRoleId') return <label className="form-label" key={field.apiName}>User Role
       <select className="form-control" value={value} disabled title="Assign roles through Setup → Users & Permissions → Users & Assignments">
         <option value="">Manage in Users & Assignments</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}

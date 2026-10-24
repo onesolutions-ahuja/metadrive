@@ -43,6 +43,7 @@ export async function validateRbac(db:SqlExecutor,tenant:string,next:Snapshot){
   keys(p.objectPermissions,objectSet);keys(p.fieldPermissions,fieldSet);keys(p.recordTypePermissions,typeSet);
   keys(p.appPermissions,appSet);keys(p.tabPermissions,objectSet);grantRules(p);
  }
+ for(const p of next.permissionSets)keys(p.recordDataScopes,objectSet);
  for(const p of next.profiles)refs(p.inheritedPermissionSetIds,next.permissionSets);
  for(const g of next.permissionSetGroups){
   refs(g.permissionSetIds,next.permissionSets);

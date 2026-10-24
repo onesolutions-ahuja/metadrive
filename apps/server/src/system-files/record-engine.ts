@@ -832,10 +832,8 @@ export class RecordEngine {
       conditionParams.push(...compiled.parameters);
     }else if(options.filterLogic?.trim())throw new Error('Filter logic requires filters');
     if(options.scope==='my')predicates.push('r.owner_id=$3');
-    else if(options.scope==='my_team')predicates.push(`EXISTS(
-      SELECT 1 FROM md_user_roles team_owner
-      WHERE team_owner.tenant_id=r.tenant_id AND team_owner.user_id=r.owner_id
-        AND team_owner.role_id IN(SELECT role_id FROM md_user_role_tree($1,$3)))`);
+    else if(options.scope==='my_team')predicates.push(`r.owner_id IN(
+      SELECT user_id FROM md_reporting_users($1,$3,'descendants'))`);
     else if(options.scope==='queue')predicates.push(`r.owner_queue_id IS NOT NULL
       AND md_access_member($1,$3,r.owner_queue_id)`);
     else if(options.scope!==undefined&&options.scope!=='all')throw new Error('Invalid list view scope');
