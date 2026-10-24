@@ -81,6 +81,7 @@
     "apps/server/test/system/object-quick-action-runtime.test.ts",
     "apps/server/test/system/offline-briefcase-settings.test.ts",
     "apps/server/test/system/offline-publication-contract.test.ts",
+    "apps/server/test/system/onesys-namespace.test.ts",
     "apps/server/test/system/parse-json-flow-node.test.ts",
     "apps/server/test/system/password-reset-service.test.ts",
     "apps/server/test/system/platform-recovery-mailer.test.ts",

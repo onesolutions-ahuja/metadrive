@@ -7,6 +7,7 @@ export default Object.freeze({
   "credential": "WhatsApp_Cloud_API",
   "url": "https://graph.facebook.com/",
   "auth": "Bearer",
+  "communicationChannel": "WhatsApp",
   "header": "",
   "fields": [
     {
@@ -19,7 +20,7 @@ export default Object.freeze({
   "operations": {
     "SendMessage": {
       "method": "POST",
-      "path": "v26.0/{!phoneNumberId}/messages"
+      "path": "v26.0/{!public_phoneNumberId}/messages"
     }
   },
   "docs": "https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api",

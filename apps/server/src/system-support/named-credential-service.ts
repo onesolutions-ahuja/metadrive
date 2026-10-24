@@ -308,6 +308,8 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid credential');
   const x=body as Record<string,unknown>;
+  if(typeof x.name==='string'&&/^onesys/i.test(x.name))
+   throw new Error('onesys is reserved for system-installed credentials');
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||x.protocol!=='HTTPS'
@@ -541,6 +543,19 @@ export class NamedCredentialService {
     resolvedConfig.integrationConnectionId??null,resolvedConfig.integrationConnectionId
       ?resolvedConfig.operation:null,
     resolvedConfig.integrationConnectionId?this.encryptValue(String(resolvedConfig.path)):null]);
+   // Persist channel classification with the durable callout. The worker cannot
+   // infer this reliably from a reconstructed HTTP request.
+   const communicationLog=resolvedConfig.communicationLog??config.communicationLog;
+   if(communicationLog!==undefined){
+    if(!communicationLog||typeof communicationLog!=='object'||Array.isArray(communicationLog))
+     throw new Error('Invalid Communication classification');
+    const serialized=JSON.stringify(communicationLog);
+    if(serialized.length>8192)throw new Error('Communication classification too large');
+    await client.query(`
+     INSERT INTO md_http_callout_job_values(tenant_id,job_id,api_name,value_ciphertext,data_type)
+     VALUES($1,$2,'__communication_log',$3,'communication_log')`,
+     [tenantId,rows[0].id,this.encryptValue(serialized)]);
+   }
    // Persist the trusted credential-derived scalar snapshot encrypted for durable headers.
    for(const [apiName,value] of Object.entries(mappedVariables)){
     if(!/^[A-Za-z][A-Za-z0-9_.]*$/.test(apiName)||!isCalloutScalar(value))
@@ -604,7 +619,15 @@ export class NamedCredentialService {
      WHERE tenant_id=$1 AND job_id=$2
     `,[job.tenant_id,job.id]);
     const variables:Record<string,CalloutScalar>=Object.create(null) as Record<string,CalloutScalar>;
+    let communicationLog:Record<string,unknown>|undefined;
     for(const row of rows){
+     if(row.api_name==='__communication_log'&&row.data_type==='communication_log'){
+      const parsed:unknown=JSON.parse(this.decryptValue(row.value_ciphertext));
+      if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
+       throw new Error('Invalid durable communication metadata');
+      communicationLog=parsed as Record<string,unknown>;
+      continue;
+     }
      let value:CalloutScalar;
      const stored=this.decryptValue(row.value_ciphertext);
      if(row.data_type==='null'){
@@ -636,7 +659,8 @@ export class NamedCredentialService {
      namedCredentialId:job.credential_id,method:job.method,
      path:this.decryptValue(job.path_ciphertext),headers:this.decryptValue(job.headers_ciphertext),
      body:job.body_ciphertext?this.decryptValue(job.body_ciphertext):'',
-     timeoutMs:job.timeout_ms
+     timeoutMs:job.timeout_ms,
+     ...(communicationLog?{communicationLog}:{})
     },variables,job.idempotency_key_ciphertext
       ?this.decryptValue(job.idempotency_key_ciphertext):job.id,true);
     // Commit terminal state and provider acknowledgement atomically.
@@ -675,6 +699,14 @@ export class NamedCredentialService {
      (current.rows[0].secret_ciphertext || current.rows[0].configuration_ciphertext))
     throw new Error('Credential key rotation requires a complete re-encryption workflow');
   const x=body as Record<string,unknown>;
+  const {rows:bindings}=await this.db.query<{credential_name:string}>(`
+   SELECT credential_name FROM md_connector_app_credentials
+   WHERE tenant_id=$1 AND credential_id=$2`,[tenantId,id]);
+  if(bindings.length&&bindings.some(binding=>binding.credential_name!==x.name))
+   throw new Error('Connector credential name cannot be changed');
+  if(typeof x.name==='string'&&/^onesys/i.test(x.name)
+    &&!bindings.some(binding=>binding.credential_name===x.name))
+   throw new Error('System credential names are managed by AppExchange');
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     x.protocol!=='HTTPS'||

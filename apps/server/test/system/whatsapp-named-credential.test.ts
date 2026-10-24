@@ -8,7 +8,7 @@ test('WhatsApp connection seeds only required sender ID without hardcoded option
  assert.match(manifest,/"apiName": "public_phoneNumberId"/);
  assert.match(manifest,/"required": true/);
  assert.doesNotMatch(manifest,/"required": false/);
- assert.match(manifest,/v26\.0\/\{!phoneNumberId\}\/messages/);
+ assert.match(manifest,/v26\.0\/\{!public_phoneNumberId\}\/messages/);
  assert.doesNotMatch(ui,/whatsAppFields|public_businessPortfolioId|public_displayName/);
  assert.match(ui,/\.\.\.preset\?\.configuration, \.\.\.credential\.configuration/);
  assert.match(ui,/Add variable/);
