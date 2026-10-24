@@ -134,7 +134,9 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
   (tenant_id,kind,api_name,label,properties,enabled)
   VALUES($1,'connector-providers',$2,$3,$4::jsonb,true)
   ON CONFLICT(tenant_id,kind,api_name)
-  DO UPDATE SET enabled=true,updated_at=now()`,
+  DO UPDATE SET enabled=true,
+    properties=EXCLUDED.properties || md_system_definitions.properties,
+    updated_at=now()`,
   [tenantId,name,d.label,JSON.stringify(properties)]);
  const connection={status:'ACTIVE',connectorKey:name,configuration:{namedCredentialId:credentialId}};
  await client.query(`INSERT INTO md_system_definitions
