@@ -12,6 +12,7 @@ import {SetupAuditService} from '../dist-system/system-support/setup-audit-servi
 import {SqlPersistence} from '../dist-system/system-files/sql-persistence.js';
 import {createSystemServer} from '../dist-system/system-support/server.js';
 import {once} from 'node:events';
+import {AsyncLocalStorage} from 'node:async_hooks';
 const digest=v=>createHash('sha256').update(v).digest('hex');
 const migrations=new URL('../src/system-support/migrations/',import.meta.url);
 export async function verifySecurityGovernanceSql(db){
@@ -134,6 +135,8 @@ async function verifyHttpBoundary(db,{tenant,admin,auth,connected,request,exchan
  let tail=Promise.resolve();
  const lock=async()=>{let release;const previous=tail;tail=new Promise(r=>{release=r;});await previous;return release;};
  const requestDb=Object.create(SqlPersistence.prototype);
+ // The test adapter bypasses the constructor, so initialize its transaction context.
+ requestDb.activeTransaction=new AsyncLocalStorage();
  requestDb.pool={query:async(sql,args)=>{const release=await lock();try{return await db.query(sql,args);}finally{release();}},connect:async()=>{const release=await lock();return {query:(sql,args)=>db.query(sql,args),release};}};
  await db.query('UPDATE md_transaction_security_rules SET enabled=false WHERE tenant_id=$1',[tenant]);
  const normal=await auth.issueMfaSession(tenant,admin);
