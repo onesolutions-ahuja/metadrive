@@ -13,6 +13,8 @@ on:
       - 'scripts/oracle/install-mcp-operations.sh'
       - 'scripts/oracle/metadrive-mcp-operations'
       - 'scripts/oracle/metadrive-mcp-activate'
+      - 'scripts/oracle/install-mcp-broker.sh'
+      - 'scripts/oracle/metadrive-mcp-broker.py'
       - '.github/workflows/oracle-api-deploy.yml'
   workflow_dispatch:
 permissions:
@@ -54,8 +56,11 @@ jobs:
       - name: Install restricted MCP operations from trusted checkout
         id: mcp_install
         run: |
-          bash -n scripts/oracle/install-mcp-operations.sh
-          sudo --non-interactive bash scripts/oracle/install-mcp-operations.sh
+          bash -n scripts/oracle/install-mcp-broker.sh
+          python3 -m py_compile scripts/oracle/metadrive-mcp-broker.py
+          sudo --non-interactive bash scripts/oracle/install-mcp-broker.sh
+          test "$(systemctl show metadrive-api.service -p NoNewPrivileges --value)" = yes
+          systemctl is-active --quiet metadrive-mcp-broker.socket
           sudo --non-interactive systemctl restart metadrive-api.service
           for attempt in $(seq 1 45); do
             if curl --silent --show-error --fail --max-time 4 https://api.unesolutions.co.uk/.well-known/oauth-protected-resource/api/mcp > /tmp/metadrive-mcp-discovery-${GITHUB_RUN_ID}.json; then
