@@ -12,7 +12,8 @@ export type ConnectorAppName=keyof typeof connectorApps;
 export const isConnectorApp=(name:string):name is ConnectorAppName=>
  Object.prototype.hasOwnProperty.call(connectorApps,name);
 type Field={apiName:string;label:string;required:boolean;defaultValue:string};
-type Operation={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';path:string};
+type Operation={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';path:string;
+ communicationFields?:{recipient?:string;sender?:string;body?:string;responseId?:string}};
 type Definition={folder:string;appApi:string;label:string;description:string;credential:string;url:string;
  auth:string;header:string;fields:Field[];operations:Record<string,Operation>;docs:string;notes:string;
  communicationChannel?:string};
