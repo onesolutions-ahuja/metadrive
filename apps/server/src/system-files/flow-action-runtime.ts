@@ -51,9 +51,13 @@ export async function loadFlowUserResource(client:PoolClient,tenantId:string,use
   descendantIds=descendants.rows.map(row=>row.user_id);
   directReportIds=descendants.rows.filter(row=>row.hierarchy_level===1).map(row=>row.user_id);
  }
- variables.$User={Id:actor.id,Name:actor.display_name.trim()||actor.email,Email:actor.email,
-  TimeZone:actor.time_zone,ManagerId:actor.reports_to_user_id,
-  AncestorIds:ancestorIds,DescendantIds:descendantIds,DirectReportIds:directReportIds};
+ const resource:Record<string,unknown>={Id:actor.id,Name:actor.display_name.trim()||actor.email,
+  Email:actor.email,TimeZone:actor.time_zone};
+ if(/\$User\.ManagerId\b/.test(graph))resource.ManagerId=actor.reports_to_user_id??null;
+ if(/\$User\.AncestorIds\b/.test(graph))resource.AncestorIds=ancestorIds;
+ if(/\$User\.DescendantIds\b/.test(graph))resource.DescendantIds=descendantIds;
+ if(/\$User\.DirectReportIds\b/.test(graph))resource.DirectReportIds=directReportIds;
+ variables.$User=resource;
  return {timeZone:actor.time_zone,currencyRates};
 }
 
