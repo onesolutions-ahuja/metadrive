@@ -880,6 +880,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
          <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:editingObject==='Appointment'&&field.apiName==='Notes'?{...field,dataType:'textarea'}:field} value={form[field.apiName]??''}
           onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
+     {editingObject==='Appointment'&&editing==='Create'&&
+      <fieldset className="assist-service-selection">
+       <legend>Services (select one or more)</legend>
+       {(lookupRows.Product??[]).filter(p=>
+        p.Active!==false&&p.Active!=='false'&&(p.IsService===true||p.IsService==='true'))
+        .map(product=>{
+         const id=idOf(product);
+         return <label key={id} className="assist-service-choice">
+          <input type="checkbox" checked={appointmentServices.includes(id)}
+           onChange={event=>{
+            const next=event.target.checked?[...appointmentServices,id]:appointmentServices.filter(x=>x!==id);
+            setAppointmentServices(next);
+            const total=next.reduce((minutes,productId)=>minutes+
+             Number((lookupRows.Product??[]).find(p=>idOf(p)===productId)?.DurationMinutes||30),0);
+            setForm(previous=>withServiceEnd(previous,{DurationMinutes:total||30}));
+           }}/>
+          <span>{String(product.Name??'Service')}</span>
+          <small>{Number(product.DurationMinutes??30)} min · {Number(product.Price??0).toFixed(2)}</small>
+         </label>;
+        })}
+       {!lookupRows.Product?.some(p=>p.IsService===true||p.IsService==='true')&&
+        <p>No active bookable services. Mark the relevant products as services first.</p>}
+      </fieldset>}
      {error&&<p role="alert">{error}</p>}
      <footer className="assist-modal-footer">
       <button type="button" onClick={()=>{setEditing(null);setReturnToAppointment(false);}} disabled={busy}>Cancel</button>
