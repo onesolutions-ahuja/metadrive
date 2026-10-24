@@ -13,7 +13,8 @@ const grants={
 };
 const base={id,apiName:api,label,description:text.default('')};
 export const policySet=z.object({...base,...grants,license:text.default(''),
- navigationDefaultAccess:z.enum(['Allow','Deny']).default('Deny')}).strict();
+ navigationDefaultAccess:z.enum(['Allow','Deny']).default('Deny'),
+ recordDataScopes:z.record(z.enum(['all','descendants','own'])).default({})}).strict();
 const profile=z.object({...base,...grants,license:text.default('MetaDrive'),isStandard:z.boolean().default(false),
  inheritedPermissionSetIds:ids.default([])}).strict();
 const group=z.object({...base,permissionSetIds:ids,calculationStatus:z.enum(['Updated','Updating','Failed']),
