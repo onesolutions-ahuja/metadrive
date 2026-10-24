@@ -1133,7 +1133,7 @@ function RecordWorkspace({
           && object.fields.some((field) => field.apiName === apiName
             && field.dataType === 'Text (Encrypted)')
           && formValues[apiName] === '********') && (object.apiName === 'User'
-          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp'].includes(apiName)
+          ? ['Name', 'Email', 'Username', 'IsActive', 'Password', 'Tenant', 'LandingApp', 'ReportsTo'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
