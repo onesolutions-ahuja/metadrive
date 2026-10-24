@@ -14,6 +14,16 @@ const credentialId='00000000-0000-4000-8000-000000000004';
 const jobId='00000000-0000-4000-8000-000000000005';
 const rbac={require:async()=>{},allowed:async()=>true} as unknown as RbacEngine;
 
+test('unwired Named Credential runtimes cannot send or queue external traffic',async()=>{
+ const service=new NamedCredentialService({} as SqlPersistence,rbac);
+ await assert.rejects(()=>service.callout(tenantId,userId,{
+  namedCredentialId:credentialId,method:'POST',path:'v1/send'
+ },{},'test-idempotency'),/Central Communication writer is unavailable/);
+ await assert.rejects(()=>service.enqueueCallout({} as PoolClient,tenantId,userId,
+  runId,1,{namedCredentialId:credentialId,method:'POST',path:'v1/send'},{}),
+  /Central Communication writer is unavailable/);
+});
+
 test('durable HTTP Callout validation rejects synchronous outputs',async()=>{
  const runtime=new FlowRuntime(withFlowCapabilities({} as SqlPersistence),rbac);
  const draft={apiName:'AsyncFlow',flowType:'Autolaunched Flow',
