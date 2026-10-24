@@ -366,7 +366,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
  };
  const submit=async(e:React.FormEvent)=>{
   e.preventDefault();if(!editing||busy)return;
-  const dynamic=editing!=='Delete'&&canDynamic(editing,editingObject);
+  // Legacy single-record update Flow accepts recordId; collection update rejects Id as a field.
+  const useSingleUpdate=editing==='Update'&&editingObject==='Customer'
+   &&actions.has('AceAssistUpdateCustomer');
+  const dynamic=!useSingleUpdate&&editing!=='Delete'&&canDynamic(editing,editingObject);
   if(editingObject==='Appointment'&&!dynamic&&editing!=='Delete'){
    setError('Safe booking Flow V3 is unavailable. Ask your administrator to run the AceAssist app seeder.');
    return;
@@ -411,7 +414,10 @@ export default function AceAssistRuntime({entry,onLogout}:{
     const addedId=String(first?.Id??response.outputs?.createdRecordId??response.variables?.createdRecordId??'');
     if(!addedId)throw Error('Customer was saved but the Flow did not return the new record ID');
     setSelected(0);setScreen('records');setEditing('Create');setEditingObject('Appointment');
-    setForm({...appointmentDraft,Customer:addedId});setReturnToAppointment(false);
+    setForm({...appointmentDraft,Customer:addedId});
+    const customerName=String(first?.Name??form.Name??'');
+    setLookupRows(prev=>({...prev,Customer:[...(prev.Customer??[]).filter(row=>idOf(row)!==addedId),{Id:addedId,Name:customerName}]}));
+    setReturnToAppointment(false);
    }else setEditing(null);
    setReload(v=>v+1);
   }catch(ex){setError(ex instanceof Error?ex.message:String(ex));}
