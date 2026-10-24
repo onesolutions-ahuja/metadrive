@@ -57,7 +57,7 @@ export async function verifySecurityGovernanceSql(db){
   await db.query("INSERT INTO md_permission_rules VALUES($1,$2,'*','*','allow'),($1,$3,'API','execute','allow')",[tenant,full,limited]);
   await db.query('INSERT INTO md_permission_assignments VALUES($1,$2,$3),($1,$4,$5)',[tenant,admin,full,user,limited]);
   assert.equal(await rbac.allowed(tenant,admin,'ConnectedApp','manage'),true);
-  await assert.rejects(()=>licenses.issue(tenant,admin,{tenantId:other,license_key:'Escalation',label:'Bad',kind:'User',enabled:true,seat_limit:null,expires_at:null,capabilities:[{resource:'*',action:'*'}]}),/Permission denied/);
+  await assert.rejects(()=>licenses.issue(tenant,user,{tenantId:other,license_key:'Escalation',label:'Bad',kind:'User',enabled:true,seat_limit:null,expires_at:null,capabilities:[{resource:'*',action:'*'}]}),/Permission denied/);
   const entitlement=(await db.query("INSERT INTO md_license_entitlements(tenant_id,license_key,label,kind,seat_limit) VALUES($1,'APIAddOn','API add-on','PermissionSet',1) RETURNING id",[tenant])).rows[0].id;
   await licenses.requirement(tenant,admin,{permission_set_id:limited,entitlement_id:entitlement,required:true});
   assert.equal(await rbac.allowed(tenant,user,'API','execute'),false);
