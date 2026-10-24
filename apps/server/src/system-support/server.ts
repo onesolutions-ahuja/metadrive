@@ -211,9 +211,8 @@ export function createSystemServer(db:SqlPersistence) {
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac,namedCredentials);
   // Use a dedicated RecordEngine without record-trigger callbacks for system-generated API logs.
-  const integrationLogRecords=new RecordEngine(db,rbac,namedCredentials);
   const integrationCommunicationOutbox=new IntegrationCommunicationOutbox(
-    db,createIntegrationCommunicationWriter(db,integrationLogRecords));
+    db,createIntegrationCommunicationWriter(db));
   const integrationActivityWriter=integrationCommunicationOutbox.write;
   namedCredentials.setIntegrationActivityWriter(integrationActivityWriter);
   const externalIdUpsert=new ExternalIdUpsert(db,rbac,records);
@@ -2317,9 +2316,8 @@ export async function startSystemServer() {
   purgeTimer.unref();
   const dispatcherRbac=new RbacEngine(db);
   const calloutDispatcher=new NamedCredentialService(db,dispatcherRbac);
-  const dispatcherLogRecords=new RecordEngine(db,dispatcherRbac,calloutDispatcher);
   const dispatcherOutbox=new IntegrationCommunicationOutbox(
-   db,createIntegrationCommunicationWriter(db,dispatcherLogRecords));
+   db,createIntegrationCommunicationWriter(db));
   calloutDispatcher.setIntegrationActivityWriter(dispatcherOutbox.write);
   const calloutTimer=setInterval(()=>{
     void Promise.all([calloutDispatcher.dispatchOne(),calloutDispatcher.dispatchOneFlowEmail(),
