@@ -8,6 +8,7 @@ on:
       - 'apps/server/**'
       - 'apps/connectors/**'
       - 'scripts/oracle/deploy-api.sh'
+      - 'scripts/oracle/diagnose-api-startup.py'
       - '.github/workflows/oracle-api-deploy.yml'
   workflow_dispatch:
 permissions:
@@ -38,6 +39,7 @@ jobs:
           test -f apps/server/dist-system/system-support/job-worker-entrypoint.js
           grep -q registerStalwartMailRoutes apps/server/dist-system/system-support/server.js
           bash -n scripts/oracle/deploy-api.sh
+          python3 -m py_compile scripts/oracle/diagnose-api-startup.py
           bash -n scripts/oracle/check-communication-backlog.sh
       - name: Deploy immutable API and worker release with rollback
         id: deploy
