@@ -642,7 +642,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
       <div className="assist-phone-detail-title">
        <h1>{current.object==='Appointment'?calendarCustomer(chosen):
         current.object==='Customer'?String(chosen.Name??'Client'):
-        String(chosen.InvoiceNumber??chosen.QuotationNumber??chosen.Name??current.object)}</h1>
+        String(chosen.DocumentNumber??chosen.InvoiceNumber??chosen.QuotationNumber??chosen.Name??current.object)}</h1>
        {chosen.Status!=null&&<span className="assist-phone-status">
         {String(chosen.Status)}</span>}
       </div>
