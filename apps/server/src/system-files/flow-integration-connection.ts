@@ -5,6 +5,27 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
 const object=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'
   &&!Array.isArray(value)?value as Record<string,unknown>:{};
 
+/** Trusted package selectors; field extraction never depends on a Flow. */
+const communicationFor=(provider:Record<string,unknown>,operationName?:string)=>{
+ const channelId=provider.channelId;
+ if(typeof channelId!=='string'||!/^onesys_[a-z0-9_]+$/.test(channelId))return undefined;
+ const operation=object(object(provider.operations)[operationName??'']);
+ const selectors=object(operation.communicationFields);
+ const defaults=object(provider.defaultCommunicationFields);
+ const fields=Object.keys(selectors).length?selectors:defaults;
+ const safe=(value:unknown)=>typeof value==='string'
+  &&/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(value)
+  ?value:undefined;
+ const channel=typeof provider.communicationChannel==='string'
+  ?provider.communicationChannel:undefined;
+ return {provider:channelId,...(channel?{channel}:{}),
+  ...(safe(fields.recipient)?{requestRecipientPath:fields.recipient}:{}),
+  ...(safe(fields.body)?{requestBodyPath:fields.body}:{}),
+  ...(safe(fields.sender)?{requestSenderPath:fields.sender}:{}),
+  ...(typeof fields.responseId==='string'&&/^[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?)*$/.test(fields.responseId)
+   ?{externalMessageIdResponsePath:fields.responseId}:{})};
+};
+
 /** Resolve provider operation to a tenant-scoped HTTPS Named Credential. */
 export async function resolveFlowIntegrationCallout(db:SqlExecutor,rbac:RbacEngine,
  tenantId:string,userId:string,config:Record<string,unknown>):Promise<Record<string,unknown>> {
