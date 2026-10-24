@@ -229,6 +229,14 @@ try{
  assert.ok((await get('/records/User')).records.every(u=>u.Email===undefined));
  const adminTokens=await auth.signIn(t,'administrator@example.invalid',password);
  assert.equal((await http(adminTokens.accessToken,{...await rbac.describe(t,supervisor),revision:0})).status,409);
+
+ // Native user reporting hierarchy is independent of the role tree.
+ await db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,supervisor,developer]);
+ await db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,cashier,supervisor]);
+ const descendant=(await db.query("SELECT md_reporting_scope($1,$2,$3,'descendants') AS allowed",[t,developer,cashier])).rows[0].allowed;
+ assert.equal(descendant,true);
+ assert.equal((await db.query("SELECT md_reporting_scope($1,$2,$3,'descendants') AS allowed",[t,cashier,developer])).rows[0].allowed,false);
+ await assert.rejects(()=>db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,developer,cashier]),/Circular reporting hierarchy/);
  console.info('RBAC SQL validation passed: profiles, groups, direct grants/revocation, denies/restoration, sharing/restrictions, queues, record types, tenant isolation, atomic rollback, migration idempotency, HTTP and app licensing');
 }finally{
  if(listener?.listening)await new Promise((resolve,reject)=>listener.close(e=>e?reject(e):resolve()));
