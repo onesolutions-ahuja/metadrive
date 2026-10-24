@@ -10,12 +10,17 @@ const uuid='00000000-0000-4000-8000-000000000001';
 const rbac={require:async()=>{}} as unknown as RbacEngine;
 test('HTTP Callout fails closed for missing tenant credential and local network targets',async()=>{
  const missing={query:async()=>({rows:[]})} as unknown as SqlPersistence;
- await assert.rejects(()=>new NamedCredentialService(missing,rbac).callout('tenant','user',
+ const withWriter=(db:SqlPersistence)=>{
+  const service=new NamedCredentialService(db,rbac);
+  service.setIntegrationActivityWriter(async()=>undefined);
+  return service;
+ };
+ await assert.rejects(()=>withWriter(missing).callout('tenant','user',
   {namedCredentialId:uuid,method:'POST',path:'checkout'}, {},'run-1'),/unavailable/);
  for(const target of ['http://api.example.com/','https://127.0.0.1/','https://localhost/']){
   const db={query:async()=>({rows:[{protocol:'HTTPS',base_url:target,
    auth_type:'None',header_name:'',secret_ciphertext:null,enabled:true}]})} as unknown as SqlPersistence;
-  await assert.rejects(()=>new NamedCredentialService(db,rbac).callout('tenant','user',
+  await assert.rejects(()=>withWriter(db).callout('tenant','user',
    {namedCredentialId:uuid,method:'GET',path:'checkout'}, {},'run-1'),
     /standard HTTPS|local network/);
  }
