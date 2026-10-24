@@ -8,6 +8,7 @@ export default Object.freeze({
   "url": "https://graph.facebook.com/",
   "auth": "Bearer",
   "communicationChannel": "WhatsApp",
+  "defaultCommunicationFields": {"recipient":"to","body":"text.body","responseId":"messages[0].id"},
   "header": "",
   "fields": [
     {
@@ -20,7 +21,8 @@ export default Object.freeze({
   "operations": {
     "SendMessage": {
       "method": "POST",
-      "path": "v26.0/{!public_phoneNumberId}/messages"
+      "path": "v26.0/{!public_phoneNumberId}/messages",
+      "communicationFields": {"recipient":"to","body":"text.body","responseId":"messages[0].id"}
     }
   },
   "docs": "https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api",
