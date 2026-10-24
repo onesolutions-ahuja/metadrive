@@ -332,7 +332,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   // Landing routing is returned with the authenticated session, not fetched after rendering Setup.
   const landingPreference=async(tenantId:string,userId:string)=>{
-    const {rows}=await db.query<{landing_app_api:string}>(
+    const {rows}=await db.query<{landing_app_api:string;reports_to_user_id:string|null}>(
       'SELECT landing_app_api FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
       [tenantId,userId]);
     return rows[0]?.landing_app_api??'Setup';
@@ -1776,9 +1776,9 @@ export function createSystemServer(db:SqlPersistence) {
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.
-  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string},actor:Actor)=>{
+  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string;reports_to_user_id:string|null},actor:Actor)=>{
     const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,
-      IsActive:row.enabled,Tenant:actor.tenant_id};
+      IsActive:row.enabled,Tenant:actor.tenant_id,ReportsToId:row.reports_to_user_id};
     const checks=Object.keys(fields).map(field=>({resource:'User.'+field,action:'read'}));
     const allowed=await rbac.allowedMany(actor.tenant_id,actor.user_id,checks);
     return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i])),
@@ -1789,11 +1789,14 @@ export function createSystemServer(db:SqlPersistence) {
       await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
   };
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
-    const allowed=new Set(['Name','Email','Username','IsActive','Password','Tenant','LandingApp']);
+    const allowed=new Set(['Name','Email','Username','IsActive','Password','Tenant','LandingApp','ReportsToId']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
+    if(input.ReportsToId!==undefined&&input.ReportsToId!==null
+      &&(typeof input.ReportsToId!=='string'||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(input.ReportsToId)))
+      throw new Error('Invalid reporting manager');
     if(input.Tenant!==undefined&&(typeof input.Tenant!=='string'||!/^[0-9a-f-]{36}$/i.test(input.Tenant)))throw new Error('Invalid tenant');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
     if(input.LandingApp!==undefined&&(typeof input.LandingApp!=='string'
@@ -1803,11 +1806,12 @@ export function createSystemServer(db:SqlPersistence) {
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
-      tenant:input.Tenant as string|undefined,landingApp:input.LandingApp as string|undefined,role:undefined};
+      tenant:input.Tenant as string|undefined,landingApp:input.LandingApp as string|undefined,
+      reportingTo:input.ReportsToId as string|null|undefined,role:undefined};
   };
   const readUser=async(tenantId:string,userId:string,id:string)=>{
-    const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string}>(
-      'SELECT id,email,display_name,enabled,landing_app_api FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+    const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string;reports_to_user_id:string|null}>(
+      'SELECT id,email,display_name,enabled,landing_app_api,reports_to_user_id FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
     if(!result.rows[0])throw new Error('Record not found');
     return userRecord(result.rows[0],{tenant_id:tenantId,user_id:userId});
   };
@@ -1817,8 +1821,8 @@ export function createSystemServer(db:SqlPersistence) {
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0)throw new Error('Invalid pagination');
     const [users,count]=await Promise.all([
-      db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string}>(
-        'SELECT id,email,display_name,enabled,landing_app_api FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
+      db.query<{id:string;email:string;display_name:string;enabled:boolean;landing_app_api:string;reports_to_user_id:string|null}>(
+        'SELECT id,email,display_name,enabled,landing_app_api,reports_to_user_id FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
         [actor.tenant_id,Math.min(limit,100),offset]),
       db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
     ]);
@@ -1828,6 +1832,32 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','read');
     res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
+  }));
+  // The manager picker uses tenant identities, not role hierarchy or a shadow User object.
+  app.get('/api/records/User/reporting-options',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    const {rows}=await db.query<{id:string;email:string;display_name:string;reports_to_user_id:string|null}>(
+      'SELECT id,email,display_name,reports_to_user_id FROM md_users WHERE tenant_id=$1 ORDER BY display_name,email,id LIMIT 2000',
+      [actor.tenant_id]);
+    const root=await db.query<{user_id:string}>('SELECT user_id FROM md_tenant_developer_accounts WHERE tenant_id=$1',[actor.tenant_id]);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({users:rows.map(u=>({id:u.id,name:u.display_name||u.email,email:u.email,reportsToId:u.reports_to_user_id})),
+      rootUserId:root.rows[0]?.user_id??null});
+  }));
+  app.get('/api/records/User/:id/hierarchy',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
+    const target=req.params.id;
+    if(target!==actor.user_id)await rbac.require(actor.tenant_id,actor.user_id,'Security','read');
+    const direction=req.query.direction==='ancestors'?'ancestors':req.query.direction==='descendants'?'descendants':null;
+    if(!direction)throw new Error('Invalid hierarchy direction');
+    const {rows}=await db.query<{user_id:string;hierarchy_level:number}>(
+      'SELECT user_id,hierarchy_level FROM md_reporting_users($1,$2,$3) ORDER BY hierarchy_level,user_id LIMIT 2000',
+      [actor.tenant_id,target,direction]);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({userIds:rows.map(row=>row.user_id),users:rows.map(row=>({id:row.user_id,level:row.hierarchy_level}))});
   }));
   app.post('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
@@ -1843,8 +1873,8 @@ export function createSystemServer(db:SqlPersistence) {
     const passwordHash=await auth.hashPassword(values.password!,actor.tenant_id);
     const row=await db.transaction(async client=>{
       const result=await client.query<{id:string}>(
-        'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled,landing_app_api) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
-        [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true,values.landingApp??'Setup']);
+        'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled,landing_app_api,reports_to_user_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+        [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true,values.landingApp??'Setup',values.reportingTo??null]);
       const profile=await client.query<{id:string}>(
         "SELECT id FROM md_profiles WHERE tenant_id=$1 AND api_name='Default'",[actor.tenant_id]);
       if(profile.rows[0])await client.query(
@@ -1858,7 +1888,8 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','edit');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
-    if(Object.prototype.hasOwnProperty.call(req.body,'LandingApp'))
+    if(Object.prototype.hasOwnProperty.call(req.body,'LandingApp')
+      ||Object.prototype.hasOwnProperty.call(req.body,'ReportsToId'))
       await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
@@ -1868,9 +1899,16 @@ export function createSystemServer(db:SqlPersistence) {
       throw new Error('Landing app must be installed and licensed for this tenant');
     if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
     await db.transaction(async client=>{
-      const updated=await client.query(
-        'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled),landing_app_api=COALESCE($6,landing_app_api) WHERE tenant_id=$1 AND id=$2 RETURNING id',
-        [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null,values.landingApp??null]);
+      const updated=await client.query<{id:string;reports_to_user_id:string|null}>(
+        'SELECT id,reports_to_user_id FROM md_users WHERE tenant_id=$1 AND id=$2 FOR UPDATE',
+        [actor.tenant_id,req.params.id]);
+      if(!updated.rows[0])throw new Error('Record not found');
+      await client.query(
+        'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled),landing_app_api=COALESCE($6,landing_app_api),reports_to_user_id=CASE WHEN $7::boolean THEN $8::uuid ELSE reports_to_user_id END WHERE tenant_id=$1 AND id=$2',
+        [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null,values.landingApp??null,values.reportingTo!==undefined,values.reportingTo??null]);
+      if(values.reportingTo!==undefined&&values.reportingTo!==updated.rows[0].reports_to_user_id)
+        await client.query("INSERT INTO md_security_events(tenant_id,actor_user_id,subject_user_id,action,details) VALUES($1,$2,$3,'user.reporting.change',jsonb_build_object('previous',$4::text,'requested',$5::text))",
+          [actor.tenant_id,actor.user_id,req.params.id,updated.rows[0].reports_to_user_id,values.reportingTo]);
       if(!updated.rowCount)throw new Error('Record not found');
       if(values.enabled===false){
         await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
