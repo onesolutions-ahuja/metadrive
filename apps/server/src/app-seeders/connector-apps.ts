@@ -12,10 +12,11 @@ export type ConnectorAppName=keyof typeof connectorApps;
 export const isConnectorApp=(name:string):name is ConnectorAppName=>
  Object.prototype.hasOwnProperty.call(connectorApps,name);
 type Field={apiName:string;label:string;required:boolean;defaultValue:string};
-type Operation={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';path:string};
+type Operation={method:'GET'|'POST'|'PUT'|'PATCH'|'DELETE';path:string;
+ communicationFields?:{recipient?:string;sender?:string;body?:string;responseId?:string}};
 type Definition={folder:string;appApi:string;label:string;description:string;credential:string;url:string;
  auth:string;header:string;fields:Field[];operations:Record<string,Operation>;docs:string;notes:string;
- communicationChannel?:string};
+ communicationChannel?:string;defaultCommunicationFields?:Record<string,string>};
 const id=/^[A-Za-z][A-Za-z0-9_]*$/;
 function validate(value:Definition,apiName:string):Definition{
  if(value.appApi!==apiName||!id.test(value.credential)||!value.label||!value.description
@@ -62,6 +63,22 @@ export async function seedConnectorAppCatalog(db:Pick<SqlPersistence,'transactio
       (app_id,version,published,description,brand_color)
       VALUES($1,1,true,$2,'#3A6073')
       ON CONFLICT(app_id,version) DO NOTHING`,[rows[0].id,d.description]);
+   // Upgrade only already-installed connector metadata. Do not install apps,
+   // replace tenant credentials or overwrite customer-authored properties.
+   if(d.defaultCommunicationFields){
+    const defaults={channelId:'onesys_'+d.folder.replace(/-/g,'_'),
+     ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{}),
+     defaultCommunicationFields:d.defaultCommunicationFields};
+    await client.query(`
+     UPDATE md_system_definitions p
+     SET properties=$2::jsonb || p.properties,updated_at=now()
+     FROM md_apps a JOIN md_app_installations i ON i.app_id=a.id
+     WHERE a.api_name=$1 AND a.tenant_owner_id IS NULL
+       AND p.tenant_id=i.tenant_id AND p.api_name=a.api_name
+       AND p.kind='connector-providers' AND p.enabled=true
+       AND NOT (p.properties ? 'defaultCommunicationFields')`,
+      [name,JSON.stringify(defaults)]);
+   }
   }
  });
 }
@@ -127,12 +144,15 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
   [tenantId,appId,credentialName,d.fields.map(field=>field.apiName)]);
  const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs,
   channelId:systemChannelId,credentialName,
-  ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{})};
+  ...(d.communicationChannel?{communicationChannel:d.communicationChannel}:{}),
+  ...(d.defaultCommunicationFields?{defaultCommunicationFields:d.defaultCommunicationFields}:{})};
  await client.query(`INSERT INTO md_system_definitions
   (tenant_id,kind,api_name,label,properties,enabled)
   VALUES($1,'connector-providers',$2,$3,$4::jsonb,true)
   ON CONFLICT(tenant_id,kind,api_name)
-  DO UPDATE SET enabled=true,updated_at=now()`,
+  DO UPDATE SET enabled=true,
+    properties=EXCLUDED.properties || md_system_definitions.properties,
+    updated_at=now()`,
   [tenantId,name,d.label,JSON.stringify(properties)]);
  const connection={status:'ACTIVE',connectorKey:name,configuration:{namedCredentialId:credentialId}};
  await client.query(`INSERT INTO md_system_definitions

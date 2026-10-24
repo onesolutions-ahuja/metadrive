@@ -11,6 +11,7 @@ type Actor={tenant_id:string;user_id:string};
 type Authenticated=Request & {actor?:Actor;rawWebhookBody?:Buffer};
 type Endpoint={tenant_id:string;id:string;api_name:string;flow_api:string|null;
  execution_user_id:string|null;created_by:string;credential_name:string|null;
+ channel_id:string|null;channel_name:string|null;
  verify_token_digest:Buffer;signature_secret_ciphertext:Buffer;
  encryption_key_id:string;enabled:boolean;app_api:string|null;provider:string};
 const identifier=/^[A-Za-z][A-Za-z0-9_]*$/;
@@ -120,7 +121,25 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
  const load=async(id:string):Promise<Endpoint|undefined>=>{
   if(!uuid.test(id))return undefined;
   const {rows}=await db.query<Endpoint>(`
-   SELECT w.*,a.api_name AS app_api,c.name AS credential_name
+   SELECT w.*,a.api_name AS app_api,c.name AS credential_name,
+    (SELECT p.properties->>'channelId'
+     FROM md_connector_app_credentials binding
+     JOIN md_apps ca ON ca.id=binding.app_id AND ca.tenant_owner_id IS NULL
+     JOIN md_app_installations installed ON installed.tenant_id=binding.tenant_id
+       AND installed.app_id=binding.app_id
+     JOIN md_system_definitions p ON p.tenant_id=binding.tenant_id
+       AND p.kind='connector-providers' AND p.api_name=ca.api_name AND p.enabled=true
+     WHERE binding.tenant_id=w.tenant_id AND binding.credential_id=w.credential_id
+     LIMIT 1) AS channel_id,
+    (SELECT p.properties->>'communicationChannel'
+     FROM md_connector_app_credentials binding
+     JOIN md_apps ca ON ca.id=binding.app_id AND ca.tenant_owner_id IS NULL
+     JOIN md_app_installations installed ON installed.tenant_id=binding.tenant_id
+       AND installed.app_id=binding.app_id
+     JOIN md_system_definitions p ON p.tenant_id=binding.tenant_id
+       AND p.kind='connector-providers' AND p.api_name=ca.api_name AND p.enabled=true
+     WHERE binding.tenant_id=w.tenant_id AND binding.credential_id=w.credential_id
+     LIMIT 1) AS channel_name
    FROM md_inbound_webhook_endpoints w
    LEFT JOIN md_apps a ON a.id=w.app_id AND a.enabled=true
    LEFT JOIN md_named_credentials c ON c.tenant_id=w.tenant_id AND c.id=w.credential_id
@@ -147,7 +166,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    &&matches(endpoint.verify_token_digest,digest(token)));
   if(endpoint)await writeIntegrationActivity(db,{
    tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-   provider:endpoint.credential_name??endpoint.provider,
+   provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
    actorUserId:endpoint.execution_user_id??endpoint.created_by,
    endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'GET',statusCode:valid?200:403,outcome:valid?'success':'rejected',
    durationMs:Date.now()-requestStartedAt,responseBytes:valid?Buffer.byteLength(String(challenge)):0,
@@ -167,10 +186,12 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
    if(!endpoint)return;
    await writeIntegrationActivity(db,{
     tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-    provider:endpoint.credential_name??endpoint.provider,
+    provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
     actorUserId:endpoint.execution_user_id??endpoint.created_by,
     endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'POST',statusCode,outcome,durationMs:Date.now()-requestStartedAt,
-    requestBytes:raw?.length??0,errorCode:errorCode??null
+    requestBytes:raw?.length??0,errorCode:errorCode??null,
+    communication:{channel:endpoint.channel_name??'Other',
+     provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider}
    },activityWriter);
   };
   const reject=async(reason:string,rawBodyBytes?:number)=>{
@@ -243,7 +264,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
       // webhook attempt's result/latency/byte counts; do not emit a second API row.
       await activityWriter({
        tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
-       provider:endpoint.credential_name??endpoint.provider,
+       provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
        actorUserId:endpoint.execution_user_id??endpoint.created_by,
        endpoint:'/api/inbound-webhooks/'+endpoint.api_name,method:'POST',
        statusCode:200,outcome:'success',durationMs:Date.now()-requestStartedAt,
@@ -251,7 +272,7 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
        communication:{
         channel:String(values.Channel??'WhatsApp'),name:String(values.Name??'WhatsApp inbound'),
         sender:String(values.Sender??''),recipient:String(values.Recipient??''),
-        body:String(values.Body??''),provider:String(values.Provider??endpoint.provider),
+        body:String(values.Body??''),provider:endpoint.channel_id??String(values.Provider??endpoint.provider),
         externalMessageId:externalMessageId||undefined,
         relatedObject:'InboundWebhookEndpoint',relatedRecordId:endpoint.id,
         conversationId:typeof values.ConversationId==='string'?values.ConversationId:undefined,

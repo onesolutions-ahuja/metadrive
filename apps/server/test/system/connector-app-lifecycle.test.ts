@@ -40,6 +40,15 @@ test('six independently defined connector apps provision only tenant-scoped non-
   const providerMetadata=JSON.parse(String(provider.args[3]));
   assert.equal(providerMetadata.channelId,channelName);
   assert.equal(providerMetadata.credentialName,channelName);
+  if(name==='WhatsAppConnector'){
+   assert.equal(providerMetadata.communicationChannel,'WhatsApp');
+   assert.deepEqual(providerMetadata.defaultCommunicationFields,{
+    recipient:'to',body:'text.body',responseId:'messages[0].id'
+   });
+  }
+  assert.ok(writes.some(w=>w.sql.includes(
+   'properties=EXCLUDED.properties || md_system_definitions.properties')),
+   'Reinstall must add missing connector metadata while preserving tenant overrides');
   assert.equal(credential.args[3]?.toString().startsWith('https://'),true);
   assert.equal(credential.args.length,6,'No tenant secret belongs in a connector definition');
   assert.ok(writes.some(w=>w.sql.includes("kind,api_name,label,properties,enabled")));

@@ -28,7 +28,7 @@ const isCalloutScalar=(value:unknown):value is CalloutScalar=>
  ||typeof value==='number'&&Number.isFinite(value);
 
 function mappedCommunicationDetails(config:Record<string,unknown>,
- variables:Record<string,string|number|boolean|null>,responseBody?:string):IntegrationCommunicationDetails|undefined{
+ variables:Record<string,string|number|boolean|null>,responseBody?:string,requestBody?:string):IntegrationCommunicationDetails|undefined{
  const raw=config.communicationLog;
  if(!raw||typeof raw!=='object'||Array.isArray(raw))return undefined;
  const mapping=raw as Record<string,unknown>;
@@ -41,6 +41,28 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
  for(const key of ['channel','name','sender','recipient','subject','body','provider'] as const){
   const value=render(mapping[key]);
   if(value!==undefined)details[key]=value;
+ }
+ // Field extraction is declared by the installed connector, never by a Flow
+ // implementation. Only explicitly selected scalar fields enter Communication.
+ if(requestBody && requestBody.length<=32768){
+  try{
+   const json:unknown=JSON.parse(requestBody);
+   const get=(selector:unknown):string|undefined=>{
+    if(typeof selector!=='string'||!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(selector))return undefined;
+    let value:unknown=json;
+    for(const part of selector.split('.')){
+     if(!value||typeof value!=='object'||Array.isArray(value)){value=undefined;break;}
+     value=(value as Record<string,unknown>)[part];
+    }
+    return typeof value==='string'||typeof value==='number'?String(value).slice(0,10000):undefined;
+   };
+   for(const [field,selector] of [
+    ['recipient','requestRecipientPath'],['sender','requestSenderPath'],['body','requestBodyPath']
+   ] as const){
+    const value=get(mapping[selector]);
+    if(value!==undefined)details[field]=value;
+   }
+  }catch{/* Generic opaque HTTP payloads are logged without message details. */}
  }
  const path=mapping.externalMessageIdResponsePath;
  if(typeof path==='string'&&responseBody&&/^[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?(?:\.[A-Za-z][A-Za-z0-9_]*(?:\[\d+\])?)*$/.test(path)){
@@ -506,6 +528,8 @@ export class NamedCredentialService {
    ?JSON.parse(this.decryptOpaque(credentialSettings[0].configuration_ciphertext,
       credentialSettings[0].encryption_key_id)) as unknown:null;
   const mappedVariables=bindPublicHttpCredentialVariables(variables,configuration,templates);
+  if(Object.hasOwn(mappedVariables,'OneSysCommunicationLog'))
+   throw new Error('Reserved durable communication metadata variable');
   const prepared=prepareFlowHttpRequest(resolvedConfig,mappedVariables);
   const method=String(resolvedConfig.method??'GET').toUpperCase();
   const path=prepared.path;
@@ -553,7 +577,7 @@ export class NamedCredentialService {
     if(serialized.length>8192)throw new Error('Communication classification too large');
     await client.query(`
      INSERT INTO md_http_callout_job_values(tenant_id,job_id,api_name,value_ciphertext,data_type)
-     VALUES($1,$2,'__communication_log',$3,'communication_log')`,
+     VALUES($1,$2,'OneSysCommunicationLog',$3,'string')`,
      [tenantId,rows[0].id,this.encryptValue(serialized)]);
    }
    // Persist the trusted credential-derived scalar snapshot encrypted for durable headers.
@@ -621,7 +645,7 @@ export class NamedCredentialService {
     const variables:Record<string,CalloutScalar>=Object.create(null) as Record<string,CalloutScalar>;
     let communicationLog:Record<string,unknown>|undefined;
     for(const row of rows){
-     if(row.api_name==='__communication_log'&&row.data_type==='communication_log'){
+     if(row.api_name==='OneSysCommunicationLog'&&row.data_type==='string'){
       const parsed:unknown=JSON.parse(this.decryptValue(row.value_ciphertext));
       if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))
        throw new Error('Invalid durable communication metadata');
@@ -1181,7 +1205,7 @@ export class NamedCredentialService {
     endpoint:auditEndpoint,method,outcome:'network_error',
     durationMs:Date.now()-requestStartedAt,requestBytes,
     errorCode:error instanceof Error?error.name:'NETWORK_ERROR',
-    communication:mappedCommunicationDetails(config,flowVariables)
+    communication:mappedCommunicationDetails(config,flowVariables,undefined,body)
    },this.integrationActivityWriter);
    throw error;
   }
@@ -1193,7 +1217,7 @@ export class NamedCredentialService {
    outcome:successful?'success':'http_error',durationMs:Date.now()-requestStartedAt,
    requestBytes,responseBytes:result.responseBytes,
    errorCode:successful?null:'HTTP_STATUS_'+result.status,
-   communication:mappedCommunicationDetails(config,flowVariables,successful?result.body:undefined)
+   communication:mappedCommunicationDetails(config,flowVariables,successful?result.body:undefined,body)
   },this.integrationActivityWriter);
   if(!successful)throw new Error('HTTP Callout failed with status '+result.status);
   return {status:result.status,body:result.body.slice(0,4096)};
