@@ -67,6 +67,7 @@ test('durable HTTP Callout encrypts payload and never blindly retries uncertain 
   }
  } as unknown as SqlPersistence;
  const service=new NamedCredentialService(db,rbac);
+ service.setIntegrationActivityWriter(async()=>undefined);
  let sent:Record<string,unknown>|undefined;
  service.callout=async(_tenant,_user,config,variables,key)=>{
   idempotencyKeys.push(key);
@@ -114,6 +115,7 @@ test('durable external message metadata uses valid SQL key and type',async()=>{
   return {rows:[]};
  }} as unknown as PoolClient;
  const service=new NamedCredentialService({} as SqlPersistence,rbac);
+ service.setIntegrationActivityWriter(async()=>undefined);
  try{
   await service.enqueueCallout(client,tenantId,userId,runId,9,{
    namedCredentialId:credentialId,method:'POST',path:'v1/message',
