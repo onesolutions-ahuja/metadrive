@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {enforceManualPaymentGuard} from '../../src/system-files/nodes/RecordPaymentGuard.js';
+import {enforceManualPaymentGuard,enforceCashLedgerReversal} from '../../src/system-files/nodes/RecordPaymentGuard.js';
 const invoiceId='22222222-2222-4222-8222-222222222222';
 const config={
  invoiceObject:'Invoice',paymentObject:'CashLedger',invoiceField:'Invoice',
@@ -23,7 +23,7 @@ function fixture(amountPaid=0,entries:Record<string,unknown>[]=[]){
     updates.push(fields);
    }
   },
-  recordQuery:{find:async()=>entries}
+  recordQuery:{find:async(_t:string,_u:string,object:string)=>object==='Payment'?[]:entries}
  } as never;
  const fields:Record<string,unknown>={
   Invoice:invoiceId,Amount:40,Method:'Cash',Status:'Posted',
@@ -45,7 +45,7 @@ test('CashLedger receipt uses server-authenticated user and server time',async()
 test('CashLedger fails closed on legacy unallocated amount paid',async()=>{
  const f=fixture(20);
  await assert.rejects(enforceManualPaymentGuard(f.context,config,f.fields),
-  /legacy or unreconciled/);
+  /unreconciled/);
  assert.equal(f.updates.length,0);
 });
 test('CashLedger rejects replayed request and mismatched direction',async()=>{
@@ -65,4 +65,47 @@ test('CashLedger seeder and authorised Flow preserve permissions and use shared 
  assert.match(flow,/manualPaymentGuard/);
  assert.match(flow,/AceAssistCashier/);
  assert.doesNotMatch(flow,/INSERT INTO md_records|INSERT INTO md_record_values/);
+});
+
+test('cash receipt reversal appends an OUT posting and decreases invoice paid total',async()=>{
+ const changes:Record<string,unknown>[]=[];
+ const queries:string[]=[];
+ const invoiceId='22222222-2222-4222-8222-222222222222';
+ const originalId='33333333-3333-4333-8333-333333333333';
+ const context={
+  tenantId:'t',userId:'cashier',node:{config:{object:'CashLedger'}},
+  client:{query:async(sql:string)=>{queries.push(sql);return {rows:[]};}},
+  records:{
+   get:async(_t:string,_u:string,object:string)=>
+    object==='CashLedger'?{Invoice:invoiceId,Amount:40,Direction:'IN',
+     TransactionType:'Receipt',Status:'Posted',Method:'Cash'}:
+    {AmountPaid:40,Total:100,Customer:'customer',CurrencyCode:'GBP'},
+   update:async(_t:string,_u:string,_object:string,_id:string,value:Record<string,unknown>)=>
+    {changes.push(value);}
+  },
+  recordQuery:{find:async(_t:string,_u:string,object:string)=>object==='Payment'?[]:[{Id:originalId,Amount:40,Direction:'IN',
+   TransactionType:'Receipt',Status:'Posted',Method:'Cash',Reference:'old-request'}]}
+ } as never;
+ const fields:Record<string,unknown>={ReversalOf:originalId,Reference:'refund-request-001',
+  Direction:'OUT',TransactionType:'Refund',Status:'Posted',Method:'Cash',Amount:0};
+ await enforceCashLedgerReversal(context,{version:1},fields);
+ assert.deepEqual(changes,[{AmountPaid:0,Status:'Issued'}]);
+ assert.equal(fields.Amount,40);
+ assert.equal(fields.User,'cashier');
+ assert.ok(queries.some(query=>query.includes('cash_ledger_guarded')));
+});
+test('CashLedger reversal flow is explicit and permission-scoped',()=>{
+ const source=readFileSync(new URL('../../src/app-seeders/core-cash-ledger-flows.ts',import.meta.url),'utf8');
+ assert.match(source,/AceAssistReverseCashLedgerV1/);
+ assert.match(source,/cashReversalGuard/);
+ assert.match(source,/AceAssistCashier/);
+});
+
+test('CashLedger reconciles existing settled Payment without double-posting',async()=>{
+ const f=fixture(30);
+ (f.context as unknown as {recordQuery:{find:(t:string,u:string,o:string)=>Promise<Record<string,unknown>[]>}})
+  .recordQuery.find=async(_t,_u,object)=>object==='Payment'
+   ?[{Status:'Settled',Amount:30}]:[];
+ await enforceManualPaymentGuard(f.context,config,f.fields);
+ assert.deepEqual(f.updates,[{AmountPaid:70,Status:'PartPaid'}]);
 });

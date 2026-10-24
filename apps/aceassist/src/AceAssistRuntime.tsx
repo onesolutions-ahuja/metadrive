@@ -91,6 +91,7 @@ export default function AceAssistRuntime({entry,onLogout}:{
  const [appointmentDraft,setAppointmentDraft]=useState<Record<string,string>>({});
  const [busy,setBusy]=useState(false);
  const [cashInvoice,setCashInvoice]=useState<Row|null>(null);
+ const [refundReceipt,setRefundReceipt]=useState<Row|null>(null);
  const [printingDocument,setPrintingDocument]=useState<Row|null>(null);
  const [printingObject,setPrintingObject]=useState<'Quotation'|'Invoice'>('Invoice');
  const [cashAmount,setCashAmount]=useState('');
@@ -313,6 +314,20 @@ export default function AceAssistRuntime({entry,onLogout}:{
     method:'POST',body:JSON.stringify({recordId:cashInvoice.Id,amount,requestId:cashRequestId})});
    if(response.interviewId)throw Error('Cash settlement has not completed');
    setCashInvoice(null);setNotice('Cash receipt posted to CashLedger through authorised Flow.');
+   setReload(x=>x+1);
+  }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
+  finally{setBusy(false);}
+ };
+ const reverseCashReceipt=async()=>{
+  if(!refundReceipt?.Id||busy||!actions.has('AceAssistReverseCashLedgerV1'))return;
+  setBusy(true);setError('');
+  try{
+   const response=await apiRequest<FlowResponse>('/flows/AceAssistReverseCashLedgerV1/execute',{
+    method:'POST',body:JSON.stringify({
+     originalId:String(refundReceipt.Id),requestId:window.crypto.randomUUID()})});
+   if(response.interviewId)throw Error('Cash reversal is incomplete');
+   setRefundReceipt(null);setChosen(null);
+   setNotice('Cash receipt reversed with a new CashLedger entry.');
    setReload(x=>x+1);
   }catch(cause){setError(cause instanceof Error?cause.message:String(cause));}
   finally{setBusy(false);}
@@ -693,12 +708,12 @@ export default function AceAssistRuntime({entry,onLogout}:{
         {' '}{Number(chosen.Total).toFixed(2)}</p>}
       </section>}
       <div className="custom-action-buttons">
-       <button type="button" onClick={()=>startEdit('Update',chosen)}
+       {current.object!=='CashLedger'&&<button type="button" onClick={()=>startEdit('Update',chosen)}
         disabled={isFinancialDocument(current.object)
          ?!actions.has(documentFlow('Update',current.object))||busy
           ||!actions.has('AceAssistLoad'+current.object+'Line')
          :!(can('Update')||canDynamic('Update',current.object))||busy}>
-        {isFinancialDocument(current.object)?'Edit document & items':'Edit'}</button>
+        {isFinancialDocument(current.object)?'Edit document & items':'Edit'}</button>}
        {current.object==='Appointment'&&String(chosen.Status??'')==='Completed'
         &&actions.has('AceAssistInvoiceFromAppointment')&&
         <button type="button" disabled={busy}
@@ -724,7 +739,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
         &&['Issued','PartPaid'].includes(String(chosen.Status??''))&&
         <button type="button" disabled={busy} onClick={()=>openCashPayment(chosen)}>
          Record cash payment</button>}
-       <button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>
+       {current.object==='CashLedger'&&String(chosen.TransactionType)==='Receipt'
+        &&String(chosen.Direction)==='IN'&&String(chosen.Status)==='Posted'
+        &&actions.has('AceAssistReverseCashLedgerV1')&&
+        <button type="button" disabled={busy} onClick={()=>setRefundReceipt(chosen)}>Reverse receipt</button>}
+       {current.object!=='CashLedger'&&<button type="button" onClick={()=>startEdit('Delete',chosen)} disabled={!can('Delete')||busy}>Delete</button>}
       </div>
      </>:<p className="custom-empty">Select a record to edit or view details.</p>}
 
@@ -749,6 +768,21 @@ export default function AceAssistRuntime({entry,onLogout}:{
   {printingDocument&&<DocumentPrint objectLabel={printingObject}
    document={printingDocument} lines={relatedRows}
    onClose={()=>setPrintingDocument(null)}/>}
+  {refundReceipt&&<div className="assist-modal-backdrop" role="presentation">
+   <section className="assist-modal" role="dialog" aria-modal="true" aria-label="Reverse posted cash receipt">
+    <header className="assist-modal-heading"><h2>Reverse cash receipt</h2>
+     <button type="button" disabled={busy} onClick={()=>setRefundReceipt(null)}>Close</button></header>
+    <p>Reverse {Number(refundReceipt.Amount??0).toFixed(2)} recorded against
+     {' '}{String(refundReceipt.TransactionNumber??refundReceipt.Reference??'this receipt')}?</p>
+    <p>A new OUT entry will be created; the original remains in the ledger.</p>
+    {error&&<p role="alert">{error}</p>}
+    <div className="custom-action-buttons">
+     <button type="button" disabled={busy} onClick={()=>setRefundReceipt(null)}>Cancel</button>
+     <button type="button" disabled={busy} onClick={()=>void reverseCashReceipt()}>
+      {busy?'Reversing…':'Confirm reversal'}</button>
+    </div>
+   </section>
+  </div>}
   {cashInvoice&&<div className="assist-modal-backdrop" role="presentation">
    <section className="assist-modal" role="dialog" aria-modal="true"
     aria-label="Record cash settlement">
@@ -762,29 +796,6 @@ export default function AceAssistRuntime({entry,onLogout}:{
        value={cashAmount} onChange={event=>setCashAmount(event.target.value)}/>
      </label>
      <p>Only record cash actually received. Card payments require a verified provider callback.</p>
-     {editingObject==='Appointment'&&editing==='Create'&&
-      <fieldset className="assist-service-selection">
-       <legend>Services (select one or more)</legend>
-       {(lookupRows.Product??[]).filter(p=>
-        p.Active!==false&&p.Active!=='false'&&(p.IsService===true||p.IsService==='true'))
-        .map(product=>{
-         const id=idOf(product);
-         return <label key={id} className="assist-service-choice">
-          <input type="checkbox" checked={appointmentServices.includes(id)}
-           onChange={event=>{
-            const next=event.target.checked?[...appointmentServices,id]:appointmentServices.filter(x=>x!==id);
-            setAppointmentServices(next);
-            const total=next.reduce((minutes,productId)=>minutes+
-             Number((lookupRows.Product??[]).find(p=>idOf(p)===productId)?.DurationMinutes||30),0);
-            setForm(previous=>withServiceEnd(previous,{DurationMinutes:total||30}));
-           }}/>
-          <span>{String(product.Name??'Service')}</span>
-          <small>{Number(product.DurationMinutes??30)} min · {Number(product.Price??0).toFixed(2)}</small>
-         </label>;
-        })}
-       {!lookupRows.Product?.some(p=>p.IsService===true||p.IsService==='true')&&
-        <p>No active bookable services. Mark the relevant products as services first.</p>}
-      </fieldset>}
      {error&&<p role="alert">{error}</p>}
      <footer className="assist-modal-footer">
       <button type="button" disabled={busy} onClick={()=>setCashInvoice(null)}>Cancel</button>
@@ -869,6 +880,29 @@ export default function AceAssistRuntime({entry,onLogout}:{
          <RecordFieldInput field={editingObject==='Appointment'&&field.apiName==='Location'?{...field,label:'Address'}:editingObject==='Appointment'&&field.apiName==='Notes'?{...field,dataType:'textarea'}:field} value={form[field.apiName]??''}
           onChange={v=>setForm(x=>({...x,[field.apiName]:v}))}/>}
        </React.Fragment>)}
+     {editingObject==='Appointment'&&editing==='Create'&&
+      <fieldset className="assist-service-selection">
+       <legend>Services (select one or more)</legend>
+       {(lookupRows.Product??[]).filter(p=>
+        p.Active!==false&&p.Active!=='false'&&(p.IsService===true||p.IsService==='true'))
+        .map(product=>{
+         const id=idOf(product);
+         return <label key={id} className="assist-service-choice">
+          <input type="checkbox" checked={appointmentServices.includes(id)}
+           onChange={event=>{
+            const next=event.target.checked?[...appointmentServices,id]:appointmentServices.filter(x=>x!==id);
+            setAppointmentServices(next);
+            const total=next.reduce((minutes,productId)=>minutes+
+             Number((lookupRows.Product??[]).find(p=>idOf(p)===productId)?.DurationMinutes||30),0);
+            setForm(previous=>withServiceEnd(previous,{DurationMinutes:total||30}));
+           }}/>
+          <span>{String(product.Name??'Service')}</span>
+          <small>{Number(product.DurationMinutes??30)} min · {Number(product.Price??0).toFixed(2)}</small>
+         </label>;
+        })}
+       {!lookupRows.Product?.some(p=>p.IsService===true||p.IsService==='true')&&
+        <p>No active bookable services. Mark the relevant products as services first.</p>}
+      </fieldset>}
      {error&&<p role="alert">{error}</p>}
      <footer className="assist-modal-footer">
       <button type="button" onClick={()=>{setEditing(null);setReturnToAppointment(false);}} disabled={busy}>Cancel</button>
