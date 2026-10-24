@@ -48,7 +48,7 @@ function mappedCommunicationDetails(config:Record<string,unknown>,
   try{
    const json:unknown=JSON.parse(requestBody);
    const get=(selector:unknown):string|undefined=>{
-    if(typeof selector!=='string'||!/^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(selector))return undefined;
+    if(typeof selector!=='string'||!/^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){0,5}$/.test(selector))return undefined;
     let value:unknown=json;
     for(const part of selector.split('.')){
      if(!value||typeof value!=='object'||Array.isArray(value)){value=undefined;break;}
