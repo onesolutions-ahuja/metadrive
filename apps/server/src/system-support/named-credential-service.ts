@@ -308,6 +308,8 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid credential');
   const x=body as Record<string,unknown>;
+  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name))
+   throw new Error('onesys is reserved for system-installed credentials');
   if(typeof x.name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)
     ||typeof x.label!=='string'||!x.label.trim()
     ||x.protocol!=='HTTPS'
@@ -675,6 +677,8 @@ export class NamedCredentialService {
      (current.rows[0].secret_ciphertext || current.rows[0].configuration_ciphertext))
     throw new Error('Credential key rotation requires a complete re-encryption workflow');
   const x=body as Record<string,unknown>;
+  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name))
+   throw new Error('System credential names are managed by AppExchange');
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     x.protocol!=='HTTPS'||
