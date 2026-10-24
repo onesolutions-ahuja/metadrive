@@ -8,6 +8,7 @@ import {seedAceAssistDocumentFlows} from './aceassist-document-flows.js';
 import {seedAceAssistReminderFlows} from './aceassist-reminder-flows.js';
 import {seedAceAssistPaymentFlows} from './aceassist-payment-flows.js';
 import {seedCashLedgerFlows} from './core-cash-ledger-flows.js';
+import {seedAppointmentLines} from './aceassist-appointment-lines.js';
 import {ACEASSIST_BOOKING_OVERLAP,ACEASSIST_BOOKING_AVAILABILITY} from './aceassist-booking-guards.js';
 import {seedAceAssistWhatsAppBookingFlow} from './aceassist-whatsapp-booking-flow.js';
 import {ACEASSIST_SCHEDULING_OBJECTS,ACEASSIST_SCHEDULING_FIELD_NAMES,seedAceAssistSchedulingObjects} from './aceassist-scheduling-objects.js';
@@ -119,6 +120,7 @@ export async function seedAceAssistCrudFlows(db:SqlPersistence):Promise<number> 
   created+=await seedAceAssistDocumentFlows(client,tenant_id);
   created+=await seedAceAssistPaymentFlows(client,tenant_id);
   created+=await seedCashLedgerFlows(client,tenant_id);
+  created+=await seedAppointmentLines(client,tenant_id);
   created+=await seedAceAssistWhatsAppBookingFlow(client,tenant_id);
   created+=await seedAceAssistReminderFlows(client,tenant_id);
   created+=await seedAceAssistCommunicationTemplates(client,tenant_id);
