@@ -16,6 +16,61 @@ const money=(value:unknown):number=>{
 /** Shared SQL-backed settlement check; configuration is supplied by the calling
  * Flow, never hardcoded to an app. Funds are not collected here.
  */
+/** Authorised reversal of an existing posted cash receipt. A reversal is a new
+ * immutable OUT entry; never edits or deletes the original ledger row.
+ * The invoice and both postings are protected by the same transaction lock.
+ */
+export async function enforceCashLedgerReversal(context:FlowNodeContext,raw:unknown,
+ fields:Record<string,unknown>):Promise<void>{
+ if(!raw||typeof raw!=='object'||Array.isArray(raw)
+  ||context.node.config.object!=='CashLedger')throw Error('Invalid reversal Flow');
+ const originalId=fields.ReversalOf,ref=fields.Reference;
+ if(typeof originalId!=='string'||!/^[0-9a-f-]{36}$/i.test(originalId))
+  throw Error('Valid original ledger entry required');
+ if(typeof ref!=='string'||ref.length<8||ref.length>128)
+  throw Error('Reversal requires an idempotency reference');
+ if(fields.TransactionType!=='Refund'||fields.Direction!=='OUT'||fields.Status!=='Posted'
+  ||fields.Method!=='Cash')throw Error('Invalid reversal posting');
+ const original=await context.records.get(context.tenantId,context.userId,
+  'CashLedger',originalId,context.client);
+ const invoiceId=original.Invoice;
+ if(typeof invoiceId!=='string'||!/^[0-9a-f-]{36}$/i.test(invoiceId)
+  ||original.TransactionType!=='Receipt'||original.Direction!=='IN'
+  ||original.Status!=='Posted'||original.Method!=='Cash')
+  throw Error('Only posted cash receipts can be reversed');
+ await context.client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+  [context.tenantId+':financial-invoice:'+invoiceId]);
+ const entries=await context.recordQuery.find(context.tenantId,context.userId,
+  'CashLedger',[{field:'Invoice',operator:'Equals',value:invoiceId}],
+  undefined,{limit:200},context.client);
+ if(entries.length===200)throw Error('CashLedger reconciliation limit exceeded');
+ if(entries.some(e=>e.Reference===ref))throw Error('Reversal request already recorded');
+ if(entries.some(e=>e.ReversalOf===originalId))throw Error('Receipt already reversed');
+ const total=entries.filter(e=>e.Status==='Posted').reduce((sum,e)=>{
+  const value=money(e.Amount);
+  return sum+(e.Direction==='IN'?value:e.Direction==='OUT'?-value:0);
+ },0);
+ const reversal=money(original.Amount);
+ if(reversal<=0||total<reversal)throw Error('Reversal exceeds current paid balance');
+ const invoice=await context.records.get(context.tenantId,context.userId,
+  'Invoice',invoiceId,context.client);
+ if(money(invoice.AmountPaid??0)!==total)
+  throw Error('Invoice and CashLedger disagree; reconciliation required');
+ const remaining=total-reversal;
+ const invoiceTotal=money(invoice.Total);
+ await context.records.update(context.tenantId,context.userId,'Invoice',invoiceId,{
+  AmountPaid:remaining/100,Status:remaining===invoiceTotal?'Paid':remaining>0?'PartPaid':'Issued'
+ },undefined,context.client);
+ fields.Invoice=invoiceId;
+ fields.Amount=reversal/100;
+ fields.Customer=invoice.Customer??null;
+ fields.CurrencyCode=invoice.CurrencyCode??null;
+ fields.User=context.userId;
+ fields.SourceApp='AceAssist';
+ fields.TransactionDate=new Date().toISOString();
+ await context.client.query("SELECT set_config('metadrive.cash_ledger_guarded','yes',true)");
+}
+
 export async function enforceManualPaymentGuard(context:FlowNodeContext,raw:unknown,
  fields:Record<string,unknown>):Promise<void>{
  if(raw===null||raw===undefined)return;
