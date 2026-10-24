@@ -158,6 +158,10 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
+  if(endpoint&&!activityWriter){
+   res.status(503).type('text/plain').send('Webhook communication logger unavailable');
+   return;
+  }
   const mode=req.query['hub.mode'],token=req.query['hub.verify_token'];
   const challenge=req.query['hub.challenge'];
   const valid=Boolean(endpoint&&['Meta','HmacSha256'].includes(endpoint.provider)
@@ -179,6 +183,11 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const requestStartedAt=Date.now();
   res.setHeader('Cache-Control','no-store');
   const endpoint=await load(req.params.id);
+  // No external request is acknowledged without the central Communication writer.
+  if(endpoint&&!activityWriter){
+   res.status(503).json({error:'Webhook communication logger unavailable'});
+   return;
+  }
   const signature=req.get('x-hub-signature-256');
   const raw=req.rawWebhookBody;
   const logInbound=async(statusCode:number,outcome:'success'|'http_error'|'network_error'|'rejected',
@@ -245,24 +254,22 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
   const event=events[0];
   if(!event){await logInbound(503,'http_error','EVENT_WRITE_FAILED');res.status(503).json({error:'Unable to accept webhook'});return;}
   if(event.status==='completed'){await logInbound(200,'success');res.status(200).json({received:true});return;}
-  // The event payload is retained in tenant SQL. A compact scalar copy is sent
-  // only when the Flow input contract can accept it (max 4096 characters).
-  const json=raw.toString('utf8');
+  // The event payload is retained in tenant SQL. The central writer is independent
+  // of any Flow; business Flows may run afterwards, but never create the audit record.
   let requestCommunicationRecorded=false;
   try{
    // Save the provider message before any optional legacy Flow work. A credential
    // webhook never executes AceChatterReceiveWebhook or any other app Flow.
    if(endpoint.credential_name){
-    if(!records&&!activityWriter)throw new Error('Communication record engine unavailable');
+    if(!activityWriter)throw new Error('Central Communication writer unavailable');
     const messages=whatsappMessages(req.body,endpoint.id);
     let writtenMessages=0;
     for(const values of messages){
      const externalMessageId=typeof values.ExternalMessageId==='string'?values.ExternalMessageId:'';
      if(externalMessageId&&await hasInboundMessage(db,endpoint.tenant_id,externalMessageId))continue;
-     if(activityWriter){
-      // The one Communication record carries both the real inbound message and this
-      // webhook attempt's result/latency/byte counts; do not emit a second API row.
-      await activityWriter({
+     // A verified inbound message always enters the same central outbox.
+     // Never write it through an app Flow or a direct RecordEngine bypass.
+     await activityWriter({
        tenantId:endpoint.tenant_id,direction:'Inbound',transport:'Webhook',
        provider:endpoint.channel_id??endpoint.credential_name??endpoint.provider,
        actorUserId:endpoint.execution_user_id??endpoint.created_by,
@@ -279,10 +286,6 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
         receivedAt:typeof values.ReceivedAt==='string'?values.ReceivedAt:undefined
        }
       });
-     }else{
-      await records!.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
-       'Communication',values);
-     }
      writtenMessages++;
     }
     requestCommunicationRecorded=writtenMessages>0;
@@ -294,16 +297,6 @@ export function registerInboundWebhookPublicRoutes(app:Express,db:SqlPersistence
      requestId:event.id,webhookEventId:event.id,webhookPayloadJson:json.length<=4096?json:'',
      webhookEndpoint:endpoint.api_name
     });
-   }else{
-    if(!records)throw new Error('Communication record engine unavailable');
-    const sanitized=JSON.stringify(safePayload(req.body)).slice(0,10000);
-    await records.create(endpoint.tenant_id,endpoint.execution_user_id??endpoint.created_by,
-     'Communication',{
-      Name:'Webhook '+endpoint.api_name,Channel:'Other',Direction:'Inbound',Status:'Received',
-      Provider:endpoint.provider,Body:sanitized,ReceivedAt:new Date().toISOString(),
-      ExternalMessageId:event.id,RelatedObject:'InboundWebhookEvent',RelatedRecordId:event.id
-     });
-    requestCommunicationRecorded=true;
    }
    await db.query(`UPDATE md_inbound_webhook_events SET status='completed',
      processed_at=now(),error_code=NULL WHERE tenant_id=$1 AND id=$2`,
