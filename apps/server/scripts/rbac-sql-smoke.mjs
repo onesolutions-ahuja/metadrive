@@ -237,6 +237,9 @@ try{
  assert.equal(descendant,true);
  assert.equal((await db.query("SELECT md_reporting_scope($1,$2,$3,'descendants') AS allowed",[t,cashier,developer])).rows[0].allowed,false);
  await assert.rejects(()=>db.query('UPDATE md_users SET reports_to_user_id=$3 WHERE tenant_id=$1 AND id=$2',[t,developer,cashier]),/Circular reporting hierarchy/);
+ await save(snapshot=>{snapshot.permissionSets.find(set=>set.id===superSet).recordDataScopes={Invoice:'descendants'};},developer);
+ assert.equal((await db.query("SELECT md_effective_reporting_scope($1,$2,'Invoice') AS scope",[t,supervisor])).rows[0].scope,'descendants');
+ assert.equal((await db.query("SELECT md_record_access($1,$2,$3,'read') AS allowed",[t,supervisor,owned])).rows[0].allowed,false);
  console.info('RBAC SQL validation passed: profiles, groups, direct grants/revocation, denies/restoration, sharing/restrictions, queues, record types, tenant isolation, atomic rollback, migration idempotency, HTTP and app licensing');
 }finally{
  if(listener?.listening)await new Promise((resolve,reject)=>listener.close(e=>e?reject(e):resolve()));
