@@ -856,6 +856,7 @@ export type PermissionSetMetadata = PermissionPolicyExtras & {
   appPermissions?: Record<string, boolean>;
   tabPermissions?: Record<string, boolean>;
   navigationDefaultAccess?: 'Allow' | 'Deny';
+  recordDataScopes?: Record<string, 'all' | 'descendants' | 'own'>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
 
