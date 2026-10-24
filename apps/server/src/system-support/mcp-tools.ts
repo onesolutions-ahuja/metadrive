@@ -18,11 +18,11 @@ async function brokerOperation(request:{action:string;service:string;release?:st
   const fail=()=>{if(!finished){finished=true;sock.destroy();reject(Error('Operations broker unavailable'));}};
   sock.setTimeout(15000,fail);
   sock.on('error',fail);
-  sock.on('connect',()=>sock.write(JSON.stringify(request)+'\\n'));
+  sock.on('connect',()=>sock.write(JSON.stringify(request)+'\n'));
   sock.on('data',(chunk:Buffer)=>{
    buffer+=chunk.toString('utf8');
    if(buffer.length>256*1024){fail();return;}
-   const index=buffer.indexOf('\\n');
+   const index=buffer.indexOf('\n');
    if(index<0)return;
    try{
     const answer=JSON.parse(buffer.slice(0,index));
