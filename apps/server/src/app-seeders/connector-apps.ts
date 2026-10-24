@@ -73,26 +73,33 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
  const appId=apps[0]?.id;
  if(!appId)throw Error('Connector app missing from published catalogue: '+name);
  // Existing Named Credentials can have customer-renamed labels, custom endpoints and ciphertext.
+ // A system credential uses an immutable AppExchange-controlled namespace.
+ // Keep legacy tenant credentials reusable until references can be migrated safely.
+ const systemCredentialName='onesys_'+name;
+ const {rows:legacyBinding}=await client.query<{credential_id:string;credential_name:string}>(`
+  SELECT b.credential_id,b.credential_name FROM md_connector_app_credentials b
+  WHERE b.tenant_id=$1 AND b.app_id=$2 LIMIT 1`,[tenantId,appId]);
+ const credentialName=legacyBinding[0]?.credential_name??systemCredentialName;
  const {rows:credentials}=await client.query<{id:string}>(`INSERT INTO md_named_credentials
    (tenant_id,name,label,protocol,base_url,auth_type,header_name,enabled)
    VALUES($1,$2,$3,'HTTPS',$4,$5,$6,true)
    ON CONFLICT(tenant_id,name) DO NOTHING RETURNING id`,
-   [tenantId,d.credential,d.label,d.url,d.auth,d.header]);
+   [tenantId,credentialName,d.label,d.url,d.auth,d.header]);
  const created=Boolean(credentials[0]);
  const {rows:current}=created?{rows:credentials}:await client.query<{id:string}>(`
   SELECT id FROM md_named_credentials WHERE tenant_id=$1 AND name=$2 FOR UPDATE`,
-  [tenantId,d.credential]);
+  [tenantId,credentialName]);
  if(!current[0])throw Error('Connector credential could not be resolved: '+name);
  const credentialId=current[0].id;
  const {rows:existingOwner}=await client.query<{credential_id:string}>(`
   SELECT credential_id FROM md_connector_app_credentials
-  WHERE tenant_id=$1 AND app_id=$2 AND credential_name=$3`,[tenantId,appId,d.credential]);
+  WHERE tenant_id=$1 AND app_id=$2 AND credential_name=$3`,[tenantId,appId,credentialName]);
  if(existingOwner[0]&&existingOwner[0].credential_id!==credentialId)
   throw Error('Connector credential binding cannot change: '+name);
  await client.query(`INSERT INTO md_connector_app_credentials
    (tenant_id,app_id,credential_id,credential_name,provisioned)
    VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-   [tenantId,appId,credentialId,d.credential,created]);
+   [tenantId,appId,credentialId,credentialName,created]);
  // Reinstall re-enables managed resources without modifying existing customer secret/URL/auth.
  await client.query(`UPDATE md_named_credentials SET enabled=true,updated_at=now()
   WHERE tenant_id=$1 AND id=$2`,[tenantId,credentialId]);
@@ -101,15 +108,16 @@ export async function installConnectorApp(client:PoolClient,tenantId:string,name
     (tenant_id,app_id,credential_name,field_api,label,required,default_value)
     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO UPDATE
     SET label=EXCLUDED.label,required=EXCLUDED.required,default_value=EXCLUDED.default_value`,
-    [tenantId,appId,d.credential,field.apiName,field.label,field.required,field.defaultValue]);
+    [tenantId,appId,credentialName,field.apiName,field.label,field.required,field.defaultValue]);
  }
  // These rows are connector-package declarations, never customer-defined Named Credential
  // variables. Remove stale optional declarations on reinstall; do not touch ciphertext.
  await client.query(`DELETE FROM md_connector_app_fields
   WHERE tenant_id=$1 AND app_id=$2 AND credential_name=$3
     AND NOT (field_api=ANY($4::text[]))`,
-  [tenantId,appId,d.credential,d.fields.map(field=>field.apiName)]);
- const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs};
+  [tenantId,appId,credentialName,d.fields.map(field=>field.apiName)]);
+ const properties={status:'ACTIVE',baseUrl:d.url,operations:d.operations,documentation:d.docs,
+  channelId:'onesys_'+connectorApps[name].replace(/-/g,'_'),credentialName};
  await client.query(`INSERT INTO md_system_definitions
   (tenant_id,kind,api_name,label,properties,enabled)
   VALUES($1,'connector-providers',$2,$3,$4::jsonb,true)
