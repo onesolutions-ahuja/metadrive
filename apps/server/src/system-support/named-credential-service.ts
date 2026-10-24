@@ -699,13 +699,14 @@ export class NamedCredentialService {
      (current.rows[0].secret_ciphertext || current.rows[0].configuration_ciphertext))
     throw new Error('Credential key rotation requires a complete re-encryption workflow');
   const x=body as Record<string,unknown>;
-  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name)){
-   const {rows:owner}=await this.db.query<{credential_name:string}>(`
-    SELECT credential_name FROM md_connector_app_credentials
-    WHERE tenant_id=$1 AND credential_id=$2 AND credential_name=$3 LIMIT 1`,
-    [tenantId,id,x.name]);
-   if(!owner[0])throw new Error('System credential names are managed by AppExchange');
-  }
+  const {rows:bindings}=await this.db.query<{credential_name:string}>(`
+   SELECT credential_name FROM md_connector_app_credentials
+   WHERE tenant_id=$1 AND credential_id=$2`,[tenantId,id]);
+  if(bindings.length&&bindings.some(binding=>binding.credential_name!==x.name))
+   throw new Error('Connector credential name cannot be changed');
+  if(typeof x.name==='string'&&/^onesys(?:_|$)/i.test(x.name)
+    &&!bindings.some(binding=>binding.credential_name===x.name))
+   throw new Error('System credential names are managed by AppExchange');
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
     x.protocol!=='HTTPS'||
