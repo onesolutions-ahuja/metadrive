@@ -8,6 +8,7 @@ src=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   echo 'Unexpected API sandbox configuration; aborting' >&2; exit 1;
 }
 id metadrive >/dev/null
+install -d -o root -g root -m 0755 /usr/local/libexec
 install -o root -g root -m 0755 "$src/metadrive-mcp-operations" /usr/local/sbin/metadrive-mcp-operations
 install -o root -g root -m 0755 "$src/metadrive-mcp-activate" /usr/local/libexec/metadrive-mcp-activate
 install -o root -g root -m 0755 "$src/metadrive-mcp-broker.py" /usr/local/libexec/metadrive-mcp-broker.py
