@@ -13,8 +13,17 @@ test('credential-linked webhook accepts verified request, creates Communication,
  const communications:Array<Record<string,unknown>>=[];
  let flowsCalled=0;
  let state='received';
- const db={query:async(sql:string)=>{
-  if(sql.includes('md_communication_logger_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+ const db={query:async(sql:string,params:unknown[]=[])=>{
+  if(sql.includes('INSERT INTO md_record_values')){
+   const keys=params[2] as string[],entries=params[3] as string[];
+   communications.push(Object.fromEntries(keys.map((key,index)=>[key,entries[index]])));
+   return {rows:[]};
+  }
+  if(sql.includes('FROM md_tenants'))return {rows:[{id:tenant}]};
+  if(sql.includes('FROM md_field_definitions'))
+   return {rows:(params[1] as string[]).map(api_name=>({api_name}))};
+  if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'record-new'}]};
+
   if(sql.includes('FROM md_records r'))return {rows:[]};
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
@@ -27,7 +36,7 @@ test('credential-linked webhook accepts verified request, creates Communication,
    return {rows:[{id:'44444444-4444-4444-8444-444444444444',status:state}]};
   if(sql.includes("SET status='completed'"))state='completed';
   return {rows:[]};
- }};
+ },transaction:async(fn:(client:unknown)=>Promise<unknown>)=>fn({query:db.query})};
  const app=express();
  app.use(express.json({verify:(req,_res,raw)=>{
   (req as typeof req&{rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(raw);
@@ -98,7 +107,16 @@ test('credential webhook retries skip inbound message IDs already stored before 
  const communications:Array<Record<string,unknown>>=[];
  let eventStatus='received';
  const db={query:async(sql:string,params:unknown[] = [])=>{
-  if(sql.includes('md_communication_logger_accounts'))return {rows:[{user_id:'tenant-system-user'}]};
+  if(sql.includes('INSERT INTO md_record_values')){
+   const keys=params[2] as string[],entries=params[3] as string[];
+   communications.push(Object.fromEntries(keys.map((key,index)=>[key,entries[index]])));
+   return {rows:[]};
+  }
+  if(sql.includes('FROM md_tenants'))return {rows:[{id:tenant}]};
+  if(sql.includes('FROM md_field_definitions'))
+   return {rows:(params[1] as string[]).map(api_name=>({api_name}))};
+  if(sql.includes('INSERT INTO md_records'))return {rows:[{id:'record-new'}]};
+
   if(sql.includes('FROM md_inbound_webhook_endpoints w'))return {rows:[{
    tenant_id:tenant,id:endpoint,api_name:'Credential_WhatsApp',flow_api:null,
    execution_user_id:actor,created_by:actor,credential_name:'WhatsApp',provider:'HmacSha256',
@@ -111,7 +129,7 @@ test('credential webhook retries skip inbound message IDs already stored before 
    return {rows:[{id:'44444444-4444-4444-8444-444444444444',status:eventStatus}]};
   if(sql.includes("SET status='completed'"))eventStatus='completed';
   return {rows:[]};
- }};
+ },transaction:async(fn:(client:unknown)=>Promise<unknown>)=>fn({query:db.query})};
  const app=express();
  app.use(express.json({verify:(req,_res,raw)=>{
   (req as typeof req&{rawWebhookBody?:Buffer}).rawWebhookBody=Buffer.from(raw);
