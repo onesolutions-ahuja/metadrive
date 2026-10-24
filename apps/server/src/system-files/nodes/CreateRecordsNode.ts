@@ -2,7 +2,12 @@ import type {FlowNodeContext,FlowActionResult} from './NodeContext.js';
 import {enforceRecordOverlap,enforceUniqueRecordInput} from './RecordOverlapGuard.js';
 import {enforceRecordAvailability} from './RecordAvailabilityGuard.js';
 import {defaultDocumentLineTotalsConfig,enforceDocumentConversion,enforceDocumentSourceLink,prepareDocumentLineMutation,recalculateDocumentLineTotals} from './DocumentFinancialGuard.js';
-import {enforceManualPaymentGuard} from './RecordPaymentGuard.js';
+import {enforceManualPaymentGuard,enforceCashLedgerReversal} from './RecordPaymentGuard.js';
+async function enforceCashLedgerReversalIfConfigured(context:FlowNodeContext,guard:unknown,
+ fields:Record<string,unknown>){
+ if(guard!==null&&guard!==undefined)
+  await enforceCashLedgerReversal(context,guard,fields);
+}
 export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<FlowActionResult>{
  const {tenantId,userId,client,node,records,vars,evaluate,set,recordValues,scalar}=context;
  const config=node.config;
@@ -32,6 +37,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
         await enforceDocumentConversion(context,config.documentConversion,fields);
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
       await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
+      await enforceCashLedgerReversalIfConfigured(context,config.cashReversalGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       if(lineMutation)await recalculateDocumentLineTotals(context,lineTotalsConfig,lineMutation.newParent);
       created.push({...fields,Id:id});
@@ -58,6 +64,7 @@ export async function executeCreateRecordsNode(context:FlowNodeContext):Promise<
       await enforceDocumentConversion(context,config.documentConversion,fields);
       await enforceDocumentSourceLink(context,config.sourceLinkGuard,fields);
       await enforceManualPaymentGuard(context,config.manualPaymentGuard,fields);
+      await enforceCashLedgerReversalIfConfigured(context,config.cashReversalGuard,fields);
       const id=await records.createInTransaction(client,tenantId,userId,objectApi,fields);
       if(lineMutation)await recalculateDocumentLineTotals(context,config.documentLineTotals,lineMutation.newParent);
       // Make the newly created record available to subsequent steps as {!record<stepId>.Id}.
