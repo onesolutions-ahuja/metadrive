@@ -332,6 +332,8 @@ export default function AceAssistRuntime({entry,onLogout}:{
    values[field.apiName]=formatInput(existing,field,hours?.timezone);
   }
   if(object==='Appointment'&&operation==='Create'){
+   values.Status='Scheduled';
+   values.TimeZone=hours?.timezone??'';
    if(visibleFields(object).some(f=>f.apiName==='AssignedUser'))values.AssignedUser=selfId;
    else values.AssignedTo=selfId;
   }
