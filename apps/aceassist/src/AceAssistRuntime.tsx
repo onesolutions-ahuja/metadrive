@@ -26,7 +26,7 @@ const tabs:Tab[]=[
  {object:'Customer',label:'Customers'},
  {object:'Quotation',label:'Quotations'},
  {object:'Invoice',label:'Invoices'},
- {object:'Payment',label:'Payments'}
+ {object:'CashLedger',label:'Cash Ledger'}
 ];
 const isFinancialDocument=(name:string):name is DocumentType=>
  name==='Quotation'||name==='Invoice';
@@ -555,11 +555,11 @@ export default function AceAssistRuntime({entry,onLogout}:{
        <button type="button" onClick={()=>changeCalendarDate(1)} aria-label="Next period">›</button>
       </div>}
       <button type="button" onClick={()=>{setReload(n=>n+1);setHoursReload(n=>n+1);}} disabled={busy}>Refresh</button>
-      <button type="button" onClick={()=>startEdit('Create')}
+      {current.object!=='CashLedger'&&<button type="button" onClick={()=>startEdit('Create')}
        disabled={isFinancialDocument(current.object)
         ?!actions.has(documentFlow('Create',current.object))||busy:
         !(can('Create')||canDynamic('Create',current.object))||busy}>
-       New {current.object}</button>
+       New {current.object}</button>}
      </div></div>
     {current.object==='Appointment'&&<div className="assist-calendar-filters">
      <label>Staff<select value={calendarStaffFilter} onChange={e=>setCalendarStaffFilter(e.target.value)}>
