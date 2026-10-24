@@ -1046,7 +1046,8 @@ export const objectMetadata: ObjectMetadata[] = [
       { apiName: 'Email', label: 'Email', dataType: 'Email', required: true, unique: true },
       { apiName: 'Username', label: 'Username', dataType: 'Text(80)', required: true, unique: true },
       { apiName: 'IsActive', label: 'Active', dataType: 'Checkbox', required: true, unique: false },
-      { apiName: 'UserRoleId', label: 'User Role', dataType: 'Text(18)', required: false, unique: false }
+      { apiName: 'UserRoleId', label: 'User Role', dataType: 'Text(18)', required: false, unique: false },
+      { apiName: 'ReportsTo', label: 'Reporting To', dataType: 'Lookup(User)', required: false, unique: false, relationship: { type: 'Lookup', targetObject: 'User', relationshipName: 'Manager', childRelationshipName: 'DirectReports' } }
     ]
   },
   {
