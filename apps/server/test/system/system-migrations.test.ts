@@ -39,7 +39,7 @@ test('system migrations are additive, recorded, and idempotent',async()=>{
 
 test('already-applied credential webhook migration remains byte-for-byte immutable',()=>{
  const original=readFileSync(new URL('../../src/system-support/migrations/20261127-credential-webhooks.sql',import.meta.url));
- const blobHash=createHash('sha1').update('blob '+original.length+'\\0').update(original).digest('hex');
+ const blobHash=createHash('sha1').update('blob '+original.length).update(Buffer.from([0])).update(original).digest('hex');
  assert.equal(blobHash,'b90beba8b1466148a6d3c9b7515014ee32de6c08',
   'Never edit a migration whose checksum was stored in production SQL');
  const followup=readFileSync(new URL('../../src/system-support/migrations/20261203-credential-webhook-fk-reconcile.sql',import.meta.url),'utf8');
