@@ -1360,6 +1360,7 @@ export class RecordEngine {
   /** Retain business records and their dependent SQL rows for recoverable deletion. */
   private async removeRecordTree(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,
     root:boolean,visiting:Set<string>,deletionGroupId:string,rootId:string){
+    if(objectApi==='CashLedger')throw Error('CashLedger entries cannot be deleted; post a reversal');
     await this.lockObjectForWrite(client,tenantId,objectApi);
     const recordKey=JSON.stringify([objectApi,id]);
     if(visiting.has(recordKey))throw new Error('Master-Detail record cycle detected');
