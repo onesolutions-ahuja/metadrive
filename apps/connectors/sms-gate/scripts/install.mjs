@@ -8,6 +8,8 @@ export default Object.freeze({
   "url": "https://api.sms-gate.app/3rdparty/v1/",
   "auth": "Basic",
   "header": "",
+  "communicationChannel": "SMS",
+  "defaultCommunicationFields": {"recipient":"phoneNumbers[0]","body":"textMessage.text","responseId":"id"},
   "fields": [],
   "operations": {
     "SendMessage": {
